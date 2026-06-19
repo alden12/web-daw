@@ -1,0 +1,74 @@
+/**
+ * The single source of truth for a set of parameter values. Framework-agnostic
+ * and audio-agnostic: the UI, the audio engine's bindings, MCP, and persistence
+ * all read and write through this one object. It validates every write against
+ * the schema and notifies subscribers.
+ */
+import type { ParamSchema, ParamSpec, ParamValue, PatchValues } from './types';
+
+type Listener = (id: string, value: ParamValue) => void;
+
+function coerce(spec: ParamSpec, value: ParamValue): ParamValue {
+  switch (spec.kind) {
+    case 'number': {
+      const n = typeof value === 'number' ? value : Number(value);
+      if (!Number.isFinite(n)) return spec.default;
+      return Math.min(spec.max, Math.max(spec.min, n));
+    }
+    case 'enum':
+      return spec.options.includes(value as string) ? (value as string) : spec.default;
+    case 'boolean':
+      return Boolean(value);
+  }
+}
+
+export class ParamStore {
+  private readonly specs = new Map<string, ParamSpec>();
+  private readonly values = new Map<string, ParamValue>();
+  private readonly listeners = new Set<Listener>();
+
+  constructor(schema: ParamSchema) {
+    for (const spec of schema) {
+      this.specs.set(spec.id, spec);
+      this.values.set(spec.id, spec.default);
+    }
+  }
+
+  spec(id: string): ParamSpec {
+    const spec = this.specs.get(id);
+    if (!spec) throw new Error(`Unknown parameter: ${id}`);
+    return spec;
+  }
+
+  get(id: string): ParamValue {
+    if (!this.specs.has(id)) throw new Error(`Unknown parameter: ${id}`);
+    return this.values.get(id)!;
+  }
+
+  /** Set a value, coerced/validated against the schema. Notifies subscribers. */
+  set(id: string, value: ParamValue): void {
+    const spec = this.spec(id);
+    const next = coerce(spec, value);
+    if (this.values.get(id) === next) return;
+    this.values.set(id, next);
+    for (const listener of this.listeners) listener(id, next);
+  }
+
+  /** Subscribe to every value change. Returns an unsubscribe function. */
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /** Current value of every parameter, i.e. the patch. */
+  snapshot(): PatchValues {
+    return Object.fromEntries(this.values);
+  }
+
+  /** Apply a patch, validating each value. Ignores unknown ids. */
+  load(patch: PatchValues): void {
+    for (const [id, value] of Object.entries(patch)) {
+      if (this.specs.has(id)) this.set(id, value);
+    }
+  }
+}
