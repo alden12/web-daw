@@ -25,6 +25,31 @@
   font-size: 15px;
 }
 
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.mcp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.mcp-connected .mcp-dot {
+  background: #2ecc71;
+}
+.mcp-connecting .mcp-dot {
+  background: #f1c40f;
+}
+.mcp-disconnected .mcp-dot {
+  background: #e74c3c;
+}
+
 .start {
   font-family: var(--mono);
   font-size: 16px;

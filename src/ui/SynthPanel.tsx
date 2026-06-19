@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { ParamStore } from '../audio/params/store';
 import { Synth, synthSchema } from '../audio/synth/Synth';
+import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { Knob } from './Knob';
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
@@ -18,9 +19,16 @@ export function SynthPanel() {
   const [store] = useState(() => new ParamStore(synthSchema));
   const [synth] = useState(() => new Synth(store));
   const [started, setStarted] = useState(false);
+  const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
 
   // Tear the engine down when the panel unmounts.
   useEffect(() => () => synth.dispose(), [synth]);
+
+  // Bridge the store/synth to the MCP server's WebSocket (auto-reconnecting).
+  useEffect(() => {
+    const handle = connectMcpBridge(store, synth, { onStatus: setMcpStatus });
+    return () => handle.dispose();
+  }, [store, synth]);
 
   // Computer-keyboard note input (mono: release only when no keys are held).
   useEffect(() => {
@@ -63,6 +71,9 @@ export function SynthPanel() {
             Start audio
           </button>
         )}
+        <p className={`mcp-status mcp-${mcpStatus}`}>
+          <span className="mcp-dot" /> MCP: {mcpStatus}
+        </p>
       </header>
 
       <div className="rack">
