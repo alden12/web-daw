@@ -29,6 +29,10 @@ let shuttingDown = false;
 const shutdown = () => {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Hard backstop: never let a wedged close() keep the process (and the WS port)
+  // alive after the client has gone.
+  const hard = setTimeout(() => process.exit(0), 1500);
+  hard.unref();
   void close().finally(() => process.exit(0));
 };
 

@@ -88,6 +88,14 @@ export function createDawMcp(
     return true;
   };
 
+  // Pending note events for an in-flight play_sequence; cleared if a new
+  // sequence starts or the server shuts down, so notes never outlive their run.
+  let sequenceTimers: ReturnType<typeof setTimeout>[] = [];
+  const clearSequence = () => {
+    for (const t of sequenceTimers) clearTimeout(t);
+    sequenceTimers = [];
+  };
+
   const server = new McpServer({ name: 'web-daw', version: '0.1.0' });
 
   server.registerTool(
@@ -179,9 +187,52 @@ export function createDawMcp(
     },
   );
 
+  server.registerTool(
+    'play_sequence',
+    {
+      title: 'Play sequence',
+      description:
+        'Play a monophonic melody: notes are played back-to-back, each for its own durationMs. ' +
+        'A short gap at the end of each note (articulationMs, default 30) separates repeats. ' +
+        'Use this for tunes - the server handles the timing so the rhythm is accurate.',
+      inputSchema: {
+        notes: z
+          .array(
+            z.object({
+              midi: z.number().int().min(0).max(127),
+              durationMs: z.number().min(1).max(20000),
+            }),
+          )
+          .min(1)
+          .max(512),
+        articulationMs: z.number().min(0).max(500).optional(),
+      },
+    },
+    async ({ notes, articulationMs }) => {
+      if (!connected()) return fail('No DAW tab connected.');
+      clearSequence();
+      const gap = articulationMs ?? 30;
+      let t = 0;
+      for (const { midi, durationMs } of notes) {
+        const start = t;
+        sequenceTimers.push(setTimeout(() => sendToTab({ type: 'noteOn', midi }), start));
+        sequenceTimers.push(
+          setTimeout(() => sendToTab({ type: 'noteOff' }), start + Math.max(1, durationMs - gap)),
+        );
+        t += durationMs;
+      }
+      return ok(`Playing ${notes.length} notes over ${t}ms`);
+    },
+  );
+
   const close = async () => {
+    clearSequence();
+    // Terminate clients first: wss.close() does not drop existing connections and
+    // its callback would otherwise wait on them forever, hanging shutdown.
+    for (const client of wss.clients) client.terminate();
+    tab = null;
     await new Promise<void>((resolve) => wss.close(() => resolve()));
-    await server.close();
+    await server.close().catch(() => undefined);
   };
 
   return { server, close };

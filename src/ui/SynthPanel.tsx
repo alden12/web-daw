@@ -3,23 +3,34 @@
  * schema entry (no per-param code), handles the user gesture that starts audio,
  * and maps the computer keyboard to notes.
  */
-import { useEffect, useState } from 'react';
-import { ParamStore } from '../audio/params/store';
-import { Synth, synthSchema } from '../audio/synth/Synth';
-import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
-import { Knob } from './Knob';
+import { useEffect, useState } from "react";
+import { ParamStore } from "../audio/params/store";
+import { Synth, synthSchema } from "../audio/synth/Synth";
+import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
+import { Knob } from "./Knob";
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
 const KEY_MAP: Record<string, number> = {
-  a: 60, w: 61, s: 62, e: 63, d: 64, f: 65, t: 66,
-  g: 67, y: 68, h: 69, u: 70, j: 71, k: 72,
+  a: 60,
+  w: 61,
+  s: 62,
+  e: 63,
+  d: 64,
+  f: 65,
+  t: 66,
+  g: 67,
+  y: 68,
+  h: 69,
+  u: 70,
+  j: 71,
+  k: 72,
 };
 
 export function SynthPanel() {
   const [store] = useState(() => new ParamStore(synthSchema));
   const [synth] = useState(() => new Synth(store));
   const [started, setStarted] = useState(false);
-  const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
+  const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
 
   // Tear the engine down when the panel unmounts.
   useEffect(() => () => synth.dispose(), [synth]);
@@ -47,11 +58,11 @@ export function SynthPanel() {
       held.delete(key);
       if (held.size === 0) synth.noteOff();
     };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
     return () => {
-      window.removeEventListener('keydown', onDown);
-      window.removeEventListener('keyup', onUp);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
     };
   }, [started, synth]);
 
@@ -65,7 +76,9 @@ export function SynthPanel() {
       <header className="synth-header">
         <h1>web-daw</h1>
         {started ? (
-          <p className="hint">Play notes with the keyboard row A–K (W, E, T, Y, U for sharps).</p>
+          <p className="hint">
+            Play notes with the keyboard row A-K (W, E, T, Y, U for sharps).
+          </p>
         ) : (
           <button type="button" className="start" onClick={handleStart}>
             Start audio

@@ -100,4 +100,23 @@ describe('MCP server', () => {
     expect(types).toEqual(['noteOn', 'noteOff']);
     expect(messages[0]).toEqual({ type: 'noteOn', midi: 60 });
   });
+
+  it('play_sequence plays notes in order with paired on/off events', async () => {
+    const messages = await connectTab();
+    const res = await call('play_sequence', {
+      notes: [
+        { midi: 60, durationMs: 40 },
+        { midi: 64, durationMs: 40 },
+        { midi: 67, durationMs: 40 },
+      ],
+      articulationMs: 10,
+    });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => messages.filter((m) => (m as { type: string }).type === 'noteOff').length === 3);
+    const onNotes = messages
+      .filter((m) => (m as { type: string }).type === 'noteOn')
+      .map((m) => (m as { midi: number }).midi);
+    expect(onNotes).toEqual([60, 64, 67]);
+    expect(messages.filter((m) => (m as { type: string }).type === 'noteOff')).toHaveLength(3);
+  });
 });
