@@ -321,3 +321,84 @@
   flex-direction: column;
   gap: 24px;
 }
+
+.effects {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.effects-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.effects-empty {
+  text-align: center;
+  color: var(--muted, #888);
+  font-size: 13px;
+  margin: 0;
+}
+.effect {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.effect.bypassed {
+  opacity: 0.5;
+}
+.effect-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--code-bg);
+  border-bottom: 1px solid var(--border);
+}
+.effect-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+.effect-bypass,
+.effect-move,
+.effect-remove {
+  font-family: var(--mono);
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+.effect-bypass.on {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.effect-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.effect .rack {
+  border: none;
+  padding: 18px;
+  gap: 20px 28px;
+}
+.effects-add {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.effect-add {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+}

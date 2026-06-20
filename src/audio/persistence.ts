@@ -7,11 +7,11 @@
 import type { ProjectStore } from './project/projectStore';
 import type { ProjectData } from './project/types';
 
-const STORAGE_KEY = 'web-daw:project:v2';
+const STORAGE_KEY = 'web-daw:project:v3';
 const SAVE_DEBOUNCE_MS = 300;
 
 interface StoredProject {
-  version: 2;
+  version: 3;
   project: ProjectData;
 }
 
@@ -20,7 +20,7 @@ export function loadProject(): ProjectData | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as StoredProject;
-    return data.version === 2 ? data.project : null;
+    return data.version === 3 ? data.project : null;
   } catch {
     return null;
   }
@@ -28,7 +28,7 @@ export function loadProject(): ProjectData | null {
 
 function saveProject(project: ProjectStore): void {
   try {
-    const data: StoredProject = { version: 2, project: project.snapshot() };
+    const data: StoredProject = { version: 3, project: project.snapshot() };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // storage full or unavailable - skip silently
@@ -56,7 +56,11 @@ export function attachAutosave(project: ProjectStore): () => void {
   let trackUnsubs: (() => void)[] = [];
   const resubscribeTracks = () => {
     for (const u of trackUnsubs) u();
-    trackUnsubs = project.getTracks().flatMap((t) => [t.params.subscribe(schedule), t.clip.subscribe(schedule)]);
+    trackUnsubs = project.getTracks().flatMap((t) => [
+      t.params.subscribe(schedule),
+      t.clip.subscribe(schedule),
+      ...t.effects.map((fx) => fx.params.subscribe(schedule)),
+    ]);
   };
 
   const unsubStructure = project.subscribe(() => {

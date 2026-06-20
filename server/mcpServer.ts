@@ -13,8 +13,9 @@ import { z } from 'zod';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { ProjectStore } from '../src/audio/project/projectStore';
-import type { Track } from '../src/audio/project/projectStore';
+import type { Track, EffectInstance } from '../src/audio/project/projectStore';
 import { INSTRUMENT_CATALOG, instrumentSchema } from '../src/audio/instruments/catalog';
+import { EFFECT_CATALOG, effectSchema } from '../src/audio/effects/catalog';
 import { validateParam } from '../src/audio/params/validate';
 import type { NoteEvent } from '../src/audio/sequencer/types';
 import { DEFAULT_WS_PORT } from '../src/audio/mcp/protocol';
@@ -22,6 +23,7 @@ import type { BrowserToServer, ServerToBrowser } from '../src/audio/mcp/protocol
 
 const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
+const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
 
 export interface DawMcp {
   server: McpServer;
@@ -60,6 +62,7 @@ export function createDawMcp(
       if (msg.type === 'projectSnapshot' || msg.type === 'projectStructure') mirror.load(msg.project);
       else if (msg.type === 'paramChanged') mirror.getTrack(msg.trackId)?.params.set(msg.id, msg.value);
       else if (msg.type === 'clipSnapshot') mirror.getTrack(msg.trackId)?.clip.load(msg.clip);
+      else if (msg.type === 'effectParamChanged') mirror.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value);
     });
     socket.on('close', () => {
       if (tab === socket) tab = null;
@@ -80,6 +83,18 @@ export function createDawMcp(
     const t = mirror.getTrack(id);
     if (!t) return { error: `Unknown track "${id}". Use list_tracks to see valid ids.` };
     return { id, track: t };
+  }
+
+  /** Resolve a track (explicit/selected) and one of its effects by id. */
+  function resolveEffect(
+    track: string | undefined,
+    effectId: string,
+  ): { trackId: string; track: Track; effect: EffectInstance } | { error: string } {
+    const r = resolveTrack(track);
+    if ('error' in r) return { error: r.error };
+    const effect = r.track.effects.find((fx) => fx.id === effectId);
+    if (!effect) return { error: `Unknown effect "${effectId}" on track ${r.id}. Use list_effects.` };
+    return { trackId: r.id, track: r.track, effect };
   }
 
   let sequenceTimers: ReturnType<typeof setTimeout>[] = [];
@@ -217,6 +232,138 @@ export function createDawMcp(
       if (!sendToTab({ type: 'setParam', trackId: r.id, id, value })) return fail('No DAW tab connected.');
       r.track.params.set(id, value);
       return ok(`Set ${id} = ${JSON.stringify(value)} on ${r.id}.`);
+    },
+  );
+
+  // --- Effects --------------------------------------------------------------
+  server.registerTool(
+    'list_effects',
+    {
+      title: 'List effects',
+      description: 'List a track\'s effect chain (id, type, bypass, in order) and the available effect types.',
+      inputSchema: trackArg,
+    },
+    async ({ track }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      return ok(
+        JSON.stringify(
+          {
+            track: r.id,
+            available: Object.entries(EFFECT_CATALOG).map(([id, def]) => ({ id, label: def.label })),
+            effects: r.track.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed })),
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    'add_effect',
+    {
+      title: 'Add effect',
+      description: 'Append an effect to a track\'s chain (see list_effects for types). Returns the new effect id.',
+      inputSchema: { ...trackArg, effect: z.string() },
+    },
+    async ({ track, effect }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!(effect in EFFECT_CATALOG)) {
+        return fail(`Unknown effect "${effect}". Options: ${Object.keys(EFFECT_CATALOG).join(', ')}.`);
+      }
+      const id = makeEffectId();
+      if (!sendToTab({ type: 'addEffect', trackId: r.id, effectType: effect, id })) return fail('No DAW tab connected.');
+      mirror.addEffect(r.id, effect, id);
+      return ok(`Added ${effect} effect to ${r.id} (id ${id}).`);
+    },
+  );
+
+  server.registerTool(
+    'remove_effect',
+    {
+      title: 'Remove effect',
+      description: 'Remove an effect from a track\'s chain by id.',
+      inputSchema: { ...trackArg, effect_id: z.string() },
+    },
+    async ({ track, effect_id }) => {
+      const r = resolveEffect(track, effect_id);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'removeEffect', trackId: r.trackId, effectId: effect_id })) return fail('No DAW tab connected.');
+      mirror.removeEffect(r.trackId, effect_id);
+      return ok(`Removed effect ${effect_id} from ${r.trackId}.`);
+    },
+  );
+
+  server.registerTool(
+    'move_effect',
+    {
+      title: 'Move effect',
+      description: 'Reorder an effect within a track\'s chain (0 = first/earliest in the signal path).',
+      inputSchema: { ...trackArg, effect_id: z.string(), to_index: z.number().int().min(0) },
+    },
+    async ({ track, effect_id, to_index }) => {
+      const r = resolveEffect(track, effect_id);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'moveEffect', trackId: r.trackId, effectId: effect_id, toIndex: to_index })) return fail('No DAW tab connected.');
+      mirror.moveEffect(r.trackId, effect_id, to_index);
+      return ok(`Moved effect ${effect_id} to index ${to_index} on ${r.trackId}.`);
+    },
+  );
+
+  server.registerTool(
+    'bypass_effect',
+    {
+      title: 'Bypass effect',
+      description: 'Enable or bypass an effect (bypassed effects are skipped in the signal path).',
+      inputSchema: { ...trackArg, effect_id: z.string(), bypassed: z.boolean() },
+    },
+    async ({ track, effect_id, bypassed }) => {
+      const r = resolveEffect(track, effect_id);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'bypassEffect', trackId: r.trackId, effectId: effect_id, bypassed })) return fail('No DAW tab connected.');
+      mirror.setEffectBypass(r.trackId, effect_id, bypassed);
+      return ok(`${bypassed ? 'Bypassed' : 'Enabled'} effect ${effect_id} on ${r.trackId}.`);
+    },
+  );
+
+  server.registerTool(
+    'list_effect_parameters',
+    {
+      title: 'List effect parameters',
+      description: 'List an effect\'s parameters with schema and current values.',
+      inputSchema: { ...trackArg, effect_id: z.string() },
+    },
+    async ({ track, effect_id }) => {
+      const r = resolveEffect(track, effect_id);
+      if ('error' in r) return fail(r.error);
+      const params = effectSchema(r.effect.type).map((spec) => ({ ...spec, value: r.effect.params.get(spec.id) }));
+      return ok(JSON.stringify({ track: r.trackId, effect: effect_id, type: r.effect.type, parameters: params }, null, 2));
+    },
+  );
+
+  server.registerTool(
+    'set_effect_parameter',
+    {
+      title: 'Set effect parameter',
+      description: 'Set a parameter on an effect. Validated against the effect\'s schema (range/enum).',
+      inputSchema: { ...trackArg, effect_id: z.string(), id: z.string(), value: z.union([z.number(), z.string(), z.boolean()]) },
+    },
+    async ({ track, effect_id, id, value }) => {
+      const r = resolveEffect(track, effect_id);
+      if ('error' in r) return fail(r.error);
+      let spec;
+      try {
+        spec = r.effect.params.spec(id);
+      } catch {
+        return fail(`Unknown parameter "${id}" for effect "${r.effect.type}".`);
+      }
+      const err = validateParam(spec, value);
+      if (err) return fail(err);
+      if (!sendToTab({ type: 'setEffectParam', trackId: r.trackId, effectId: effect_id, id, value })) return fail('No DAW tab connected.');
+      r.effect.params.set(id, value);
+      return ok(`Set ${id} = ${JSON.stringify(value)} on effect ${effect_id}.`);
     },
   );
 

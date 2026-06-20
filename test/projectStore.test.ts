@@ -80,6 +80,57 @@ describe('ProjectStore', () => {
     expect(lead.clip.getClip().notes).toHaveLength(1);
     expect(b.getTrack(t2.id)!.params.get('fm.ratio')).toBe(3);
   });
+
+  it('adds, reorders, bypasses, and removes effects, each with its own schema', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    const delay = p.addEffect(t.id, 'delay')!;
+    const reverb = p.addEffect(t.id, 'reverb')!;
+    expect(p.getStructure().tracks[0].effects.map((fx) => fx.type)).toEqual(['delay', 'reverb']);
+    // each effect has its own ParamStore over the effect's schema
+    expect(delay.params.spec('delay.feedback')).toBeTruthy();
+    expect(reverb.params.spec('reverb.decay')).toBeTruthy();
+    expect(() => delay.params.spec('reverb.decay')).toThrow();
+
+    // reorder: move reverb to the front
+    p.moveEffect(t.id, reverb.id, 0);
+    expect(p.getStructure().tracks[0].effects.map((fx) => fx.id)).toEqual([reverb.id, delay.id]);
+
+    // bypass
+    p.setEffectBypass(t.id, delay.id, true);
+    expect(p.getEffect(t.id, delay.id)!.bypassed).toBe(true);
+
+    // remove
+    p.removeEffect(t.id, reverb.id);
+    expect(p.getStructure().tracks[0].effects.map((fx) => fx.id)).toEqual([delay.id]);
+  });
+
+  it('falls back to the default effect for unknown types and is idempotent on re-add', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    const fx = p.addEffect(t.id, 'nope')!;
+    expect(fx.type).toBe('delay');
+    const again = p.addEffect(t.id, 'delay', fx.id);
+    expect(again).toBe(fx);
+    expect(p.getTrack(t.id)!.effects).toHaveLength(1);
+  });
+
+  it('round-trips effects (type, bypass, params) through snapshot/load', () => {
+    const a = new ProjectStore(false);
+    const t = a.addTrack('subtractive', 'Pad');
+    const rev = a.addEffect(t.id, 'reverb')!;
+    rev.params.set('mix', 0.6);
+    a.addEffect(t.id, 'delay');
+    a.setEffectBypass(t.id, rev.id, true);
+    const snap = a.snapshot();
+
+    const b = new ProjectStore(false);
+    b.load(snap);
+    const effects = b.getTrack(t.id)!.effects;
+    expect(effects.map((fx) => fx.type)).toEqual(['reverb', 'delay']);
+    expect(effects[0].bypassed).toBe(true);
+    expect(effects[0].params.get('mix')).toBe(0.6);
+  });
 });
 
 describe('instrument catalog', () => {

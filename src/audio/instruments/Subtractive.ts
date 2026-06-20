@@ -7,7 +7,7 @@ import type { ParamStore } from '../params/store';
 import { BaseInstrument } from './BaseInstrument';
 import type { VoiceHandle } from './types';
 import { midiToFreq, rampParam, type ParamBinding } from './binding';
-import { subtractiveSchema, type Waveform } from './catalog';
+import { type Waveform } from './catalog';
 
 export class SubtractiveInstrument extends BaseInstrument {
   private filter!: BiquadFilterNode;
@@ -16,7 +16,7 @@ export class SubtractiveInstrument extends BaseInstrument {
 
   constructor(ctx: AudioContext, store: ParamStore) {
     super(ctx, store);
-    this.init(subtractiveSchema);
+    this.init();
   }
 
   protected buildGraph(): void {

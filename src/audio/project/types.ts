@@ -6,6 +6,13 @@
 import type { PatchValues } from '../params/types';
 import type { ClipData } from '../sequencer/types';
 
+/** An effect in a track's chain (structural view, no param values). */
+export interface EffectMeta {
+  id: string;
+  type: string;
+  bypassed: boolean;
+}
+
 export interface TrackMeta {
   id: string;
   name: string;
@@ -13,11 +20,19 @@ export interface TrackMeta {
   muted: boolean;
   /** 0..1 track output gain. */
   volume: number;
+  /** Ordered insert effects between the instrument and the track gain. */
+  effects: EffectMeta[];
 }
 
-export interface TrackData extends TrackMeta {
+/** An effect with its persisted param values. */
+export interface EffectData extends EffectMeta {
+  params: PatchValues;
+}
+
+export interface TrackData extends Omit<TrackMeta, 'effects'> {
   params: PatchValues;
   clip: ClipData;
+  effects: EffectData[];
 }
 
 export interface ProjectData {

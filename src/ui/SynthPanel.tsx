@@ -14,6 +14,7 @@ import { attachAutosave, restoreProject } from '../audio/persistence';
 import { useProject } from '../audio/project/useProject';
 import { TrackList } from './TrackList';
 import { InstrumentPanel } from './InstrumentPanel';
+import { EffectChain } from './EffectChain';
 import { TransportBar } from './TransportBar';
 import { PianoRoll } from './PianoRoll';
 
@@ -99,6 +100,7 @@ export function SynthPanel() {
       {selectedTrack && (
         <div className="track-detail" key={selectedTrack.id}>
           <InstrumentPanel params={selectedTrack.params} instrumentType={selectedTrack.instrumentType} />
+          <EffectChain projectStore={projectStore} trackId={selectedTrack.id} />
           <TransportBar projectStore={projectStore} scheduler={scheduler} isPlaying={isPlaying} started={started} />
           <PianoRoll clipStore={selectedTrack.clip} scheduler={scheduler} />
         </div>
