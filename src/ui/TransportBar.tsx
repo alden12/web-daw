@@ -1,23 +1,23 @@
 /**
- * Transport controls: play/stop the scheduler and edit the tempo. Tempo is read
- * and written through the clip store, so MCP and the UI stay in sync.
+ * Transport controls: play/stop the scheduler and edit the project tempo. Tempo
+ * is read/written through the project store, so MCP and the UI stay in sync.
  */
-import type { ClipStore } from '../audio/sequencer/clipStore';
+import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
-import { useClip } from '../audio/sequencer/useClip';
+import { useProject } from '../audio/project/useProject';
 
 export function TransportBar({
-  clipStore,
+  projectStore,
   scheduler,
   isPlaying,
   started,
 }: {
-  clipStore: ClipStore;
+  projectStore: ProjectStore;
   scheduler: Scheduler;
   isPlaying: boolean;
   started: boolean;
 }) {
-  const clip = useClip(clipStore);
+  const project = useProject(projectStore);
 
   return (
     <div className="transport">
@@ -35,8 +35,8 @@ export function TransportBar({
           type="number"
           min={20}
           max={300}
-          value={clip.tempoBpm}
-          onChange={(e) => clipStore.setTempo(Number(e.target.value))}
+          value={project.tempoBpm}
+          onChange={(e) => projectStore.setTempo(Number(e.target.value))}
         />
         BPM
       </label>

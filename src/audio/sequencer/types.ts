@@ -19,8 +19,7 @@ export interface NoteEvent {
 
 export interface ClipData {
   notes: NoteEvent[];
-  tempoBpm: number;
-  /** Loop length in beats. */
+  /** Loop length in beats. Tempo is project-level (see ProjectStore). */
   lengthBeats: number;
 }
 

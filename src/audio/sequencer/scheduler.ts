@@ -1,14 +1,15 @@
 /**
  * The playback scheduler: the brief's "Tale of Two Clocks". A coarse setInterval
- * wakes every LOOKAHEAD_MS and schedules note onsets that fall within the next
- * SCHEDULE_AHEAD_SEC, using the precise AudioContext clock via synth.playNote.
- * Playback loops at the clip's lengthBeats.
+ * wakes every LOOKAHEAD_MS and schedules note onsets within the next
+ * SCHEDULE_AHEAD_SEC for EVERY (non-muted) track, using the precise AudioContext
+ * clock via each track's instrument.playNote. Playback loops at the project's
+ * lengthBeats; tempo comes from the project.
  *
  * Beat bookkeeping is anchored as (anchorBeat at anchorTime), so a tempo change
- * mid-playback re-anchors and stays continuous instead of jumping.
+ * mid-playback re-anchors and stays continuous.
  */
-import type { Synth } from '../synth/Synth';
-import type { ClipStore } from './clipStore';
+import type { AudioEngine } from '../engine/AudioEngine';
+import type { ProjectStore } from '../project/projectStore';
 import type { NoteEvent } from './types';
 
 const LOOKAHEAD_MS = 25;
@@ -49,16 +50,16 @@ export class Scheduler {
 
   private anchorBeat = 0;
   private anchorTime = 0;
-  private lastBps = 2; // 120 bpm
+  private lastBps = 2;
   private scheduledUntilBeats = 0;
 
-  private readonly synth: Synth;
-  private readonly clipStore: ClipStore;
+  private readonly engine: AudioEngine;
+  private readonly project: ProjectStore;
   private readonly onStateChange?: (playing: boolean) => void;
 
-  constructor(synth: Synth, clipStore: ClipStore, onStateChange?: (playing: boolean) => void) {
-    this.synth = synth;
-    this.clipStore = clipStore;
+  constructor(engine: AudioEngine, project: ProjectStore, onStateChange?: (playing: boolean) => void) {
+    this.engine = engine;
+    this.project = project;
     this.onStateChange = onStateChange;
   }
 
@@ -67,13 +68,12 @@ export class Scheduler {
   }
 
   play(): void {
-    if (this.timer !== null || !this.synth.started) return;
-    this.anchorTime = this.synth.currentTime;
+    if (this.timer !== null || !this.engine.started) return;
+    this.anchorTime = this.engine.currentTime;
     this.anchorBeat = 0;
     this.scheduledUntilBeats = 0;
-    this.lastBps = this.clipStore.getClip().tempoBpm / 60;
-    // Re-anchor on tempo change so playback stays continuous.
-    this.unsubscribe = this.clipStore.subscribe(() => this.reanchor());
+    this.lastBps = this.project.tempo / 60;
+    this.unsubscribe = this.project.subscribe(() => this.reanchor());
     this.tick();
     this.timer = setInterval(() => this.tick(), LOOKAHEAD_MS);
     this.onStateChange?.(true);
@@ -85,41 +85,45 @@ export class Scheduler {
     this.timer = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
-    this.synth.allNotesOff();
+    for (const track of this.project.getTracks()) this.engine.getInstrument(track.id)?.allNotesOff();
     this.onStateChange?.(false);
   }
 
   /** Looped position in beats for the playhead; 0 when stopped. */
   getPositionBeats(): number {
     if (this.timer === null) return 0;
-    const clip = this.clipStore.getClip();
-    const pos = this.anchorBeat + (this.synth.currentTime - this.anchorTime) * this.lastBps;
-    return clip.lengthBeats > 0 ? pos % clip.lengthBeats : 0;
+    const len = this.project.length;
+    const pos = this.anchorBeat + (this.engine.currentTime - this.anchorTime) * this.lastBps;
+    return len > 0 ? pos % len : 0;
   }
 
   private reanchor(): void {
-    const now = this.synth.currentTime;
+    const now = this.engine.currentTime;
     this.anchorBeat += (now - this.anchorTime) * this.lastBps;
     this.anchorTime = now;
-    this.lastBps = this.clipStore.getClip().tempoBpm / 60;
+    this.lastBps = this.project.tempo / 60;
   }
 
   private tick(): void {
-    const clip = this.clipStore.getClip();
-    const bps = clip.tempoBpm / 60;
-    const now = this.synth.currentTime;
+    const bpm = this.project.tempo;
+    const bps = bpm / 60;
+    const loopLen = this.project.length;
+    const now = this.engine.currentTime;
     const horizonBeats = this.anchorBeat + (now + SCHEDULE_AHEAD_SEC - this.anchorTime) * bps;
-    const occurrences = notesStartingInBeatRange(
-      clip.notes,
-      this.scheduledUntilBeats,
-      horizonBeats,
-      clip.lengthBeats,
-    );
-    for (const { note, atBeat } of occurrences) {
-      const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-      this.synth.playNote(note.pitch, beatsToSeconds(note.length, clip.tempoBpm), note.velocity, when);
+    const fromBeats = this.scheduledUntilBeats;
+    if (horizonBeats <= fromBeats) return;
+
+    for (const track of this.project.getTracks()) {
+      if (track.muted) continue;
+      const instrument = this.engine.getInstrument(track.id);
+      if (!instrument) continue;
+      const occurrences = notesStartingInBeatRange(track.clip.getClip().notes, fromBeats, horizonBeats, loopLen);
+      for (const { note, atBeat } of occurrences) {
+        const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+        instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
+      }
     }
-    if (horizonBeats > this.scheduledUntilBeats) this.scheduledUntilBeats = horizonBeats;
+    this.scheduledUntilBeats = horizonBeats;
   }
 
   dispose(): void {

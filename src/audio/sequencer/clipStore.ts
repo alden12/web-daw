@@ -7,9 +7,6 @@
  */
 import { GRID, type ClipData, type NoteEvent } from './types';
 
-const MIN_BPM = 20;
-const MAX_BPM = 300;
-const DEFAULT_TEMPO = 120;
 const DEFAULT_LENGTH = 16;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -25,7 +22,6 @@ export interface NoteInput {
 
 export class ClipStore {
   private readonly notes = new Map<string, NoteEvent>();
-  private tempoBpm = DEFAULT_TEMPO;
   private lengthBeats = DEFAULT_LENGTH;
   private readonly listeners = new Set<() => void>();
   private cached!: ClipData;
@@ -48,7 +44,6 @@ export class ClipStore {
   }
 
   private applyClip(clip: Partial<ClipData>): void {
-    this.tempoBpm = clamp(clip.tempoBpm ?? this.tempoBpm, MIN_BPM, MAX_BPM);
     this.lengthBeats = clip.lengthBeats ?? this.lengthBeats;
     this.notes.clear();
     for (const n of clip.notes ?? []) {
@@ -59,7 +54,6 @@ export class ClipStore {
   private rebuild(): void {
     this.cached = {
       notes: [...this.notes.values()].sort((a, b) => a.start - b.start || a.pitch - b.pitch),
-      tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
     };
   }
@@ -94,13 +88,6 @@ export class ClipStore {
   clear(): void {
     if (this.notes.size === 0) return;
     this.notes.clear();
-    this.emit();
-  }
-
-  setTempo(bpm: number): void {
-    const next = clamp(bpm, MIN_BPM, MAX_BPM);
-    if (next === this.tempoBpm) return;
-    this.tempoBpm = next;
     this.emit();
   }
 
