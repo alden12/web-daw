@@ -49,7 +49,7 @@ export function buildBindings(
   ctx: BaseAudioContext,
   nodes: PersistentNodes,
   voiceState: VoiceState,
-  getVoice: () => Voice | null,
+  getVoices: () => Iterable<Voice>,
 ): Record<string, ParamBinding> {
   return {
     // --- Persistent-node params: applied to a live AudioParam immediately. ---
@@ -63,19 +63,17 @@ export function buildBindings(
       apply: (v, smoothMs) => rampParam(ctx, nodes.masterGain.gain, v as number, smoothMs),
     },
 
-    // --- Per-voice params: stored for the next voice; live voice poked if legal. ---
+    // --- Per-voice params: stored for new voices; all live voices poked too. ---
     'osc.waveform': {
       apply: (v) => {
         voiceState.waveform = v as Waveform;
-        const voice = getVoice();
-        if (voice) voice.osc.type = v as Waveform;
+        for (const voice of getVoices()) voice.osc.type = v as Waveform;
       },
     },
     'osc.detune': {
       apply: (v, smoothMs) => {
         voiceState.detune = v as number;
-        const voice = getVoice();
-        if (voice) rampParam(ctx, voice.osc.detune, v as number, smoothMs);
+        for (const voice of getVoices()) rampParam(ctx, voice.osc.detune, v as number, smoothMs);
       },
     },
     'env.attack': {

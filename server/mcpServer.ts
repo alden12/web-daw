@@ -14,8 +14,14 @@ import type { RawData } from 'ws';
 import { ParamStore } from '../src/audio/params/store';
 import { synthSchema } from '../src/audio/synth/schema';
 import type { ParamSpec, ParamValue } from '../src/audio/params/types';
+import { ClipStore } from '../src/audio/sequencer/clipStore';
+import type { NoteEvent } from '../src/audio/sequencer/types';
 import { DEFAULT_WS_PORT } from '../src/audio/mcp/protocol';
 import type { BrowserToServer, ServerToBrowser } from '../src/audio/mcp/protocol';
+
+function randomId(): string {
+  return crypto.randomUUID();
+}
 
 export interface DawMcp {
   server: McpServer;
@@ -52,6 +58,7 @@ export function createDawMcp(
 
   // The server's mirror of the tab's state, kept current by snapshot/paramChanged.
   const mirror = new ParamStore(synthSchema);
+  const clipMirror = new ClipStore();
 
   // A single connected DAW tab (localhost, single-tab assumption).
   let tab: WebSocket | null = null;
@@ -75,6 +82,7 @@ export function createDawMcp(
       }
       if (msg.type === 'snapshot') mirror.load(msg.values);
       else if (msg.type === 'paramChanged') mirror.set(msg.id, msg.value);
+      else if (msg.type === 'clipSnapshot') clipMirror.load(msg.clip);
     });
     socket.on('close', () => {
       if (tab === socket) tab = null;
@@ -157,16 +165,25 @@ export function createDawMcp(
     'note_on',
     {
       title: 'Note on',
-      description: 'Start a note and hold it. MIDI note number 0-127 (60 = middle C).',
-      inputSchema: { midi: z.number().int().min(0).max(127) },
+      description: 'Start a note and hold it. MIDI note number 0-127 (60 = middle C). Polyphonic.',
+      inputSchema: {
+        midi: z.number().int().min(0).max(127),
+        velocity: z.number().min(0).max(1).optional(),
+      },
     },
-    async ({ midi }) => (sendToTab({ type: 'noteOn', midi }) ? ok(`noteOn ${midi}`) : fail('No DAW tab connected.')),
+    async ({ midi, velocity }) =>
+      sendToTab({ type: 'noteOn', midi, velocity }) ? ok(`noteOn ${midi}`) : fail('No DAW tab connected.'),
   );
 
   server.registerTool(
     'note_off',
-    { title: 'Note off', description: 'Release the currently sounding note.' },
-    async () => (sendToTab({ type: 'noteOff' }) ? ok('noteOff') : fail('No DAW tab connected.')),
+    {
+      title: 'Note off',
+      description: 'Release a sounding note by its MIDI number.',
+      inputSchema: { midi: z.number().int().min(0).max(127) },
+    },
+    async ({ midi }) =>
+      sendToTab({ type: 'noteOff', midi }) ? ok(`noteOff ${midi}`) : fail('No DAW tab connected.'),
   );
 
   server.registerTool(
@@ -177,12 +194,13 @@ export function createDawMcp(
       inputSchema: {
         midi: z.number().int().min(0).max(127),
         durationMs: z.number().min(1).max(20000).optional(),
+        velocity: z.number().min(0).max(1).optional(),
       },
     },
-    async ({ midi, durationMs }) => {
-      if (!sendToTab({ type: 'noteOn', midi })) return fail('No DAW tab connected.');
+    async ({ midi, durationMs, velocity }) => {
+      if (!sendToTab({ type: 'noteOn', midi, velocity })) return fail('No DAW tab connected.');
       const dur = durationMs ?? 500;
-      setTimeout(() => sendToTab({ type: 'noteOff' }), dur);
+      setTimeout(() => sendToTab({ type: 'noteOff', midi }), dur);
       return ok(`Played ${midi} for ${dur}ms`);
     },
   );
@@ -192,9 +210,9 @@ export function createDawMcp(
     {
       title: 'Play sequence',
       description:
-        'Play a monophonic melody: notes are played back-to-back, each for its own durationMs. ' +
-        'A short gap at the end of each note (articulationMs, default 30) separates repeats. ' +
-        'Use this for tunes - the server handles the timing so the rhythm is accurate.',
+        'Play a monophonic melody ad-hoc (not added to the clip): notes play back-to-back, each for ' +
+        'its own durationMs. A short gap (articulationMs, default 30) separates repeats. For songs you ' +
+        'want to keep/edit, use add_notes + play instead.',
       inputSchema: {
         notes: z
           .array(
@@ -217,12 +235,128 @@ export function createDawMcp(
         const start = t;
         sequenceTimers.push(setTimeout(() => sendToTab({ type: 'noteOn', midi }), start));
         sequenceTimers.push(
-          setTimeout(() => sendToTab({ type: 'noteOff' }), start + Math.max(1, durationMs - gap)),
+          setTimeout(() => sendToTab({ type: 'noteOff', midi }), start + Math.max(1, durationMs - gap)),
         );
         t += durationMs;
       }
       return ok(`Playing ${notes.length} notes over ${t}ms`);
     },
+  );
+
+  // --- Clip (piano roll) tools ------------------------------------------------
+
+  const noteShape = {
+    pitch: z.number().int().min(0).max(127),
+    start: z.number().min(0).describe('onset in beats'),
+    length: z.number().min(0).optional().describe('duration in beats (default 1)'),
+    velocity: z.number().min(0).max(1).optional(),
+  };
+
+  const makeNote = (n: {
+    pitch: number;
+    start: number;
+    length?: number;
+    velocity?: number;
+  }): NoteEvent => ({
+    id: randomId(),
+    pitch: n.pitch,
+    start: n.start,
+    length: n.length ?? 1,
+    velocity: n.velocity ?? 0.8,
+  });
+
+  server.registerTool(
+    'list_notes',
+    {
+      title: 'List notes',
+      description: 'Return the current clip: notes (id, pitch, start/length in beats, velocity), tempo, and length.',
+    },
+    async () => ok(JSON.stringify({ connected: connected(), clip: clipMirror.getClip() }, null, 2)),
+  );
+
+  server.registerTool(
+    'add_note',
+    {
+      title: 'Add note',
+      description: 'Add one note to the clip. Times are in beats (4 beats = 1 bar). Returns the note id.',
+      inputSchema: noteShape,
+    },
+    async (input) => {
+      const note = makeNote(input);
+      if (!sendToTab({ type: 'addNote', note })) return fail('No DAW tab connected.');
+      clipMirror.putNote(note);
+      return ok(`Added note ${note.pitch} at beat ${note.start} (id ${note.id})`);
+    },
+  );
+
+  server.registerTool(
+    'add_notes',
+    {
+      title: 'Add notes',
+      description: 'Add many notes to the clip at once (for writing a whole melody). Times in beats.',
+      inputSchema: { notes: z.array(z.object(noteShape)).min(1).max(512) },
+    },
+    async ({ notes }) => {
+      if (!connected()) return fail('No DAW tab connected.');
+      const ids: string[] = [];
+      for (const input of notes) {
+        const note = makeNote(input);
+        sendToTab({ type: 'addNote', note });
+        clipMirror.putNote(note);
+        ids.push(note.id);
+      }
+      return ok(`Added ${ids.length} notes.`);
+    },
+  );
+
+  server.registerTool(
+    'remove_note',
+    {
+      title: 'Remove note',
+      description: 'Remove a note from the clip by id.',
+      inputSchema: { id: z.string() },
+    },
+    async ({ id }) => {
+      if (!sendToTab({ type: 'removeNote', id })) return fail('No DAW tab connected.');
+      clipMirror.removeNote(id);
+      return ok(`Removed note ${id}`);
+    },
+  );
+
+  server.registerTool(
+    'clear_clip',
+    { title: 'Clear clip', description: 'Remove all notes from the clip.' },
+    async () => {
+      if (!sendToTab({ type: 'clearClip' })) return fail('No DAW tab connected.');
+      clipMirror.clear();
+      return ok('Cleared clip.');
+    },
+  );
+
+  server.registerTool(
+    'set_tempo',
+    {
+      title: 'Set tempo',
+      description: 'Set the playback tempo in BPM (20-300).',
+      inputSchema: { bpm: z.number().min(20).max(300) },
+    },
+    async ({ bpm }) => {
+      if (!sendToTab({ type: 'setTempo', bpm })) return fail('No DAW tab connected.');
+      clipMirror.setTempo(bpm);
+      return ok(`Tempo set to ${bpm} BPM.`);
+    },
+  );
+
+  server.registerTool(
+    'play',
+    { title: 'Play', description: 'Start clip playback (loops).' },
+    async () => (sendToTab({ type: 'transport', action: 'play' }) ? ok('Playing.') : fail('No DAW tab connected.')),
+  );
+
+  server.registerTool(
+    'stop',
+    { title: 'Stop', description: 'Stop clip playback.' },
+    async () => (sendToTab({ type: 'transport', action: 'stop' }) ? ok('Stopped.') : fail('No DAW tab connected.')),
   );
 
   const close = async () => {

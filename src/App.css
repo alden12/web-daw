@@ -130,3 +130,108 @@
 .control input[type='checkbox'] {
   font-family: var(--mono);
 }
+
+/* --- Transport --- */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  justify-content: center;
+}
+
+.transport-btn {
+  font-family: var(--mono);
+  font-size: 15px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid var(--accent-border);
+  cursor: pointer;
+  min-width: 96px;
+}
+.transport-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tempo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+.tempo input {
+  width: 64px;
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+.transport-hint {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.7;
+}
+
+/* --- Piano roll --- */
+.roll-scroll {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.roll-grid {
+  position: relative;
+  cursor: copy;
+}
+
+.roll-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.roll-row.black {
+  background: var(--roll-black);
+}
+
+.roll-label {
+  position: sticky;
+  left: 2px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text);
+  opacity: 0.7;
+  padding-left: 2px;
+}
+
+.roll-note {
+  position: absolute;
+  background: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.roll-note:hover {
+  filter: brightness(1.2);
+}
+
+.roll-playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  background: var(--text-h);
+  pointer-events: none;
+  opacity: 0;
+}
