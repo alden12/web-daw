@@ -6,7 +6,6 @@ describe('ClipStore', () => {
   it('starts empty with sensible defaults', () => {
     const clip = new ClipStore().getClip();
     expect(clip.notes).toEqual([]);
-    expect(clip.tempoBpm).toBe(120);
     expect(clip.lengthBeats).toBe(16);
   });
 
@@ -39,14 +38,6 @@ describe('ClipStore', () => {
     expect(store.getClip().notes).toHaveLength(0);
   });
 
-  it('clamps tempo to range', () => {
-    const store = new ClipStore();
-    store.setTempo(9999);
-    expect(store.getClip().tempoBpm).toBe(300);
-    store.setTempo(1);
-    expect(store.getClip().tempoBpm).toBe(20);
-  });
-
   it('putNote inserts/replaces by id (for sync from elsewhere)', () => {
     const store = new ClipStore();
     store.putNote({ id: 'fixed', pitch: 60, start: 0, length: 1, velocity: 0.5 });
@@ -59,12 +50,10 @@ describe('ClipStore', () => {
   it('round-trips snapshot and load', () => {
     const a = new ClipStore();
     a.addNote({ pitch: 67, start: 2, length: 2, velocity: 0.9 });
-    a.setTempo(90);
     const snap = a.snapshot();
 
     const b = new ClipStore();
     b.load(snap);
-    expect(b.getClip().tempoBpm).toBe(90);
     expect(b.getClip().notes).toHaveLength(1);
     expect(b.getClip().notes[0].pitch).toBe(67);
   });

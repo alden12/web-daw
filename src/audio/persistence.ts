@@ -1,67 +1,73 @@
 /**
- * Local persistence: the whole project (synth patch + clip) is just snapshots of
- * the two stores, so saving and loading is a near-free projection of the same
- * model everything else consumes. Uses localStorage for now; a network/cloud
- * backend can later slot in behind this same snapshot/load seam.
+ * Local persistence: the whole project (all tracks' instruments + clips +
+ * transport) is just a snapshot of the ProjectStore, so saving/loading is a
+ * near-free projection of the same model everything else consumes. localStorage
+ * for now; a network backend can later slot in behind this same seam.
  */
-import type { ParamStore } from './params/store';
-import type { PatchValues } from './params/types';
-import type { ClipStore } from './sequencer/clipStore';
-import type { ClipData } from './sequencer/types';
+import type { ProjectStore } from './project/projectStore';
+import type { ProjectData } from './project/types';
 
-const STORAGE_KEY = 'web-daw:project:v1';
+const STORAGE_KEY = 'web-daw:project:v2';
 const SAVE_DEBOUNCE_MS = 300;
 
-interface ProjectData {
-  version: 1;
-  patch: PatchValues;
-  clip: ClipData;
+interface StoredProject {
+  version: 2;
+  project: ProjectData;
 }
 
-export function loadProject(): { patch?: PatchValues; clip?: ClipData } | null {
+export function loadProject(): ProjectData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as ProjectData;
-    return { patch: data.patch, clip: data.clip };
+    const data = JSON.parse(raw) as StoredProject;
+    return data.version === 2 ? data.project : null;
   } catch {
     return null;
   }
 }
 
-function saveProject(paramStore: ParamStore, clipStore: ClipStore): void {
+function saveProject(project: ProjectStore): void {
   try {
-    const data: ProjectData = {
-      version: 1,
-      patch: paramStore.snapshot(),
-      clip: clipStore.snapshot(),
-    };
+    const data: StoredProject = { version: 2, project: project.snapshot() };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // storage full or unavailable - skip silently
   }
 }
 
-/** Restore a saved project into the stores, if present. Call before wiring sync. */
-export function restoreProject(paramStore: ParamStore, clipStore: ClipStore): void {
+/** Restore a saved project into the store, if present. Call before wiring sync. */
+export function restoreProject(project: ProjectStore): void {
   const saved = loadProject();
-  if (!saved) return;
-  if (saved.patch) paramStore.load(saved.patch);
-  if (saved.clip) clipStore.load(saved.clip);
+  if (saved && saved.tracks?.length) project.load(saved);
 }
 
-/** Debounced autosave on any change to either store. Returns a disposer. */
-export function attachAutosave(paramStore: ParamStore, clipStore: ClipStore): () => void {
+/**
+ * Debounced autosave on any structural OR per-track (param/clip) change. Returns
+ * a disposer. Re-subscribes to track stores whenever the track set changes.
+ */
+export function attachAutosave(project: ProjectStore): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => saveProject(paramStore, clipStore), SAVE_DEBOUNCE_MS);
+    timer = setTimeout(() => saveProject(project), SAVE_DEBOUNCE_MS);
   };
-  const unsubParam = paramStore.subscribe(schedule);
-  const unsubClip = clipStore.subscribe(schedule);
+
+  // Per-track subscriptions are rebuilt on structural change (tracks come/go).
+  let trackUnsubs: (() => void)[] = [];
+  const resubscribeTracks = () => {
+    for (const u of trackUnsubs) u();
+    trackUnsubs = project.getTracks().flatMap((t) => [t.params.subscribe(schedule), t.clip.subscribe(schedule)]);
+  };
+
+  const unsubStructure = project.subscribe(() => {
+    resubscribeTracks();
+    schedule();
+  });
+  resubscribeTracks();
+
   return () => {
     if (timer) clearTimeout(timer);
-    unsubParam();
-    unsubClip();
+    for (const u of trackUnsubs) u();
+    unsubStructure();
   };
 }
