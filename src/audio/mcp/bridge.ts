@@ -43,67 +43,35 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  const handle = (msg: ServerToBrowser) => {
-    switch (msg.type) {
-      case 'createTrack':
-        projectStore.addTrack(msg.instrumentType, msg.name, msg.id);
-        break;
-      case 'removeTrack':
-        projectStore.removeTrack(msg.trackId);
-        break;
-      case 'selectTrack':
-        projectStore.selectTrack(msg.trackId);
-        break;
-      case 'setTrack':
-        if (msg.muted !== undefined) projectStore.setMuted(msg.trackId, msg.muted);
-        if (msg.volume !== undefined) projectStore.setVolume(msg.trackId, msg.volume);
-        if (msg.name !== undefined) projectStore.renameTrack(msg.trackId, msg.name);
-        break;
-      case 'setParam':
-        projectStore.getTrack(msg.trackId)?.params.set(msg.id, msg.value);
-        break;
-      case 'addEffect':
-        projectStore.addEffect(msg.trackId, msg.effectType, msg.id);
-        break;
-      case 'removeEffect':
-        projectStore.removeEffect(msg.trackId, msg.effectId);
-        break;
-      case 'moveEffect':
-        projectStore.moveEffect(msg.trackId, msg.effectId, msg.toIndex);
-        break;
-      case 'bypassEffect':
-        projectStore.setEffectBypass(msg.trackId, msg.effectId, msg.bypassed);
-        break;
-      case 'setEffectParam':
-        projectStore.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value);
-        break;
-      case 'addNote':
-        projectStore.getTrack(msg.trackId)?.clip.putNote(msg.note);
-        break;
-      case 'removeNote':
-        projectStore.getTrack(msg.trackId)?.clip.removeNote(msg.id);
-        break;
-      case 'clearClip':
-        projectStore.getTrack(msg.trackId)?.clip.clear();
-        break;
-      case 'noteOn':
-        engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1);
-        break;
-      case 'noteOff':
-        engine.getInstrument(msg.trackId)?.noteOff(msg.midi);
-        break;
-      case 'allNotesOff':
-        for (const t of projectStore.getTracks()) engine.getInstrument(t.id)?.allNotesOff();
-        break;
-      case 'setTempo':
-        projectStore.setTempo(msg.bpm);
-        break;
-      case 'transport':
-        if (msg.action === 'play') scheduler.play();
-        else scheduler.stop();
-        break;
-    }
+  // One handler per inbound message type (map dispatch, not switch). The mapped
+  // type makes it a compile error to leave a message type unhandled.
+  type Handlers = { [K in ServerToBrowser['type']]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
+  const handlers: Handlers = {
+    createTrack: (msg) => void projectStore.addTrack(msg.instrumentType, msg.name, msg.id),
+    removeTrack: (msg) => projectStore.removeTrack(msg.trackId),
+    selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
+    setTrack: (msg) => {
+      if (msg.muted !== undefined) projectStore.setMuted(msg.trackId, msg.muted);
+      if (msg.volume !== undefined) projectStore.setVolume(msg.trackId, msg.volume);
+      if (msg.name !== undefined) projectStore.renameTrack(msg.trackId, msg.name);
+    },
+    setParam: (msg) => projectStore.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
+    addEffect: (msg) => void projectStore.addEffect(msg.trackId, msg.effectType, msg.id),
+    removeEffect: (msg) => projectStore.removeEffect(msg.trackId, msg.effectId),
+    moveEffect: (msg) => projectStore.moveEffect(msg.trackId, msg.effectId, msg.toIndex),
+    bypassEffect: (msg) => projectStore.setEffectBypass(msg.trackId, msg.effectId, msg.bypassed),
+    setEffectParam: (msg) => projectStore.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value),
+    addNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.putNote(msg.note),
+    removeNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.removeNote(msg.id),
+    clearClip: (msg) => projectStore.getTrack(msg.trackId)?.clip.clear(),
+    noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
+    noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
+    allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
+    setTempo: (msg) => projectStore.setTempo(msg.bpm),
+    transport: (msg) => (msg.action === 'play' ? scheduler.play() : scheduler.stop()),
   };
+
+  const handle = (msg: ServerToBrowser) => (handlers[msg.type] as (m: ServerToBrowser) => void)?.(msg);
 
   // Per-track param/clip subscriptions, rebuilt whenever the track set changes.
   const resubscribeTracks = () => {

@@ -1,8 +1,7 @@
-import './App.css'
-import { SynthPanel } from './ui/SynthPanel'
+import { AppShell } from './ui/AppShell'
 
 function App() {
-  return <SynthPanel />
+  return <AppShell />
 }
 
 export default App

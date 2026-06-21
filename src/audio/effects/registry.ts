@@ -10,11 +10,12 @@ import { DelayEffect } from './Delay';
 import { DistortionEffect } from './Distortion';
 import { ReverbEffect } from './Reverb';
 import { FilterEffect } from './Filter';
-import { DEFAULT_EFFECT } from './catalog';
+import { DEFAULT_EFFECT, type EffectType } from './catalog';
 
 type EffectFactory = (ctx: AudioContext, store: ParamStore) => Effect;
 
-const FACTORIES: Record<string, EffectFactory> = {
+// Typed off the catalog keys: a cataloged effect without a factory won't compile.
+const FACTORIES: Record<EffectType, EffectFactory> = {
   delay: (ctx, store) => new DelayEffect(ctx, store),
   distortion: (ctx, store) => new DistortionEffect(ctx, store),
   reverb: (ctx, store) => new ReverbEffect(ctx, store),
@@ -22,7 +23,7 @@ const FACTORIES: Record<string, EffectFactory> = {
 };
 
 export function createEffect(type: string, ctx: AudioContext, store: ParamStore): Effect {
-  const make = FACTORIES[type] ?? FACTORIES[DEFAULT_EFFECT];
+  const make = FACTORIES[type as EffectType] ?? FACTORIES[DEFAULT_EFFECT];
   return make(ctx, store);
 }
 

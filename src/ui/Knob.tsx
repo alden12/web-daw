@@ -1,11 +1,11 @@
 /**
  * A generic, schema-driven control. Given a ParamSpec it renders the right
  * control for the param's kind and reads/writes through the store. There is no
- * per-parameter UI code anywhere - the synth panel is just this mapped over the
- * schema.
+ * per-parameter UI code anywhere - panels are just this mapped over a schema.
  */
 import { useRef } from 'react';
-import type { NumberSpec, ParamSpec } from '../audio/params/types';
+import type { ReactElement } from 'react';
+import type { EnumSpec, NumberSpec, ParamSpec } from '../audio/params/types';
 import type { ParamStore } from '../audio/params/store';
 import { useParam } from '../audio/params/useParam';
 import { fromNormalized, toNormalized } from '../audio/params/taper';
@@ -40,9 +40,9 @@ function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
   };
 
   return (
-    <div className="knob">
+    <div className="flex flex-col items-center gap-1.5 w-14">
       <div
-        className="knob-dial"
+        className="relative w-10 h-10 rounded-full bg-ground border border-line cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
         role="slider"
         aria-label={spec.label}
         aria-valuemin={spec.min}
@@ -54,12 +54,12 @@ function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
         onPointerUp={onPointerUp}
       >
         <span
-          className="knob-indicator"
+          className="absolute left-1/2 bottom-1/2 w-0.5 h-4 bg-you rounded-full origin-bottom"
           style={{ transform: `translateX(-50%) rotate(${angle}deg)` }}
         />
       </div>
-      <span className="knob-label">{spec.label}</span>
-      <span className="knob-value">{formatValue(spec, value as number)}</span>
+      <span className="text-[9px] uppercase tracking-wide text-muted text-center leading-tight">{spec.label}</span>
+      <span className="font-mono text-[10px] text-ink">{formatValue(spec, value as number)}</span>
     </div>
   );
 }
@@ -67,32 +67,33 @@ function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
 export function Knob({ spec, store }: { spec: ParamSpec; store: ParamStore }) {
   const [value, setValue] = useParam(store, spec.id);
 
-  switch (spec.kind) {
-    case 'number':
-      return <NumberKnob spec={spec} store={store} />;
-    case 'enum':
-      return (
-        <label className="control">
-          <span className="knob-label">{spec.label}</span>
-          <select value={value as string} onChange={(e) => setValue(e.target.value)}>
-            {spec.options.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        </label>
-      );
-    case 'boolean':
-      return (
-        <label className="control">
-          <span className="knob-label">{spec.label}</span>
-          <input
-            type="checkbox"
-            checked={value as boolean}
-            onChange={(e) => setValue(e.target.checked)}
-          />
-        </label>
-      );
-  }
+  // One renderer per kind (map dispatch). useParam runs above unconditionally, so
+  // hook order is stable regardless of which renderer is picked.
+  const renderers: Record<ParamSpec['kind'], () => ReactElement> = {
+    number: () => <NumberKnob spec={spec as NumberSpec} store={store} />,
+    enum: () => (
+      <label className="flex flex-col items-center gap-1.5 w-14">
+        <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
+        <select
+          value={value as string}
+          onChange={(e) => setValue(e.target.value)}
+          className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
+        >
+          {(spec as EnumSpec).options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    ),
+    boolean: () => (
+      <label className="flex flex-col items-center gap-1.5 w-14">
+        <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
+        <input type="checkbox" checked={value as boolean} onChange={(e) => setValue(e.target.checked)} />
+      </label>
+    ),
+  };
+
+  return renderers[spec.kind]();
 }
