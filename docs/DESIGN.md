@@ -316,6 +316,18 @@ slices; within a theme, order is rough.
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
 
+**Platform & form factor**
+
+- **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
+  + timeline) assumes a wide screen; small screens need a different shape - collapse to a
+  single focused region with a bottom tab/drawer bar to switch between library, the selected
+  track's workbench, the timeline, and the agent. Touch interactions are the real work: the
+  knob's vertical-drag gesture, note drawing, and group/clip drag all need touch handlers and
+  larger hit targets. The agent pane leans toward a slide-over sheet on phones. Being web-first
+  is the advantage here - it should run on a tablet/phone, which also makes the AI-co-author
+  pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
+  (Converse/Produce) maps naturally onto how much screen the agent takes.
+
 **Longer horizon:** automation lanes (section 5); in-app agent (section 9); sharing /
 collaboration; Tauri desktop shell (also the home for native low-latency monitoring).
 
