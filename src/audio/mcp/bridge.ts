@@ -47,7 +47,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // type makes it a compile error to leave a message type unhandled.
   type Handlers = { [K in ServerToBrowser['type']]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
   const handlers: Handlers = {
-    createTrack: (msg) => void projectStore.addTrack(msg.instrumentType, msg.name, msg.id),
+    createTrack: (msg) => void projectStore.addTrack(msg.instrumentType, { name: msg.name, id: msg.id, groupId: msg.groupId }),
     removeTrack: (msg) => projectStore.removeTrack(msg.trackId),
     selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
     setTrack: (msg) => {
@@ -55,12 +55,22 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
       if (msg.volume !== undefined) projectStore.setVolume(msg.trackId, msg.volume);
       if (msg.name !== undefined) projectStore.renameTrack(msg.trackId, msg.name);
     },
+    createGroup: (msg) => void projectStore.addGroup({ id: msg.id, name: msg.name, parentId: msg.parentId }),
+    removeGroup: (msg) => projectStore.removeGroup(msg.groupId),
+    setGroup: (msg) => {
+      if (msg.name !== undefined) projectStore.renameGroup(msg.groupId, msg.name);
+      if (msg.muted !== undefined) projectStore.setGroupMuted(msg.groupId, msg.muted);
+      if (msg.volume !== undefined) projectStore.setGroupVolume(msg.groupId, msg.volume);
+      if (msg.collapsed !== undefined) projectStore.setGroupCollapsed(msg.groupId, msg.collapsed);
+    },
+    moveTrack: (msg) => projectStore.moveTrack(msg.trackId, msg.groupId),
+    moveGroup: (msg) => projectStore.moveGroup(msg.groupId, msg.parentId),
     setParam: (msg) => projectStore.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
-    addEffect: (msg) => void projectStore.addEffect(msg.trackId, msg.effectType, msg.id),
-    removeEffect: (msg) => projectStore.removeEffect(msg.trackId, msg.effectId),
-    moveEffect: (msg) => projectStore.moveEffect(msg.trackId, msg.effectId, msg.toIndex),
-    bypassEffect: (msg) => projectStore.setEffectBypass(msg.trackId, msg.effectId, msg.bypassed),
-    setEffectParam: (msg) => projectStore.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value),
+    addEffect: (msg) => void projectStore.addEffect(msg.hostId, msg.effectType, msg.id),
+    removeEffect: (msg) => projectStore.removeEffect(msg.hostId, msg.effectId),
+    moveEffect: (msg) => projectStore.moveEffect(msg.hostId, msg.effectId, msg.toIndex),
+    bypassEffect: (msg) => projectStore.setEffectBypass(msg.hostId, msg.effectId, msg.bypassed),
+    setEffectParam: (msg) => projectStore.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
     addNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.putNote(msg.note),
     removeNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.removeNote(msg.id),
     clearClip: (msg) => projectStore.getTrack(msg.trackId)?.clip.clear(),
@@ -73,18 +83,24 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
 
   const handle = (msg: ServerToBrowser) => (handlers[msg.type] as (m: ServerToBrowser) => void)?.(msg);
 
-  // Per-track param/clip subscriptions, rebuilt whenever the track set changes.
+  // Per-track/group param/clip subscriptions, rebuilt whenever structure changes.
+  // Effects are host-addressed (the host is the track or group that owns them).
   const resubscribeTracks = () => {
     for (const u of trackUnsubs) u();
-    trackUnsubs = projectStore.getTracks().flatMap((t) => [
-      t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
-      t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
-      ...t.effects.map((fx) =>
-        fx.params.subscribe((id, value) =>
-          send({ type: 'effectParamChanged', trackId: t.id, effectId: fx.id, id, value }),
+    trackUnsubs = [
+      ...projectStore.getTracks().flatMap((t) => [
+        t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
+        t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
+        ...t.effects.map((fx) =>
+          fx.params.subscribe((id, value) => send({ type: 'effectParamChanged', hostId: t.id, effectId: fx.id, id, value })),
+        ),
+      ]),
+      ...projectStore.getGroups().flatMap((g) =>
+        g.effects.map((fx) =>
+          fx.params.subscribe((id, value) => send({ type: 'effectParamChanged', hostId: g.id, effectId: fx.id, id, value })),
         ),
       ),
-    ]);
+    ];
   };
 
   const wireOutbound = () => {

@@ -246,16 +246,21 @@ Notes:
 
 Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback
 + persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
-`bindParams` seam + master limiter).
+`bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
+agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
+7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
+effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
+and host-addressed effects).
 
 Next, in rough order:
-- **Slice 6 - UI refinement** toward the layout in sections 3-6 (video-editor spine, agent
-  pane, two-voice color, library tree, grouping, clip variants). Lock the on-disk format
-  (section 10) here, since persistence is adjacent and everything tinker-related depends on
-  it.
-- **Slice 7 - full DSP** via AudioWorklet. The `bindParams` seam already isolates native ->
-  worklet, so no schema/UI/MCP churn. Also the moment to make the subtractive filter
-  per-voice (it is paraphonic today) and decide worklet param messaging.
+- **Full DSP** via AudioWorklet. The `bindParams` seam already isolates native -> worklet,
+  so no schema/UI/MCP churn. Also the moment to make the subtractive filter per-voice (it is
+  paraphonic today) and decide worklet param messaging.
+- **Authored append-only event log**, then the **on-disk file format** (section 10) - the
+  remaining cheap-to-bake-in-early pieces. These unlock AI presence, the activity feed, and
+  version history. Each gets its own slice. (Group effect-chain *editing in the UI* - the
+  workbench showing a selected group's rack - is a small follow-up; the model, audio, and
+  MCP already support it.)
 - **Longer horizon:** grouping as a real bus tree; automation lanes; version history + git
   backing with semantic diff/merge; local-first files + in-app file viewer; in-app agent;
   Tauri desktop shell; sharing/collab.

@@ -28,8 +28,8 @@ describe('ProjectStore', () => {
 
   it('honors an explicit id and is idempotent on re-add (sync from the other end)', () => {
     const p = new ProjectStore(false);
-    const a = p.addTrack('fm', 'Bass', 't-abc');
-    const b = p.addTrack('fm', 'Bass', 't-abc');
+    const a = p.addTrack('fm', { name: 'Bass', id: 't-abc' });
+    const b = p.addTrack('fm', { name: 'Bass', id: 't-abc' });
     expect(a).toBe(b);
     expect(p.getStructure().tracks).toHaveLength(1);
   });
@@ -63,10 +63,10 @@ describe('ProjectStore', () => {
 
   it('round-trips snapshot and load (multiple tracks, params, clips)', () => {
     const a = new ProjectStore(false);
-    const t1 = a.addTrack('subtractive', 'Lead');
+    const t1 = a.addTrack('subtractive', { name: 'Lead' });
     t1.params.set('filter.cutoff', 1234);
     t1.clip.addNote({ pitch: 60, start: 0 });
-    const t2 = a.addTrack('fm', 'Bass');
+    const t2 = a.addTrack('fm', { name: 'Bass' });
     t2.params.set('fm.ratio', 3);
     a.setTempo(100);
     const snap = a.snapshot();
@@ -117,7 +117,7 @@ describe('ProjectStore', () => {
 
   it('round-trips effects (type, bypass, params) through snapshot/load', () => {
     const a = new ProjectStore(false);
-    const t = a.addTrack('subtractive', 'Pad');
+    const t = a.addTrack('subtractive', { name: 'Pad' });
     const rev = a.addEffect(t.id, 'reverb')!;
     rev.params.set('mix', 0.6);
     a.addEffect(t.id, 'delay');
@@ -130,6 +130,107 @@ describe('ProjectStore', () => {
     expect(effects.map((fx) => fx.type)).toEqual(['reverb', 'delay']);
     expect(effects[0].bypassed).toBe(true);
     expect(effects[0].params.get('mix')).toBe(0.6);
+  });
+});
+
+describe('ProjectStore groups (bus tree)', () => {
+  it('files a new track into its instrument family group (librarian), creating it', () => {
+    const p = new ProjectStore(false);
+    const sub = p.addTrack('subtractive'); // family "Synths"
+    const groups = p.getGroups();
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('Synths');
+    expect(groups[0].parentId).toBeNull();
+    expect(sub.parentId).toBe(groups[0].id);
+
+    // a second subtractive reuses the same family group; an fm makes a new one
+    const sub2 = p.addTrack('subtractive');
+    expect(sub2.parentId).toBe(groups[0].id);
+    const fm = p.addTrack('fm'); // family "Bass"
+    expect(p.getGroups()).toHaveLength(2);
+    expect(p.getGroup(fm.parentId)!.name).toBe('Bass');
+  });
+
+  it('seeds the default project with one track filed into a group', () => {
+    const p = new ProjectStore();
+    expect(p.getGroups()).toHaveLength(1);
+    expect(p.getStructure().tracks[0].parentId).toBe(p.getGroups()[0].id);
+  });
+
+  it('moves a track into another group and nests groups, rejecting cycles', () => {
+    const p = new ProjectStore(false);
+    const drums = p.addGroup({ name: 'Drums' });
+    const bus = p.addGroup({ name: 'Bus' });
+    const t = p.addTrack('subtractive');
+    p.moveTrack(t.id, drums.id);
+    expect(p.getTrack(t.id)!.parentId).toBe(drums.id);
+
+    p.moveGroup(drums.id, bus.id);
+    expect(p.getGroup(drums.id)!.parentId).toBe(bus.id);
+    // cycle: bus cannot become a child of its own descendant
+    p.moveGroup(bus.id, drums.id);
+    expect(p.getGroup(bus.id)!.parentId).toBeNull();
+    // self-parenting is a no-op
+    p.moveGroup(bus.id, bus.id);
+    expect(p.getGroup(bus.id)!.parentId).toBeNull();
+  });
+
+  it('removeGroup cascades: deletes descendant subgroups and their tracks', () => {
+    const p = new ProjectStore(false);
+    const parent = p.addGroup({ name: 'Parent' });
+    const child = p.addGroup({ name: 'Child', parentId: parent.id });
+    const t1 = p.addTrack('subtractive', { groupId: parent.id });
+    const t2 = p.addTrack('fm', { groupId: child.id });
+
+    p.removeGroup(parent.id);
+    expect(p.getGroups()).toHaveLength(0);
+    expect(p.getTrack(t1.id)).toBeUndefined();
+    expect(p.getTrack(t2.id)).toBeUndefined();
+  });
+
+  it('hosts an effect chain on a group bus (host-addressed effects)', () => {
+    const p = new ProjectStore(false);
+    const g = p.addGroup({ name: 'Bus' });
+    const fx = p.addEffect(g.id, 'reverb')!;
+    expect(p.getGroup(g.id)!.effects.map((e) => e.type)).toEqual(['reverb']);
+    expect(p.getEffect(g.id, fx.id)).toBe(fx);
+    expect(p.getStructure().groups[0].effects[0].type).toBe('reverb');
+    p.removeEffect(g.id, fx.id);
+    expect(p.getGroup(g.id)!.effects).toHaveLength(0);
+  });
+
+  it('round-trips the group tree through snapshot/load', () => {
+    const a = new ProjectStore(false);
+    const g = a.addGroup({ name: 'Keys' });
+    a.addEffect(g.id, 'delay');
+    const t = a.addTrack('subtractive', { name: 'Pad', groupId: g.id });
+    const snap = a.snapshot();
+
+    const b = new ProjectStore(false);
+    b.load(snap);
+    const grp = b.getGroups().find((x) => x.name === 'Keys')!;
+    expect(grp).toBeTruthy();
+    expect(grp.effects.map((e) => e.type)).toEqual(['delay']);
+    expect(b.getTrack(t.id)!.parentId).toBe(grp.id);
+  });
+
+  it('migrates a legacy flat snapshot by filing tracks into family groups', () => {
+    const legacy = {
+      tracks: [
+        { id: 't-1', name: 'Lead', instrumentType: 'subtractive', muted: false, volume: 0.8, params: {}, clip: { lengthBeats: 16, notes: [] }, effects: [] },
+        { id: 't-2', name: 'Sub', instrumentType: 'fm', muted: false, volume: 0.8, params: {}, clip: { lengthBeats: 16, notes: [] }, effects: [] },
+      ],
+      tempoBpm: 120,
+      lengthBeats: 16,
+      selectedTrackId: 't-1',
+    } as unknown as Parameters<ProjectStore['load']>[0];
+
+    const p = new ProjectStore(false);
+    p.load(legacy);
+    expect(p.getStructure().tracks).toHaveLength(2);
+    // each track was filed into a real group named for its family
+    expect(p.getGroup(p.getTrack('t-1')!.parentId)!.name).toBe('Synths');
+    expect(p.getGroup(p.getTrack('t-2')!.parentId)!.name).toBe('Bass');
   });
 });
 

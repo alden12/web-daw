@@ -30,11 +30,17 @@ export const fmSchema: ParamSchema = [
 export interface CatalogEntry {
   label: string;
   schema: ParamSchema;
+  /**
+   * Default group family a new track of this instrument is filed into (the
+   * "Claude is the librarian" rule - organization is maintained as music is
+   * built, not patched up later). Just a sensible default; tracks can be moved.
+   */
+  family: string;
 }
 
 export const INSTRUMENT_CATALOG = {
-  subtractive: { label: 'Subtractive', schema: subtractiveSchema },
-  fm: { label: 'FM', schema: fmSchema },
+  subtractive: { label: 'Subtractive', schema: subtractiveSchema, family: 'Synths' },
+  fm: { label: 'FM', schema: fmSchema, family: 'Bass' },
 } satisfies Record<string, CatalogEntry>;
 
 /** Cataloged instrument ids. The registry is typed off this, so every type has a factory. */
@@ -51,4 +57,9 @@ export function catalogEntry(type: string): CatalogEntry {
 
 export function instrumentSchema(type: string): ParamSchema {
   return catalogEntry(type).schema;
+}
+
+/** Default group family for an instrument type (see CatalogEntry.family). */
+export function instrumentFamily(type: string): string {
+  return catalogEntry(type).family;
 }

@@ -7,28 +7,34 @@
 import type { ProjectStore } from './project/projectStore';
 import type { ProjectData } from './project/types';
 
-const STORAGE_KEY = 'web-daw:project:v3';
+const STORAGE_KEY = 'web-daw:project:v4';
+// Older snapshots (flat track list, no group tree). Read for migration only;
+// ProjectStore.load files parentless tracks into their family group.
+const LEGACY_KEYS = ['web-daw:project:v3'];
 const SAVE_DEBOUNCE_MS = 300;
 
 interface StoredProject {
-  version: 3;
+  version: 4;
   project: ProjectData;
 }
 
 export function loadProject(): ProjectData | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw) as StoredProject;
-    return data.version === 3 ? data.project : null;
-  } catch {
-    return null;
+  for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const data = JSON.parse(raw) as { version: number; project: ProjectData };
+      if (data.project?.tracks) return data.project;
+    } catch {
+      // try the next key
+    }
   }
+  return null;
 }
 
 function saveProject(project: ProjectStore): void {
   try {
-    const data: StoredProject = { version: 3, project: project.snapshot() };
+    const data: StoredProject = { version: 4, project: project.snapshot() };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // storage full or unavailable - skip silently
@@ -52,15 +58,18 @@ export function attachAutosave(project: ProjectStore): () => void {
     timer = setTimeout(() => saveProject(project), SAVE_DEBOUNCE_MS);
   };
 
-  // Per-track subscriptions are rebuilt on structural change (tracks come/go).
+  // Per-track/group subscriptions are rebuilt on structural change (they come/go).
   let trackUnsubs: (() => void)[] = [];
   const resubscribeTracks = () => {
     for (const u of trackUnsubs) u();
-    trackUnsubs = project.getTracks().flatMap((t) => [
-      t.params.subscribe(schedule),
-      t.clip.subscribe(schedule),
-      ...t.effects.map((fx) => fx.params.subscribe(schedule)),
-    ]);
+    trackUnsubs = [
+      ...project.getTracks().flatMap((t) => [
+        t.params.subscribe(schedule),
+        t.clip.subscribe(schedule),
+        ...t.effects.map((fx) => fx.params.subscribe(schedule)),
+      ]),
+      ...project.getGroups().flatMap((g) => g.effects.map((fx) => fx.params.subscribe(schedule))),
+    ];
   };
 
   const unsubStructure = project.subscribe(() => {

@@ -13,8 +13,8 @@ import { z } from 'zod';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { ProjectStore } from '../src/audio/project/projectStore';
-import type { Track, EffectInstance } from '../src/audio/project/projectStore';
-import { INSTRUMENT_CATALOG, instrumentSchema } from '../src/audio/instruments/catalog';
+import type { Track, EffectInstance, Group } from '../src/audio/project/projectStore';
+import { INSTRUMENT_CATALOG, instrumentSchema, instrumentFamily } from '../src/audio/instruments/catalog';
 import { EFFECT_CATALOG, effectSchema } from '../src/audio/effects/catalog';
 import { validateParam } from '../src/audio/params/validate';
 import type { NoteEvent } from '../src/audio/sequencer/types';
@@ -23,6 +23,7 @@ import type { BrowserToServer, ServerToBrowser } from '../src/audio/mcp/protocol
 
 const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
+const makeGroupId = () => `g-${randomId().slice(0, 8)}`;
 const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
 
 export interface DawMcp {
@@ -50,7 +51,7 @@ export function createDawMcp(
     projectStructure: (msg) => mirror.load(msg.project),
     paramChanged: (msg) => mirror.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
     clipSnapshot: (msg) => mirror.getTrack(msg.trackId)?.clip.load(msg.clip),
-    effectParamChanged: (msg) => mirror.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value),
+    effectParamChanged: (msg) => mirror.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
   };
 
   let tab: WebSocket | null = null;
@@ -93,16 +94,47 @@ export function createDawMcp(
     return { id, track: t };
   }
 
-  /** Resolve a track (explicit/selected) and one of its effects by id. */
-  function resolveEffect(
+  /** Resolve a group id. */
+  function resolveGroup(group: string): { id: string; group: Group } | { error: string } {
+    const g = mirror.getGroup(group);
+    if (!g) return { error: `Unknown group "${group}". Use list_groups to see valid ids.` };
+    return { id: group, group: g };
+  }
+
+  /** Resolve an effect host: an explicit group, else the resolved/selected track. */
+  function resolveHost(
     track: string | undefined,
-    effectId: string,
-  ): { trackId: string; track: Track; effect: EffectInstance } | { error: string } {
+    group: string | undefined,
+  ): { hostId: string; label: string; effects: EffectInstance[] } | { error: string } {
+    if (group !== undefined) {
+      const r = resolveGroup(group);
+      if ('error' in r) return { error: r.error };
+      return { hostId: r.id, label: `group ${r.id}`, effects: r.group.effects };
+    }
     const r = resolveTrack(track);
     if ('error' in r) return { error: r.error };
-    const effect = r.track.effects.find((fx) => fx.id === effectId);
-    if (!effect) return { error: `Unknown effect "${effectId}" on track ${r.id}. Use list_effects.` };
-    return { trackId: r.id, track: r.track, effect };
+    return { hostId: r.id, label: `track ${r.id}`, effects: r.track.effects };
+  }
+
+  /** Resolve a host (group/track) and one of its effects by id. */
+  function resolveEffect(
+    track: string | undefined,
+    group: string | undefined,
+    effectId: string,
+  ): { hostId: string; label: string; effect: EffectInstance } | { error: string } {
+    const h = resolveHost(track, group);
+    if ('error' in h) return { error: h.error };
+    const effect = h.effects.find((fx) => fx.id === effectId);
+    if (!effect) return { error: `Unknown effect "${effectId}" on ${h.label}. Use list_effects.` };
+    return { hostId: h.hostId, label: h.label, effect };
+  }
+
+  /** The top-level group for an instrument family, creating one (id only) if absent. */
+  function familyGroup(family: string): { id: string; name: string; created: boolean } {
+    const existing = mirror.getGroups().find((g) => g.parentId === null && g.name === family);
+    return existing
+      ? { id: existing.id, name: existing.name, created: false }
+      : { id: makeGroupId(), name: family, created: true };
   }
 
   let sequenceTimers: ReturnType<typeof setTimeout>[] = [];
@@ -119,7 +151,8 @@ export function createDawMcp(
     'list_tracks',
     {
       title: 'List tracks',
-      description: 'List all tracks (id, name, instrument, mute, volume, note count), the tempo, and the available instrument types.',
+      description:
+        'List all tracks (id, name, instrument, group, mute, volume, note count), the tempo, and the available instrument types (with their default group family).',
     },
     async () =>
       ok(
@@ -129,11 +162,12 @@ export function createDawMcp(
             tempoBpm: mirror.tempo,
             lengthBeats: mirror.length,
             selectedTrackId: mirror.selectedId,
-            instruments: Object.entries(INSTRUMENT_CATALOG).map(([id, def]) => ({ id, label: def.label })),
+            instruments: Object.entries(INSTRUMENT_CATALOG).map(([id, def]) => ({ id, label: def.label, family: def.family })),
             tracks: mirror.getTracks().map((t) => ({
               id: t.id,
               name: t.name,
               instrument: t.instrumentType,
+              group: t.parentId,
               muted: t.muted,
               volume: t.volume,
               notes: t.clip.getClip().notes.length,
@@ -149,19 +183,37 @@ export function createDawMcp(
     'create_track',
     {
       title: 'Create track',
-      description: 'Create a track with the given instrument type (see list_tracks for ids). Returns the new track id.',
-      inputSchema: { instrument: z.string(), name: z.string().optional() },
+      description:
+        'Create a track with the given instrument type (see list_tracks for ids). Files it into the given group, or the instrument\'s default family group (created if needed). Returns the new track id.',
+      inputSchema: {
+        instrument: z.string(),
+        name: z.string().optional(),
+        group: z.string().optional().describe('group id to file into; defaults to the instrument\'s family group'),
+      },
     },
-    async ({ instrument, name }) => {
+    async ({ instrument, name, group }) => {
       if (!(instrument in INSTRUMENT_CATALOG)) {
         return fail(`Unknown instrument "${instrument}". Options: ${Object.keys(INSTRUMENT_CATALOG).join(', ')}.`);
       }
-      const id = makeTrackId();
-      if (!sendToTab({ type: 'createTrack', instrumentType: instrument, name, id })) {
-        return fail('No DAW tab connected.');
+      if (!connected()) return fail('No DAW tab connected.');
+      let groupId: string;
+      if (group !== undefined) {
+        const g = resolveGroup(group);
+        if ('error' in g) return fail(g.error);
+        groupId = g.id;
+      } else {
+        // Librarian: file into the instrument's family group, creating it if absent.
+        const fam = familyGroup(instrumentFamily(instrument));
+        groupId = fam.id;
+        if (fam.created) {
+          sendToTab({ type: 'createGroup', id: fam.id, name: fam.name, parentId: null });
+          mirror.addGroup({ id: fam.id, name: fam.name, parentId: null });
+        }
       }
-      mirror.addTrack(instrument, name, id);
-      return ok(`Created ${instrument} track "${mirror.getTrack(id)?.name}" (id ${id}).`);
+      const id = makeTrackId();
+      sendToTab({ type: 'createTrack', instrumentType: instrument, name, id, groupId });
+      mirror.addTrack(instrument, { name, id, groupId });
+      return ok(`Created ${instrument} track "${mirror.getTrack(id)?.name}" (id ${id}) in group ${groupId}.`);
     },
   );
 
@@ -207,6 +259,132 @@ export function createDawMcp(
     },
   );
 
+  // --- Groups (bus tree) ----------------------------------------------------
+  server.registerTool(
+    'list_groups',
+    {
+      title: 'List groups',
+      description:
+        'List the project\'s groups (bus tree): id, name, parent (null = top-level/master), mute, volume, collapsed, effect count, and the tracks filed in each.',
+    },
+    async () =>
+      ok(
+        JSON.stringify(
+          {
+            groups: mirror.getGroups().map((g) => ({
+              id: g.id,
+              name: g.name,
+              parent: g.parentId,
+              muted: g.muted,
+              volume: g.volume,
+              collapsed: g.collapsed,
+              effects: g.effects.length,
+              tracks: mirror.getTracks().filter((t) => t.parentId === g.id).map((t) => t.id),
+            })),
+          },
+          null,
+          2,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'create_group',
+    {
+      title: 'Create group',
+      description: 'Create a group (bus). Nest it under `parent`, or omit for a top-level group routed to master. Returns the new group id.',
+      inputSchema: { name: z.string().optional(), parent: z.string().optional().describe('parent group id; omit for top-level') },
+    },
+    async ({ name, parent }) => {
+      if (!connected()) return fail('No DAW tab connected.');
+      if (parent !== undefined && 'error' in resolveGroup(parent)) {
+        return fail(`Unknown parent group "${parent}". Use list_groups.`);
+      }
+      const id = makeGroupId();
+      const parentId = parent ?? null;
+      sendToTab({ type: 'createGroup', id, name, parentId });
+      mirror.addGroup({ id, name, parentId });
+      return ok(`Created group "${mirror.getGroup(id)?.name}" (id ${id}).`);
+    },
+  );
+
+  server.registerTool(
+    'remove_group',
+    {
+      title: 'Remove group',
+      description: 'Remove a group AND everything inside it (its tracks, their clips, and any subgroups). Move tracks out first to keep them.',
+      inputSchema: { group: z.string() },
+    },
+    async ({ group }) => {
+      const r = resolveGroup(group);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'removeGroup', groupId: r.id })) return fail('No DAW tab connected.');
+      mirror.removeGroup(r.id);
+      return ok(`Removed group ${r.id} and its contents.`);
+    },
+  );
+
+  server.registerTool(
+    'set_group',
+    {
+      title: 'Set group',
+      description: 'Set a group\'s name, mute, volume (0..1), and/or collapsed state. Muting a group silences everything routed through it.',
+      inputSchema: {
+        group: z.string(),
+        name: z.string().optional(),
+        muted: z.boolean().optional(),
+        volume: z.number().min(0).max(1).optional(),
+        collapsed: z.boolean().optional(),
+      },
+    },
+    async ({ group, name, muted, volume, collapsed }) => {
+      const r = resolveGroup(group);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'setGroup', groupId: r.id, name, muted, volume, collapsed })) return fail('No DAW tab connected.');
+      if (name !== undefined) mirror.renameGroup(r.id, name);
+      if (muted !== undefined) mirror.setGroupMuted(r.id, muted);
+      if (volume !== undefined) mirror.setGroupVolume(r.id, volume);
+      if (collapsed !== undefined) mirror.setGroupCollapsed(r.id, collapsed);
+      return ok(`Updated group ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'move_track',
+    {
+      title: 'Move track',
+      description: 'Move a track into another group.',
+      inputSchema: { ...trackArg, group: z.string() },
+    },
+    async ({ track, group }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      const g = resolveGroup(group);
+      if ('error' in g) return fail(g.error);
+      if (!sendToTab({ type: 'moveTrack', trackId: r.id, groupId: g.id })) return fail('No DAW tab connected.');
+      mirror.moveTrack(r.id, g.id);
+      return ok(`Moved track ${r.id} into group ${g.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'move_group',
+    {
+      title: 'Move group',
+      description: 'Reparent a group under another group, or to top-level (omit `parent`). Rejects cycles.',
+      inputSchema: { group: z.string(), parent: z.string().optional().describe('new parent group id; omit for top-level') },
+    },
+    async ({ group, parent }) => {
+      const r = resolveGroup(group);
+      if ('error' in r) return fail(r.error);
+      if (parent !== undefined && 'error' in resolveGroup(parent)) return fail(`Unknown parent group "${parent}". Use list_groups.`);
+      const parentId = parent ?? null;
+      if (!sendToTab({ type: 'moveGroup', groupId: r.id, parentId })) return fail('No DAW tab connected.');
+      mirror.moveGroup(r.id, parentId);
+      return ok(`Moved group ${r.id} under ${parentId ?? 'master'}.`);
+    },
+  );
+
   // --- Parameters -----------------------------------------------------------
   server.registerTool(
     'list_parameters',
@@ -243,23 +421,27 @@ export function createDawMcp(
     },
   );
 
-  // --- Effects --------------------------------------------------------------
+  // --- Effects (on a host: a track or a group bus) --------------------------
+  // Effect tools take an optional `group` to target a group's bus chain instead
+  // of a track's; otherwise they act on the resolved/selected track.
+  const groupArg = { group: z.string().optional().describe('group id; targets the group\'s bus effect chain instead of a track') };
+
   server.registerTool(
     'list_effects',
     {
       title: 'List effects',
-      description: 'List a track\'s effect chain (id, type, bypass, in order) and the available effect types.',
-      inputSchema: trackArg,
+      description: 'List a host\'s effect chain (id, type, bypass, in order) and the available effect types. Pass `group` for a group bus, else a track.',
+      inputSchema: { ...trackArg, ...groupArg },
     },
-    async ({ track }) => {
-      const r = resolveTrack(track);
+    async ({ track, group }) => {
+      const r = resolveHost(track, group);
       if ('error' in r) return fail(r.error);
       return ok(
         JSON.stringify(
           {
-            track: r.id,
+            host: r.hostId,
             available: Object.entries(EFFECT_CATALOG).map(([id, def]) => ({ id, label: def.label })),
-            effects: r.track.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed })),
+            effects: r.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed })),
           },
           null,
           2,
@@ -272,19 +454,19 @@ export function createDawMcp(
     'add_effect',
     {
       title: 'Add effect',
-      description: 'Append an effect to a track\'s chain (see list_effects for types). Returns the new effect id.',
-      inputSchema: { ...trackArg, effect: z.string() },
+      description: 'Append an effect to a host\'s chain (see list_effects for types). Pass `group` for a group bus, else a track. Returns the new effect id.',
+      inputSchema: { ...trackArg, ...groupArg, effect: z.string() },
     },
-    async ({ track, effect }) => {
-      const r = resolveTrack(track);
+    async ({ track, group, effect }) => {
+      const r = resolveHost(track, group);
       if ('error' in r) return fail(r.error);
       if (!(effect in EFFECT_CATALOG)) {
         return fail(`Unknown effect "${effect}". Options: ${Object.keys(EFFECT_CATALOG).join(', ')}.`);
       }
       const id = makeEffectId();
-      if (!sendToTab({ type: 'addEffect', trackId: r.id, effectType: effect, id })) return fail('No DAW tab connected.');
-      mirror.addEffect(r.id, effect, id);
-      return ok(`Added ${effect} effect to ${r.id} (id ${id}).`);
+      if (!sendToTab({ type: 'addEffect', hostId: r.hostId, effectType: effect, id })) return fail('No DAW tab connected.');
+      mirror.addEffect(r.hostId, effect, id);
+      return ok(`Added ${effect} effect to ${r.label} (id ${id}).`);
     },
   );
 
@@ -292,15 +474,15 @@ export function createDawMcp(
     'remove_effect',
     {
       title: 'Remove effect',
-      description: 'Remove an effect from a track\'s chain by id.',
-      inputSchema: { ...trackArg, effect_id: z.string() },
+      description: 'Remove an effect from a host\'s chain by id.',
+      inputSchema: { ...trackArg, ...groupArg, effect_id: z.string() },
     },
-    async ({ track, effect_id }) => {
-      const r = resolveEffect(track, effect_id);
+    async ({ track, group, effect_id }) => {
+      const r = resolveEffect(track, group, effect_id);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'removeEffect', trackId: r.trackId, effectId: effect_id })) return fail('No DAW tab connected.');
-      mirror.removeEffect(r.trackId, effect_id);
-      return ok(`Removed effect ${effect_id} from ${r.trackId}.`);
+      if (!sendToTab({ type: 'removeEffect', hostId: r.hostId, effectId: effect_id })) return fail('No DAW tab connected.');
+      mirror.removeEffect(r.hostId, effect_id);
+      return ok(`Removed effect ${effect_id} from ${r.label}.`);
     },
   );
 
@@ -308,15 +490,15 @@ export function createDawMcp(
     'move_effect',
     {
       title: 'Move effect',
-      description: 'Reorder an effect within a track\'s chain (0 = first/earliest in the signal path).',
-      inputSchema: { ...trackArg, effect_id: z.string(), to_index: z.number().int().min(0) },
+      description: 'Reorder an effect within a host\'s chain (0 = first/earliest in the signal path).',
+      inputSchema: { ...trackArg, ...groupArg, effect_id: z.string(), to_index: z.number().int().min(0) },
     },
-    async ({ track, effect_id, to_index }) => {
-      const r = resolveEffect(track, effect_id);
+    async ({ track, group, effect_id, to_index }) => {
+      const r = resolveEffect(track, group, effect_id);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'moveEffect', trackId: r.trackId, effectId: effect_id, toIndex: to_index })) return fail('No DAW tab connected.');
-      mirror.moveEffect(r.trackId, effect_id, to_index);
-      return ok(`Moved effect ${effect_id} to index ${to_index} on ${r.trackId}.`);
+      if (!sendToTab({ type: 'moveEffect', hostId: r.hostId, effectId: effect_id, toIndex: to_index })) return fail('No DAW tab connected.');
+      mirror.moveEffect(r.hostId, effect_id, to_index);
+      return ok(`Moved effect ${effect_id} to index ${to_index} on ${r.label}.`);
     },
   );
 
@@ -325,14 +507,14 @@ export function createDawMcp(
     {
       title: 'Bypass effect',
       description: 'Enable or bypass an effect (bypassed effects are skipped in the signal path).',
-      inputSchema: { ...trackArg, effect_id: z.string(), bypassed: z.boolean() },
+      inputSchema: { ...trackArg, ...groupArg, effect_id: z.string(), bypassed: z.boolean() },
     },
-    async ({ track, effect_id, bypassed }) => {
-      const r = resolveEffect(track, effect_id);
+    async ({ track, group, effect_id, bypassed }) => {
+      const r = resolveEffect(track, group, effect_id);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'bypassEffect', trackId: r.trackId, effectId: effect_id, bypassed })) return fail('No DAW tab connected.');
-      mirror.setEffectBypass(r.trackId, effect_id, bypassed);
-      return ok(`${bypassed ? 'Bypassed' : 'Enabled'} effect ${effect_id} on ${r.trackId}.`);
+      if (!sendToTab({ type: 'bypassEffect', hostId: r.hostId, effectId: effect_id, bypassed })) return fail('No DAW tab connected.');
+      mirror.setEffectBypass(r.hostId, effect_id, bypassed);
+      return ok(`${bypassed ? 'Bypassed' : 'Enabled'} effect ${effect_id} on ${r.label}.`);
     },
   );
 
@@ -341,13 +523,13 @@ export function createDawMcp(
     {
       title: 'List effect parameters',
       description: 'List an effect\'s parameters with schema and current values.',
-      inputSchema: { ...trackArg, effect_id: z.string() },
+      inputSchema: { ...trackArg, ...groupArg, effect_id: z.string() },
     },
-    async ({ track, effect_id }) => {
-      const r = resolveEffect(track, effect_id);
+    async ({ track, group, effect_id }) => {
+      const r = resolveEffect(track, group, effect_id);
       if ('error' in r) return fail(r.error);
       const params = effectSchema(r.effect.type).map((spec) => ({ ...spec, value: r.effect.params.get(spec.id) }));
-      return ok(JSON.stringify({ track: r.trackId, effect: effect_id, type: r.effect.type, parameters: params }, null, 2));
+      return ok(JSON.stringify({ host: r.hostId, effect: effect_id, type: r.effect.type, parameters: params }, null, 2));
     },
   );
 
@@ -356,10 +538,10 @@ export function createDawMcp(
     {
       title: 'Set effect parameter',
       description: 'Set a parameter on an effect. Validated against the effect\'s schema (range/enum).',
-      inputSchema: { ...trackArg, effect_id: z.string(), id: z.string(), value: z.union([z.number(), z.string(), z.boolean()]) },
+      inputSchema: { ...trackArg, ...groupArg, effect_id: z.string(), id: z.string(), value: z.union([z.number(), z.string(), z.boolean()]) },
     },
-    async ({ track, effect_id, id, value }) => {
-      const r = resolveEffect(track, effect_id);
+    async ({ track, group, effect_id, id, value }) => {
+      const r = resolveEffect(track, group, effect_id);
       if ('error' in r) return fail(r.error);
       let spec;
       try {
@@ -369,7 +551,7 @@ export function createDawMcp(
       }
       const err = validateParam(spec, value);
       if (err) return fail(err);
-      if (!sendToTab({ type: 'setEffectParam', trackId: r.trackId, effectId: effect_id, id, value })) return fail('No DAW tab connected.');
+      if (!sendToTab({ type: 'setEffectParam', hostId: r.hostId, effectId: effect_id, id, value })) return fail('No DAW tab connected.');
       r.effect.params.set(id, value);
       return ok(`Set ${id} = ${JSON.stringify(value)} on effect ${effect_id}.`);
     },
