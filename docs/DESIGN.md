@@ -245,56 +245,67 @@ Notes:
 
 ## 11. Roadmap / slicing
 
-Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback
+Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback +
+persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
+`bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
+agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
+7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
+effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
+and host-addressed effects), 8 (audio tracks + audio clips: Track is a discriminated union of
+instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
+through the bus tree - see section 14).
 
-- persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
-  `bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
-  agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
-  7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
-  effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
-  and host-addressed effects), 8 (audio tracks + audio clips: Track is a discriminated union
-  of instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
-  through the bus tree - see section 14).
+Sequencing follows the thesis (section 1: structured, authored events in one store). Two
+model evolutions are worth doing early because everything else gets cheaper once they exist:
+the **authored event log** (undo/redo and version history fall out of it) and **multiple
+clips per track** (clip editing, copy-paste, and real arrangement build on it). The raw
+backlog below is grouped into themed slices; within a theme, order is rough.
 
-Next, in rough order:
+**Near-term - UI on top of the current model**
 
-- **Group effect-chain editing in the workbench** (next, small). The model, audio, and MCP
-  already support effects on a group bus (host-addressed); this is the UI to select a group
-  and edit its rack (and group/track selection in general) in the center workbench.
-- **Full DSP** via AudioWorklet. The `bindParams` seam already isolates native -> worklet,
-  so no schema/UI/MCP churn. Also the moment to make the subtractive filter per-voice (it is
-  paraphonic today) and decide worklet param messaging.
-- **Authored append-only event log**, then the **on-disk file format** (section 10) - the
-  remaining cheap-to-bake-in-early pieces. These unlock AI presence, the activity feed, and
-  version history. Each gets its own slice.
-- **Live audio recording / capture** (see section 14). Audio tracks, audio clips, OPFS
-  storage, and buffer playback landed in slice 8; what remains is the capture pipeline:
-  getUserMedia from interfaces + an AudioWorklet (or MediaRecorder for a first cut), recording
-  latency compensation, and a calibration step. Native low-latency monitoring is the case for
-  the desktop (Tauri) backend.
-- **Longer horizon:** automation lanes; version history + git backing with semantic diff/
-  merge; local-first files + in-app file viewer; in-app agent; Tauri desktop shell;
-  sharing/collab.
-- MIDI track quantization
-- MIDI device input and recording
-- Time signature
-- Resizable panels (and persistence of panel sizes in local storage)
-- Better midi editing (note drag, resize, track resize, multiple select), timeline manipulation/navigation (skip to time, zoom, pan, repeat section), timeline beat markers
-- Track ordering with drag and drop
-- Improved instrument and effect drag and drop
-- Metronome
-- Timeline visual summary of grouped tracks
-- Clip view and editing
-- Grooves
-- Set project key, MIDI roll shows note intervals in relation to the current key
-- Speed up and slow down audio tracks without changing pitch
-- MIDI import
-- Copy/paste
-- Undo/redo history
-- Open source instrument and effects library?
-- Track colors
-- Track splitting, moving, setting start and end of sample
-- Sampler instrument
+- **Group/track selection + group-FX editing in the workbench** (next, small). Select a
+  group or track and edit its effect rack in the center workbench; generalize selection
+  beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
+- **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
+  everything rhythmic; small and transport-level.
+- **Piano-roll editing:** note drag / resize / multi-select, and copy-paste of notes.
+- **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
+  project key with the roll showing note intervals/scale relative to it.
+- **Timeline & arrangement UX** (likely two slices): zoom / pan / skip-to-time / loop a
+  section, track reorder by drag, track-height resize, track colors, a visual summary of
+  grouped tracks, resizable + persisted panel sizes, and library drag-and-drop for
+  instruments/effects.
+
+**Model evolutions - sequence early, they unlock the rest**
+
+- **Authored append-only event log.** Highest-leverage step: **undo/redo** and **version
+  history** are the same mechanism falling out of it, and it underpins AI presence and the
+  activity feed.
+- **On-disk file format** (section 10): human-readable project files; pairs with the event
+  log and local-first storage.
+- **Clips & arrangement:** evolve past one-clip-per-track to many clips placed and edited on
+  the timeline - clip view + editing, split / move / set a clip's start-end, copy-paste of
+  clips, and MIDI import as clips. Ties into clip variants (section 6).
+- **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
+  per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
+  up/down without changing pitch) and other sample-accurate audio work become tractable.
+
+**Recording & input**
+
+- **Live audio capture** (section 14): getUserMedia + worklet/MediaRecorder, recording
+  latency compensation, calibration.
+- **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
+  reuses the same arm / record / quantize machinery as audio.
+
+**Instruments, content & ecosystem**
+
+- **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
+  instrument catalog and the slice-8 audio-clip storage.
+- **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
+  community device format (open question).
+
+**Longer horizon:** automation lanes (section 5); in-app agent (section 9); sharing /
+collaboration; Tauri desktop shell (also the home for native low-latency monitoring).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
