@@ -1,9 +1,8 @@
 /**
- * The agent pane (right): a first-class home for the AI collaborator. For now it
- * surfaces the MCP connection (the session is driven from Claude Code over MCP)
- * and scaffolds the activity feed. The in-app chat and the live edit history
- * land with the event-log slice; this establishes the region and the
- * collapse-to-rail behavior (Produce mode).
+ * The agent pane (right): a first-class home for the AI collaborator. It surfaces
+ * the MCP connection (the session is driven from Claude Code over MCP) and the
+ * live activity feed. It collapses to a thin rail (Produce mode) - drag the edge
+ * to resize, or use the chevron / top-bar toggle to collapse and expand.
  */
 import type { McpStatus } from '../audio/mcp/bridge';
 import type { EditLog } from '../audio/commands/editLog';
@@ -16,16 +15,54 @@ const DOT: Record<McpStatus, string> = {
   disconnected: 'bg-claude',
 };
 
-export function AgentPanel({ mcpStatus, editLog }: { mcpStatus: McpStatus; editLog: EditLog }) {
+export function AgentPanel({
+  mcpStatus,
+  editLog,
+  collapsed,
+  onToggle,
+}: {
+  mcpStatus: McpStatus;
+  editLog: EditLog;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const { entries } = useEditLog(editLog);
   const recent = entries.slice(-100).reverse();
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label="Expand agent pane"
+        title="Expand agent pane"
+        className="[grid-area:agent] bg-panel border-l border-line flex flex-col items-center gap-3.5 py-3.5 cursor-pointer hover:bg-card/40"
+      >
+        <span className="text-[13px] leading-none text-muted">«</span>
+        <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} />
+        <span className="w-2 h-2 rounded-full bg-you" />
+      </button>
+    );
+  }
+
   return (
     <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
-      <div className="agent-full flex flex-col h-full">
+      <div className="flex flex-col h-full">
         <div className="flex items-center justify-between h-12 px-4 border-b border-line">
           <span className="text-[12.5px] font-semibold text-bright">Agent</span>
-          <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted">
-            <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} /> {mcpStatus}
+          <span className="inline-flex items-center gap-2 font-mono text-xs text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} /> {mcpStatus}
+            </span>
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label="Collapse agent pane"
+              title="Collapse agent pane (Produce)"
+              className="text-[13px] leading-none text-muted hover:text-ink cursor-pointer px-1"
+            >
+              »
+            </button>
           </span>
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3.5">
@@ -59,10 +96,6 @@ export function AgentPanel({ mcpStatus, editLog }: { mcpStatus: McpStatus; editL
             )}
           </div>
         </div>
-      </div>
-      <div className="agent-rail flex-col items-center gap-3.5 py-3.5" aria-hidden="true">
-        <span className="w-2 h-2 rounded-full bg-claude" />
-        <span className="w-2 h-2 rounded-full bg-you" />
       </div>
     </div>
   );

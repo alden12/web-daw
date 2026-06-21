@@ -1,7 +1,7 @@
 /**
- * The top bar: brand, transport (play/stop + tempo, via TransportBar), the
- * workspace mode toggle (resizes the agent pane), the audio-start gesture, and
- * the MCP status. Pure chrome over state owned by AppShell.
+ * The top bar: brand, transport (play/stop + tempo, via TransportBar), undo/redo,
+ * the agent-pane expand/collapse (Produce mode), the audio-start gesture, and the
+ * MCP status. Pure chrome over state owned by AppShell.
  */
 import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
@@ -10,9 +10,6 @@ import type { EditLog } from '../audio/commands/editLog';
 import type { Dispatch } from '../audio/commands/types';
 import { useEditLog } from '../audio/commands/useEditLog';
 import { TransportBar } from './TransportBar';
-
-export type Mode = 'converse' | 'balanced' | 'produce';
-const MODES: Mode[] = ['converse', 'balanced', 'produce'];
 
 const DOT: Record<McpStatus, string> = {
   connected: 'bg-good',
@@ -28,8 +25,8 @@ export function TopBar({
   isPlaying,
   started,
   mcpStatus,
-  mode,
-  onMode,
+  agentCollapsed,
+  onToggleAgent,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -38,8 +35,8 @@ export function TopBar({
   isPlaying: boolean;
   started: boolean;
   mcpStatus: McpStatus;
-  mode: Mode;
-  onMode: (mode: Mode) => void;
+  agentCollapsed: boolean;
+  onToggleAgent: () => void;
 }) {
   const { canUndo, canRedo } = useEditLog(editLog);
   const histBtn = 'font-mono text-[13px] w-7 h-7 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed';
@@ -64,21 +61,16 @@ export function TopBar({
         </button>
       </div>
 
-      <div className="ml-auto flex gap-0.5 bg-card border border-line rounded-lg p-0.5" role="group" aria-label="Workspace mode">
-        {MODES.map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            onClick={() => onMode(m)}
-            className={`font-mono text-[11px] tracking-wide px-2.5 py-1 rounded-md cursor-pointer ${
-              mode === m ? 'bg-ground text-ink' : 'text-muted'
-            }`}
-          >
-            {m[0].toUpperCase() + m.slice(1)}
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        aria-pressed={agentCollapsed}
+        title={agentCollapsed ? 'Expand agent pane' : 'Collapse agent pane (Produce)'}
+        onClick={onToggleAgent}
+        className="ml-auto inline-flex items-center gap-1.5 font-mono text-[11px] tracking-wide px-2.5 py-1.5 rounded-md border border-line bg-card text-ink cursor-pointer hover:bg-ground"
+      >
+        <span className="text-[13px] leading-none">{agentCollapsed ? '«' : '»'}</span>
+        {agentCollapsed ? 'Agent' : 'Produce'}
+      </button>
 
       <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted">
         <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} /> MCP: {mcpStatus}
