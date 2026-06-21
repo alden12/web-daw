@@ -257,9 +257,10 @@ through the bus tree - see section 14).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). Two
 model evolutions are worth doing early because everything else gets cheaper once they exist:
-the **authored event log** (undo/redo and version history fall out of it) and **multiple
-clips per track** (clip editing, copy-paste, and real arrangement build on it). The raw
-backlog below is grouped into themed slices; within a theme, order is rough.
+the **authored event log** (undo/redo and version history fall out of it) and **a track that
+owns a set of clips** (which unlocks the Session/clip-launch view with variants, plus
+copy-paste and linear arrangement editing). The raw backlog below is grouped into themed
+slices; within a theme, order is rough.
 
 **Near-term - UI on top of the current model**
 
@@ -283,9 +284,16 @@ backlog below is grouped into themed slices; within a theme, order is rough.
   activity feed.
 - **On-disk file format** (section 10): human-readable project files; pairs with the event
   log and local-first storage.
-- **Clips & arrangement:** evolve past one-clip-per-track to many clips placed and edited on
-  the timeline - clip view + editing, split / move / set a clip's start-end, copy-paste of
-  clips, and MIDI import as clips. Ties into clip variants (section 6).
+- **Clip model + Session (clip-launch) view + variants.** Generalize a track from one looped
+  clip to a set of clip slots, then build the Ableton-style Session/Grid view on top: each
+  track is a column of launchable clips, with its **variants stacked vertically** (section 6:
+  a variant bundles clip notes + instrument params + effect chain, so switching morphs the
+  devices too; "Try"/fork is non-destructive; Claude can generate takes). Scenes launch a row
+  across tracks. This is the fearless-experimentation surface and the clip-launch view in one
+  - the same clips the arrangement uses, seen as possibility (vertical) rather than time.
+- **Arrangement editing (linear timeline)** - the other view onto the same clip model:
+  placing / splitting / moving clips along time, setting a clip's start-end, copy-paste of
+  clips, and MIDI import as clips.
 - **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
   per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
   up/down without changing pitch) and other sample-accurate audio work become tractable.
