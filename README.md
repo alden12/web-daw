@@ -17,11 +17,14 @@ Vite + React + TypeScript.
 
 ## Development
 
+This project uses [Yarn Classic](https://classic.yarnpkg.com/) (v1).
+
 ```bash
-npm install      # install dependencies
-npm run dev      # start the dev server
-npm run build    # type-check and build for production
-npm run lint     # lint
+yarn             # install dependencies
+yarn dev         # start the dev server
+yarn build       # type-check and build for production
+yarn lint        # lint
+yarn test        # run tests
 ```
 
 ## License
