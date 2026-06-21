@@ -253,17 +253,21 @@ effect chains, the librarian filing tracks into family groups, group-addressed M
 and host-addressed effects).
 
 Next, in rough order:
+- **Group effect-chain editing in the workbench** (next, small). The model, audio, and MCP
+  already support effects on a group bus (host-addressed); this is the UI to select a group
+  and edit its rack (and group/track selection in general) in the center workbench.
 - **Full DSP** via AudioWorklet. The `bindParams` seam already isolates native -> worklet,
   so no schema/UI/MCP churn. Also the moment to make the subtractive filter per-voice (it is
   paraphonic today) and decide worklet param messaging.
 - **Authored append-only event log**, then the **on-disk file format** (section 10) - the
   remaining cheap-to-bake-in-early pieces. These unlock AI presence, the activity feed, and
-  version history. Each gets its own slice. (Group effect-chain *editing in the UI* - the
-  workbench showing a selected group's rack - is a small follow-up; the model, audio, and
-  MCP already support it.)
-- **Longer horizon:** grouping as a real bus tree; automation lanes; version history + git
-  backing with semantic diff/merge; local-first files + in-app file viewer; in-app agent;
-  Tauri desktop shell; sharing/collab.
+  version history. Each gets its own slice.
+- **Live audio recording / input** (see section 14). Audio tracks, capture from interfaces
+  via getUserMedia + an AudioWorklet, recording latency compensation, and OPFS-backed clip
+  storage. Native low-latency monitoring is the case for the desktop (Tauri) backend.
+- **Longer horizon:** automation lanes; version history + git backing with semantic diff/
+  merge; local-first files + in-app file viewer; in-app agent; Tauri desktop shell;
+  sharing/collab.
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
@@ -283,3 +287,57 @@ of snapshots, and the human-readable file format.
   two-voice color, grouping, clip variants, library tree, open timeline, panel hierarchy.
   (Private artifact link from the design session.)
 - Memory pointer: `web-daw-ui-direction` (concise recall) points here for the full version.
+
+## 14. Live audio recording & input (design thinking)
+
+The honest constraint first: the browser cannot reach ASIO-class round-trip latency. On
+Windows the browser drives audio through WASAPI (usually shared mode), never ASIO, and
+there is no web API to reach an ASIO driver. macOS/CoreAudio is decent; Windows is mediocre.
+So the strategy is not "beat the latency" - it is "don't depend on it for tracking, and null
+it out for timing accuracy." That is also how pros track in any DAW once buffers get large.
+
+The capture path (web-first):
+- **Input** via `getUserMedia({ audio: { deviceId, echoCancellation:false, noiseSuppression:
+  false, autoGainControl:false, channelCount, sampleRate } })`. Disabling the voice-DSP is
+  mandatory or Chrome mangles the signal. Enumerate/select interfaces with
+  `enumerateDevices()` (labels need permission; HTTPS/secure-context required).
+- **Into the graph** via `MediaStreamAudioSourceNode`, then a capture **AudioWorklet** (the
+  ScriptProcessor replacement) that runs on the render thread at 128-frame quanta and copies
+  PCM into a **SharedArrayBuffer ring buffer** (needs cross-origin isolation: COOP/COEP
+  headers). A Web Worker drains the ring and streams float32 to **OPFS / File System Access
+  API** (and/or encodes WAV/FLAC via WebCodecs), so we never hold gigabytes in RAM.
+- **Sample-rate alignment:** run the `AudioContext` at the interface's native rate (request
+  48k, read back `sampleRate`); resampling a getUserMedia stream adds latency and artifacts.
+
+Monitoring (what the performer hears while recording):
+- **Hardware/direct monitoring is the default recommendation** - the interface mixes input
+  to output internally, zero added latency, the computer only captures. This sidesteps the
+  whole latency problem for tracking and is what ASIO users do anyway when buffers are big.
+- **Software monitoring** (through our graph) is offered only where the round-trip is low
+  enough (macOS + good interface); we read `context.outputLatency`/`baseLatency` and warn.
+
+Timing accuracy = **recording latency compensation** (the real answer):
+- We don't need low latency to record *accurately*; we need to know the offset and shift the
+  recorded region back by it so it lands where the performer actually played. Captured frames
+  are timestamped against `context.currentTime`; the round-trip offset = input + output +
+  worklet buffering.
+- A one-time **loopback calibration** (play a click, record it back through a physical/virtual
+  loop, measure the sample offset) gives an exact per-device compensation value - Logic/Ableton
+  call this driver-error compensation. Store the offset on the recorded region; everything
+  downstream stays sample-accurate.
+
+Fit with the model:
+- A **recorded clip is just another clip type** alongside MIDI/note clips: a reference to an
+  audio buffer (OPFS file) + the compensation offset, sitting on an **audio track** whose
+  "instrument" is a buffer player. It flows through the same ProjectStore/persistence/MCP
+  keystone; playback schedules `AudioBufferSourceNode.start(when)` via the existing lookahead
+  scheduler (playback latency is bounded by `outputLatency` and is fine for non-interactive
+  playback).
+- MCP stays a control-plane: it can arm/disarm tracks, start/stop capture, set the
+  compensation, and place/trim recorded regions - never the realtime sample path.
+
+The escape hatch for true low-latency monitored tracking: the **Tauri desktop backend**
+(already an open decision). A Rust audio backend (CPAL, or WASAPI-exclusive / CoreAudio, even
+ASIO) could own capture/monitoring natively while the same web UI/model rides on top. Staged
+plan: web-first with hardware monitoring + latency compensation (covers most recording), then
+the native backend for users who need monitored low-latency input.
