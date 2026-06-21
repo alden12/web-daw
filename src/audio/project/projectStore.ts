@@ -21,7 +21,7 @@ import {
   DEFAULT_INSTRUMENT,
 } from '../instruments/catalog';
 import { EFFECT_CATALOG, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
-import type { ProjectData, TrackMeta, GroupMeta, AudioClip } from './types';
+import type { ProjectData, TrackMeta, GroupMeta, AudioClip, VariantData, VariantAuthor } from './types';
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
@@ -60,12 +60,21 @@ interface BaseTrack extends EffectHost {
   volume: number;
 }
 
-/** An instrument track: a synth (params) playing a note clip. */
+/**
+ * An instrument track: a synth (params) playing a note clip. The live
+ * `params`/`clip`/`effects` are the working copy of the active variant; the
+ * parked variants are snapshots in `variants` (the active entry is refreshed
+ * from the live stores on fold). Switching/forking loads a variant into the
+ * live stores IN PLACE so the engine's bindings (created once per track id)
+ * stay valid - see materializeVariant.
+ */
 export interface InstrumentTrack extends BaseTrack {
   kind: 'instrument';
   instrumentType: string;
   params: ParamStore;
   clip: ClipStore;
+  variants: VariantData[];
+  activeVariantId: string;
 }
 
 /** An audio track: a recorded/imported audio clip played back as a buffer. */
@@ -110,6 +119,9 @@ export class ProjectStore {
   private nextEffectId(): string {
     return `fx-${crypto.randomUUID().slice(0, 8)}`;
   }
+  private nextVariantId(): string {
+    return `v-${crypto.randomUUID().slice(0, 8)}`;
+  }
 
   private effectMetas(host: EffectHost): TrackMeta['effects'] {
     return host.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed }));
@@ -126,7 +138,13 @@ export class ProjectStore {
     };
     return t.kind === 'audio'
       ? { ...base, kind: 'audio', audioClip: { ...t.audioClip } }
-      : { ...base, kind: 'instrument', instrumentType: t.instrumentType };
+      : {
+          ...base,
+          kind: 'instrument',
+          instrumentType: t.instrumentType,
+          variants: t.variants.map((v) => ({ id: v.id, name: v.name, author: v.author })),
+          activeVariantId: t.activeVariantId,
+        };
   }
 
   private rebuild(): void {
@@ -300,6 +318,13 @@ export class ProjectStore {
         ? opts.groupId
         : this.ensureFamilyGroup(instrumentFamily(type)).id;
     const trackId = opts.id ?? this.nextId();
+    const params = new ParamStore(instrumentSchema(type));
+    const clip = new ClipStore({ lengthBeats: this.lengthBeats });
+    // Derive the seed variant's id from the (agreed) track id so the browser and
+    // the MCP mirror seed the SAME id - addTrack runs independently on each side,
+    // and a divergent default-variant id would make variant tools address a
+    // variant the other end doesn't have. Forks get communicated random ids.
+    const variantId = `v-${trackId}`;
     const track: InstrumentTrack = {
       kind: 'instrument',
       id: trackId,
@@ -308,9 +333,12 @@ export class ProjectStore {
       parentId,
       muted: false,
       volume: 0.8,
-      params: new ParamStore(instrumentSchema(type)),
-      clip: new ClipStore({ lengthBeats: this.lengthBeats }),
+      params,
+      clip,
       effects: [],
+      // The whole sound is the active variant; the live stores are its working copy.
+      variants: [{ id: variantId, name: 'A', author: 'you', clip: clip.snapshot(), params: params.snapshot(), effects: [] }],
+      activeVariantId: variantId,
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -411,6 +439,118 @@ export class ProjectStore {
     this.emit();
   }
 
+  // --- variants (instrument tracks) -----------------------------------------
+  /** A unique, human variant name (A, B, C, ... AA) not already used on the track. */
+  private nextVariantName(t: InstrumentTrack): string {
+    const used = new Set(t.variants.map((v) => v.name));
+    for (let i = 0; ; i++) {
+      const name = String.fromCharCode(65 + (i % 26)).repeat(Math.floor(i / 26) + 1);
+      if (!used.has(name)) return name;
+    }
+  }
+
+  /** Snapshot the live stores back into the active variant (it is otherwise stale). */
+  private foldActiveVariant(t: InstrumentTrack): void {
+    const v = t.variants.find((x) => x.id === t.activeVariantId);
+    if (!v) return;
+    v.clip = t.clip.snapshot();
+    v.params = t.params.snapshot();
+    v.effects = this.snapshotEffects(t);
+  }
+
+  /**
+   * Reconcile a host's live effect chain against a target list IN PLACE: reuse
+   * existing EffectInstances by id (load their params) so the engine's binding
+   * survives; create fresh instances for new ids; drop removed; match order.
+   */
+  private loadEffectsInPlace(host: EffectHost, want: VariantData['effects']): void {
+    const byId = new Map(host.effects.map((fx) => [fx.id, fx] as const));
+    host.effects = want.map((w) => {
+      const existing = byId.get(w.id);
+      if (existing && existing.type === w.type) {
+        existing.bypassed = w.bypassed;
+        existing.params.load(w.params);
+        return existing;
+      }
+      const params = new ParamStore(effectSchema(w.type));
+      if (w.params) params.load(w.params);
+      return { id: w.id, type: w.type, bypassed: w.bypassed, params };
+    });
+  }
+
+  /** Load a variant's bundle into the track's live stores in place; make it active. */
+  private materializeVariant(t: InstrumentTrack, v: VariantData): void {
+    t.params.load(v.params);
+    t.clip.load(v.clip);
+    this.loadEffectsInPlace(t, v.effects);
+    t.activeVariantId = v.id;
+  }
+
+  /** Deep, independent copy of a variant's payload (clip notes + params + effects). */
+  private cloneVariantPayload(v: VariantData): Pick<VariantData, 'clip' | 'params' | 'effects'> {
+    return {
+      clip: { notes: v.clip.notes.map((n) => ({ ...n })), lengthBeats: v.clip.lengthBeats },
+      params: { ...v.params },
+      effects: v.effects.map((fx) => ({ ...fx, params: { ...fx.params } })),
+    };
+  }
+
+  /** Fork a variant ("Try"): clone the source (default active), park it, edit the copy. */
+  addVariant(
+    trackId: string,
+    opts: { id?: string; name?: string; fromVariantId?: string; author?: VariantAuthor } = {},
+  ): VariantData | undefined {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== 'instrument') return undefined;
+    this.foldActiveVariant(t);
+    const source =
+      t.variants.find((v) => v.id === (opts.fromVariantId ?? t.activeVariantId)) ??
+      t.variants.find((v) => v.id === t.activeVariantId)!;
+    const id = opts.id && !t.variants.some((v) => v.id === opts.id) ? opts.id : this.nextVariantId();
+    const variant: VariantData = {
+      id,
+      name: opts.name ?? this.nextVariantName(t),
+      author: opts.author ?? 'you',
+      ...this.cloneVariantPayload(source),
+    };
+    t.variants.push(variant);
+    this.materializeVariant(t, variant);
+    this.emit();
+    return variant;
+  }
+
+  /** Switch the active variant: fold the current one, then materialize the target. */
+  selectVariant(trackId: string, variantId: string): void {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== 'instrument' || t.activeVariantId === variantId) return;
+    const target = t.variants.find((v) => v.id === variantId);
+    if (!target) return;
+    this.foldActiveVariant(t);
+    this.materializeVariant(t, target);
+    this.emit();
+  }
+
+  /** Remove a variant (never the last); reassign + materialize a neighbour if active. */
+  removeVariant(trackId: string, variantId: string): void {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== 'instrument' || t.variants.length <= 1) return;
+    const idx = t.variants.findIndex((v) => v.id === variantId);
+    if (idx === -1) return;
+    const removingActive = t.activeVariantId === variantId;
+    t.variants.splice(idx, 1);
+    if (removingActive) this.materializeVariant(t, t.variants[Math.min(idx, t.variants.length - 1)]);
+    this.emit();
+  }
+
+  renameVariant(trackId: string, variantId: string, name: string): void {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== 'instrument') return;
+    const v = t.variants.find((x) => x.id === variantId);
+    if (!v || v.name === name) return;
+    v.name = name;
+    this.emit();
+  }
+
   // --- effect chain (track OR group) ----------------------------------------
   /** Resolve an effect host (track or group) by id; ids are unique across both. */
   private getEffectHost(hostId: string): EffectHost | undefined {
@@ -495,17 +635,26 @@ export class ProjectStore {
         effects: this.snapshotEffects(g),
       })),
       tracks: this.tracks.map((t) => {
-        const base = {
-          id: t.id,
-          name: t.name,
-          parentId: t.parentId,
-          muted: t.muted,
-          volume: t.volume,
-          effects: this.snapshotEffects(t),
+        const base = { id: t.id, name: t.name, parentId: t.parentId, muted: t.muted, volume: t.volume };
+        if (t.kind === 'audio') {
+          return { ...base, kind: 'audio' as const, effects: this.snapshotEffects(t), audioClip: { ...t.audioClip } };
+        }
+        // The active variant is otherwise stale (the live stores are truth) - fold first.
+        this.foldActiveVariant(t);
+        return {
+          ...base,
+          kind: 'instrument' as const,
+          instrumentType: t.instrumentType,
+          activeVariantId: t.activeVariantId,
+          variants: t.variants.map((v) => ({
+            id: v.id,
+            name: v.name,
+            author: v.author,
+            clip: { notes: v.clip.notes.map((n) => ({ ...n })), lengthBeats: v.clip.lengthBeats },
+            params: { ...v.params },
+            effects: v.effects.map((fx) => ({ ...fx, params: { ...fx.params } })),
+          })),
         };
-        return t.kind === 'audio'
-          ? { ...base, kind: 'audio' as const, audioClip: { ...t.audioClip } }
-          : { ...base, kind: 'instrument' as const, instrumentType: t.instrumentType, params: t.params.snapshot(), clip: t.clip.snapshot() };
       }),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
@@ -521,7 +670,39 @@ export class ProjectStore {
     });
   }
 
+  /**
+   * The persisted variant stack for an instrument track. Migrates legacy v4
+   * tracks (top-level params/clip/effects, no `variants`) into one default
+   * variant, so older snapshots are read forward.
+   */
+  private normalizeVariants(t: ProjectData['tracks'][number], projLen: number): VariantData[] {
+    // Legacy tracks predate `kind`; anything not explicitly audio is an instrument.
+    if (t.kind === 'audio') return [];
+    const author = (a: unknown): VariantAuthor => (a === 'claude' ? 'claude' : 'you');
+    if (t.variants?.length) {
+      return t.variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        author: author(v.author),
+        clip: v.clip ?? { notes: [], lengthBeats: projLen },
+        params: v.params ?? {},
+        effects: v.effects ?? [],
+      }));
+    }
+    return [
+      {
+        id: this.nextVariantId(),
+        name: 'A',
+        author: 'you',
+        clip: t.clip ?? { notes: [], lengthBeats: projLen },
+        params: t.params ?? {},
+        effects: t.effects ?? [],
+      },
+    ];
+  }
+
   load(data: ProjectData): void {
+    const projLen = data.lengthBeats ?? 16;
     this.groups = (data.groups ?? []).map((g) => ({
       id: g.id,
       name: g.name,
@@ -531,6 +712,10 @@ export class ProjectStore {
       volume: g.volume ?? 0.8,
       effects: this.loadEffects(g.effects),
     }));
+    // Reuse existing child stores by id so the engine's per-track bindings stay
+    // valid across load (undo/redo, variant switches) - replacing a ParamStore
+    // would orphan the bound instrument. Stores are mutated in place below.
+    const prev = new Map(this.tracks.map((t) => [t.id, t] as const));
     this.tracks = (data.tracks ?? []).map((t): Track => {
       const base = {
         id: t.id,
@@ -538,21 +723,30 @@ export class ProjectStore {
         parentId: t.parentId,
         muted: t.muted ?? false,
         volume: t.volume ?? 0.8,
-        effects: this.loadEffects(t.effects),
       };
       if (t.kind === 'audio') {
-        return { ...base, kind: 'audio', audioClip: { ...t.audioClip } };
+        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), audioClip: { ...t.audioClip } };
       }
       // Legacy tracks predate `kind`; treat them as instrument tracks.
-      const store = new ParamStore(instrumentSchema(t.instrumentType));
-      if (t.params) store.load(t.params);
-      return {
+      const variants = this.normalizeVariants(t, projLen);
+      const activeVariantId =
+        t.activeVariantId && variants.some((v) => v.id === t.activeVariantId) ? t.activeVariantId : variants[0].id;
+      const reuse = prev.get(t.id);
+      const reused = reuse?.kind === 'instrument' && reuse.instrumentType === t.instrumentType ? reuse : undefined;
+      const track: InstrumentTrack = {
         ...base,
         kind: 'instrument',
         instrumentType: t.instrumentType,
-        params: store,
-        clip: new ClipStore(t.clip ?? { lengthBeats: data.lengthBeats ?? 16 }),
+        params: reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType)),
+        clip: reused?.clip ?? new ClipStore({ lengthBeats: projLen }),
+        effects: reused?.effects ?? [],
+        variants,
+        activeVariantId,
       };
+      // Load the active variant into the live stores in place (reuses effect
+      // instances by id), keeping any reused bindings live.
+      this.materializeVariant(track, variants.find((v) => v.id === activeVariantId)!);
+      return track;
     });
     // Repair: every track must belong to a real group (migrates flat/legacy
     // projects by filing tracks into their instrument's family group).

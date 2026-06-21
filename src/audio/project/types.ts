@@ -41,6 +41,31 @@ export interface GroupMeta {
 
 export type TrackKind = 'instrument' | 'audio';
 
+/** Who authored a piece of durable state (two-voice presence). Mirrors commands/types Author. */
+export type VariantAuthor = 'you' | 'claude';
+
+/**
+ * A clip variant: a snapshot of the whole sound - clip notes + instrument params
+ * + the effect chain (not just notes like an Ableton clip), so switching variants
+ * morphs the devices to match. Cheap because every store already snapshots; a
+ * variant is a bundle of three snapshots (DESIGN.md section 6).
+ */
+export interface VariantData {
+  id: string;
+  name: string;
+  author: VariantAuthor;
+  clip: ClipData;
+  params: PatchValues;
+  effects: EffectData[];
+}
+
+/** Stable structural view of a variant for the UI (no snapshot payloads). */
+export interface VariantMeta {
+  id: string;
+  name: string;
+  author: VariantAuthor;
+}
+
 /** An audio clip on an audio track: a reference to an OPFS-stored file + placement. */
 export interface AudioClip {
   id: string;
@@ -70,6 +95,9 @@ interface BaseTrackMeta {
 export interface InstrumentTrackMeta extends BaseTrackMeta {
   kind: 'instrument';
   instrumentType: string;
+  /** Variant stack (the active variant's chain is reflected in `effects`). */
+  variants: VariantMeta[];
+  activeVariantId: string;
 }
 
 export interface AudioTrackMeta extends BaseTrackMeta {
@@ -88,10 +116,17 @@ export interface GroupData extends Omit<GroupMeta, 'effects'> {
   effects: EffectData[];
 }
 
-export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects'> {
-  params: PatchValues;
-  clip: ClipData;
-  effects: EffectData[];
+export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects' | 'variants'> {
+  /**
+   * The whole sound lives in the variant stack; the active variant holds the
+   * current params/clip/effects. Legacy v4 snapshots carry top-level
+   * params/clip/effects instead (migrated to one default variant on load).
+   */
+  variants: VariantData[];
+  /** Legacy v4 fields, read only for migration in ProjectStore.load. */
+  params?: PatchValues;
+  clip?: ClipData;
+  effects?: EffectData[];
 }
 
 export interface AudioTrackData extends Omit<AudioTrackMeta, 'effects'> {

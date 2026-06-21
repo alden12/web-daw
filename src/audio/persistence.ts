@@ -7,14 +7,15 @@
 import type { ProjectStore } from './project/projectStore';
 import type { ProjectData } from './project/types';
 
-const STORAGE_KEY = 'web-daw:project:v4';
-// Older snapshots (flat track list, no group tree). Read for migration only;
-// ProjectStore.load files parentless tracks into their family group.
-const LEGACY_KEYS = ['web-daw:project:v3'];
+const STORAGE_KEY = 'web-daw:project:v5';
+// Older snapshots. Read for migration only; ProjectStore.load files parentless
+// tracks into their family group and migrates single-clip tracks (v4) into one
+// default variant.
+const LEGACY_KEYS = ['web-daw:project:v4', 'web-daw:project:v3'];
 const SAVE_DEBOUNCE_MS = 300;
 
 interface StoredProject {
-  version: 4;
+  version: 5;
   project: ProjectData;
 }
 
@@ -34,7 +35,7 @@ export function loadProject(): ProjectData | null {
 
 function saveProject(project: ProjectStore): void {
   try {
-    const data: StoredProject = { version: 4, project: project.snapshot() };
+    const data: StoredProject = { version: 5, project: project.snapshot() };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // storage full or unavailable - skip silently

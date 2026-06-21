@@ -255,13 +255,18 @@ and host-addressed effects), 8 (audio tracks + audio clips: Track is a discrimin
 instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
 through the bus tree - see section 14), 9 (authored edit log: every durable edit flows through
 one `dispatch(command, author)` seam into an append-only, authored command log, sharing the
-MCP protocol's command vocabulary - powering undo/redo and the two-voice activity feed).
+MCP protocol's command vocabulary - powering undo/redo and the two-voice activity feed),
+10 (clip variants: an instrument track owns a stack of variants, each bundling clip notes +
+instrument params + effect chain; the active variant is materialized into the live stores in
+place so the engine bindings survive; "Try"/fork is non-destructive, switching morphs the
+devices, and Claude's generated takes are tagged coral - see section 6).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
-**authored edit log** (slice 9) is in place; the remaining early model evolution is **a track
-that owns a set of clips** (which unlocks the Session/clip-launch view with variants, plus
-copy-paste and linear arrangement editing). The raw backlog below is grouped into themed
-slices; within a theme, order is rough.
+**authored edit log** (slice 9) and **clip variants** (slice 10) are in place; the remaining
+early model evolution is generalizing variants into **a track that owns a set of clip slots**
+and building the **Session/clip-launch grid** on top (the same variants seen as launchable
+slots - one model, two views), plus copy-paste and linear arrangement editing. The raw backlog
+below is grouped into themed slices; within a theme, order is rough.
 
 **Near-term - UI on top of the current model**
 
@@ -288,13 +293,15 @@ slices; within a theme, order is rough.
   directly on the log.
 - **On-disk file format** (section 10): human-readable project files; pairs with the persisted
   edit log and local-first storage.
-- **Clip model + Session (clip-launch) view + variants.** Generalize a track from one looped
-  clip to a set of clip slots, then build the Ableton-style Session/Grid view on top: each
-  track is a column of launchable clips, with its **variants stacked vertically** (section 6:
-  a variant bundles clip notes + instrument params + effect chain, so switching morphs the
-  devices too; "Try"/fork is non-destructive; Claude can generate takes). Scenes launch a row
-  across tracks. This is the fearless-experimentation surface and the clip-launch view in one
-  - the same clips the arrangement uses, seen as possibility (vertical) rather than time.
+- **Clip variants - DONE (slice 10).** An instrument track owns a stack of variants; each
+  **variant bundles clip notes + instrument params + effect chain** (section 6), so switching
+  morphs the devices too. "Try"/fork is non-destructive (the original is parked); Claude
+  generates takes tagged coral; switching/forking loads a variant into the live stores in
+  place so the engine bindings survive. Edits flow through the same `dispatch`/MCP seam, so
+  undo/redo and the activity feed cover them. *Remaining:* generalize variants into a set of
+  **clip slots** and build the Ableton-style **Session/Grid view** on top - each track a column
+  of launchable clips with its variants stacked vertically, scenes launching a row across
+  tracks (the same variants seen as launchable slots - one model, two views).
 - **Arrangement editing (linear timeline)** - the other view onto the same clip model:
   placing / splitting / moving clips along time, setting a clip's start-end, copy-paste of
   clips, and MIDI import as clips.

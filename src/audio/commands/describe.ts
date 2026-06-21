@@ -44,6 +44,10 @@ const DESCRIBE: DescribeMap = {
   addNote: () => 'Added note',
   removeNote: () => 'Removed note',
   clearClip: () => 'Cleared clip',
+  addVariant: (c) => `New variant${c.name ? ` ${c.name}` : ''}`,
+  selectVariant: () => 'Switched variant',
+  removeVariant: () => 'Removed variant',
+  renameVariant: (c) => `Renamed variant to ${c.name}`,
   setTempo: (c) => `Set tempo ${c.bpm}`,
 };
 

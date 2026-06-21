@@ -25,6 +25,7 @@ const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
 const makeGroupId = () => `g-${randomId().slice(0, 8)}`;
 const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
+const makeVariantId = () => `v-${randomId().slice(0, 8)}`;
 
 export interface DawMcp {
   server: McpServer;
@@ -654,6 +655,107 @@ export function createDawMcp(
       if (!sendToTab({ type: 'clearClip', trackId: r.id })) return fail('No DAW tab connected.');
       r.track.clip.clear();
       return ok(`Cleared clip on ${r.id}.`);
+    },
+  );
+
+  // --- Clip variants --------------------------------------------------------
+  // A variant bundles the whole sound (notes + params + effects). Generating
+  // takes: add_variant (forks the active one), select_variant to make it active,
+  // then the note/param tools edit it. Variants you create are tagged 'claude'.
+  const variantArg = { variant: z.string().describe('variant id (see list_variants)') };
+
+  server.registerTool(
+    'list_variants',
+    {
+      title: 'List variants',
+      description: 'Return a track\'s clip variants (id, name, author) and which is active.',
+      inputSchema: trackArg,
+    },
+    async ({ track }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      return ok(
+        JSON.stringify(
+          {
+            track: r.id,
+            activeVariantId: r.track.activeVariantId,
+            variants: r.track.variants.map((v) => ({ id: v.id, name: v.name, author: v.author })),
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    'add_variant',
+    {
+      title: 'Add variant',
+      description:
+        'Fork a track\'s active variant into a new editable one (the original is parked, non-destructive) and make it active. Returns the new variant id - then edit notes/params to shape the take.',
+      inputSchema: { ...trackArg, name: z.string().optional(), from: z.string().optional().describe('variant id to fork; defaults to active') },
+    },
+    async ({ track, name, from }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      const id = makeVariantId();
+      if (!sendToTab({ type: 'addVariant', trackId: r.id, id, name, fromVariantId: from }))
+        return fail('No DAW tab connected.');
+      mirror.addVariant(r.id, { id, name, fromVariantId: from, author: 'claude' });
+      return ok(`Forked variant on ${r.id} (id ${id}); it is now active.`);
+    },
+  );
+
+  server.registerTool(
+    'select_variant',
+    {
+      title: 'Select variant',
+      description: 'Make a variant active (morphs the whole sound: notes + params + effects).',
+      inputSchema: { ...trackArg, ...variantArg },
+    },
+    async ({ track, variant }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
+      if (!sendToTab({ type: 'selectVariant', trackId: r.id, variantId: variant })) return fail('No DAW tab connected.');
+      mirror.selectVariant(r.id, variant);
+      return ok(`Switched ${r.id} to variant ${variant}.`);
+    },
+  );
+
+  server.registerTool(
+    'remove_variant',
+    {
+      title: 'Remove variant',
+      description: 'Delete a variant (a track must keep at least one).',
+      inputSchema: { ...trackArg, ...variantArg },
+    },
+    async ({ track, variant }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (r.track.variants.length <= 1) return fail(`Track ${r.id} has only one variant; cannot remove it.`);
+      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
+      if (!sendToTab({ type: 'removeVariant', trackId: r.id, variantId: variant })) return fail('No DAW tab connected.');
+      mirror.removeVariant(r.id, variant);
+      return ok(`Removed variant ${variant} from ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'rename_variant',
+    {
+      title: 'Rename variant',
+      description: 'Rename a variant.',
+      inputSchema: { ...trackArg, ...variantArg, name: z.string().min(1) },
+    },
+    async ({ track, variant, name }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
+      if (!sendToTab({ type: 'renameVariant', trackId: r.id, variantId: variant, name })) return fail('No DAW tab connected.');
+      mirror.renameVariant(r.id, variant, name);
+      return ok(`Renamed variant ${variant} to "${name}" on ${r.id}.`);
     },
   );
 

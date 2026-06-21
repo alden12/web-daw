@@ -8,4 +8,5 @@ const short = () => crypto.randomUUID().slice(0, 8);
 export const newTrackId = () => `t-${short()}`;
 export const newGroupId = () => `g-${short()}`;
 export const newEffectId = () => `fx-${short()}`;
+export const newVariantId = () => `v-${short()}`;
 export const newNoteId = () => crypto.randomUUID();

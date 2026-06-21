@@ -43,6 +43,11 @@ export type ServerToBrowser =
   | { type: 'addNote'; trackId: string; note: NoteEvent }
   | { type: 'removeNote'; trackId: string; id: string }
   | { type: 'clearClip'; trackId: string }
+  // Clip variants (instrument tracks; each bundles notes + params + effects)
+  | { type: 'addVariant'; trackId: string; id: string; name?: string; fromVariantId?: string }
+  | { type: 'selectVariant'; trackId: string; variantId: string }
+  | { type: 'removeVariant'; trackId: string; variantId: string }
+  | { type: 'renameVariant'; trackId: string; variantId: string; name: string }
   // Live notes (polyphonic)
   | { type: 'noteOn'; trackId: string; midi: number; velocity?: number }
   | { type: 'noteOff'; trackId: string; midi: number }

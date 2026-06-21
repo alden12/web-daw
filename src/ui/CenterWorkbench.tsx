@@ -11,6 +11,7 @@ import type { Dispatch } from '../audio/commands/types';
 import { InstrumentPanel } from './InstrumentPanel';
 import { EffectChain } from './EffectChain';
 import { PianoRoll } from './PianoRoll';
+import { VariantStrip } from './VariantStrip';
 
 function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Dispatch }) {
   const clip = track.audioClip;
@@ -93,6 +94,10 @@ export function CenterWorkbench({
         <span className="font-semibold text-sm text-bright">{selectedTrack.name}</span>
         <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
       </div>
+
+      {selectedTrack.kind === 'instrument' && (
+        <VariantStrip projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+      )}
 
       <div className="shrink-0 border-b border-line overflow-x-auto" key={`${selectedTrack.id}:dev`}>
         <div className="flex items-stretch gap-2 p-3 min-w-max">

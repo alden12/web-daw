@@ -80,14 +80,14 @@ export class EditLog {
     if (coalesce) {
       // Same target as the last edit, within the window: fold into it (one undo
       // step, one log entry) - the pre-edit checkpoint already captures "before".
-      applyEdit(this.project, command);
+      applyEdit(this.project, command, author);
       const last = this.entries[this.entries.length - 1];
       this.entries[this.entries.length - 1] = { ...last, command, time: now };
     } else {
       this.undoStack.push(this.project.snapshot());
       if (this.undoStack.length > MAX_DEPTH) this.undoStack.shift();
       this.redoStack = [];
-      applyEdit(this.project, command);
+      applyEdit(this.project, command, author);
       this.entries.push({ seq: this.seq++, command, author, time: now });
     }
     this.lastKey = key;

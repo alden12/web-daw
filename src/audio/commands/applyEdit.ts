@@ -8,10 +8,14 @@
  * replaces - only the entry point changes.
  */
 import type { ProjectStore } from '../project/projectStore';
-import type { EditCommand } from './types';
+import type { Author, EditCommand } from './types';
 
 type ApplyMap = {
-  [K in EditCommand['type']]: (project: ProjectStore, command: Extract<EditCommand, { type: K }>) => void;
+  [K in EditCommand['type']]: (
+    project: ProjectStore,
+    command: Extract<EditCommand, { type: K }>,
+    author: Author,
+  ) => void;
 };
 
 const APPLY: ApplyMap = {
@@ -59,9 +63,15 @@ const APPLY: ApplyMap = {
     const t = p.getTrack(c.trackId);
     if (t?.kind === 'instrument') t.clip.clear();
   },
+  // The new variant is tagged with the dispatching author (two-voice: you/claude).
+  addVariant: (p, c, author) =>
+    void p.addVariant(c.trackId, { id: c.id, name: c.name, fromVariantId: c.fromVariantId, author }),
+  selectVariant: (p, c) => p.selectVariant(c.trackId, c.variantId),
+  removeVariant: (p, c) => p.removeVariant(c.trackId, c.variantId),
+  renameVariant: (p, c) => p.renameVariant(c.trackId, c.variantId, c.name),
   setTempo: (p, c) => p.setTempo(c.bpm),
 };
 
-export function applyEdit(project: ProjectStore, command: EditCommand): void {
-  (APPLY[command.type] as (p: ProjectStore, c: EditCommand) => void)(project, command);
+export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {
+  (APPLY[command.type] as (p: ProjectStore, c: EditCommand, author: Author) => void)(project, command, author);
 }
