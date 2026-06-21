@@ -13,6 +13,7 @@ import { Scheduler } from '../audio/sequencer/scheduler';
 import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { attachAutosave, restoreProject } from '../audio/persistence';
 import { useProject } from '../audio/project/useProject';
+import { EditLog } from '../audio/commands/editLog';
 import { TopBar, type Mode } from './TopBar';
 import { LibraryPanel } from './LibraryPanel';
 import { CenterWorkbench } from './CenterWorkbench';
@@ -29,11 +30,13 @@ const KEY_MAP: Record<string, number> = {
 export function AppShell() {
   const [projectStore] = useState(() => new ProjectStore());
   const [engine] = useState(() => new AudioEngine());
+  const [editLog] = useState(() => new EditLog(projectStore));
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
   const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
   const [mode, setMode] = useState<Mode>('balanced');
+  const dispatch = editLog.dispatch;
 
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
@@ -51,9 +54,23 @@ export function AppShell() {
   }, [scheduler, engine]);
 
   useEffect(() => {
-    const handle = connectMcpBridge({ projectStore, engine, scheduler }, { onStatus: setMcpStatus });
+    const handle = connectMcpBridge({ projectStore, engine, scheduler, editLog }, { onStatus: setMcpStatus });
     return () => handle.dispose();
-  }, [projectStore, engine, scheduler]);
+  }, [projectStore, engine, scheduler, editLog]);
+
+  // Undo / redo (Cmd/Ctrl-Z, Shift+Cmd/Ctrl-Z), unless typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      e.preventDefault();
+      if (e.shiftKey) editLog.redo();
+      else editLog.undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editLog]);
 
   // Computer-keyboard plays the selected track's instrument (polyphonic).
   useEffect(() => {
@@ -87,6 +104,8 @@ export function AppShell() {
       <TopBar
         projectStore={projectStore}
         scheduler={scheduler}
+        editLog={editLog}
+        dispatch={dispatch}
         isPlaying={isPlaying}
         started={started}
         mcpStatus={mcpStatus}
@@ -94,10 +113,10 @@ export function AppShell() {
         onMode={setMode}
       />
       <div className="app-body flex-1 min-h-0">
-        <LibraryPanel projectStore={projectStore} />
-        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} selectedTrack={selectedTrack} />
-        <AgentPanel mcpStatus={mcpStatus} />
-        <ArrangementTimeline projectStore={projectStore} scheduler={scheduler} />
+        <LibraryPanel projectStore={projectStore} dispatch={dispatch} />
+        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} selectedTrack={selectedTrack} />
+        <AgentPanel mcpStatus={mcpStatus} editLog={editLog} />
+        <ArrangementTimeline projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} />
       </div>
       {!started && <StartDialog onStart={handleStart} />}
     </div>

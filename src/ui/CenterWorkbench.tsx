@@ -7,11 +7,12 @@
  */
 import type { ProjectStore, Track, AudioTrack } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
+import type { Dispatch } from '../audio/commands/types';
 import { InstrumentPanel } from './InstrumentPanel';
 import { EffectChain } from './EffectChain';
 import { PianoRoll } from './PianoRoll';
 
-function AudioClipPanel({ track, projectStore }: { track: AudioTrack; projectStore: ProjectStore }) {
+function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Dispatch }) {
   const clip = track.audioClip;
   return (
     <div className="flex-1 min-h-0 p-3">
@@ -37,7 +38,7 @@ function AudioClipPanel({ track, projectStore }: { track: AudioTrack; projectSto
                 min={0}
                 step={0.25}
                 value={clip.startBeat}
-                onChange={(e) => projectStore.setAudioClip(track.id, { startBeat: Number(e.target.value) })}
+                onChange={(e) => dispatch({ type: 'setAudioClip', trackId: track.id, patch: { startBeat: Number(e.target.value) } })}
                 className="w-16 font-mono text-[12px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
               />
               beats
@@ -50,7 +51,7 @@ function AudioClipPanel({ track, projectStore }: { track: AudioTrack; projectSto
                 max={1}
                 step={0.01}
                 value={clip.gain}
-                onChange={(e) => projectStore.setAudioClip(track.id, { gain: Number(e.target.value) })}
+                onChange={(e) => dispatch({ type: 'setAudioClip', trackId: track.id, patch: { gain: Number(e.target.value) } })}
                 className="w-28"
               />
               <span className="text-faint w-8">{clip.gain.toFixed(2)}</span>
@@ -65,10 +66,12 @@ function AudioClipPanel({ track, projectStore }: { track: AudioTrack; projectSto
 export function CenterWorkbench({
   projectStore,
   scheduler,
+  dispatch,
   selectedTrack,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
+  dispatch: Dispatch;
   selectedTrack: Track | undefined;
 }) {
   if (!selectedTrack) {
@@ -94,18 +97,23 @@ export function CenterWorkbench({
       <div className="shrink-0 border-b border-line overflow-x-auto" key={`${selectedTrack.id}:dev`}>
         <div className="flex items-stretch gap-2 p-3 min-w-max">
           {selectedTrack.kind === 'instrument' && (
-            <InstrumentPanel params={selectedTrack.params} instrumentType={selectedTrack.instrumentType} />
+            <InstrumentPanel
+              params={selectedTrack.params}
+              instrumentType={selectedTrack.instrumentType}
+              trackId={selectedTrack.id}
+              dispatch={dispatch}
+            />
           )}
-          <EffectChain projectStore={projectStore} trackId={selectedTrack.id} />
+          <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
         </div>
       </div>
 
       {selectedTrack.kind === 'instrument' ? (
         <div className="flex-1 min-h-0 p-3" key={`${selectedTrack.id}:roll`}>
-          <PianoRoll clipStore={selectedTrack.clip} scheduler={scheduler} />
+          <PianoRoll clipStore={selectedTrack.clip} scheduler={scheduler} trackId={selectedTrack.id} dispatch={dispatch} />
         </div>
       ) : (
-        <AudioClipPanel track={selectedTrack} projectStore={projectStore} key={`${selectedTrack.id}:audio`} />
+        <AudioClipPanel track={selectedTrack} dispatch={dispatch} key={`${selectedTrack.id}:audio`} />
       )}
     </div>
   );

@@ -7,6 +7,8 @@
 import type { ProjectStore } from '../project/projectStore';
 import type { AudioEngine } from '../engine/AudioEngine';
 import type { Scheduler } from '../sequencer/scheduler';
+import type { EditLog } from '../commands/editLog';
+import type { EditCommand } from '../commands/types';
 import { DEFAULT_WS_PORT } from './protocol';
 import type { BrowserToServer, ServerToBrowser } from './protocol';
 
@@ -16,6 +18,7 @@ export interface McpBridgeDeps {
   projectStore: ProjectStore;
   engine: AudioEngine;
   scheduler: Scheduler;
+  editLog: EditLog;
 }
 
 export interface McpBridgeOptions {
@@ -28,7 +31,7 @@ export interface McpBridgeHandle {
 }
 
 export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions = {}): McpBridgeHandle {
-  const { projectStore, engine, scheduler } = deps;
+  const { projectStore, engine, scheduler, editLog } = deps;
   const url = options.url ?? `ws://localhost:${DEFAULT_WS_PORT}`;
   const setStatus = (s: McpStatus) => options.onStatus?.(s);
 
@@ -43,57 +46,25 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  // One handler per inbound message type (map dispatch, not switch). The mapped
-  // type makes it a compile error to leave a message type unhandled.
-  type Handlers = { [K in ServerToBrowser['type']]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
-  const handlers: Handlers = {
-    createTrack: (msg) => void projectStore.addTrack(msg.instrumentType, { name: msg.name, id: msg.id, groupId: msg.groupId }),
-    removeTrack: (msg) => projectStore.removeTrack(msg.trackId),
+  // Inbound from the server (Claude). Durable edits route through the shared edit
+  // log authored 'claude' (so they are logged, undoable, two-voice) via the same
+  // applyEdit path the UI uses. Navigation / live notes / transport are not edits
+  // and are applied directly. The mapped type keeps the live set exhaustive.
+  type LiveType = 'selectTrack' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
+  type LiveHandlers = { [K in LiveType]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
+  const live: LiveHandlers = {
     selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
-    setTrack: (msg) => {
-      if (msg.muted !== undefined) projectStore.setMuted(msg.trackId, msg.muted);
-      if (msg.volume !== undefined) projectStore.setVolume(msg.trackId, msg.volume);
-      if (msg.name !== undefined) projectStore.renameTrack(msg.trackId, msg.name);
-    },
-    createGroup: (msg) => void projectStore.addGroup({ id: msg.id, name: msg.name, parentId: msg.parentId }),
-    removeGroup: (msg) => projectStore.removeGroup(msg.groupId),
-    setGroup: (msg) => {
-      if (msg.name !== undefined) projectStore.renameGroup(msg.groupId, msg.name);
-      if (msg.muted !== undefined) projectStore.setGroupMuted(msg.groupId, msg.muted);
-      if (msg.volume !== undefined) projectStore.setGroupVolume(msg.groupId, msg.volume);
-      if (msg.collapsed !== undefined) projectStore.setGroupCollapsed(msg.groupId, msg.collapsed);
-    },
-    moveTrack: (msg) => projectStore.moveTrack(msg.trackId, msg.groupId),
-    moveGroup: (msg) => projectStore.moveGroup(msg.groupId, msg.parentId),
-    setParam: (msg) => {
-      const t = projectStore.getTrack(msg.trackId);
-      if (t?.kind === 'instrument') t.params.set(msg.id, msg.value);
-    },
-    addEffect: (msg) => void projectStore.addEffect(msg.hostId, msg.effectType, msg.id),
-    removeEffect: (msg) => projectStore.removeEffect(msg.hostId, msg.effectId),
-    moveEffect: (msg) => projectStore.moveEffect(msg.hostId, msg.effectId, msg.toIndex),
-    bypassEffect: (msg) => projectStore.setEffectBypass(msg.hostId, msg.effectId, msg.bypassed),
-    setEffectParam: (msg) => projectStore.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
-    addNote: (msg) => {
-      const t = projectStore.getTrack(msg.trackId);
-      if (t?.kind === 'instrument') t.clip.putNote(msg.note);
-    },
-    removeNote: (msg) => {
-      const t = projectStore.getTrack(msg.trackId);
-      if (t?.kind === 'instrument') t.clip.removeNote(msg.id);
-    },
-    clearClip: (msg) => {
-      const t = projectStore.getTrack(msg.trackId);
-      if (t?.kind === 'instrument') t.clip.clear();
-    },
     noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
     noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
     allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
-    setTempo: (msg) => projectStore.setTempo(msg.bpm),
     transport: (msg) => (msg.action === 'play' ? scheduler.play() : scheduler.stop()),
   };
+  const liveTypes = new Set<string>(['selectTrack', 'noteOn', 'noteOff', 'allNotesOff', 'transport']);
 
-  const handle = (msg: ServerToBrowser) => (handlers[msg.type] as (m: ServerToBrowser) => void)?.(msg);
+  const handle = (msg: ServerToBrowser) => {
+    if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
+    else editLog.dispatch(msg as EditCommand, 'claude');
+  };
 
   // Per-track/group param/clip subscriptions, rebuilt whenever structure changes.
   // Effects are host-addressed (the host is the track or group that owns them).

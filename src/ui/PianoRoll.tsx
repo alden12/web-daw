@@ -9,6 +9,8 @@ import type { ClipStore } from '../audio/sequencer/clipStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import { GRID } from '../audio/sequencer/types';
 import { useClip } from '../audio/sequencer/useClip';
+import type { Dispatch } from '../audio/commands/types';
+import { newNoteId } from '../audio/commands/ids';
 
 const MIN_PITCH = 36; // C2
 const MAX_PITCH = 83; // B5
@@ -20,7 +22,17 @@ const ROWS = MAX_PITCH - MIN_PITCH + 1;
 const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 const pitchName = (pitch: number) => `C${Math.floor(pitch / 12) - 1}`;
 
-export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; scheduler: Scheduler }) {
+export function PianoRoll({
+  clipStore,
+  scheduler,
+  trackId,
+  dispatch,
+}: {
+  clipStore: ClipStore;
+  scheduler: Scheduler;
+  trackId: string;
+  dispatch: Dispatch;
+}) {
   const clip = useClip(clipStore);
   const playheadRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +62,7 @@ export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; sche
     const start = Math.floor(x / CELL_W) * GRID;
     const pitch = MAX_PITCH - Math.floor(y / ROW_H);
     if (pitch < MIN_PITCH || pitch > MAX_PITCH) return;
-    clipStore.addNote({ pitch, start, length: 1, velocity: 0.8 });
+    dispatch({ type: 'addNote', trackId, note: { id: newNoteId(), pitch, start, length: 1, velocity: 0.8 } });
   };
 
   // Background grid: beat lines, finer cell lines, semitone rows.
@@ -93,7 +105,7 @@ export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; sche
             title={`${pitchNote(note.pitch)} · ${note.start}+${note.length} beats`}
             onClick={(e) => {
               e.stopPropagation();
-              clipStore.removeNote(note.id);
+              dispatch({ type: 'removeNote', trackId, id: note.id });
             }}
           />
         ))}

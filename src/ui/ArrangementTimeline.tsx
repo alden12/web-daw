@@ -14,6 +14,8 @@ import type { ProjectStore } from '../audio/project/projectStore';
 import type { ClipStore } from '../audio/sequencer/clipStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import type { AudioClip, GroupMeta, TrackMeta } from '../audio/project/types';
+import type { Dispatch } from '../audio/commands/types';
+import { newGroupId } from '../audio/commands/ids';
 import { useProject } from '../audio/project/useProject';
 import { useClip } from '../audio/sequencer/useClip';
 
@@ -76,7 +78,17 @@ function AudioLanePreview({ clip, lengthBeats, tempoBpm }: { clip: AudioClip; le
   );
 }
 
-function GroupHeader({ group, depth, projectStore }: { group: GroupMeta; depth: number; projectStore: ProjectStore }) {
+function GroupHeader({
+  group,
+  depth,
+  projectStore,
+  dispatch,
+}: {
+  group: GroupMeta;
+  depth: number;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
+}) {
   return (
     <div
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-line bg-center`}
@@ -95,7 +107,7 @@ function GroupHeader({ group, depth, projectStore }: { group: GroupMeta; depth: 
       <button
         type="button"
         title={group.muted ? 'Unmute group' : 'Mute group'}
-        onClick={() => projectStore.setGroupMuted(group.id, !group.muted)}
+        onClick={() => dispatch({ type: 'setGroup', groupId: group.id, muted: !group.muted })}
         className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
           group.muted ? 'border-claude text-claude' : 'border-line bg-card text-ink'
         }`}
@@ -109,13 +121,13 @@ function GroupHeader({ group, depth, projectStore }: { group: GroupMeta; depth: 
         step={0.01}
         value={group.volume}
         title="Group volume"
-        onChange={(e) => projectStore.setGroupVolume(group.id, Number(e.target.value))}
+        onChange={(e) => dispatch({ type: 'setGroup', groupId: group.id, volume: Number(e.target.value) })}
         className="w-12 shrink-0"
       />
       <button
         type="button"
         title="Remove group and its contents"
-        onClick={() => projectStore.removeGroup(group.id)}
+        onClick={() => dispatch({ type: 'removeGroup', groupId: group.id })}
         className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
       >
         ×
@@ -124,7 +136,19 @@ function GroupHeader({ group, depth, projectStore }: { group: GroupMeta; depth: 
   );
 }
 
-function TrackHeader({ track, depth, selected, projectStore }: { track: TrackMeta; depth: number; selected: boolean; projectStore: ProjectStore }) {
+function TrackHeader({
+  track,
+  depth,
+  selected,
+  projectStore,
+  dispatch,
+}: {
+  track: TrackMeta;
+  depth: number;
+  selected: boolean;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
+}) {
   return (
     <div
       onClick={() => projectStore.selectTrack(track.id)}
@@ -138,7 +162,7 @@ function TrackHeader({ track, depth, selected, projectStore }: { track: TrackMet
         title={track.muted ? 'Unmute' : 'Mute'}
         onClick={(e) => {
           e.stopPropagation();
-          projectStore.setMuted(track.id, !track.muted);
+          dispatch({ type: 'setTrack', trackId: track.id, muted: !track.muted });
         }}
         className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
           track.muted ? 'border-claude text-claude' : 'border-line bg-card text-ink'
@@ -155,7 +179,7 @@ function TrackHeader({ track, depth, selected, projectStore }: { track: TrackMet
         value={track.volume}
         title="Volume"
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => projectStore.setVolume(track.id, Number(e.target.value))}
+        onChange={(e) => dispatch({ type: 'setTrack', trackId: track.id, volume: Number(e.target.value) })}
         className="w-14 shrink-0"
       />
       <button
@@ -163,7 +187,7 @@ function TrackHeader({ track, depth, selected, projectStore }: { track: TrackMet
         title="Remove track"
         onClick={(e) => {
           e.stopPropagation();
-          projectStore.removeTrack(track.id);
+          dispatch({ type: 'removeTrack', trackId: track.id });
         }}
         className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
       >
@@ -173,7 +197,15 @@ function TrackHeader({ track, depth, selected, projectStore }: { track: TrackMet
   );
 }
 
-export function ArrangementTimeline({ projectStore, scheduler }: { projectStore: ProjectStore; scheduler: Scheduler }) {
+export function ArrangementTimeline({
+  projectStore,
+  scheduler,
+  dispatch,
+}: {
+  projectStore: ProjectStore;
+  scheduler: Scheduler;
+  dispatch: Dispatch;
+}) {
   const project = useProject(projectStore);
   const playheadRef = useRef<HTMLDivElement>(null);
   const lengthBeats = project.lengthBeats;
@@ -199,7 +231,7 @@ export function ArrangementTimeline({ projectStore, scheduler }: { projectStore:
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Arrangement</span>
         <button
           type="button"
-          onClick={() => projectStore.addGroup({})}
+          onClick={() => dispatch({ type: 'createGroup', id: newGroupId() })}
           title="Add a top-level group"
           className="font-mono text-[10px] tracking-wide text-muted border border-line rounded px-1.5 py-0.5 cursor-pointer hover:text-ink"
         >
@@ -217,7 +249,7 @@ export function ArrangementTimeline({ projectStore, scheduler }: { projectStore:
           <div className="flex flex-col border-r border-line">
             {rows.map((row) =>
               row.kind === 'group' ? (
-                <GroupHeader key={row.group.id} group={row.group} depth={row.depth} projectStore={projectStore} />
+                <GroupHeader key={row.group.id} group={row.group} depth={row.depth} projectStore={projectStore} dispatch={dispatch} />
               ) : (
                 <TrackHeader
                   key={row.track.id}
@@ -225,6 +257,7 @@ export function ArrangementTimeline({ projectStore, scheduler }: { projectStore:
                   depth={row.depth}
                   selected={row.track.id === project.selectedTrackId}
                   projectStore={projectStore}
+                  dispatch={dispatch}
                 />
               ),
             )}

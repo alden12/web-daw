@@ -5,9 +5,20 @@
  */
 import type { ParamStore } from '../audio/params/store';
 import { instrumentSchema, catalogEntry } from '../audio/instruments/catalog';
+import type { Dispatch } from '../audio/commands/types';
 import { Knob } from './Knob';
 
-export function InstrumentPanel({ params, instrumentType }: { params: ParamStore; instrumentType: string }) {
+export function InstrumentPanel({
+  params,
+  instrumentType,
+  trackId,
+  dispatch,
+}: {
+  params: ParamStore;
+  instrumentType: string;
+  trackId: string;
+  dispatch: Dispatch;
+}) {
   const schema = instrumentSchema(instrumentType);
   return (
     <div className="shrink-0 border border-line rounded-xl bg-card">
@@ -17,7 +28,12 @@ export function InstrumentPanel({ params, instrumentType }: { params: ParamStore
       </div>
       <div className="flex gap-3 px-3 py-3">
         {schema.map((spec) => (
-          <Knob key={spec.id} spec={spec} store={params} />
+          <Knob
+            key={spec.id}
+            spec={spec}
+            store={params}
+            onChange={(id, value) => dispatch({ type: 'setParam', trackId, id, value })}
+          />
         ))}
       </div>
     </div>

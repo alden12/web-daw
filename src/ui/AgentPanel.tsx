@@ -6,6 +6,9 @@
  * collapse-to-rail behavior (Produce mode).
  */
 import type { McpStatus } from '../audio/mcp/bridge';
+import type { EditLog } from '../audio/commands/editLog';
+import { useEditLog } from '../audio/commands/useEditLog';
+import { describeCommand } from '../audio/commands/describe';
 
 const DOT: Record<McpStatus, string> = {
   connected: 'bg-good',
@@ -13,7 +16,9 @@ const DOT: Record<McpStatus, string> = {
   disconnected: 'bg-claude',
 };
 
-export function AgentPanel({ mcpStatus }: { mcpStatus: McpStatus }) {
+export function AgentPanel({ mcpStatus, editLog }: { mcpStatus: McpStatus; editLog: EditLog }) {
+  const { entries } = useEditLog(editLog);
+  const recent = entries.slice(-100).reverse();
   return (
     <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
       <div className="agent-full flex flex-col h-full">
@@ -30,9 +35,28 @@ export function AgentPanel({ mcpStatus }: { mcpStatus: McpStatus }) {
           </p>
           <div>
             <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint mb-2.5">Activity</div>
-            <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
-              Edit history appears here once the event log lands.
-            </div>
+            {recent.length === 0 ? (
+              <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
+                Edits you and Claude make appear here.
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {recent.map((entry) => (
+                  <li
+                    key={entry.seq}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
+                      entry.author === 'claude' ? 'border-claude' : 'border-you'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === 'claude' ? 'bg-claude' : 'bg-you'}`}
+                    />
+                    <span className="font-mono text-[11.5px] text-ink truncate">{describeCommand(entry.command)}</span>
+                    <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{entry.author}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </div>

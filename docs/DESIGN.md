@@ -253,12 +253,13 @@ agent pane, library tree; conventions pass - zod validation, map dispatch, catal
 effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
 and host-addressed effects), 8 (audio tracks + audio clips: Track is a discriminated union of
 instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
-through the bus tree - see section 14).
+through the bus tree - see section 14), 9 (authored edit log: every durable edit flows through
+one `dispatch(command, author)` seam into an append-only, authored command log, sharing the
+MCP protocol's command vocabulary - powering undo/redo and the two-voice activity feed).
 
-Sequencing follows the thesis (section 1: structured, authored events in one store). Two
-model evolutions are worth doing early because everything else gets cheaper once they exist:
-the **authored event log** (undo/redo and version history fall out of it) and **a track that
-owns a set of clips** (which unlocks the Session/clip-launch view with variants, plus
+Sequencing follows the thesis (section 1: structured, authored events in one store). The
+**authored edit log** (slice 9) is in place; the remaining early model evolution is **a track
+that owns a set of clips** (which unlocks the Session/clip-launch view with variants, plus
 copy-paste and linear arrangement editing). The raw backlog below is grouped into themed
 slices; within a theme, order is rough.
 
@@ -279,11 +280,14 @@ slices; within a theme, order is rough.
 
 **Model evolutions - sequence early, they unlock the rest**
 
-- **Authored append-only event log.** Highest-leverage step: **undo/redo** and **version
-  history** are the same mechanism falling out of it, and it underpins AI presence and the
-  activity feed.
-- **On-disk file format** (section 10): human-readable project files; pairs with the event
-  log and local-first storage.
+- **Authored edit log - DONE (slice 9).** Every durable edit flows through one
+  `dispatch(command, author)` seam into an append-only, authored command log (in-memory),
+  powering undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed.
+  *Remaining:* **persist the log** across reloads (the entry type is serializable already),
+  then **version history** with semantic diff/merge & branches (section 7) - both build
+  directly on the log.
+- **On-disk file format** (section 10): human-readable project files; pairs with the persisted
+  edit log and local-first storage.
 - **Clip model + Session (clip-launch) view + variants.** Generalize a track from one looped
   clip to a set of clip slots, then build the Ableton-style Session/Grid view on top: each
   track is a column of launchable clips, with its **variants stacked vertically** (section 6:

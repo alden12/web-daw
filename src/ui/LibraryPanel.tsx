@@ -10,6 +10,8 @@ import type { ProjectStore } from '../audio/project/projectStore';
 import { INSTRUMENT_CATALOG } from '../audio/instruments/catalog';
 import { EFFECT_CATALOG } from '../audio/effects/catalog';
 import { audioStorageAvailable, putAudio } from '../audio/audioStore';
+import type { Dispatch } from '../audio/commands/types';
+import { newEffectId, newTrackId } from '../audio/commands/ids';
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -60,7 +62,7 @@ function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: ()
   );
 }
 
-export function LibraryPanel({ projectStore }: { projectStore: ProjectStore }) {
+export function LibraryPanel({ projectStore, dispatch }: { projectStore: ProjectStore; dispatch: Dispatch }) {
   const [importError, setImportError] = useState<string | null>(null);
 
   const onImport = async (file: File) => {
@@ -71,7 +73,7 @@ export function LibraryPanel({ projectStore }: { projectStore: ProjectStore }) {
     }
     try {
       const [fileId, durationSec] = await Promise.all([putAudio(file), audioDuration(file).catch(() => 0)]);
-      projectStore.addAudioTrack({ fileId, name: file.name.replace(/\.[^.]+$/, ''), durationSec });
+      dispatch({ type: 'addAudioTrack', id: newTrackId(), fileId, name: file.name.replace(/\.[^.]+$/, ''), durationSec });
     } catch {
       setImportError('Import failed.');
     }
@@ -84,7 +86,7 @@ export function LibraryPanel({ projectStore }: { projectStore: ProjectStore }) {
       <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-faint px-4 pt-3 pb-1.5">Instruments</div>
       <Category label="Synths">
         {Object.entries(INSTRUMENT_CATALOG).map(([type, def]) => (
-          <Leaf key={type} label={def.label} onClick={() => projectStore.addTrack(type)} />
+          <Leaf key={type} label={def.label} onClick={() => dispatch({ type: 'createTrack', instrumentType: type, id: newTrackId() })} />
         ))}
       </Category>
 
@@ -96,8 +98,8 @@ export function LibraryPanel({ projectStore }: { projectStore: ProjectStore }) {
             label={def.label}
             fx
             onClick={() => {
-              const id = projectStore.selectedId;
-              if (id) projectStore.addEffect(id, type);
+              const hostId = projectStore.selectedId;
+              if (hostId) dispatch({ type: 'addEffect', hostId, effectType: type, id: newEffectId() });
             }}
           />
         ))}
