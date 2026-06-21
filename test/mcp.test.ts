@@ -119,4 +119,67 @@ describe('MCP server', () => {
     expect(onNotes).toEqual([60, 64, 67]);
     expect(messages.filter((m) => (m as { type: string }).type === 'noteOff')).toHaveLength(3);
   });
+
+  it('note_off requires a midi pitch', async () => {
+    await connectTab();
+    // missing required `midi` -> the SDK reports an error (reject or isError result)
+    const bad = await call('note_off', {}).catch(
+      (e: unknown): TextResult => ({ isError: true, content: [{ type: 'text', text: String(e) }] }),
+    );
+    expect(bad.isError).toBe(true);
+    const ok = await call('note_off', { midi: 60 });
+    expect(ok.isError).toBeFalsy();
+  });
+
+  it('add_note forwards to the tab and updates the mirror clip', async () => {
+    const messages = await connectTab();
+    const res = await call('add_note', { pitch: 60, start: 0, length: 1 });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => messages.some((m) => (m as { type: string }).type === 'addNote'));
+    const added = messages.find((m) => (m as { type: string }).type === 'addNote') as {
+      note: { pitch: number; start: number };
+    };
+    expect(added.note.pitch).toBe(60);
+
+    const list = JSON.parse((await call('list_notes')).content[0].text);
+    expect(list.clip.notes).toHaveLength(1);
+    expect(list.clip.notes[0].pitch).toBe(60);
+  });
+
+  it('add_notes bulk-adds and clear_clip empties the clip', async () => {
+    await connectTab();
+    await call('add_notes', {
+      notes: [
+        { pitch: 60, start: 0 },
+        { pitch: 64, start: 1 },
+        { pitch: 67, start: 2 },
+      ],
+    });
+    let list = JSON.parse((await call('list_notes')).content[0].text);
+    expect(list.clip.notes).toHaveLength(3);
+
+    await call('clear_clip');
+    list = JSON.parse((await call('list_notes')).content[0].text);
+    expect(list.clip.notes).toHaveLength(0);
+  });
+
+  it('set_tempo forwards and updates the mirror', async () => {
+    const messages = await connectTab();
+    const res = await call('set_tempo', { bpm: 90 });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => messages.some((m) => (m as { type: string }).type === 'setTempo'));
+    const list = JSON.parse((await call('list_notes')).content[0].text);
+    expect(list.clip.tempoBpm).toBe(90);
+  });
+
+  it('play / stop forward transport commands', async () => {
+    const messages = await connectTab();
+    await call('play');
+    await call('stop');
+    await waitFor(() => messages.filter((m) => (m as { type: string }).type === 'transport').length === 2);
+    expect(messages.filter((m) => (m as { type: string }).type === 'transport')).toEqual([
+      { type: 'transport', action: 'play' },
+      { type: 'transport', action: 'stop' },
+    ]);
+  });
 });

@@ -1,18 +1,27 @@
 /**
  * The browser end of the MCP bridge. Connects to the Node MCP server's
- * WebSocket and makes the tab a client of the SAME ParamStore the UI uses:
- * inbound setParam writes go through the store (so smoothing/validation are
- * shared), and local store changes are mirrored back to the server. Note
- * messages are forwarded straight to the Synth engine.
+ * WebSocket and makes the tab a client of the SAME stores the UI uses: inbound
+ * param/clip writes go through ParamStore/ClipStore (so validation and the UI
+ * stay consistent), note + transport messages drive the Synth and Scheduler,
+ * and local store changes are mirrored back to the server.
  *
- * No audio-engine changes: this only consumes the existing store and Synth API.
+ * No audio-engine changes beyond consuming the existing store/synth/scheduler API.
  */
 import type { ParamStore } from '../params/store';
 import type { Synth } from '../synth/Synth';
+import type { ClipStore } from '../sequencer/clipStore';
+import type { Scheduler } from '../sequencer/scheduler';
 import { DEFAULT_WS_PORT } from './protocol';
 import type { BrowserToServer, ServerToBrowser } from './protocol';
 
 export type McpStatus = 'connecting' | 'connected' | 'disconnected';
+
+export interface McpBridgeDeps {
+  paramStore: ParamStore;
+  clipStore: ClipStore;
+  synth: Synth;
+  scheduler: Scheduler;
+}
 
 export interface McpBridgeOptions {
   url?: string;
@@ -23,16 +32,13 @@ export interface McpBridgeHandle {
   dispose(): void;
 }
 
-export function connectMcpBridge(
-  store: ParamStore,
-  synth: Synth,
-  options: McpBridgeOptions = {},
-): McpBridgeHandle {
+export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions = {}): McpBridgeHandle {
+  const { paramStore, clipStore, synth, scheduler } = deps;
   const url = options.url ?? `ws://localhost:${DEFAULT_WS_PORT}`;
   const setStatus = (s: McpStatus) => options.onStatus?.(s);
 
   let ws: WebSocket | null = null;
-  let unsubscribe: (() => void) | null = null;
+  let unsubs: (() => void)[] = [];
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let backoff = 500;
   let disposed = false;
@@ -44,13 +50,32 @@ export function connectMcpBridge(
   const handle = (msg: ServerToBrowser) => {
     switch (msg.type) {
       case 'setParam':
-        store.set(msg.id, msg.value);
+        paramStore.set(msg.id, msg.value);
         break;
       case 'noteOn':
-        synth.noteOn(msg.midi);
+        synth.noteOn(msg.midi, msg.velocity ?? 1);
         break;
       case 'noteOff':
-        synth.noteOff();
+        synth.noteOff(msg.midi);
+        break;
+      case 'allNotesOff':
+        synth.allNotesOff();
+        break;
+      case 'addNote':
+        clipStore.putNote(msg.note);
+        break;
+      case 'removeNote':
+        clipStore.removeNote(msg.id);
+        break;
+      case 'clearClip':
+        clipStore.clear();
+        break;
+      case 'setTempo':
+        clipStore.setTempo(msg.bpm);
+        break;
+      case 'transport':
+        if (msg.action === 'play') scheduler.play();
+        else scheduler.stop();
         break;
     }
   };
@@ -64,8 +89,13 @@ export function connectMcpBridge(
     socket.onopen = () => {
       backoff = 500;
       setStatus('connected');
-      send({ type: 'snapshot', values: store.snapshot() });
-      unsubscribe = store.subscribe((id, value) => send({ type: 'paramChanged', id, value }));
+      // Send full current state, then mirror future local changes to the server.
+      send({ type: 'snapshot', values: paramStore.snapshot() });
+      send({ type: 'clipSnapshot', clip: clipStore.snapshot() });
+      unsubs.push(
+        paramStore.subscribe((id, value) => send({ type: 'paramChanged', id, value })),
+        clipStore.subscribe(() => send({ type: 'clipSnapshot', clip: clipStore.snapshot() })),
+      );
     };
 
     socket.onmessage = (event) => {
@@ -77,8 +107,8 @@ export function connectMcpBridge(
     };
 
     socket.onclose = () => {
-      unsubscribe?.();
-      unsubscribe = null;
+      for (const u of unsubs) u();
+      unsubs = [];
       ws = null;
       if (disposed) return;
       setStatus('disconnected');
@@ -95,7 +125,8 @@ export function connectMcpBridge(
     dispose() {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      unsubscribe?.();
+      for (const u of unsubs) u();
+      unsubs = [];
       ws?.close();
       ws = null;
     },
