@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { ProjectStore } from '../src/audio/project/projectStore';
-import type { Track, EffectInstance, Group } from '../src/audio/project/projectStore';
+import type { Track, InstrumentTrack, EffectInstance, Group } from '../src/audio/project/projectStore';
 import { INSTRUMENT_CATALOG, instrumentSchema, instrumentFamily } from '../src/audio/instruments/catalog';
 import { EFFECT_CATALOG, effectSchema } from '../src/audio/effects/catalog';
 import { validateParam } from '../src/audio/params/validate';
@@ -49,8 +49,14 @@ export function createDawMcp(
   const inbound: Inbound = {
     projectSnapshot: (msg) => mirror.load(msg.project),
     projectStructure: (msg) => mirror.load(msg.project),
-    paramChanged: (msg) => mirror.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
-    clipSnapshot: (msg) => mirror.getTrack(msg.trackId)?.clip.load(msg.clip),
+    paramChanged: (msg) => {
+      const t = mirror.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.params.set(msg.id, msg.value);
+    },
+    clipSnapshot: (msg) => {
+      const t = mirror.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.clip.load(msg.clip);
+    },
     effectParamChanged: (msg) => mirror.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
   };
 
@@ -92,6 +98,16 @@ export function createDawMcp(
     const t = mirror.getTrack(id);
     if (!t) return { error: `Unknown track "${id}". Use list_tracks to see valid ids.` };
     return { id, track: t };
+  }
+
+  /** Resolve a track that must be an instrument track (params/notes tools). */
+  function resolveInstrumentTrack(track?: string): { id: string; track: InstrumentTrack } | { error: string } {
+    const r = resolveTrack(track);
+    if ('error' in r) return r;
+    if (r.track.kind !== 'instrument') {
+      return { error: `Track ${r.id} is an audio track; this tool needs an instrument track.` };
+    }
+    return { id: r.id, track: r.track };
   }
 
   /** Resolve a group id. */
@@ -166,11 +182,13 @@ export function createDawMcp(
             tracks: mirror.getTracks().map((t) => ({
               id: t.id,
               name: t.name,
-              instrument: t.instrumentType,
+              kind: t.kind,
+              instrument: t.kind === 'instrument' ? t.instrumentType : undefined,
+              clip: t.kind === 'audio' ? t.audioClip.name : undefined,
               group: t.parentId,
               muted: t.muted,
               volume: t.volume,
-              notes: t.clip.getClip().notes.length,
+              notes: t.kind === 'instrument' ? t.clip.getClip().notes.length : undefined,
             })),
           },
           null,
@@ -390,7 +408,7 @@ export function createDawMcp(
     'list_parameters',
     { title: 'List parameters', description: 'List a track instrument\'s parameters with schema and current values.', inputSchema: trackArg },
     async ({ track }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       const params = instrumentSchema(r.track.instrumentType).map((spec) => ({ ...spec, value: r.track.params.get(spec.id) }));
       return ok(JSON.stringify({ track: r.id, instrument: r.track.instrumentType, parameters: params }, null, 2));
@@ -405,7 +423,7 @@ export function createDawMcp(
       inputSchema: { ...trackArg, id: z.string(), value: z.union([z.number(), z.string(), z.boolean()]) },
     },
     async ({ track, id, value }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       let spec;
       try {
@@ -576,7 +594,7 @@ export function createDawMcp(
     'list_notes',
     { title: 'List notes', description: 'Return a track\'s clip notes (id, pitch, start/length in beats, velocity).', inputSchema: trackArg },
     async ({ track }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       return ok(JSON.stringify({ track: r.id, clip: r.track.clip.getClip() }, null, 2));
     },
@@ -586,7 +604,7 @@ export function createDawMcp(
     'add_note',
     { title: 'Add note', description: 'Add one note to a track\'s clip. Times in beats. Returns the note id.', inputSchema: { ...trackArg, ...noteShape } },
     async ({ track, pitch, start, length, velocity }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       const note = makeNote({ pitch, start, length, velocity });
       if (!sendToTab({ type: 'addNote', trackId: r.id, note })) return fail('No DAW tab connected.');
@@ -603,7 +621,7 @@ export function createDawMcp(
       inputSchema: { ...trackArg, notes: z.array(z.object(noteShape)).min(1).max(512) },
     },
     async ({ track, notes }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       if (!connected()) return fail('No DAW tab connected.');
       for (const input of notes) {
@@ -619,7 +637,7 @@ export function createDawMcp(
     'remove_note',
     { title: 'Remove note', description: 'Remove a note from a track\'s clip by id.', inputSchema: { ...trackArg, id: z.string() } },
     async ({ track, id }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       if (!sendToTab({ type: 'removeNote', trackId: r.id, id })) return fail('No DAW tab connected.');
       r.track.clip.removeNote(id);
@@ -631,7 +649,7 @@ export function createDawMcp(
     'clear_clip',
     { title: 'Clear clip', description: 'Remove all notes from a track\'s clip.', inputSchema: trackArg },
     async ({ track }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       if (!sendToTab({ type: 'clearClip', trackId: r.id })) return fail('No DAW tab connected.');
       r.track.clip.clear();
@@ -662,7 +680,7 @@ export function createDawMcp(
     'note_on',
     { title: 'Note on', description: 'Start a held note on a track (MIDI 0-127, 60 = middle C).', inputSchema: { ...trackArg, midi: z.number().int().min(0).max(127), velocity: z.number().min(0).max(1).optional() } },
     async ({ track, midi, velocity }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       return sendToTab({ type: 'noteOn', trackId: r.id, midi, velocity }) ? ok(`noteOn ${midi} on ${r.id}`) : fail('No DAW tab connected.');
     },
@@ -672,7 +690,7 @@ export function createDawMcp(
     'note_off',
     { title: 'Note off', description: 'Release a note on a track by its MIDI number.', inputSchema: { ...trackArg, midi: z.number().int().min(0).max(127) } },
     async ({ track, midi }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       return sendToTab({ type: 'noteOff', trackId: r.id, midi }) ? ok(`noteOff ${midi} on ${r.id}`) : fail('No DAW tab connected.');
     },
@@ -682,7 +700,7 @@ export function createDawMcp(
     'play_note',
     { title: 'Play note', description: 'Play a note on a track for a duration (ms, default 500).', inputSchema: { ...trackArg, midi: z.number().int().min(0).max(127), durationMs: z.number().min(1).max(20000).optional(), velocity: z.number().min(0).max(1).optional() } },
     async ({ track, midi, durationMs, velocity }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       if (!sendToTab({ type: 'noteOn', trackId: r.id, midi, velocity })) return fail('No DAW tab connected.');
       const dur = durationMs ?? 500;
@@ -703,7 +721,7 @@ export function createDawMcp(
       },
     },
     async ({ track, notes, articulationMs }) => {
-      const r = resolveTrack(track);
+      const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       if (!connected()) return fail('No DAW tab connected.');
       clearSequence();

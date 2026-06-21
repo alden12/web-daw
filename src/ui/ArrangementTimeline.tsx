@@ -13,7 +13,7 @@ import { useEffect, useRef } from 'react';
 import type { ProjectStore } from '../audio/project/projectStore';
 import type { ClipStore } from '../audio/sequencer/clipStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
-import type { GroupMeta, TrackMeta } from '../audio/project/types';
+import type { AudioClip, GroupMeta, TrackMeta } from '../audio/project/types';
 import { useProject } from '../audio/project/useProject';
 import { useClip } from '../audio/sequencer/useClip';
 
@@ -58,6 +58,20 @@ function TrackPreview({ clipStore }: { clipStore: ClipStore }) {
           }}
         />
       ))}
+    </div>
+  );
+}
+
+function AudioLanePreview({ clip, lengthBeats, tempoBpm }: { clip: AudioClip; lengthBeats: number; tempoBpm: number }) {
+  const durationBeats = clip.durationSec * (tempoBpm / 60);
+  const width = Math.max(2, Math.min(100, (durationBeats / lengthBeats) * 100));
+  return (
+    <div
+      className="absolute top-2 bottom-2 rounded bg-card border border-line border-t-2 border-t-you overflow-hidden"
+      style={{ left: `${(clip.startBeat / lengthBeats) * 100}%`, width: `${width}%` }}
+    >
+      <div className="absolute inset-0 bg-you/15" />
+      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{clip.name}</span>
     </div>
   );
 }
@@ -221,10 +235,15 @@ export function ArrangementTimeline({ projectStore, scheduler }: { projectStore:
               if (row.kind === 'group') {
                 return <div key={row.group.id} className={`${ROW} border-b border-line bg-center/40`} />;
               }
-              const track = projectStore.getTrack(row.track.id);
+              const meta = row.track;
+              const track = projectStore.getTrack(meta.id);
               return (
-                <div key={row.track.id} className={`${ROW} relative border-b border-line-soft lane-grid`}>
-                  {track && <TrackPreview clipStore={track.clip} />}
+                <div key={meta.id} className={`${ROW} relative border-b border-line-soft lane-grid`}>
+                  {meta.kind === 'audio' ? (
+                    <AudioLanePreview clip={meta.audioClip} lengthBeats={lengthBeats} tempoBpm={project.tempoBpm} />
+                  ) : (
+                    track?.kind === 'instrument' && <TrackPreview clipStore={track.clip} />
+                  )}
                 </div>
               );
             })}

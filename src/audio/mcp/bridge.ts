@@ -65,15 +65,27 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     },
     moveTrack: (msg) => projectStore.moveTrack(msg.trackId, msg.groupId),
     moveGroup: (msg) => projectStore.moveGroup(msg.groupId, msg.parentId),
-    setParam: (msg) => projectStore.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
+    setParam: (msg) => {
+      const t = projectStore.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.params.set(msg.id, msg.value);
+    },
     addEffect: (msg) => void projectStore.addEffect(msg.hostId, msg.effectType, msg.id),
     removeEffect: (msg) => projectStore.removeEffect(msg.hostId, msg.effectId),
     moveEffect: (msg) => projectStore.moveEffect(msg.hostId, msg.effectId, msg.toIndex),
     bypassEffect: (msg) => projectStore.setEffectBypass(msg.hostId, msg.effectId, msg.bypassed),
     setEffectParam: (msg) => projectStore.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
-    addNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.putNote(msg.note),
-    removeNote: (msg) => projectStore.getTrack(msg.trackId)?.clip.removeNote(msg.id),
-    clearClip: (msg) => projectStore.getTrack(msg.trackId)?.clip.clear(),
+    addNote: (msg) => {
+      const t = projectStore.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.clip.putNote(msg.note);
+    },
+    removeNote: (msg) => {
+      const t = projectStore.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.clip.removeNote(msg.id);
+    },
+    clearClip: (msg) => {
+      const t = projectStore.getTrack(msg.trackId);
+      if (t?.kind === 'instrument') t.clip.clear();
+    },
     noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
     noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
     allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
@@ -89,8 +101,12 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     for (const u of trackUnsubs) u();
     trackUnsubs = [
       ...projectStore.getTracks().flatMap((t) => [
-        t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
-        t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
+        ...(t.kind === 'instrument'
+          ? [
+              t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
+              t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
+            ]
+          : []),
         ...t.effects.map((fx) =>
           fx.params.subscribe((id, value) => send({ type: 'effectParamChanged', hostId: t.id, effectId: fx.id, id, value })),
         ),

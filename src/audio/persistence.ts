@@ -64,8 +64,7 @@ export function attachAutosave(project: ProjectStore): () => void {
     for (const u of trackUnsubs) u();
     trackUnsubs = [
       ...project.getTracks().flatMap((t) => [
-        t.params.subscribe(schedule),
-        t.clip.subscribe(schedule),
+        ...(t.kind === 'instrument' ? [t.params.subscribe(schedule), t.clip.subscribe(schedule)] : []),
         ...t.effects.map((fx) => fx.params.subscribe(schedule)),
       ]),
       ...project.getGroups().flatMap((g) => g.effects.map((fx) => fx.params.subscribe(schedule))),

@@ -21,10 +21,12 @@ import {
   DEFAULT_INSTRUMENT,
 } from '../instruments/catalog';
 import { EFFECT_CATALOG, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
-import type { ProjectData, TrackMeta, GroupMeta } from './types';
+import type { ProjectData, TrackMeta, GroupMeta, AudioClip } from './types';
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
+/** Default group family imported/recorded audio is filed into (the librarian). */
+const AUDIO_FAMILY = 'Audio';
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** An effect at runtime: meta + its own ParamStore over the effect's schema. */
@@ -50,17 +52,30 @@ export interface Group extends EffectHost {
   volume: number;
 }
 
-/** A track at runtime: meta + its instrument params + its clip + its effect chain. */
-export interface Track extends EffectHost {
+interface BaseTrack extends EffectHost {
   id: string;
   name: string;
-  instrumentType: string;
   parentId: string;
   muted: boolean;
   volume: number;
+}
+
+/** An instrument track: a synth (params) playing a note clip. */
+export interface InstrumentTrack extends BaseTrack {
+  kind: 'instrument';
+  instrumentType: string;
   params: ParamStore;
   clip: ClipStore;
 }
+
+/** An audio track: a recorded/imported audio clip played back as a buffer. */
+export interface AudioTrack extends BaseTrack {
+  kind: 'audio';
+  audioClip: AudioClip;
+}
+
+/** A track at runtime. Both kinds share the base fields + the effect chain. */
+export type Track = InstrumentTrack | AudioTrack;
 
 /** Stable structural view for the UI (no child stores). */
 export interface ProjectStructure {
@@ -100,6 +115,20 @@ export class ProjectStore {
     return host.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed }));
   }
 
+  private trackMeta(t: Track): TrackMeta {
+    const base = {
+      id: t.id,
+      name: t.name,
+      parentId: t.parentId,
+      muted: t.muted,
+      volume: t.volume,
+      effects: this.effectMetas(t),
+    };
+    return t.kind === 'audio'
+      ? { ...base, kind: 'audio', audioClip: { ...t.audioClip } }
+      : { ...base, kind: 'instrument', instrumentType: t.instrumentType };
+  }
+
   private rebuild(): void {
     this.cached = {
       groups: this.groups.map((g) => ({
@@ -111,15 +140,7 @@ export class ProjectStore {
         volume: g.volume,
         effects: this.effectMetas(g),
       })),
-      tracks: this.tracks.map((t) => ({
-        id: t.id,
-        name: t.name,
-        instrumentType: t.instrumentType,
-        parentId: t.parentId,
-        muted: t.muted,
-        volume: t.volume,
-        effects: this.effectMetas(t),
-      })),
+      tracks: this.tracks.map((t) => this.trackMeta(t)),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       selectedTrackId: this.selectedTrackId,
@@ -279,7 +300,8 @@ export class ProjectStore {
         ? opts.groupId
         : this.ensureFamilyGroup(instrumentFamily(type)).id;
     const trackId = opts.id ?? this.nextId();
-    const track: Track = {
+    const track: InstrumentTrack = {
+      kind: 'instrument',
       id: trackId,
       name: opts.name ?? `${catalogEntry(type).label} ${this.tracks.length + 1}`,
       instrumentType: type,
@@ -294,6 +316,53 @@ export class ProjectStore {
     this.selectedTrackId = trackId;
     this.emit();
     return track;
+  }
+
+  /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
+  addAudioTrack(
+    clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },
+    opts: { name?: string; id?: string; groupId?: string } = {},
+  ): AudioTrack {
+    if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
+    const parentId =
+      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(AUDIO_FAMILY).id;
+    const trackId = opts.id ?? this.nextId();
+    const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
+    const track: AudioTrack = {
+      kind: 'audio',
+      id: trackId,
+      name,
+      parentId,
+      muted: false,
+      volume: 0.8,
+      effects: [],
+      audioClip: {
+        id: `ac-${crypto.randomUUID().slice(0, 8)}`,
+        name: clip.name ?? name,
+        fileId: clip.fileId,
+        startBeat: clip.startBeat ?? 0,
+        gain: clip.gain ?? 1,
+        durationSec: clip.durationSec ?? 0,
+      },
+    };
+    this.tracks.push(track);
+    this.selectedTrackId = trackId;
+    this.emit();
+    return track;
+  }
+
+  /** Edit an audio clip's placement/gain (no-op on instrument tracks). */
+  setAudioClip(trackId: string, patch: Partial<Pick<AudioClip, 'startBeat' | 'gain' | 'name'>>): void {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== 'audio') return;
+    const next = {
+      ...t.audioClip,
+      ...(patch.startBeat !== undefined ? { startBeat: Math.max(0, patch.startBeat) } : {}),
+      ...(patch.gain !== undefined ? { gain: clamp(patch.gain, 0, 1) } : {}),
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+    };
+    t.audioClip = next;
+    this.emit();
   }
 
   removeTrack(id: string): void {
@@ -425,17 +494,19 @@ export class ProjectStore {
         volume: g.volume,
         effects: this.snapshotEffects(g),
       })),
-      tracks: this.tracks.map((t) => ({
-        id: t.id,
-        name: t.name,
-        instrumentType: t.instrumentType,
-        parentId: t.parentId,
-        muted: t.muted,
-        volume: t.volume,
-        params: t.params.snapshot(),
-        clip: t.clip.snapshot(),
-        effects: this.snapshotEffects(t),
-      })),
+      tracks: this.tracks.map((t) => {
+        const base = {
+          id: t.id,
+          name: t.name,
+          parentId: t.parentId,
+          muted: t.muted,
+          volume: t.volume,
+          effects: this.snapshotEffects(t),
+        };
+        return t.kind === 'audio'
+          ? { ...base, kind: 'audio' as const, audioClip: { ...t.audioClip } }
+          : { ...base, kind: 'instrument' as const, instrumentType: t.instrumentType, params: t.params.snapshot(), clip: t.clip.snapshot() };
+      }),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       selectedTrackId: this.selectedTrackId,
@@ -460,26 +531,35 @@ export class ProjectStore {
       volume: g.volume ?? 0.8,
       effects: this.loadEffects(g.effects),
     }));
-    this.tracks = (data.tracks ?? []).map((t) => ({
-      id: t.id,
-      name: t.name,
-      instrumentType: t.instrumentType,
-      parentId: t.parentId,
-      muted: t.muted ?? false,
-      volume: t.volume ?? 0.8,
-      params: (() => {
-        const store = new ParamStore(instrumentSchema(t.instrumentType));
-        if (t.params) store.load(t.params);
-        return store;
-      })(),
-      clip: new ClipStore(t.clip ?? { lengthBeats: data.lengthBeats ?? 16 }),
-      effects: this.loadEffects(t.effects),
-    }));
+    this.tracks = (data.tracks ?? []).map((t): Track => {
+      const base = {
+        id: t.id,
+        name: t.name,
+        parentId: t.parentId,
+        muted: t.muted ?? false,
+        volume: t.volume ?? 0.8,
+        effects: this.loadEffects(t.effects),
+      };
+      if (t.kind === 'audio') {
+        return { ...base, kind: 'audio', audioClip: { ...t.audioClip } };
+      }
+      // Legacy tracks predate `kind`; treat them as instrument tracks.
+      const store = new ParamStore(instrumentSchema(t.instrumentType));
+      if (t.params) store.load(t.params);
+      return {
+        ...base,
+        kind: 'instrument',
+        instrumentType: t.instrumentType,
+        params: store,
+        clip: new ClipStore(t.clip ?? { lengthBeats: data.lengthBeats ?? 16 }),
+      };
+    });
     // Repair: every track must belong to a real group (migrates flat/legacy
     // projects by filing tracks into their instrument's family group).
     for (const t of this.tracks) {
       if (!t.parentId || !this.getGroup(t.parentId)) {
-        t.parentId = this.ensureFamilyGroup(instrumentFamily(t.instrumentType)).id;
+        const family = t.kind === 'audio' ? AUDIO_FAMILY : instrumentFamily(t.instrumentType);
+        t.parentId = this.ensureFamilyGroup(family).id;
       }
     }
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);

@@ -234,6 +234,61 @@ describe('ProjectStore groups (bus tree)', () => {
   });
 });
 
+describe('ProjectStore audio tracks', () => {
+  it('adds an audio track filed into the Audio group, with a clip', () => {
+    const p = new ProjectStore(false);
+    const t = p.addAudioTrack({ fileId: 'au-xyz', name: 'Take 1', durationSec: 3.5 });
+    expect(t.kind).toBe('audio');
+    expect(t.audioClip.fileId).toBe('au-xyz');
+    expect(t.audioClip.durationSec).toBe(3.5);
+    expect(t.audioClip.startBeat).toBe(0);
+    const group = p.getGroup(t.parentId)!;
+    expect(group.name).toBe('Audio');
+    expect(group.parentId).toBeNull();
+  });
+
+  it('audio tracks carry an effect chain like instrument tracks', () => {
+    const p = new ProjectStore(false);
+    const t = p.addAudioTrack({ fileId: 'au-1' });
+    const fx = p.addEffect(t.id, 'reverb')!;
+    expect(p.getTrack(t.id)!.effects.map((e) => e.type)).toEqual(['reverb']);
+    expect(p.getEffect(t.id, fx.id)).toBe(fx);
+  });
+
+  it('edits clip gain (clamped) and start beat; ignores instrument tracks', () => {
+    const p = new ProjectStore(false);
+    const audio = p.addAudioTrack({ fileId: 'au-1' });
+    p.setAudioClip(audio.id, { gain: 5, startBeat: 2 });
+    const clip = (p.getTrack(audio.id) as { audioClip: { gain: number; startBeat: number } }).audioClip;
+    expect(clip.gain).toBe(1);
+    expect(clip.startBeat).toBe(2);
+    // no-op on an instrument track
+    const inst = p.addTrack('subtractive');
+    expect(() => p.setAudioClip(inst.id, { gain: 0.5 })).not.toThrow();
+  });
+
+  it('round-trips a mixed instrument + audio project through snapshot/load', () => {
+    const a = new ProjectStore(false);
+    a.addTrack('subtractive', { name: 'Lead' });
+    const au = a.addAudioTrack({ fileId: 'au-9', name: 'Vox', durationSec: 2, startBeat: 4, gain: 0.7 });
+    a.addEffect(au.id, 'delay');
+    const snap = a.snapshot();
+
+    const b = new ProjectStore(false);
+    b.load(snap);
+    const structure = b.getStructure();
+    expect(structure.tracks.map((t) => t.kind)).toEqual(['instrument', 'audio']);
+    const loaded = b.getTrack(au.id)!;
+    expect(loaded.kind).toBe('audio');
+    if (loaded.kind === 'audio') {
+      expect(loaded.audioClip.fileId).toBe('au-9');
+      expect(loaded.audioClip.startBeat).toBe(4);
+      expect(loaded.audioClip.gain).toBe(0.7);
+    }
+    expect(loaded.effects.map((e) => e.type)).toEqual(['delay']);
+  });
+});
+
 describe('instrument catalog', () => {
   it('exposes a label and a valid schema for every instrument type', () => {
     for (const [type, def] of Object.entries(INSTRUMENT_CATALOG)) {

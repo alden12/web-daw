@@ -9,6 +9,11 @@
  * and effect chain, and reuses the same routing as a track. Tracks always live
  * in a group; groups nest under other groups, with top-level groups (parentId
  * null) summing into the master bus.
+ *
+ * A track is one of two kinds: an instrument track (a synth driven by a param
+ * store, playing a note clip) or an audio track (a recorded/imported audio clip
+ * played back as a buffer). Both share the base fields and the effect chain, so
+ * they route identically; only the source differs.
  */
 import type { PatchValues } from '../params/types';
 import type { ClipData } from '../sequencer/types';
@@ -34,18 +39,45 @@ export interface GroupMeta {
   effects: EffectMeta[];
 }
 
-export interface TrackMeta {
+export type TrackKind = 'instrument' | 'audio';
+
+/** An audio clip on an audio track: a reference to an OPFS-stored file + placement. */
+export interface AudioClip {
   id: string;
   name: string;
-  instrumentType: string;
+  /** Handle id of the audio file in the OPFS audio store. */
+  fileId: string;
+  /** Onset within the loop, in beats. */
+  startBeat: number;
+  /** 0..1 clip gain. */
+  gain: number;
+  /** Cached natural duration in seconds (region sizing before/without decode). */
+  durationSec: number;
+}
+
+interface BaseTrackMeta {
+  id: string;
+  name: string;
   /** Id of the group this track lives in (always set). */
   parentId: string;
   muted: boolean;
   /** 0..1 track output gain. */
   volume: number;
-  /** Ordered insert effects between the instrument and the track gain. */
+  /** Ordered insert effects between the source and the track gain. */
   effects: EffectMeta[];
 }
+
+export interface InstrumentTrackMeta extends BaseTrackMeta {
+  kind: 'instrument';
+  instrumentType: string;
+}
+
+export interface AudioTrackMeta extends BaseTrackMeta {
+  kind: 'audio';
+  audioClip: AudioClip;
+}
+
+export type TrackMeta = InstrumentTrackMeta | AudioTrackMeta;
 
 /** An effect with its persisted param values. */
 export interface EffectData extends EffectMeta {
@@ -56,11 +88,17 @@ export interface GroupData extends Omit<GroupMeta, 'effects'> {
   effects: EffectData[];
 }
 
-export interface TrackData extends Omit<TrackMeta, 'effects'> {
+export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects'> {
   params: PatchValues;
   clip: ClipData;
   effects: EffectData[];
 }
+
+export interface AudioTrackData extends Omit<AudioTrackMeta, 'effects'> {
+  effects: EffectData[];
+}
+
+export type TrackData = InstrumentTrackData | AudioTrackData;
 
 export interface ProjectData {
   groups: GroupData[];

@@ -235,24 +235,29 @@ my-track/
 ```
 
 Notes:
+
 - Project structure, patches, automation, variants -> stable, sorted JSON (diffable).
 - MIDI -> standard `.mid` for interoperability; audio -> `.wav`/`.flac` referenced by path.
-- An instrument *preset* is just its `PatchValues` (a param snapshot); an instrument
-  *definition* (the DSP) is app code today. Custom-DSP-via-worklet later could let users
+- An instrument _preset_ is just its `PatchValues` (a param snapshot); an instrument
+  _definition_ (the DSP) is app code today. Custom-DSP-via-worklet later could let users
   drop in their own instrument code - the ultimate tinker story, far off.
 - Keep ids stable and human-meaningful where possible so diffs read well.
 
 ## 11. Roadmap / slicing
 
 Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback
-+ persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
-`bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
-agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
-7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
-effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
-and host-addressed effects).
+
+- persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
+  `bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
+  agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
+  7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
+  effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
+  and host-addressed effects), 8 (audio tracks + audio clips: Track is a discriminated union
+  of instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
+  through the bus tree - see section 14).
 
 Next, in rough order:
+
 - **Group effect-chain editing in the workbench** (next, small). The model, audio, and MCP
   already support effects on a group bus (host-addressed); this is the UI to select a group
   and edit its rack (and group/track selection in general) in the center workbench.
@@ -262,12 +267,34 @@ Next, in rough order:
 - **Authored append-only event log**, then the **on-disk file format** (section 10) - the
   remaining cheap-to-bake-in-early pieces. These unlock AI presence, the activity feed, and
   version history. Each gets its own slice.
-- **Live audio recording / input** (see section 14). Audio tracks, capture from interfaces
-  via getUserMedia + an AudioWorklet, recording latency compensation, and OPFS-backed clip
-  storage. Native low-latency monitoring is the case for the desktop (Tauri) backend.
+- **Live audio recording / capture** (see section 14). Audio tracks, audio clips, OPFS
+  storage, and buffer playback landed in slice 8; what remains is the capture pipeline:
+  getUserMedia from interfaces + an AudioWorklet (or MediaRecorder for a first cut), recording
+  latency compensation, and a calibration step. Native low-latency monitoring is the case for
+  the desktop (Tauri) backend.
 - **Longer horizon:** automation lanes; version history + git backing with semantic diff/
   merge; local-first files + in-app file viewer; in-app agent; Tauri desktop shell;
   sharing/collab.
+- MIDI track quantization
+- MIDI device input and recording
+- Time signature
+- Resizable panels (and persistence of panel sizes in local storage)
+- Better midi editing (note drag, resize, track resize, multiple select), timeline manipulation/navigation (skip to time, zoom, pan, repeat section), timeline beat markers
+- Track ordering with drag and drop
+- Improved instrument and effect drag and drop
+- Metronome
+- Timeline visual summary of grouped tracks
+- Clip view and editing
+- Grooves
+- Set project key, MIDI roll shows note intervals in relation to the current key
+- Speed up and slow down audio tracks without changing pitch
+- MIDI import
+- Copy/paste
+- Undo/redo history
+- Open source instrument and effects library?
+- Track colors
+- Track splitting, moving, setting start and end of sample
+- Sampler instrument
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
@@ -297,8 +324,9 @@ So the strategy is not "beat the latency" - it is "don't depend on it for tracki
 it out for timing accuracy." That is also how pros track in any DAW once buffers get large.
 
 The capture path (web-first):
+
 - **Input** via `getUserMedia({ audio: { deviceId, echoCancellation:false, noiseSuppression:
-  false, autoGainControl:false, channelCount, sampleRate } })`. Disabling the voice-DSP is
+false, autoGainControl:false, channelCount, sampleRate } })`. Disabling the voice-DSP is
   mandatory or Chrome mangles the signal. Enumerate/select interfaces with
   `enumerateDevices()` (labels need permission; HTTPS/secure-context required).
 - **Into the graph** via `MediaStreamAudioSourceNode`, then a capture **AudioWorklet** (the
@@ -310,6 +338,7 @@ The capture path (web-first):
   48k, read back `sampleRate`); resampling a getUserMedia stream adds latency and artifacts.
 
 Monitoring (what the performer hears while recording):
+
 - **Hardware/direct monitoring is the default recommendation** - the interface mixes input
   to output internally, zero added latency, the computer only captures. This sidesteps the
   whole latency problem for tracking and is what ASIO users do anyway when buffers are big.
@@ -317,7 +346,8 @@ Monitoring (what the performer hears while recording):
   enough (macOS + good interface); we read `context.outputLatency`/`baseLatency` and warn.
 
 Timing accuracy = **recording latency compensation** (the real answer):
-- We don't need low latency to record *accurately*; we need to know the offset and shift the
+
+- We don't need low latency to record _accurately_; we need to know the offset and shift the
   recorded region back by it so it lands where the performer actually played. Captured frames
   are timestamped against `context.currentTime`; the round-trip offset = input + output +
   worklet buffering.
@@ -327,6 +357,7 @@ Timing accuracy = **recording latency compensation** (the real answer):
   downstream stays sample-accurate.
 
 Fit with the model:
+
 - A **recorded clip is just another clip type** alongside MIDI/note clips: a reference to an
   audio buffer (OPFS file) + the compensation offset, sitting on an **audio track** whose
   "instrument" is a buffer player. It flows through the same ProjectStore/persistence/MCP

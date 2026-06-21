@@ -1,29 +1,42 @@
 /**
  * The audio engine: owns the AudioContext and master output, and realizes the
- * project's tracks and groups as audio. Each track gets an Instrument (from the
- * registry, driven by the track's ParamStore) and a track gain (volume/mute);
- * each group gets an input bus, its own effect chain, and an output gain. The
- * graph mirrors the project's bus tree:
- *   Instrument -> [track effects] -> trackGain -> group.input
- *   group.input -> [group effects] -> group.output -> parent group.input | master
- *   master -> limiter -> destination
+ * project's tracks and groups as audio. Tracks come in two kinds:
+ *   - instrument: an Instrument (from the registry, driven by the track's
+ *     ParamStore) -> [track effects] -> trackGain
+ *   - audio: scheduled AudioBufferSourceNodes -> an input gain -> [track effects]
+ *     -> trackGain
+ * Both feed their group's bus, mirroring the project's tree:
+ *   ... -> trackGain -> group.input -> [group effects] -> group.output
+ *       -> parent group.input | master -> limiter -> destination
  *
  * `reconcile` keeps audio in sync with the project: it builds/disposes nodes for
- * tracks and groups, rewires each effect chain, re-routes to the current parent
- * (so moving a track/group between groups just reconnects), and applies
- * mute/volume. A muted group zeroes its bus, silencing all its descendants.
+ * tracks and groups, rewires each effect chain, re-routes to the current parent,
+ * applies mute/volume, and decodes any audio clips. A muted group zeroes its bus,
+ * silencing all its descendants. Audio playback is driven by the Scheduler, which
+ * calls `scheduleAudioClip` the way it calls `instrument.playNote`.
  */
 import type { ProjectStore, EffectInstance } from '../project/projectStore';
 import { createInstrument } from '../instruments/registry';
 import type { Instrument } from '../instruments/types';
 import { createEffect } from '../effects/registry';
 import type { Effect } from '../effects/types';
+import { getAudioBuffer } from '../audioStore';
 
 interface TrackNode {
   instrument: Instrument;
   gain: GainNode;
   /** Effect instances by id; chain order comes from the track's effect list. */
   effects: Map<string, Effect>;
+}
+
+interface AudioTrackNode {
+  /** Where this track's scheduled buffer sources feed in. */
+  input: GainNode;
+  /** Track volume/mute; feeds the group bus. */
+  gain: GainNode;
+  effects: Map<string, Effect>;
+  /** Currently-playing sources, so playback can be stopped on transport stop. */
+  sources: Set<AudioBufferSourceNode>;
 }
 
 interface GroupNode {
@@ -39,7 +52,11 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private limiter: DynamicsCompressorNode | null = null;
   private readonly nodes = new Map<string, TrackNode>();
+  private readonly audioNodes = new Map<string, AudioTrackNode>();
   private readonly groupNodes = new Map<string, GroupNode>();
+  /** Decoded audio buffers keyed by OPFS file id (shared across tracks). */
+  private readonly audioBuffers = new Map<string, AudioBuffer>();
+  private readonly decoding = new Set<string>();
   private project: ProjectStore | null = null;
   private unsubscribe: (() => void) | null = null;
 
@@ -83,7 +100,7 @@ export class AudioEngine {
     const groups = project.getGroups();
     const tracks = project.getTracks();
 
-    // Dispose nodes for removed groups/tracks.
+    // Dispose nodes for removed groups/tracks (by kind - ids live in one map).
     const liveGroupIds = new Set(groups.map((g) => g.id));
     for (const [id, node] of this.groupNodes) {
       if (!liveGroupIds.has(id)) {
@@ -93,13 +110,23 @@ export class AudioEngine {
         this.groupNodes.delete(id);
       }
     }
-    const liveTrackIds = new Set(tracks.map((t) => t.id));
+    const instrumentIds = new Set(tracks.filter((t) => t.kind === 'instrument').map((t) => t.id));
     for (const [id, node] of this.nodes) {
-      if (!liveTrackIds.has(id)) {
+      if (!instrumentIds.has(id)) {
         this.disposeEffects(node.effects);
         node.instrument.dispose();
         node.gain.disconnect();
         this.nodes.delete(id);
+      }
+    }
+    const audioIds = new Set(tracks.filter((t) => t.kind === 'audio').map((t) => t.id));
+    for (const [id, node] of this.audioNodes) {
+      if (!audioIds.has(id)) {
+        this.disposeAudioSources(node);
+        this.disposeEffects(node.effects);
+        node.input.disconnect();
+        node.gain.disconnect();
+        this.audioNodes.delete(id);
       }
     }
 
@@ -123,18 +150,32 @@ export class AudioEngine {
 
     // Track nodes, effect chains, and routing into their group.
     for (const track of tracks) {
-      let node = this.nodes.get(track.id);
-      if (!node) {
-        const gain = ctx.createGain();
-        const instrument = createInstrument(track.instrumentType, ctx, track.params);
-        node = { instrument, gain, effects: new Map() };
-        this.nodes.set(track.id, node);
+      if (track.kind === 'instrument') {
+        let node = this.nodes.get(track.id);
+        if (!node) {
+          const gain = ctx.createGain();
+          const instrument = createInstrument(track.instrumentType, ctx, track.params);
+          node = { instrument, gain, effects: new Map() };
+          this.nodes.set(track.id, node);
+        }
+        this.reconcileEffects(node.effects, track.effects);
+        this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
+        node.gain.disconnect();
+        node.gain.connect(this.parentInput(track.parentId));
+        node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
+      } else {
+        let node = this.audioNodes.get(track.id);
+        if (!node) {
+          node = { input: ctx.createGain(), gain: ctx.createGain(), effects: new Map(), sources: new Set() };
+          this.audioNodes.set(track.id, node);
+        }
+        this.reconcileEffects(node.effects, track.effects);
+        this.rewireChain(node.input, node.effects, track.effects, node.gain);
+        node.gain.disconnect();
+        node.gain.connect(this.parentInput(track.parentId));
+        node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
+        this.ensureDecoded(track.audioClip.fileId);
       }
-      this.reconcileEffects(node.effects, track.effects);
-      this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
-      node.gain.disconnect();
-      node.gain.connect(this.parentInput(track.parentId));
-      node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
     }
   }
 
@@ -147,6 +188,18 @@ export class AudioEngine {
   private disposeEffects(effects: Map<string, Effect>): void {
     for (const fx of effects.values()) fx.dispose();
     effects.clear();
+  }
+
+  private disposeAudioSources(node: AudioTrackNode): void {
+    for (const src of node.sources) {
+      try {
+        src.stop();
+        src.disconnect();
+      } catch {
+        // already stopped
+      }
+    }
+    node.sources.clear();
   }
 
   /** Create effects for new instances, dispose effects no longer in the chain. */
@@ -180,6 +233,55 @@ export class AudioEngine {
     cursor.connect(dest);
   }
 
+  /** Fetch + decode an audio file once, keyed by its OPFS id. */
+  private ensureDecoded(fileId: string): void {
+    if (!fileId || this.audioBuffers.has(fileId) || this.decoding.has(fileId)) return;
+    this.decoding.add(fileId);
+    getAudioBuffer(fileId)
+      .then((arr) => this.ctx?.decodeAudioData(arr))
+      .then((buffer) => {
+        if (buffer) this.audioBuffers.set(fileId, buffer);
+      })
+      .catch(() => undefined)
+      .finally(() => this.decoding.delete(fileId));
+  }
+
+  /** Schedule an audio track's clip to play at `when` (audio-clock seconds). */
+  scheduleAudioClip(trackId: string, when: number): void {
+    const ctx = this.ctx;
+    const node = this.audioNodes.get(trackId);
+    const track = this.project?.getTrack(trackId);
+    if (!ctx || !node || track?.kind !== 'audio') return;
+    const buffer = this.audioBuffers.get(track.audioClip.fileId);
+    if (!buffer) return; // not decoded yet - silently skip this pass
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    if (track.audioClip.gain !== 1) {
+      const clipGain = ctx.createGain();
+      clipGain.gain.value = track.audioClip.gain;
+      source.connect(clipGain);
+      clipGain.connect(node.input);
+    } else {
+      source.connect(node.input);
+    }
+    source.start(when);
+    node.sources.add(source);
+    source.onended = () => {
+      node.sources.delete(source);
+      try {
+        source.disconnect();
+      } catch {
+        // ignore
+      }
+    };
+  }
+
+  /** Stop all currently-playing audio clips (called on transport stop). */
+  stopAllAudio(): void {
+    for (const node of this.audioNodes.values()) this.disposeAudioSources(node);
+  }
+
   getInstrument(trackId: string): Instrument | undefined {
     return this.nodes.get(trackId)?.instrument;
   }
@@ -193,12 +295,21 @@ export class AudioEngine {
       node.gain.disconnect();
     }
     this.nodes.clear();
+    for (const node of this.audioNodes.values()) {
+      this.disposeAudioSources(node);
+      this.disposeEffects(node.effects);
+      node.input.disconnect();
+      node.gain.disconnect();
+    }
+    this.audioNodes.clear();
     for (const node of this.groupNodes.values()) {
       this.disposeEffects(node.effects);
       node.input.disconnect();
       node.output.disconnect();
     }
     this.groupNodes.clear();
+    this.audioBuffers.clear();
+    this.decoding.clear();
     this.limiter?.disconnect();
     void this.ctx?.close();
     this.ctx = null;
