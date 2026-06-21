@@ -259,10 +259,14 @@ MCP protocol's command vocabulary - powering undo/redo and the two-voice activit
 10 (clip variants: an instrument track owns a stack of variants, each bundling clip notes +
 instrument params + effect chain; the active variant is materialized into the live stores in
 place so the engine bindings survive; "Try"/fork is non-destructive, switching morphs the
-devices, and Claude's generated takes are tagged coral - see section 6).
+devices, and Claude's generated takes are tagged coral - see section 6),
+11 (edit-log persistence: the authored command log is persisted alongside the project
+snapshot in localStorage and restored on load, so the activity feed and authored history
+survive a reload; undo/redo stays session-scoped).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
-**authored edit log** (slice 9) and **clip variants** (slice 10) are in place; the remaining
+**authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
+(slice 11) are in place; the remaining
 early model evolution is generalizing variants into **a track that owns a set of clip slots**
 and building the **Session/clip-launch grid** on top (the same variants seen as launchable
 slots - one model, two views), plus copy-paste and linear arrangement editing. The raw backlog
@@ -285,12 +289,14 @@ below is grouped into themed slices; within a theme, order is rough.
 
 **Model evolutions - sequence early, they unlock the rest**
 
-- **Authored edit log - DONE (slice 9).** Every durable edit flows through one
-  `dispatch(command, author)` seam into an append-only, authored command log (in-memory),
-  powering undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed.
-  *Remaining:* **persist the log** across reloads (the entry type is serializable already),
-  then **version history** with semantic diff/merge & branches (section 7) - both build
-  directly on the log.
+- **Authored edit log + persistence - DONE (slices 9, 11).** Every durable edit flows through
+  one `dispatch(command, author)` seam into an append-only, authored command log, powering
+  undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed; the log is
+  persisted alongside the project snapshot (localStorage) and restored on load, so the feed and
+  authored history survive a reload (undo/redo stays session-scoped). *Remaining:* **version
+  history** with replay/scrub/rollback and semantic diff/merge & branches (section 7) - which
+  needs undo to append compensating entries so the log becomes a faithful event source - and
+  graduating storage from localStorage to the on-disk file format (section 10) / IndexedDB.
 - **On-disk file format** (section 10): human-readable project files; pairs with the persisted
   edit log and local-first storage.
 - **Clip variants - DONE (slice 10).** An instrument track owns a stack of variants; each

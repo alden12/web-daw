@@ -117,6 +117,26 @@ export class EditLog {
     return this.cached;
   }
 
+  /** The raw append-only entries (for persistence). */
+  getEntries(): EditEntry[] {
+    return this.entries;
+  }
+
+  /**
+   * Replace the log with persisted entries (on reload). Continues `seq` from the
+   * highest restored entry so new edits stay monotonic (correct even if older
+   * entries were trimmed). Undo/redo do not span a reload, so the checkpoint
+   * stacks start empty.
+   */
+  restore(entries: EditEntry[]): void {
+    this.entries = entries.slice();
+    this.seq = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.undoStack = [];
+    this.redoStack = [];
+    this.lastKey = null;
+    this.emit();
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
