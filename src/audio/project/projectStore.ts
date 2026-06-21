@@ -8,13 +8,22 @@
 import { ParamStore } from '../params/store';
 import { ClipStore } from '../sequencer/clipStore';
 import { INSTRUMENT_CATALOG, catalogEntry, instrumentSchema, DEFAULT_INSTRUMENT } from '../instruments/catalog';
+import { EFFECT_CATALOG, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
 import type { ProjectData, TrackMeta } from './types';
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** A track at runtime: meta + its instrument params + its clip. */
+/** An effect at runtime: meta + its own ParamStore over the effect's schema. */
+export interface EffectInstance {
+  id: string;
+  type: string;
+  bypassed: boolean;
+  params: ParamStore;
+}
+
+/** A track at runtime: meta + its instrument params + its clip + its effect chain. */
 export interface Track {
   id: string;
   name: string;
@@ -23,6 +32,7 @@ export interface Track {
   volume: number;
   params: ParamStore;
   clip: ClipStore;
+  effects: EffectInstance[];
 }
 
 /** Stable structural view for the UI (no child stores). */
@@ -50,6 +60,9 @@ export class ProjectStore {
   private nextId(): string {
     return `t-${crypto.randomUUID().slice(0, 8)}`;
   }
+  private nextEffectId(): string {
+    return `fx-${crypto.randomUUID().slice(0, 8)}`;
+  }
 
   private rebuild(): void {
     this.cached = {
@@ -59,6 +72,7 @@ export class ProjectStore {
         instrumentType: t.instrumentType,
         muted: t.muted,
         volume: t.volume,
+        effects: t.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed })),
       })),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
@@ -107,6 +121,7 @@ export class ProjectStore {
       volume: 0.8,
       params: new ParamStore(instrumentSchema(type)),
       clip: new ClipStore({ lengthBeats: this.lengthBeats }),
+      effects: [],
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -160,6 +175,58 @@ export class ProjectStore {
     this.emit();
   }
 
+  // --- effect chain ---------------------------------------------------------
+  addEffect(trackId: string, type: string, id?: string): EffectInstance | undefined {
+    const track = this.getTrack(trackId);
+    if (!track) return undefined;
+    const fxType = type in EFFECT_CATALOG ? type : DEFAULT_EFFECT;
+    if (id) {
+      const existing = track.effects.find((fx) => fx.id === id);
+      if (existing) return existing;
+    }
+    const effect: EffectInstance = {
+      id: id ?? this.nextEffectId(),
+      type: fxType,
+      bypassed: false,
+      params: new ParamStore(effectSchema(fxType)),
+    };
+    track.effects.push(effect);
+    this.emit();
+    return effect;
+  }
+
+  removeEffect(trackId: string, effectId: string): void {
+    const track = this.getTrack(trackId);
+    if (!track) return;
+    const idx = track.effects.findIndex((fx) => fx.id === effectId);
+    if (idx === -1) return;
+    track.effects.splice(idx, 1);
+    this.emit();
+  }
+
+  moveEffect(trackId: string, effectId: string, toIndex: number): void {
+    const track = this.getTrack(trackId);
+    if (!track) return;
+    const from = track.effects.findIndex((fx) => fx.id === effectId);
+    if (from === -1) return;
+    const to = clamp(toIndex, 0, track.effects.length - 1);
+    if (to === from) return;
+    const [fx] = track.effects.splice(from, 1);
+    track.effects.splice(to, 0, fx);
+    this.emit();
+  }
+
+  setEffectBypass(trackId: string, effectId: string, bypassed: boolean): void {
+    const fx = this.getTrack(trackId)?.effects.find((e) => e.id === effectId);
+    if (!fx || fx.bypassed === bypassed) return;
+    fx.bypassed = bypassed;
+    this.emit();
+  }
+
+  getEffect(trackId: string, effectId: string): EffectInstance | undefined {
+    return this.getTrack(trackId)?.effects.find((fx) => fx.id === effectId);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -176,6 +243,12 @@ export class ProjectStore {
         volume: t.volume,
         params: t.params.snapshot(),
         clip: t.clip.snapshot(),
+        effects: t.effects.map((fx) => ({
+          id: fx.id,
+          type: fx.type,
+          bypassed: fx.bypassed,
+          params: fx.params.snapshot(),
+        })),
       })),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
@@ -196,6 +269,11 @@ export class ProjectStore {
         return store;
       })(),
       clip: new ClipStore(t.clip ?? { lengthBeats: data.lengthBeats ?? 16 }),
+      effects: (t.effects ?? []).map((fx) => {
+        const store = new ParamStore(effectSchema(fx.type));
+        if (fx.params) store.load(fx.params);
+        return { id: fx.id, type: fx.type, bypassed: fx.bypassed ?? false, params: store };
+      }),
     }));
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;

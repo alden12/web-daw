@@ -13,7 +13,8 @@ export type BrowserToServer =
   | { type: 'projectSnapshot'; project: ProjectData }
   | { type: 'projectStructure'; project: ProjectData }
   | { type: 'paramChanged'; trackId: string; id: string; value: ParamValue }
-  | { type: 'clipSnapshot'; trackId: string; clip: ClipData };
+  | { type: 'clipSnapshot'; trackId: string; clip: ClipData }
+  | { type: 'effectParamChanged'; trackId: string; effectId: string; id: string; value: ParamValue };
 
 /** Sent by the server to the browser tab (commands). */
 export type ServerToBrowser =
@@ -24,6 +25,12 @@ export type ServerToBrowser =
   | { type: 'setTrack'; trackId: string; muted?: boolean; volume?: number; name?: string }
   // Parameters
   | { type: 'setParam'; trackId: string; id: string; value: ParamValue }
+  // Effect chain (effect id assigned by the creator so both ends agree)
+  | { type: 'addEffect'; trackId: string; effectType: string; id: string }
+  | { type: 'removeEffect'; trackId: string; effectId: string }
+  | { type: 'moveEffect'; trackId: string; effectId: string; toIndex: number }
+  | { type: 'bypassEffect'; trackId: string; effectId: string; bypassed: boolean }
+  | { type: 'setEffectParam'; trackId: string; effectId: string; id: string; value: ParamValue }
   // Clip editing
   | { type: 'addNote'; trackId: string; note: NoteEvent }
   | { type: 'removeNote'; trackId: string; id: string }

@@ -9,7 +9,6 @@ import type { ParamStore } from '../params/store';
 import { BaseInstrument } from './BaseInstrument';
 import type { VoiceHandle } from './types';
 import { midiToFreq, type ParamBinding } from './binding';
-import { fmSchema } from './catalog';
 
 export class FmInstrument extends BaseInstrument {
   private ratio = 2;
@@ -17,7 +16,7 @@ export class FmInstrument extends BaseInstrument {
 
   constructor(ctx: AudioContext, store: ParamStore) {
     super(ctx, store);
-    this.init(fmSchema);
+    this.init();
   }
 
   protected buildGraph(): void {

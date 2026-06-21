@@ -171,4 +171,66 @@ describe('MCP server (tracks)', () => {
     expect(bad.isError).toBe(true);
     expect((await call('note_off', { midi: 60 })).isError).toBeFalsy();
   });
+
+  it('add_effect (default selected track) forwards and appears in list_effects', async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack('subtractive');
+
+    const res = await call('add_effect', { effect: 'reverb' });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes('addEffect'));
+    const added = messages.find((m) => (m as { type: string }).type === 'addEffect') as {
+      trackId: string;
+      effectType: string;
+      id: string;
+    };
+    expect(added.trackId).toBe(trackId);
+    expect(added.effectType).toBe('reverb');
+
+    const list = parse(await call('list_effects'));
+    expect(list.effects).toHaveLength(1);
+    expect(list.effects[0].type).toBe('reverb');
+    expect(list.available.map((e: { id: string }) => e.id).sort()).toEqual(['delay', 'distortion', 'filter', 'reverb']);
+  });
+
+  it('rejects an unknown effect type', async () => {
+    await connectTab();
+    await makeTrack('subtractive');
+    expect((await call('add_effect', { effect: 'bogus' })).isError).toBe(true);
+  });
+
+  it('set_effect_parameter forwards with track + effect id and validates', async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack('subtractive');
+    await call('add_effect', { effect: 'reverb' });
+    const effectId = parse(await call('list_effects')).effects[0].id as string;
+
+    const okRes = await call('set_effect_parameter', { effect_id: effectId, id: 'mix', value: 0.5 });
+    expect(okRes.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes('setEffectParam'));
+    expect(messages).toContainEqual({ type: 'setEffectParam', trackId, effectId, id: 'mix', value: 0.5 });
+
+    expect((await call('set_effect_parameter', { effect_id: effectId, id: 'mix', value: 9 })).isError).toBe(true);
+    expect((await call('set_effect_parameter', { effect_id: effectId, id: 'nope', value: 1 })).isError).toBe(true);
+    expect((await call('set_effect_parameter', { effect_id: 'fx-nope', id: 'mix', value: 0.5 })).isError).toBe(true);
+  });
+
+  it('bypass / move / remove effect forward and update list_effects', async () => {
+    const messages = await connectTab();
+    await makeTrack('subtractive');
+    await call('add_effect', { effect: 'delay' });
+    await call('add_effect', { effect: 'reverb' });
+    let list = parse(await call('list_effects'));
+    const [delayId, reverbId] = list.effects.map((e: { id: string }) => e.id);
+
+    await call('move_effect', { effect_id: reverbId, to_index: 0 });
+    await call('bypass_effect', { effect_id: delayId, bypassed: true });
+    await call('remove_effect', { effect_id: reverbId });
+    await waitFor(() => typesOf(messages).includes('removeEffect'));
+
+    list = parse(await call('list_effects'));
+    expect(list.effects).toHaveLength(1);
+    expect(list.effects[0].id).toBe(delayId);
+    expect(list.effects[0].bypassed).toBe(true);
+  });
 });

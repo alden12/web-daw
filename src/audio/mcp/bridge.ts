@@ -62,6 +62,21 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
       case 'setParam':
         projectStore.getTrack(msg.trackId)?.params.set(msg.id, msg.value);
         break;
+      case 'addEffect':
+        projectStore.addEffect(msg.trackId, msg.effectType, msg.id);
+        break;
+      case 'removeEffect':
+        projectStore.removeEffect(msg.trackId, msg.effectId);
+        break;
+      case 'moveEffect':
+        projectStore.moveEffect(msg.trackId, msg.effectId, msg.toIndex);
+        break;
+      case 'bypassEffect':
+        projectStore.setEffectBypass(msg.trackId, msg.effectId, msg.bypassed);
+        break;
+      case 'setEffectParam':
+        projectStore.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value);
+        break;
       case 'addNote':
         projectStore.getTrack(msg.trackId)?.clip.putNote(msg.note);
         break;
@@ -96,6 +111,11 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     trackUnsubs = projectStore.getTracks().flatMap((t) => [
       t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
       t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
+      ...t.effects.map((fx) =>
+        fx.params.subscribe((id, value) =>
+          send({ type: 'effectParamChanged', trackId: t.id, effectId: fx.id, id, value }),
+        ),
+      ),
     ]);
   };
 

@@ -6,9 +6,8 @@
  * noteOn/noteOff/playNote/allNotesOff.
  */
 import type { ParamStore } from '../params/store';
-import type { NumberSpec, ParamSchema } from '../params/types';
 import type { Instrument, VoiceHandle } from './types';
-import { rampParam, type ParamBinding } from './binding';
+import { bindParams, rampParam, type ParamBinding } from './binding';
 
 export abstract class BaseInstrument implements Instrument {
   protected readonly ctx: AudioContext;
@@ -22,7 +21,6 @@ export abstract class BaseInstrument implements Instrument {
   protected readonly env = { attackMs: 5, releaseMs: 200 };
 
   private unsubscribe: (() => void) | null = null;
-  private bindings: Record<string, ParamBinding> = {};
 
   constructor(ctx: AudioContext, store: ParamStore) {
     this.ctx = ctx;
@@ -36,11 +34,9 @@ export abstract class BaseInstrument implements Instrument {
    * calling buildGraph/buildBindings from the base constructor would see - and
    * then have clobbered - undefined subclass fields under useDefineForClassFields.)
    */
-  protected init(schema: ParamSchema): void {
+  protected init(): void {
     this.buildGraph();
-    this.bindings = this.buildBindings();
-    for (const spec of schema) this.applyParam(spec.id);
-    this.unsubscribe = this.store.subscribe((id) => this.applyParam(id));
+    this.unsubscribe = bindParams(this.store, this.buildBindings());
   }
 
   /** Build any shared nodes that feed `output` (e.g. a filter). */
@@ -62,14 +58,6 @@ export abstract class BaseInstrument implements Instrument {
   /** Currently sounding voices (for subclasses that poke live voices). */
   protected get voices(): Iterable<VoiceHandle> {
     return this.active;
-  }
-
-  private applyParam(id: string): void {
-    const binding = this.bindings[id];
-    if (!binding) return;
-    const spec = this.store.spec(id);
-    const smoothMs = spec.kind === 'number' ? (spec as NumberSpec).smoothMs : undefined;
-    binding.apply(this.store.get(id), smoothMs);
   }
 
   private startVoice(voice: VoiceHandle, velocity: number, when: number): void {
