@@ -27,6 +27,8 @@ const COALESCABLE = new Set<EditCommand['type']>([
   'setGroup',
   'setAudioClip',
   'setTempo',
+  'setLength',
+  'editNotes',
 ]);
 
 /** Identity of a command's edit target, so successive edits to it can coalesce. */
@@ -44,6 +46,12 @@ function coalesceKey(c: EditCommand): string {
       return `setAudioClip:${c.trackId}`;
     case 'setTempo':
       return 'setTempo';
+    case 'setLength':
+      return 'setLength';
+    // Coalesce a continuous drag of a stable selection into one entry; a new
+    // gesture (different note set) gets a fresh key, so it starts a new edit.
+    case 'editNotes':
+      return `editNotes:${c.trackId}:${c.notes.map((n) => n.id).sort().join(',')}`;
     default:
       return c.type;
   }

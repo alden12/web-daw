@@ -25,6 +25,8 @@ import type { ProjectData, TrackMeta, GroupMeta, AudioClip, VariantData, Variant
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
+const MIN_LENGTH = 1; // beats
+const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 /** Default group family imported/recorded audio is filed into (the librarian). */
 const AUDIO_FAMILY = 'Audio';
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -436,6 +438,19 @@ export class ProjectStore {
     const next = clamp(bpm, MIN_BPM, MAX_BPM);
     if (next === this.tempoBpm) return;
     this.tempoBpm = next;
+    this.emit();
+  }
+
+  /**
+   * Set the project loop length (beats). Single-loop model: the scheduler loops
+   * on this, and each instrument track's active clip is kept the same length (so
+   * the piano-roll grid and playback agree, and notes past the end are clamped).
+   */
+  setLength(beats: number): void {
+    const next = clamp(beats, MIN_LENGTH, MAX_LENGTH);
+    if (next === this.lengthBeats) return;
+    this.lengthBeats = next;
+    for (const t of this.tracks) if (t.kind === 'instrument') t.clip.setLength(next);
     this.emit();
   }
 

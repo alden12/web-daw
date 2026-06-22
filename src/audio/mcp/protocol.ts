@@ -39,9 +39,14 @@ export type ServerToBrowser =
   | { type: 'moveEffect'; hostId: string; effectId: string; toIndex: number }
   | { type: 'bypassEffect'; hostId: string; effectId: string; bypassed: boolean }
   | { type: 'setEffectParam'; hostId: string; effectId: string; id: string; value: ParamValue }
-  // Clip editing
+  // Clip editing. Plural forms (addNotes / editNotes / removeNotes) are one
+  // atomic edit each - one feed entry and one undo step - so writing a part, a
+  // multi-note drag, or a multi-delete don't flood the history.
   | { type: 'addNote'; trackId: string; note: NoteEvent }
+  | { type: 'addNotes'; trackId: string; notes: NoteEvent[] }
+  | { type: 'editNotes'; trackId: string; notes: NoteEvent[] }
   | { type: 'removeNote'; trackId: string; id: string }
+  | { type: 'removeNotes'; trackId: string; ids: string[] }
   | { type: 'clearClip'; trackId: string }
   // Clip variants (instrument tracks; each bundles notes + params + effects)
   | { type: 'addVariant'; trackId: string; id: string; name?: string; fromVariantId?: string }
@@ -54,6 +59,7 @@ export type ServerToBrowser =
   | { type: 'allNotesOff' }
   // Transport (project-level)
   | { type: 'setTempo'; bpm: number }
+  | { type: 'setLength'; lengthBeats: number }
   | { type: 'transport'; action: 'play' | 'stop' };
 
 export const DEFAULT_WS_PORT = 8765;

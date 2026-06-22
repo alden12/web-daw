@@ -55,9 +55,23 @@ const APPLY: ApplyMap = {
     const t = p.getTrack(c.trackId);
     if (t?.kind === 'instrument') t.clip.putNote(c.note);
   },
+  // addNotes / editNotes both insert-or-replace by id (putNote): a new id adds,
+  // an existing id moves/resizes/re-velocities in place. One call, one edit.
+  addNotes: (p, c) => {
+    const t = p.getTrack(c.trackId);
+    if (t?.kind === 'instrument') for (const n of c.notes) t.clip.putNote(n);
+  },
+  editNotes: (p, c) => {
+    const t = p.getTrack(c.trackId);
+    if (t?.kind === 'instrument') for (const n of c.notes) t.clip.putNote(n);
+  },
   removeNote: (p, c) => {
     const t = p.getTrack(c.trackId);
     if (t?.kind === 'instrument') t.clip.removeNote(c.id);
+  },
+  removeNotes: (p, c) => {
+    const t = p.getTrack(c.trackId);
+    if (t?.kind === 'instrument') for (const id of c.ids) t.clip.removeNote(id);
   },
   clearClip: (p, c) => {
     const t = p.getTrack(c.trackId);
@@ -70,6 +84,7 @@ const APPLY: ApplyMap = {
   removeVariant: (p, c) => p.removeVariant(c.trackId, c.variantId),
   renameVariant: (p, c) => p.renameVariant(c.trackId, c.variantId, c.name),
   setTempo: (p, c) => p.setTempo(c.bpm),
+  setLength: (p, c) => p.setLength(c.lengthBeats),
 };
 
 export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {
