@@ -207,9 +207,20 @@ interchangeable:
 - **Claude Code over MCP** (today's setup) - keep it. Perfect for the developer/tinkerer
   audience driving the same tools from a terminal or scripts.
 
-So: own in-app agent **and** the MCP server, sharing one tool/store layer. The thin server
-proxies the Claude API key for the in-app agent. We do not build a bespoke agent from
-scratch; we reuse the tools and let the Claude API reason, on the latest models.
+So: own in-app agent **and** the MCP server, sharing one tool/store layer. We do not build a
+bespoke agent from scratch; we reuse the tools and let the model reason, on the latest models.
+Concretely: the agent **loop runs client-side** - tool calls execute in the browser through
+the same `dispatch` seam (authored `claude`, coral in the feed) - and **one shared tool
+catalog** (zod -> JSON Schema) feeds both the MCP server and the panel. The thin server is
+only a **key-proxy**: keep it **provider-agnostic** (an OpenAI-compatible base URL + model, so
+a free tier or a local model can drive tests; default Claude Sonnet), and keep the key
+**server-side only** - spend-capped, never `VITE_`-inlined into the client, with auth +
+rate-limiting before any non-localhost deploy. The agent reasons on symbolic data and cannot
+hear its output; **audio-analysis tools** give it "ears" (see the roadmap).
+
+Note: Claude Code / Claude Desktop over MCP already gives a capable agent on your existing
+subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
+general "just open the app" user.
 
 ## 10. Proposed on-disk project format (the concrete next step)
 
@@ -328,6 +339,29 @@ below is grouped into themed slices; within a theme, order is rough.
   instrument catalog and the slice-8 audio-clip storage.
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
+- **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
+  **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
+  automation, and persistence come for free (the catalog/registry are already the extension
+  point, game-engine style) - plus generative **scripts** over the `dispatch` API, alongside
+  the in-app file viewer (section 8). Pairs with the shareable/community device format; running
+  user code needs **sandboxing + a trust model** (resource limits, Worker/iframe isolation,
+  capability-limited APIs) before any sharing, and the agent can author components too. Builds
+  on the "custom-DSP-via-worklet" note in section 10; the fullest workflow wants the Tauri
+  shell + local-first files (sections 8, 10).
+
+**Agent**
+
+- **In-app agent panel** (section 9): an embedded chat driving the model via the client-side
+  tool loop + thin, provider-agnostic key-proxy described in section 9. Reuses the one shared
+  tool catalog (zod -> JSON Schema); edits land authored `claude` (coral) through the existing
+  `dispatch` seam. Claude Code / Desktop over MCP already covers this for the tinkerer at no
+  per-token cost; the panel adds the embedded UX and the general "just open the app" user.
+- **Agent "ears" (audio analysis).** The agent reasons on symbolic data and cannot hear the
+  output. Render offline (`OfflineAudioContext`) and expose **analysis tools** that mirror the
+  `list_*` reads: objective DSP first (loudness / LUFS, spectral balance / masking, clipping -
+  e.g. Meyda), then MIR (key / BPM / onset via essentia.js), then perceptual/semantic (CLAP or
+  an audio-tagging model, or a multimodal model as a `describe_sound` tool). Closes the
+  perception loop for mixing/arrangement; human auditioning still decides taste.
 
 **Platform & form factor**
 
@@ -341,8 +375,8 @@ below is grouped into themed slices; within a theme, order is rough.
   pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
   (Converse/Produce) maps naturally onto how much screen the agent takes.
 
-**Longer horizon:** automation lanes (section 5); in-app agent (section 9); sharing /
-collaboration; Tauri desktop shell (also the home for native low-latency monitoring).
+**Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
+shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
