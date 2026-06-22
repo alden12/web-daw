@@ -85,6 +85,7 @@ const APPLY: ApplyMap = {
   renameVariant: (p, c) => p.renameVariant(c.trackId, c.variantId, c.name),
   setTempo: (p, c) => p.setTempo(c.bpm),
   setLength: (p, c) => p.setLength(c.lengthBeats),
+  setLoopStart: (p, c) => p.setLoopStart(c.beats),
 };
 
 export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {

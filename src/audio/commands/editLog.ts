@@ -28,6 +28,7 @@ const COALESCABLE = new Set<EditCommand['type']>([
   'setAudioClip',
   'setTempo',
   'setLength',
+  'setLoopStart',
   'editNotes',
 ]);
 
@@ -48,6 +49,8 @@ function coalesceKey(c: EditCommand): string {
       return 'setTempo';
     case 'setLength':
       return 'setLength';
+    case 'setLoopStart':
+      return 'setLoopStart';
     // Coalesce a continuous drag of a stable selection into one entry; a new
     // gesture (different note set) gets a fresh key, so it starts a new edit.
     case 'editNotes':

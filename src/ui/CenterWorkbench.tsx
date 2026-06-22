@@ -5,6 +5,7 @@
  * For an audio track, an audio-clip panel takes the place of the instrument +
  * piano roll; the effect chain is shared (audio tracks have inserts too).
  */
+import { useRef } from 'react';
 import type { ProjectStore, Track, AudioTrack } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import type { Dispatch } from '../audio/commands/types';
@@ -12,6 +13,8 @@ import { InstrumentPanel } from './InstrumentPanel';
 import { EffectChain } from './EffectChain';
 import { PianoRoll } from './PianoRoll';
 import { VariantStrip } from './VariantStrip';
+import { ResizeHandle } from './ResizeHandle';
+import { usePersistentNumber } from './usePersistent';
 
 function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Dispatch }) {
   const clip = track.audioClip;
@@ -75,6 +78,10 @@ export function CenterWorkbench({
   dispatch: Dispatch;
   selectedTrack: Track | undefined;
 }) {
+  // The instrument+effects rack is a resizable, wrapping panel above the roll.
+  const [deviceH, setDeviceH] = usePersistentNumber('web-daw:devices-height', 168, 80, 620);
+  const deviceRef = useRef<HTMLDivElement>(null);
+
   if (!selectedTrack) {
     return (
       <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -95,27 +102,41 @@ export function CenterWorkbench({
         <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
       </div>
 
-      {selectedTrack.kind === 'instrument' && (
-        <VariantStrip projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
-      )}
-
-      <div className="shrink-0 border-b border-line overflow-x-auto" key={`${selectedTrack.id}:dev`}>
-        <div className="flex items-stretch gap-2 p-3 min-w-max">
-          {selectedTrack.kind === 'instrument' && (
-            <InstrumentPanel
-              params={selectedTrack.params}
-              instrumentType={selectedTrack.instrumentType}
-              trackId={selectedTrack.id}
-              dispatch={dispatch}
-            />
-          )}
-          <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+      {/* device rack: fixed (resizable) height, wraps to fill the width */}
+      <div ref={deviceRef} className="relative shrink-0 flex flex-col border-b border-line" style={{ height: deviceH }} key={`${selectedTrack.id}:dev`}>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex flex-wrap items-stretch gap-2 p-3">
+            {selectedTrack.kind === 'instrument' && (
+              <InstrumentPanel
+                params={selectedTrack.params}
+                instrumentType={selectedTrack.instrumentType}
+                trackId={selectedTrack.id}
+                dispatch={dispatch}
+              />
+            )}
+            <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+          </div>
         </div>
+        <ResizeHandle
+          ariaLabel="Resize devices"
+          orientation="horizontal"
+          onResize={(y) => setDeviceH(y - (deviceRef.current?.getBoundingClientRect().top ?? 0))}
+          style={{ left: 0, right: 0, bottom: 0 }}
+        />
       </div>
 
       {selectedTrack.kind === 'instrument' ? (
-        <div className="flex-1 min-h-0 p-3" key={`${selectedTrack.id}:roll`}>
-          <PianoRoll clipStore={selectedTrack.clip} scheduler={scheduler} trackId={selectedTrack.id} dispatch={dispatch} />
+        <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:roll`}>
+          <VariantStrip projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} orientation="vertical" />
+          <div className="flex-1 min-w-0 min-h-0 p-3">
+            <PianoRoll
+              clipStore={selectedTrack.clip}
+              projectStore={projectStore}
+              scheduler={scheduler}
+              trackId={selectedTrack.id}
+              dispatch={dispatch}
+            />
+          </div>
         </div>
       ) : (
         <AudioClipPanel track={selectedTrack} dispatch={dispatch} key={`${selectedTrack.id}:audio`} />

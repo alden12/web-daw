@@ -60,6 +60,7 @@ export type ServerToBrowser =
   // Transport (project-level)
   | { type: 'setTempo'; bpm: number }
   | { type: 'setLength'; lengthBeats: number }
+  | { type: 'setLoopStart'; beats: number }
   | { type: 'transport'; action: 'play' | 'stop' };
 
 export const DEFAULT_WS_PORT = 8765;

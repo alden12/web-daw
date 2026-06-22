@@ -815,6 +815,20 @@ export function createDawMcp(
     },
   );
 
+  server.registerTool(
+    'set_loop_start',
+    {
+      title: 'Set loop start',
+      description: 'Set the loop start in beats; playback loops the region [start, loop length]. 0 loops from the top.',
+      inputSchema: { beats: z.number().min(0).max(256) },
+    },
+    async ({ beats }) => {
+      if (!sendToTab({ type: 'setLoopStart', beats })) return fail('No DAW tab connected.');
+      mirror.setLoopStart(beats);
+      return ok(`Loop start set to ${beats} beats.`);
+    },
+  );
+
   server.registerTool('play', { title: 'Play', description: 'Start playback (loops all tracks).' }, async () =>
     sendToTab({ type: 'transport', action: 'play' }) ? ok('Playing.') : fail('No DAW tab connected.'),
   );

@@ -280,7 +280,12 @@ a draggable loop-length handle; new plural clip commands (`addNotes`/`editNotes`
 make each gesture one feed entry and one undo step - and fix the `add_notes` history spam - and
 a project-level `setLength`; the shared `beats<->px` ruler/zoom primitive
 (`src/ui/timeline/`) is built here for the arrangement timeline to reuse - first of three
-"real DAW" pieces).
+"real DAW" pieces. A second commit adds polish: a real **loop region** [loopStart, loopEnd]
+that the scheduler loops (project `loopStart` + `setLoopStart`, two ruler handles, grid drawn
+past the end to scroll/expand into), fit-notes-to-window on track load, pinch / Cmd-scroll /
+Shift-scroll zoom, narrower velocity bars + a resizable velocity lane, deselect on Escape /
+click-outside, and a workbench relayout - variants moved to a left rail beside the roll, with a
+resizable device|roll divider and a wrapping instrument/effects rack).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
 **authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
@@ -303,9 +308,13 @@ below is grouped into themed slices; within a theme, order is rough.
   zoom, a bar/beat ruler, and a draggable loop-length handle (project-level `setLength`). Plural
   clip commands (`addNotes`/`editNotes`/`removeNotes`) make each gesture one feed entry + one
   undo step (and fixed the per-note `add_notes` history spam); they extend the MCP vocabulary
-  too (`edit_notes`/`remove_notes`/`set_length`). The shared **beats<->px + zoom + ruler**
-  primitive (`src/ui/timeline/`) is in place for the arrangement timeline to reuse. *Musical
-  editing follow-ups below (quantize/groove, project key) still pending.*
+  too (`edit_notes`/`remove_notes`/`set_length`/`set_loop_start`). The shared **beats<->px +
+  zoom + ruler** primitive (`src/ui/timeline/`) is in place for the arrangement timeline to
+  reuse. A polish pass added a real **loop region** [loopStart, loopEnd] the scheduler loops
+  (two ruler handles; grid drawn past the end), fit-to-window on load, pinch / modifier-scroll
+  zoom, a resizable velocity lane, deselect on Escape / click-out, and a workbench relayout
+  (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
+  follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it.
 - **Timeline & arrangement interactions (the third "real DAW" piece - depends on the

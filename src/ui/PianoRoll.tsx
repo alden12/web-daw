@@ -1,23 +1,30 @@
 /**
  * The piano roll: a pitch x time grid for editing a clip with the mouse, plus a
- * bar/beat ruler (with a draggable loop handle), a velocity lane, and zoom.
+ * bar/beat ruler (with draggable loop-start / loop-end handles), a velocity lane,
+ * and zoom.
  *
  * Interaction model (single tool, modifier-driven, like a real DAW):
  * - click empty cell -> add a note; click a note -> select it (shift toggles).
  * - drag a note body -> move; drag its right edge -> resize; drag on empty -> marquee.
- * - Delete removes the selection; Cmd/Ctrl C/X/V copy / cut / paste; Cmd/Ctrl-A all.
- * - the velocity lane: drag a bar to set velocity (all selected move together).
+ * - Delete removes the selection; Escape / click-outside deselects.
+ * - Cmd/Ctrl C/X/V copy / cut / paste; Cmd/Ctrl-A all.
+ * - the velocity lane: drag a bar to set velocity (all selected move together); drag
+ *   its top edge to resize the lane.
+ * - wheel zooms: ctrl/pinch = both axes, Cmd = vertical, Shift = horizontal (cursor-
+ *   anchored); plain wheel scrolls.
  *
  * Every multi-note gesture commits through ONE plural command (`editNotes` /
  * `addNotes` / `removeNotes`), so a drag is one undo step and one feed entry. The
- * geometry comes from the shared `timeGrid` helpers, so the arrangement timeline
- * can reuse the same beats<->px mapping later.
+ * loop region [loopStart, loopEnd] is project-level (the scheduler loops it); the
+ * grid is drawn past the loop end so you can scroll there and drag the end out.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ClipStore } from '../audio/sequencer/clipStore';
+import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import { GRID, type NoteEvent } from '../audio/sequencer/types';
 import { useClip } from '../audio/sequencer/useClip';
+import { useProject } from '../audio/project/useProject';
 import type { Dispatch } from '../audio/commands/types';
 import { newNoteId } from '../audio/commands/ids';
 import { usePersistentBoolean, usePersistentNumber } from './usePersistent';
@@ -27,9 +34,14 @@ import { beatToX, floorBeat, snapBeat, xToBeat } from './timeline/timeGrid';
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
 const ROWS = MAX_PITCH - MIN_PITCH + 1;
-const VEL_LANE_H = 56; // px
 const RESIZE_PX = 6; // grab zone on a note's right edge
 const DRAG_THRESH = 4; // px before an empty-grid press becomes a marquee
+const TRAIL_BEATS = 8; // empty grid drawn past the loop end (room to expand into)
+const VEL_BAR_W = 4; // px - a slim velocity marker per note
+
+const ZOOM_X = { min: 24, max: 240 };
+const ZOOM_Y = { min: 7, max: 28 };
+const VEL = { min: 24, max: 160 };
 
 const SNAP_OPTIONS = [
   { label: '1/4', value: 1 },
@@ -49,34 +61,43 @@ type Drag =
 
 export function PianoRoll({
   clipStore,
+  projectStore,
   scheduler,
   trackId,
   dispatch,
 }: {
   clipStore: ClipStore;
+  projectStore: ProjectStore;
   scheduler: Scheduler;
   trackId: string;
   dispatch: Dispatch;
 }) {
   const clip = useClip(clipStore);
-  const len = clip.lengthBeats;
+  const project = useProject(projectStore);
+  const loopStart = project.loopStart;
+  const loopEnd = project.lengthBeats; // loop end; the clip is kept in sync with it
+  const len = loopEnd; // notes live within [0, loopEnd]
+  const viewBeats = loopEnd + TRAIL_BEATS;
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber('web-daw:roll-zoom-x', 64, 24, 240);
-  const [rowH, setRowH] = usePersistentNumber('web-daw:roll-zoom-y', 12, 7, 28);
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber('web-daw:roll-zoom-x', 64, ZOOM_X.min, ZOOM_X.max);
+  const [rowH, setRowH] = usePersistentNumber('web-daw:roll-zoom-y', 12, ZOOM_Y.min, ZOOM_Y.max);
   const [snapDiv, setSnapDiv] = usePersistentNumber('web-daw:roll-snap-div', 0.25, 0.25, 1);
   const [snapOn, setSnapOn] = usePersistentBoolean('web-daw:roll-snap-on', true);
+  const [velH, setVelH] = usePersistentNumber('web-daw:roll-vel-height', 56, VEL.min, VEL.max);
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const clipboard = useRef<{ relStart: number; pitch: number; length: number; velocity: number }[]>([]);
   const lastLen = useRef(1);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const velRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
 
-  const width = beatToX(len, pxPerBeat);
+  const width = beatToX(viewBeats, pxPerBeat);
   const height = ROWS * rowH;
   const cellW = pxPerBeat * snapDiv;
 
@@ -89,22 +110,75 @@ export function PianoRoll({
   const beatAt = (clientX: number) => xToBeat(clientX - (gridRef.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const pitchAt = (clientY: number) => MAX_PITCH - Math.floor((clientY - (gridRef.current?.getBoundingClientRect().top ?? 0)) / rowH);
 
-  // Drive the playhead off the audio clock.
+  // Fit the clip's notes into view on first load of this track (the component
+  // remounts per track, so this runs once each time). Scrolls only - zoom is the
+  // user's. Empty clip -> center on middle C.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const notes = clipStore.getClip().notes;
+    const pitches = notes.map((n) => n.pitch);
+    const hi = pitches.length ? Math.max(...pitches) : 64;
+    const lo = pitches.length ? Math.min(...pitches) : 57; // frame around C4
+    const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
+    requestAnimationFrame(() => {
+      el.scrollTop = clamp(centerRow * rowH + rowH / 2 - el.clientHeight / 2, 0, height - el.clientHeight);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cursor-anchored wheel zoom (non-passive, so we can preventDefault).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return; // plain wheel = scroll
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      if (e.metaKey && !e.ctrlKey) {
+        setRowH(rowH * factor);
+        return;
+      }
+      // ctrl (pinch) zooms both axes; shift zooms horizontal only.
+      if (e.ctrlKey) setRowH(rowH * factor);
+      const rect = el.getBoundingClientRect();
+      const contentX = e.clientX - rect.left + el.scrollLeft;
+      const beatAtCursor = contentX / pxPerBeat;
+      const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
+      setPxPerBeat(next);
+      requestAnimationFrame(() => {
+        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left);
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [pxPerBeat, rowH, setPxPerBeat, setRowH]);
+
+  // Drive the playhead off the audio clock (already wrapped to the loop region).
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       const el = playheadRef.current;
       if (el) {
-        el.style.transform = `translateX(${beatToX(scheduler.getPositionBeats() % len, pxPerBeat)}px)`;
+        el.style.transform = `translateX(${beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
         el.style.opacity = scheduler.isPlaying ? '1' : '0';
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [scheduler, len, pxPerBeat]);
+  }, [scheduler, pxPerBeat]);
 
-  // Keyboard: delete / copy / cut / paste / select-all, unless typing in a field.
+  // Click outside the roll deselects.
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setSelection(new Set());
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, []);
+
+  // Keyboard: delete / deselect / copy / cut / paste / select-all, unless typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -112,7 +186,9 @@ export function PianoRoll({
       const mod = e.metaKey || e.ctrlKey;
       const ids = [...selection];
 
-      if ((e.key === 'Delete' || e.key === 'Backspace') && ids.length) {
+      if (e.key === 'Escape' && ids.length) {
+        setSelection(new Set());
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && ids.length) {
         e.preventDefault();
         dispatch({ type: 'removeNotes', trackId, ids });
         setSelection(new Set());
@@ -130,7 +206,7 @@ export function PianoRoll({
         }
       } else if (mod && e.key === 'v' && clipboard.current.length) {
         e.preventDefault();
-        const at = snapB(scheduler.getPositionBeats() % len);
+        const at = snapB(scheduler.getPositionBeats());
         const notes: NoteEvent[] = clipboard.current.map((c) => ({
           id: newNoteId(),
           pitch: clampPitch(c.pitch),
@@ -239,12 +315,13 @@ export function PianoRoll({
       if (!d || (d.kind !== 'empty' && d.kind !== 'marquee')) return;
       if (d.moved || d.additive) return; // dragged (marquee), or shift-click: keep selection
       const pitch = MAX_PITCH - Math.floor(downY / rowH);
-      if (pitch < MIN_PITCH || pitch > MAX_PITCH) {
-        setSelection(new Set());
+      const beat = xToBeat(downX, pxPerBeat);
+      if (pitch < MIN_PITCH || pitch > MAX_PITCH || beat >= loopEnd) {
+        setSelection(new Set()); // outside the note range / past the loop end: just deselect
         return;
       }
       const id = newNoteId();
-      const start = clampStart(floorBeat(xToBeat(downX, pxPerBeat), snapOn ? snapDiv : GRID));
+      const start = clampStart(floorBeat(beat, snapOn ? snapDiv : GRID));
       dispatch({ type: 'addNote', trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
       setSelection(new Set([id]));
     };
@@ -263,7 +340,7 @@ export function PianoRoll({
 
     const apply = (clientY: number) => {
       const rect = velRef.current!.getBoundingClientRect();
-      const v = clamp(1 - (clientY - rect.top) / VEL_LANE_H, 0, 1);
+      const v = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
       const notes = ids.map((id) => ({ ...origin.get(id)!, velocity: v }));
       dispatch({ type: 'editNotes', trackId, notes });
     };
@@ -271,6 +348,21 @@ export function PianoRoll({
     const onMove = (ev: PointerEvent) => apply(ev.clientY);
     const onUp = () => {
       drag.current = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  // Drag the velocity lane's top edge to resize it.
+  const onVelResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startH = velH;
+    const onMove = (ev: PointerEvent) => setVelH(startH + (startY - ev.clientY));
+    const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -287,7 +379,7 @@ export function PianoRoll({
   const zoomBtn = 'font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright';
 
   return (
-    <div className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
+    <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
       {/* toolbar */}
       <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail shrink-0 text-muted">
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Piano roll</span>
@@ -324,10 +416,26 @@ export function PianoRoll({
       </div>
 
       {/* scroll area: ruler (sticky top) + grid + velocity lane (sticky bottom) */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <Ruler lengthBeats={len} pxPerBeat={pxPerBeat} onSetLength={(beats) => dispatch({ type: 'setLength', lengthBeats: beats })} />
+      <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
+        <Ruler
+          viewBeats={viewBeats}
+          loopStart={loopStart}
+          loopEnd={loopEnd}
+          pxPerBeat={pxPerBeat}
+          onSetLoopStart={(beats) => dispatch({ type: 'setLoopStart', beats })}
+          onSetLoopEnd={(beats) => dispatch({ type: 'setLength', lengthBeats: beats })}
+        />
 
         <div ref={gridRef} data-testid="piano-grid" className="relative cursor-copy" style={{ width, height, background: gridBg }} onPointerDown={onGridDown}>
+          {/* dim grid outside the loop region */}
+          {loopStart > 0 && (
+            <div className="absolute top-0 bottom-0 left-0 bg-black/25 pointer-events-none" style={{ width: beatToX(loopStart, pxPerBeat) }} />
+          )}
+          <div
+            className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
+            style={{ left: beatToX(loopEnd, pxPerBeat), width: beatToX(viewBeats - loopEnd, pxPerBeat) }}
+          />
+
           {Array.from({ length: ROWS }, (_, row) => {
             const pitch = MAX_PITCH - row;
             return (
@@ -378,23 +486,25 @@ export function PianoRoll({
         </div>
 
         {/* velocity lane */}
-        <div
-          ref={velRef}
-          className="sticky bottom-0 z-10 border-t border-line bg-rail"
-          style={{ width, height: VEL_LANE_H }}
-          title="Velocity - drag a bar"
-        >
+        <div ref={velRef} className="sticky bottom-0 z-10 border-t border-line bg-rail" style={{ width, height: velH }} title="Velocity - drag a bar">
+          {/* resize the lane by dragging its top edge */}
+          <div
+            role="separator"
+            aria-label="Resize velocity lane"
+            onPointerDown={onVelResize}
+            className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10"
+          />
           {clip.notes.map((note) => {
             const selected = selection.has(note.id);
             return (
               <div
                 key={note.id}
                 onPointerDown={(e) => onVelDown(note, e)}
-                className={`absolute bottom-0 cursor-ns-resize ${selected ? 'bg-bright' : 'bg-you/80 hover:bg-you'}`}
+                className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? 'bg-bright' : 'bg-you/80 hover:bg-you'}`}
                 style={{
                   left: beatToX(note.start, pxPerBeat),
-                  width: Math.max(3, beatToX(note.length, pxPerBeat) - 1),
-                  height: Math.max(2, note.velocity * (VEL_LANE_H - 3)),
+                  width: VEL_BAR_W,
+                  height: Math.max(2, note.velocity * (velH - 3)),
                 }}
               />
             );

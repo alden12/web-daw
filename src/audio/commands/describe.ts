@@ -53,6 +53,7 @@ const DESCRIBE: DescribeMap = {
   renameVariant: (c) => `Renamed variant to ${c.name}`,
   setTempo: (c) => `Set tempo ${c.bpm}`,
   setLength: (c) => `Set loop length ${c.lengthBeats}`,
+  setLoopStart: (c) => `Set loop start ${c.beats}`,
 };
 
 export function describeCommand(command: EditCommand): string {

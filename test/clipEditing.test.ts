@@ -98,3 +98,33 @@ describe('setLength', () => {
     expect(project.length).toBe(16); // back to the default loop length
   });
 });
+
+describe('setLoopStart', () => {
+  it('sets the loop start and is clamped inside the loop end', () => {
+    const { project, log } = setup();
+    log.dispatch({ type: 'setLoopStart', beats: 4 });
+    expect(project.loopStart).toBe(4);
+
+    // can't reach or pass the end (default end 16; leaves >= 1 beat of region)
+    log.dispatch({ type: 'setLoopStart', beats: 999 });
+    expect(project.loopStart).toBe(15);
+  });
+
+  it('shortening the loop end pulls the start back inside it', () => {
+    const { project, log } = setup();
+    log.dispatch({ type: 'setLoopStart', beats: 10 });
+    log.dispatch({ type: 'setLength', lengthBeats: 6 });
+    expect(project.loopStart).toBeLessThanOrEqual(5); // <= end - MIN_LOOP
+  });
+
+  it('coalesces a loop-start drag into one entry + one undo step', () => {
+    const { project, log } = setup();
+    log.dispatch({ type: 'setLoopStart', beats: 2 });
+    log.dispatch({ type: 'setLoopStart', beats: 3 });
+    log.dispatch({ type: 'setLoopStart', beats: 4 });
+    expect(entriesOfType(log, 'setLoopStart')).toHaveLength(1);
+    expect(project.loopStart).toBe(4);
+    log.undo();
+    expect(project.loopStart).toBe(0);
+  });
+});

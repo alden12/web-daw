@@ -27,6 +27,7 @@ const MIN_BPM = 20;
 const MAX_BPM = 300;
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
+const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
 /** Default group family imported/recorded audio is filed into (the librarian). */
 const AUDIO_FAMILY = 'Audio';
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -94,6 +95,8 @@ export interface ProjectStructure {
   tracks: TrackMeta[];
   tempoBpm: number;
   lengthBeats: number;
+  /** Loop start in beats; the playback loop region is [loopStart, lengthBeats]. */
+  loopStart: number;
   selectedTrackId: string | null;
 }
 
@@ -102,6 +105,7 @@ export class ProjectStore {
   private groups: Group[] = [];
   private tempoBpm = 120;
   private lengthBeats = 16;
+  private loopStartBeats = 0;
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: ProjectStructure;
@@ -163,6 +167,7 @@ export class ProjectStore {
       tracks: this.tracks.map((t) => this.trackMeta(t)),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
+      loopStart: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
     };
   }
@@ -199,6 +204,9 @@ export class ProjectStore {
   }
   get length(): number {
     return this.lengthBeats;
+  }
+  get loopStart(): number {
+    return this.loopStartBeats;
   }
 
   // --- groups ---------------------------------------------------------------
@@ -450,7 +458,21 @@ export class ProjectStore {
     const next = clamp(beats, MIN_LENGTH, MAX_LENGTH);
     if (next === this.lengthBeats) return;
     this.lengthBeats = next;
+    // Keep the loop start inside the new end.
+    this.loopStartBeats = clamp(this.loopStartBeats, 0, next - MIN_LOOP);
     for (const t of this.tracks) if (t.kind === 'instrument') t.clip.setLength(next);
+    this.emit();
+  }
+
+  /**
+   * Set the loop start (beats). The scheduler loops the region [loopStart, length];
+   * notes before the start stay editable, they just don't play. Clamped inside the
+   * loop end (leaving at least MIN_LOOP beats of region).
+   */
+  setLoopStart(beats: number): void {
+    const next = clamp(beats, 0, this.lengthBeats - MIN_LOOP);
+    if (next === this.loopStartBeats) return;
+    this.loopStartBeats = next;
     this.emit();
   }
 
@@ -673,6 +695,7 @@ export class ProjectStore {
       }),
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
+      loopStart: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
     };
   }
@@ -773,6 +796,7 @@ export class ProjectStore {
     }
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;
+    this.loopStartBeats = clamp(data.loopStart ?? 0, 0, this.lengthBeats - MIN_LOOP);
     this.selectedTrackId =
       data.selectedTrackId && this.getTrack(data.selectedTrackId)
         ? data.selectedTrackId
