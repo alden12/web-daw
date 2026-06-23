@@ -73,6 +73,7 @@ const APPLY: ApplyMap = {
   // Clip pool. The new clip is tagged with the dispatching author (two-voice).
   addClip: (p, c, author) =>
     void p.addClip(c.trackId, { id: c.id, name: c.name, fromClipId: c.fromClipId, empty: c.empty, lengthBeats: c.lengthBeats, author }),
+  pasteClip: (p, c, author) => p.pasteClip(c.trackId, c.id, c.content, author),
   removeClip: (p, c) => p.removeClip(c.trackId, c.clipId),
   renameClip: (p, c) => p.renameClip(c.trackId, c.clipId, c.name),
   // Arrangement placements.
@@ -82,6 +83,9 @@ const APPLY: ApplyMap = {
   resizePlacement: (p, c) => p.resizePlacement(c.trackId, c.placementId, { offset: c.offset, length: c.length }),
   removePlacement: (p, c) => p.removePlacement(c.trackId, c.placementId),
   splitPlacement: (p, c) => p.splitPlacement(c.trackId, c.placementId, c.atBeat, c.newId),
+  // Clip launching (override the arrangement with a looping clip).
+  launchClip: (p, c) => p.launchClip(c.trackId, c.clipId),
+  stopAllClips: (p) => p.stopAllClips(),
   setTempo: (p, c) => p.setTempo(c.bpm),
   setLength: (p, c) => p.setLength(c.lengthBeats),
   setLoopStart: (p, c) => p.setLoopStart(c.beats),

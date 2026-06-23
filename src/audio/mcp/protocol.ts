@@ -8,7 +8,7 @@
  */
 import type { ParamValue } from '../params/types';
 import type { ClipData, NoteEvent } from '../sequencer/types';
-import type { ProjectData } from '../project/types';
+import type { ClipContent, ProjectData } from '../project/types';
 
 /** Sent by the browser tab to the server (state sync). */
 export type BrowserToServer =
@@ -52,6 +52,7 @@ export type ServerToBrowser =
   | { type: 'setClipLength'; trackId: string; clipId?: string; lengthBeats: number }
   // Clip pool (note patterns / launchable slots)
   | { type: 'addClip'; trackId: string; id: string; name?: string; fromClipId?: string; empty?: boolean; lengthBeats?: number }
+  | { type: 'pasteClip'; trackId: string; id: string; content: ClipContent }
   | { type: 'selectClip'; trackId: string; clipId: string }
   | { type: 'removeClip'; trackId: string; clipId: string }
   | { type: 'renameClip'; trackId: string; clipId: string; name: string }
@@ -61,6 +62,9 @@ export type ServerToBrowser =
   | { type: 'resizePlacement'; trackId: string; placementId: string; offset?: number; length?: number }
   | { type: 'removePlacement'; trackId: string; placementId: string }
   | { type: 'splitPlacement'; trackId: string; placementId: string; atBeat: number; newId: string }
+  // Clip launching (a launched clip loops over the transport, overriding placements)
+  | { type: 'launchClip'; trackId: string; clipId: string | null }
+  | { type: 'stopAllClips' }
   // Live notes (polyphonic)
   | { type: 'noteOn'; trackId: string; midi: number; velocity?: number }
   | { type: 'noteOff'; trackId: string; midi: number }

@@ -129,8 +129,9 @@ room to draw.
 > **Update (slice 13):** the variant *stack that bundled the sound* (below) was superseded by a
 > **track-level sound + a pool of clips** (clips are just notes; params/effects belong to the
 > track) - see section 11. The fearless-iteration intent survives as the clip pool + non-
-> destructive editing; "Try"/fork becomes duplicate (drag-loop / copy-paste), and the
-> Session/Grid view becomes those pool clips seen as launchable slots. Kept here for rationale.
+> destructive editing; "Try"/fork becomes duplicate (drag-loop / copy-paste), and clip
+> launching landed in slice 14 (a launched clip loops, overriding the timeline - launchable
+> slots without a separate mode). Kept here for rationale.
 
 The point: remove the fear of experimenting by making it non-destructive and complete.
 
@@ -303,15 +304,30 @@ time zoom + snap, a sticky-header spreadsheet scroll, inline rename of tracks / 
 and "+ Clip" / lane edits create empty clips. Persistence bumped to v7 with a v6-variant
 migration (one clip per variant, sound from the active variant). The top toolbar was removed -
 transport moved to the arrangement header, undo/redo to the activity panel, the brand to the
-library).
+library),
+14 (clip launching - mode-less Session: a persisted per-track `launchedClipId` that loops over
+the transport and **overrides** that track's placements, so a track can loop a clip without
+dragging it across the timeline. Launch from the clip rail (auto-starts the transport); the
+lane greys with a "now playing" badge and the arrangement header shows a **Clip mode / Back to
+timeline** control that stops all launched clips. The scheduler treats a launched clip as one
+full-region placement (reusing the loop tiling); the state flows through the same dispatch/MCP
+seam (`launch_clip` / `stop_all_clips`), so it is undoable, in the feed, two-voice, and saved -
+no separate Session *mode/view*, just a visible override state. Also adds clip copy/paste in the
+rail (Cmd/Ctrl C/X/V on the focused rail, like the timeline's placement copy/paste): a
+`pasteClip` command carries kind-tagged clip content through a module clipboard, so clips copy
+within a track and **across same-kind tracks** - audio reuses the source OPFS file; cross-type
+paste is refused. Keyboard routing is by DOM focus, so the rail, timeline, and roll each own
+their own copy/paste).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
 **authored edit log** (slice 9), **clip variants** (slice 10), **log persistence** (slice 11),
-and the **arrangement clip model + editable timeline** (slice 13: a track owns a pool of clips
-arranged as positioned placements, with linear editing and copy-paste) are in place. The
-remaining early model evolution is building the **Session/clip-launch grid** on top of the same
-clip pool (the clips seen as launchable slots - one model, two views). The raw backlog below is
-grouped into themed slices; within a theme, order is rough.
+the **arrangement clip model + editable timeline** (slice 13: a track owns a pool of clips
+arranged as positioned placements, with linear editing and copy-paste), and **mode-less clip
+launching** (slice 14: a persisted per-track launched clip that loops over the transport,
+overriding placements) are in place. The remaining piece in this theme is the optional
+multi-track **Session grid view** + scenes on top of the same launched-clip model (one model,
+two views); it is now a view, not a model change. The raw backlog below is grouped into themed
+slices; within a theme, order is rough.
 
 **Near-term - UI on top of the current model**
 
@@ -362,9 +378,11 @@ grouped into themed slices; within a theme, order is rough.
   place so the engine bindings survive. Edits flow through the same `dispatch`/MCP seam, so
   undo/redo and the activity feed cover them. Slice 13 superseded the variant *stack* with a
   track-level sound + a **pool of clips** (see below); the v6 variant format migrates to it.
-  *Remaining:* build the Ableton-style **Session/Grid view** on the same clip pool - each track
-  a column of launchable clips, scenes launching a row across tracks (the same clips seen as
-  launchable slots - one model, two views).
+  Slice 14 then added **mode-less clip launching** (a persisted launched clip loops over the
+  transport, overriding the track's placements - launchable slots without a separate view).
+  *Remaining:* the optional multi-track **Session grid view** + scenes on the same model (each
+  track a column of its clips, scenes launching a row across tracks) - a view, not a model
+  change.
 - **Arrangement clip model - DONE (slice 13), the fundamental / second "real DAW" piece.** A
   track now owns a **pool of clips** (each its own ClipStore) and an **arrangement of
   placements** {clipId, startBeat, offset, length} along time; the sound (instrument params +

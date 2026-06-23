@@ -5,18 +5,26 @@
  * the instrument card. Every edit goes through the project store, the same model
  * MCP drives.
  */
-import { Fragment } from 'react';
-import type { ProjectStore } from '../audio/project/projectStore';
-import { useProject } from '../audio/project/useProject';
-import { EFFECT_CATALOG, effectCatalogEntry, effectSchema } from '../audio/effects/catalog';
-import type { Dispatch } from '../audio/commands/types';
-import { newEffectId } from '../audio/commands/ids';
-import { Knob } from './Knob';
+import { Fragment } from "react";
+import type { ProjectStore } from "../audio/project/projectStore";
+import { useProject } from "../audio/project/useProject";
+import { effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
+import type { Dispatch } from "../audio/commands/types";
+import { Knob } from "./Knob";
 
 const ARROW = <div className="self-center text-faint text-sm px-0.5">→</div>;
-const iconBtn = 'font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer';
+const iconBtn =
+  "font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer";
 
-export function EffectChain({ projectStore, trackId, dispatch }: { projectStore: ProjectStore; trackId: string; dispatch: Dispatch }) {
+export function EffectChain({
+  projectStore,
+  trackId,
+  dispatch,
+}: {
+  projectStore: ProjectStore;
+  trackId: string;
+  dispatch: Dispatch;
+}) {
   const project = useProject(projectStore);
   const track = project.tracks.find((t) => t.id === trackId);
   if (!track) return null;
@@ -30,26 +38,44 @@ export function EffectChain({ projectStore, trackId, dispatch }: { projectStore:
         return (
           <Fragment key={fx.id}>
             {ARROW}
-            <div className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? 'opacity-50' : ''}`}>
+            <div
+              className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}
+            >
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
                 <span className="font-mono text-[12px] font-semibold text-bright mr-1">
                   {effectCatalogEntry(fx.type).label}
                 </span>
                 <button
                   type="button"
-                  title={fx.bypassed ? 'Enable' : 'Bypass'}
-                  onClick={() => dispatch({ type: 'bypassEffect', hostId: trackId, effectId: fx.id, bypassed: !fx.bypassed })}
+                  title={fx.bypassed ? "Enable" : "Bypass"}
+                  onClick={() =>
+                    dispatch({
+                      type: "bypassEffect",
+                      hostId: trackId,
+                      effectId: fx.id,
+                      bypassed: !fx.bypassed,
+                    })
+                  }
                   className={`font-mono text-[10px] h-5 px-1.5 rounded border cursor-pointer ${
-                    fx.bypassed ? 'border-line text-muted' : 'border-you/45 text-you'
+                    fx.bypassed
+                      ? "border-line text-muted"
+                      : "border-you/45 text-you"
                   }`}
                 >
-                  {fx.bypassed ? 'Off' : 'On'}
+                  {fx.bypassed ? "Off" : "On"}
                 </button>
                 <button
                   type="button"
                   title="Move earlier"
                   disabled={i === 0}
-                  onClick={() => dispatch({ type: 'moveEffect', hostId: trackId, effectId: fx.id, toIndex: i - 1 })}
+                  onClick={() =>
+                    dispatch({
+                      type: "moveEffect",
+                      hostId: trackId,
+                      effectId: fx.id,
+                      toIndex: i - 1,
+                    })
+                  }
                   className={`${iconBtn} disabled:opacity-30`}
                 >
                   ↑
@@ -58,12 +84,30 @@ export function EffectChain({ projectStore, trackId, dispatch }: { projectStore:
                   type="button"
                   title="Move later"
                   disabled={i === effects.length - 1}
-                  onClick={() => dispatch({ type: 'moveEffect', hostId: trackId, effectId: fx.id, toIndex: i + 1 })}
+                  onClick={() =>
+                    dispatch({
+                      type: "moveEffect",
+                      hostId: trackId,
+                      effectId: fx.id,
+                      toIndex: i + 1,
+                    })
+                  }
                   className={`${iconBtn} disabled:opacity-30`}
                 >
                   ↓
                 </button>
-                <button type="button" title="Remove effect" onClick={() => dispatch({ type: 'removeEffect', hostId: trackId, effectId: fx.id })} className={iconBtn}>
+                <button
+                  type="button"
+                  title="Remove effect"
+                  onClick={() =>
+                    dispatch({
+                      type: "removeEffect",
+                      hostId: trackId,
+                      effectId: fx.id,
+                    })
+                  }
+                  className={iconBtn}
+                >
                   ×
                 </button>
               </div>
@@ -73,7 +117,15 @@ export function EffectChain({ projectStore, trackId, dispatch }: { projectStore:
                     key={spec.id}
                     spec={spec}
                     store={store}
-                    onChange={(id, value) => dispatch({ type: 'setEffectParam', hostId: trackId, effectId: fx.id, id, value })}
+                    onChange={(id, value) =>
+                      dispatch({
+                        type: "setEffectParam",
+                        hostId: trackId,
+                        effectId: fx.id,
+                        id,
+                        value,
+                      })
+                    }
                   />
                 ))}
               </div>
@@ -81,19 +133,6 @@ export function EffectChain({ projectStore, trackId, dispatch }: { projectStore:
           </Fragment>
         );
       })}
-      {ARROW}
-      <div className="shrink-0 flex flex-col gap-1.5 justify-center px-1">
-        {Object.entries(EFFECT_CATALOG).map(([type, def]) => (
-          <button
-            key={type}
-            type="button"
-            onClick={() => dispatch({ type: 'addEffect', hostId: trackId, effectType: type, id: newEffectId() })}
-            className="font-mono text-[11px] px-2.5 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap text-left"
-          >
-            + {def.label}
-          </button>
-        ))}
-      </div>
     </>
   );
 }

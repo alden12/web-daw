@@ -381,6 +381,13 @@ function Lane({
           style={{ left: beatToX(dropBeat, pxPerBeat) }}
         />
       )}
+      {track.launchedClipId && (
+        <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-you bg-ground/80 border border-you/50 rounded px-1.5 py-0.5">
+            ▶ {track.clips.find((c) => c.id === track.launchedClipId)?.name ?? "clip"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -565,6 +572,7 @@ export function ArrangementTimeline({
   const beatsPerBar = DEFAULT_BEATS_PER_BAR;
   const lengthBeats = project.lengthBeats;
   const rows = flattenRows(project.groups, project.tracks);
+  const clipMode = project.tracks.some((t) => t.launchedClipId);
 
   // The grid runs past the loop and the furthest placement (room to arrange into),
   // and never stops short of the visible panel, so the bar grid fills it at any zoom.
@@ -589,7 +597,7 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
       if (!selection) return;
       if (e.key === "Escape") {
         setSelection(null);
@@ -609,7 +617,7 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       if (key !== "c" && key !== "x" && key !== "v") return;
@@ -721,6 +729,19 @@ export function ArrangementTimeline({
           isPlaying={isPlaying}
           started={started}
         />
+        {clipMode && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "stopAllClips" })}
+            title="Stop all launched clips and play the timeline arrangement"
+            className="inline-flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-you border border-you/50 bg-you/10 rounded px-2 py-1 cursor-pointer hover:bg-you/20"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-you animate-pulse" />
+            Clip mode
+            <span className="text-muted">·</span>
+            Back to timeline
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
             <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
