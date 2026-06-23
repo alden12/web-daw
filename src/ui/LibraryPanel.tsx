@@ -114,6 +114,16 @@ export function LibraryPanel({
 
   return (
     <div className="[grid-area:library] bg-rail border-r border-line overflow-y-auto py-3">
+      <div className="flex items-center gap-2 px-4 pb-4 font-semibold text-sm text-bright">
+        <span
+          className="w-4 h-4 rounded-full"
+          style={{
+            background:
+              "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))",
+          }}
+        />
+        Web DAW
+      </div>
       <div className="mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-faint text-xs">
         Search or ask…
       </div>

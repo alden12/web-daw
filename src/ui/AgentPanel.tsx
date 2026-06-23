@@ -1,18 +1,18 @@
 /**
- * The activity panel (right): the project's history/activity feed plus the MCP
- * connection (the session is driven from Claude Code over MCP). Named for its
- * current role; it may grow to host a real in-app agent later. Collapses to a thin
- * rail - drag the edge to resize, or use the chevron to collapse and expand.
+ * The activity panel (right): the project's history/activity feed, undo/redo, and
+ * the MCP connection (the session is driven from Claude Code over MCP). Named for
+ * its current role; it may grow to host a real in-app agent later. Collapses to a
+ * thin rail - drag the edge to resize, or use the chevron to collapse and expand.
  */
-import type { McpStatus } from '../audio/mcp/bridge';
-import type { EditLog } from '../audio/commands/editLog';
-import { useEditLog } from '../audio/commands/useEditLog';
-import { describeCommand } from '../audio/commands/describe';
+import type { McpStatus } from "../audio/mcp/bridge";
+import type { EditLog } from "../audio/commands/editLog";
+import { useEditLog } from "../audio/commands/useEditLog";
+import { describeCommand } from "../audio/commands/describe";
 
 const DOT: Record<McpStatus, string> = {
-  connected: 'bg-good',
-  connecting: 'bg-warn',
-  disconnected: 'bg-claude',
+  connected: "bg-good",
+  connecting: "bg-warn",
+  disconnected: "bg-claude",
 };
 
 export function AgentPanel({
@@ -26,9 +26,11 @@ export function AgentPanel({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const { entries } = useEditLog(editLog);
+  const { entries, canUndo, canRedo } = useEditLog(editLog);
   // Newest first (like a git log), so the latest edit is at the top, no scrolling.
   const recent = entries.slice(-100).reverse();
+  const histBtn =
+    "font-mono text-[12px] w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed";
 
   if (collapsed) {
     return (
@@ -49,11 +51,33 @@ export function AgentPanel({
   return (
     <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
       <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between h-12 px-4 border-b border-line">
-          <span className="text-[12.5px] font-semibold text-bright">Activity</span>
-          <span className="inline-flex items-center gap-2 font-mono text-xs text-muted">
+        <div className="flex items-center gap-2 h-12 px-4 border-b border-line">
+          <span className="text-[12.5px] font-semibold text-bright">
+            Activity
+          </span>
+          <div className="flex gap-1" role="group" aria-label="History">
+            <button
+              type="button"
+              title="Undo (Cmd/Ctrl-Z)"
+              disabled={!canUndo}
+              onClick={() => editLog.undo()}
+              className={histBtn}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              title="Redo (Shift+Cmd/Ctrl-Z)"
+              disabled={!canRedo}
+              onClick={() => editLog.redo()}
+              className={histBtn}
+            >
+              ↷
+            </button>
+          </div>
+          <span className="ml-auto inline-flex items-center gap-2 font-mono text-xs text-muted">
             <span className="inline-flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} /> MCP: {mcpStatus}
+              <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} /> MCP
             </span>
             <button
               type="button"
@@ -75,19 +99,28 @@ export function AgentPanel({
             ) : (
               <ul className="flex flex-col gap-1">
                 {recent.map((entry) => {
-                  const isUndoRedo = entry.kind === 'undo' || entry.kind === 'redo';
+                  const isUndoRedo =
+                    entry.kind === "undo" || entry.kind === "redo";
                   return (
                     <li
                       key={entry.seq}
                       className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
-                        entry.author === 'claude' ? 'border-claude' : 'border-you'
+                        entry.author === "claude"
+                          ? "border-claude"
+                          : "border-you"
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === 'claude' ? 'bg-claude' : 'bg-you'}`} />
-                      <span className={`font-mono text-[11.5px] truncate ${isUndoRedo ? 'text-muted italic' : 'text-ink'}`}>
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === "claude" ? "bg-claude" : "bg-you"}`}
+                      />
+                      <span
+                        className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}
+                      >
                         {entry.label ?? describeCommand(entry.command)}
                       </span>
-                      <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{entry.author}</span>
+                      <span className="ml-auto font-mono text-[10px] text-faint shrink-0">
+                        {entry.author}
+                      </span>
                     </li>
                   );
                 })}

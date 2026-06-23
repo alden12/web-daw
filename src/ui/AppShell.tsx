@@ -14,7 +14,6 @@ import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { attachAutosave, restoreProject } from '../audio/persistence';
 import { useProject } from '../audio/project/useProject';
 import { EditLog } from '../audio/commands/editLog';
-import { TopBar } from './TopBar';
 import { LibraryPanel } from './LibraryPanel';
 import { CenterWorkbench } from './CenterWorkbench';
 import { AgentPanel } from './AgentPanel';
@@ -136,14 +135,6 @@ export function AppShell() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink">
-      <TopBar
-        projectStore={projectStore}
-        scheduler={scheduler}
-        editLog={editLog}
-        dispatch={dispatch}
-        isPlaying={isPlaying}
-        started={started}
-      />
       <div
         ref={bodyRef}
         className="app-body flex-1 min-h-0 relative"
@@ -157,7 +148,13 @@ export function AppShell() {
           collapsed={agentCollapsed}
           onToggle={() => setAgentCollapsed(!agentCollapsed)}
         />
-        <ArrangementTimeline projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} />
+        <ArrangementTimeline
+          projectStore={projectStore}
+          scheduler={scheduler}
+          dispatch={dispatch}
+          isPlaying={isPlaying}
+          started={started}
+        />
 
         <ResizeHandle
           ariaLabel="Resize library"
