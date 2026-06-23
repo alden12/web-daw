@@ -111,6 +111,8 @@ export function AppShell() {
     if (!started) return;
     const onDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return; // don't play while typing
       const midi = KEY_MAP[e.key.toLowerCase()];
       const id = projectStore.selectedId;
       if (midi !== undefined && id) engine.getInstrument(id)?.noteOn(midi);

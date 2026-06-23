@@ -51,7 +51,7 @@ export type ServerToBrowser =
   | { type: 'clearClip'; trackId: string; clipId?: string }
   | { type: 'setClipLength'; trackId: string; clipId?: string; lengthBeats: number }
   // Clip pool (note patterns / launchable slots)
-  | { type: 'addClip'; trackId: string; id: string; name?: string; fromClipId?: string }
+  | { type: 'addClip'; trackId: string; id: string; name?: string; fromClipId?: string; empty?: boolean; lengthBeats?: number }
   | { type: 'selectClip'; trackId: string; clipId: string }
   | { type: 'removeClip'; trackId: string; clipId: string }
   | { type: 'renameClip'; trackId: string; clipId: string; name: string }

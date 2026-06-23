@@ -71,7 +71,8 @@ const APPLY: ApplyMap = {
   clearClip: (p, c) => p.getClipStore(c.trackId, c.clipId)?.clear(),
   setClipLength: (p, c) => p.setClipLength(c.trackId, c.clipId, c.lengthBeats),
   // Clip pool. The new clip is tagged with the dispatching author (two-voice).
-  addClip: (p, c, author) => void p.addClip(c.trackId, { id: c.id, name: c.name, fromClipId: c.fromClipId, author }),
+  addClip: (p, c, author) =>
+    void p.addClip(c.trackId, { id: c.id, name: c.name, fromClipId: c.fromClipId, empty: c.empty, lengthBeats: c.lengthBeats, author }),
   removeClip: (p, c) => p.removeClip(c.trackId, c.clipId),
   renameClip: (p, c) => p.renameClip(c.trackId, c.clipId, c.name),
   // Arrangement placements.

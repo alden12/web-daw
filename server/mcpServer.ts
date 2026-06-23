@@ -739,15 +739,22 @@ export function createDawMcp(
     'add_clip',
     {
       title: 'Add clip',
-      description: 'Add a note clip to a track (copies `from`, or the active clip, into a new editable one) and make it active. Returns the new clip id.',
-      inputSchema: { ...trackArg, name: z.string().optional(), from: z.string().optional().describe('clip id to copy; defaults to active') },
+      description: 'Add a note clip to a track and make it active. Defaults to copying `from` (or the active clip); pass `empty` for a fresh clip with no notes. `length_beats` sets the pattern length. Returns the new clip id.',
+      inputSchema: {
+        ...trackArg,
+        name: z.string().optional(),
+        from: z.string().optional().describe('clip id to copy; defaults to active'),
+        empty: z.boolean().optional().describe('start with no notes instead of copying'),
+        length_beats: z.number().positive().optional().describe('pattern length in beats'),
+      },
     },
-    async ({ track, name, from }) => {
+    async ({ track, name, from, empty, length_beats }) => {
       const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
       const id = makeClipId();
-      if (!sendToTab({ type: 'addClip', trackId: r.id, id, name, fromClipId: from })) return fail('No DAW tab connected.');
-      mirror.addClip(r.id, { id, name, fromClipId: from, author: 'claude' });
+      const msg = { type: 'addClip' as const, trackId: r.id, id, name, fromClipId: from, empty, lengthBeats: length_beats };
+      if (!sendToTab(msg)) return fail('No DAW tab connected.');
+      mirror.addClip(r.id, { id, name, fromClipId: from, empty, lengthBeats: length_beats, author: 'claude' });
       return ok(`Added clip on ${r.id} (id ${id}); it is now active.`);
     },
   );

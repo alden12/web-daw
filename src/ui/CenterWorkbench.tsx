@@ -13,6 +13,7 @@ import { InstrumentPanel } from './InstrumentPanel';
 import { EffectChain } from './EffectChain';
 import { PianoRoll } from './PianoRoll';
 import { VariantStrip } from './VariantStrip';
+import { InlineRename } from './InlineRename';
 import { ResizeHandle } from './ResizeHandle';
 import { usePersistentNumber } from './usePersistent';
 
@@ -83,13 +84,28 @@ export function CenterWorkbench({
   }
 
   const kindLabel = selectedTrack.kind === 'audio' ? 'audio' : selectedTrack.instrumentType;
+  const activeClip = selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
 
   return (
     <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
       <div className="flex items-center gap-2.5 h-12 px-4 border-b border-line shrink-0">
         <span className="w-2 h-2 rounded-full bg-you" />
-        <span className="font-semibold text-sm text-bright">{selectedTrack.name}</span>
+        <InlineRename
+          value={selectedTrack.name}
+          onCommit={(name) => dispatch({ type: 'setTrack', trackId: selectedTrack.id, name })}
+          className="font-semibold text-sm text-bright"
+        />
         <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
+        {activeClip && (
+          <span className="ml-auto inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
+            clip
+            <InlineRename
+              value={activeClip.name}
+              onCommit={(name) => dispatch({ type: 'renameClip', trackId: selectedTrack.id, clipId: activeClip.id, name })}
+              className="text-[12px] text-bright"
+            />
+          </span>
+        )}
       </div>
 
       {/* device rack: fixed (resizable) height, wraps to fill the width */}

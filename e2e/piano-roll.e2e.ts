@@ -77,7 +77,7 @@ test('dragging the roll handle changes the active clip length', async ({ page })
   const zoomOut = page.getByTitle('Zoom out (time)');
   for (let i = 0; i < 8; i++) await zoomOut.click();
 
-  const end = page.getByRole('slider', { name: 'Loop length' });
+  const end = page.getByTestId('roll-scroll').getByRole('slider', { name: 'Loop length' });
   const before = (await end.boundingBox())!;
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down();

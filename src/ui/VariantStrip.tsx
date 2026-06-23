@@ -1,6 +1,7 @@
 /**
  * The clip pool for the selected track: a chip per clip (a note pattern), plus
- * "+ Clip" to add one (copying the active clip). Clicking a chip makes it the
+ * "+ Clip" to add a new empty one (duplicate via drag-loop / copy-paste on the
+ * timeline). Clicking a chip makes it the
  * active clip (shown/edited in the roll); double-click renames; the active clip is
  * what the arrangement places. Two-voice colour tags who authored each clip - you
  * (teal) vs Claude (coral). Selecting is navigation (direct on the store); add /
@@ -96,7 +97,7 @@ export function VariantStrip({
         <button
           type="button"
           title="Add a clip (copies the active one)"
-          onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId() })}
+          onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
           className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
         >
           + Clip

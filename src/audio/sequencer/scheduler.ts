@@ -10,7 +10,7 @@
  */
 import type { AudioEngine } from '../engine/AudioEngine';
 import type { ProjectStore } from '../project/projectStore';
-import type { NoteEvent } from './types';
+import { GRID, type NoteEvent } from './types';
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.1;
@@ -72,6 +72,29 @@ export function onsetsInBeatRange(
     if (at >= fromBeat && at < toBeat) result.push(at);
   }
   return result;
+}
+
+/**
+ * Pure: a placement's clip notes tiled across its window, in arrangement-relative
+ * beats (0 = the placement start). A clip of `clipLen` beats loops to fill the
+ * window: a window that fits within the clip plays once (a trim), a longer window
+ * repeats the pattern. `offset` is the phase into the loop the window begins at.
+ */
+export function tileClipNotes(
+  notes: NoteEvent[],
+  clipLen: number,
+  offset: number,
+  length: number,
+): NoteEvent[] {
+  const out: NoteEvent[] = [];
+  if (clipLen <= 0) return out;
+  for (const note of notes) {
+    if (note.start < 0 || note.start >= clipLen) continue;
+    let phase = (note.start - offset) % clipLen;
+    if (phase < 0) phase += clipLen;
+    for (let tau = phase; tau < length; tau += clipLen) out.push({ ...note, start: tau });
+  }
+  return out;
 }
 
 export class Scheduler {
@@ -151,15 +174,16 @@ export class Scheduler {
       if (track.kind === 'instrument') {
         const instrument = this.engine.getInstrument(track.id);
         if (!instrument) continue;
-        // Flatten the arrangement: each placement contributes its clip's notes
-        // (windowed by offset/length) shifted to the placement's start.
+        // Flatten the arrangement: each placement contributes its clip's notes,
+        // tiled across its window (looping a clip whose window outruns it) and
+        // shifted to the placement's start on the arrangement.
         const events: NoteEvent[] = [];
         for (const p of track.placements) {
           const clip = track.clips.find((c) => c.id === p.clipId);
           if (!clip) continue;
-          for (const n of clip.store.getClip().notes) {
-            if (n.start < p.offset || n.start >= p.offset + p.length) continue;
-            events.push({ ...n, start: p.startBeat + (n.start - p.offset) });
+          const c = clip.store.getClip();
+          for (const n of tileClipNotes(c.notes, c.lengthBeats, p.offset, p.length)) {
+            events.push({ ...n, start: p.startBeat + n.start });
           }
         }
         for (const { note, atBeat } of notesStartingInBeatRange(events, fromBeats, horizonBeats, loopLen, loopStart)) {
@@ -167,13 +191,17 @@ export class Scheduler {
           instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
         }
       } else {
-        // Each audio placement is a single onset at its start (plays the buffer).
+        // Each audio placement triggers the buffer at its start, re-triggering
+        // every clip-length so a window dragged past the clip loops the sample.
         for (const p of track.placements) {
           const clip = track.clips.find((c) => c.id === p.clipId);
           if (!clip) continue;
-          for (const atBeat of onsetsInBeatRange(p.startBeat, fromBeats, horizonBeats, loopLen, loopStart)) {
-            const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-            this.engine.scheduleAudioClip(track.id, clip, when);
+          const clipBeats = clip.durationSec > 0 ? (clip.durationSec * bpm) / 60 : Infinity;
+          for (let tau = 0; tau < p.length; tau += Math.max(GRID, clipBeats)) {
+            for (const atBeat of onsetsInBeatRange(p.startBeat + tau, fromBeats, horizonBeats, loopLen, loopStart)) {
+              const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+              this.engine.scheduleAudioClip(track.id, clip, when);
+            }
           }
         }
       }

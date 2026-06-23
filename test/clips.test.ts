@@ -39,6 +39,15 @@ describe('clip pool', () => {
     expect(created!.store.getClip().notes).toHaveLength(1);
   });
 
+  it('addClip with empty starts fresh and honours lengthBeats', () => {
+    const { project, id, inst } = trackWithClip();
+    inst().clips[0].store.addNote({ pitch: 60, start: 0 });
+    const created = project.addClip(id, { empty: true, lengthBeats: 3 })!;
+    expect(created.store.getClip().notes).toHaveLength(0); // did not copy the active clip
+    expect(created.store.getClip().lengthBeats).toBe(3);
+    expect(inst().activeClipId).toBe(created.id);
+  });
+
   it('clips have independent stores - editing one does not affect another', () => {
     const { project, id, inst } = trackWithClip();
     const a = inst().clips[0];

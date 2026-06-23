@@ -55,11 +55,6 @@
   transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Bar grid behind timeline clips (dynamic repeat utilities are unwieldy). */
-.lane-grid {
-  background-image: repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px 25%);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .app-body {
     transition: none;

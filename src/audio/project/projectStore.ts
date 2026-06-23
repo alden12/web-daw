@@ -548,21 +548,25 @@ export class ProjectStore {
     return c ? this.secondsToBeats(c.durationSec) : 4;
   }
 
-  /** Fork/create a note clip ("Try"): copy `fromClipId` (default active) or start empty; make active. */
+  /**
+   * Add a note clip to the pool and make it active. Defaults to forking the
+   * active clip ("Try"); pass `empty` to start with no notes (a fresh clip), and
+   * `lengthBeats` to set its pattern length (e.g. drag-to-size on the timeline).
+   */
   addClip(
     trackId: string,
-    opts: { id?: string; name?: string; fromClipId?: string; author?: ClipAuthor } = {},
+    opts: { id?: string; name?: string; fromClipId?: string; author?: ClipAuthor; empty?: boolean; lengthBeats?: number } = {},
   ): NoteClip | undefined {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== 'instrument') return undefined;
-    const source = t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0];
+    const source = opts.empty ? undefined : t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0];
     const id = opts.id && !t.clips.some((c) => c.id === opts.id) ? opts.id : this.nextClipId();
     const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
     const clip: NoteClip = {
       id,
       name: opts.name ?? this.nextClipName(t),
       author: opts.author ?? 'you',
-      store: new ClipStore({ notes: seed.notes.map((n) => ({ ...n })), lengthBeats: seed.lengthBeats }),
+      store: new ClipStore({ notes: seed.notes.map((n) => ({ ...n })), lengthBeats: opts.lengthBeats ?? seed.lengthBeats }),
     };
     t.clips.push(clip);
     t.activeClipId = id;
