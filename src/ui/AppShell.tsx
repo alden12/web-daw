@@ -1,9 +1,10 @@
 /**
- * The top-level DAW UI. Owns the project (tracks), the AudioEngine, and the
- * Scheduler; renders the track list and the selected track's instrument panel +
- * piano roll, plus transport; handles the audio-start gesture and computer-
- * keyboard input (to the selected track); restores/persists the project; and
- * bridges everything to MCP.
+ * The app shell. Owns the project (tracks), the AudioEngine, and the Scheduler;
+ * handles the audio-start gesture and computer-keyboard input (to the selected
+ * track); restores/persists the project; bridges to MCP; and lays everything out
+ * in the four-region video-editor spine (top bar, library | center | agent,
+ * timeline). All the wiring is unchanged from the old SynthPanel - this slice is
+ * presentation only.
  */
 import { useEffect, useState } from 'react';
 import { ProjectStore } from '../audio/project/projectStore';
@@ -12,11 +13,12 @@ import { Scheduler } from '../audio/sequencer/scheduler';
 import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { attachAutosave, restoreProject } from '../audio/persistence';
 import { useProject } from '../audio/project/useProject';
-import { TrackList } from './TrackList';
-import { InstrumentPanel } from './InstrumentPanel';
-import { EffectChain } from './EffectChain';
-import { TransportBar } from './TransportBar';
-import { PianoRoll } from './PianoRoll';
+import { TopBar, type Mode } from './TopBar';
+import { LibraryPanel } from './LibraryPanel';
+import { CenterWorkbench } from './CenterWorkbench';
+import { AgentPanel } from './AgentPanel';
+import { ArrangementTimeline } from './ArrangementTimeline';
+import { StartDialog } from './StartDialog';
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
 const KEY_MAP: Record<string, number> = {
@@ -24,13 +26,14 @@ const KEY_MAP: Record<string, number> = {
   g: 67, y: 68, h: 69, u: 70, j: 71, k: 72,
 };
 
-export function SynthPanel() {
+export function AppShell() {
   const [projectStore] = useState(() => new ProjectStore());
   const [engine] = useState(() => new AudioEngine());
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
   const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
+  const [mode, setMode] = useState<Mode>('balanced');
 
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
@@ -80,31 +83,23 @@ export function SynthPanel() {
   };
 
   return (
-    <div className="synth">
-      <header className="synth-header">
-        <h1>web-daw</h1>
-        {started ? (
-          <p className="hint">Selected track plays from keyboard row A-K (W, E, T, Y, U for sharps).</p>
-        ) : (
-          <button type="button" className="start" onClick={handleStart}>
-            Start audio
-          </button>
-        )}
-        <p className={`mcp-status mcp-${mcpStatus}`}>
-          <span className="mcp-dot" /> MCP: {mcpStatus}
-        </p>
-      </header>
-
-      <TrackList projectStore={projectStore} />
-
-      {selectedTrack && (
-        <div className="track-detail" key={selectedTrack.id}>
-          <InstrumentPanel params={selectedTrack.params} instrumentType={selectedTrack.instrumentType} />
-          <EffectChain projectStore={projectStore} trackId={selectedTrack.id} />
-          <TransportBar projectStore={projectStore} scheduler={scheduler} isPlaying={isPlaying} started={started} />
-          <PianoRoll clipStore={selectedTrack.clip} scheduler={scheduler} />
-        </div>
-      )}
+    <div className="flex flex-col flex-1 min-h-screen bg-ground text-ink" data-mode={mode}>
+      <TopBar
+        projectStore={projectStore}
+        scheduler={scheduler}
+        isPlaying={isPlaying}
+        started={started}
+        mcpStatus={mcpStatus}
+        mode={mode}
+        onMode={setMode}
+      />
+      <div className="app-body flex-1 min-h-0">
+        <LibraryPanel projectStore={projectStore} />
+        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} selectedTrack={selectedTrack} />
+        <AgentPanel mcpStatus={mcpStatus} />
+        <ArrangementTimeline projectStore={projectStore} scheduler={scheduler} />
+      </div>
+      {!started && <StartDialog onStart={handleStart} />}
     </div>
   );
 }

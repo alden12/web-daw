@@ -32,15 +32,21 @@ export interface CatalogEntry {
   schema: ParamSchema;
 }
 
-export const INSTRUMENT_CATALOG: Record<string, CatalogEntry> = {
+export const INSTRUMENT_CATALOG = {
   subtractive: { label: 'Subtractive', schema: subtractiveSchema },
   fm: { label: 'FM', schema: fmSchema },
-};
+} satisfies Record<string, CatalogEntry>;
 
-export const DEFAULT_INSTRUMENT = 'subtractive';
+/** Cataloged instrument ids. The registry is typed off this, so every type has a factory. */
+export type InstrumentType = keyof typeof INSTRUMENT_CATALOG;
+
+export const DEFAULT_INSTRUMENT: InstrumentType = 'subtractive';
+
+// Lenient string-keyed view for callers holding an untyped id (persistence, MCP).
+const byType: Record<string, CatalogEntry> = INSTRUMENT_CATALOG;
 
 export function catalogEntry(type: string): CatalogEntry {
-  return INSTRUMENT_CATALOG[type] ?? INSTRUMENT_CATALOG[DEFAULT_INSTRUMENT];
+  return byType[type] ?? byType[DEFAULT_INSTRUMENT];
 }
 
 export function instrumentSchema(type: string): ParamSchema {

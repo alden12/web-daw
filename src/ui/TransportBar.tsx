@@ -20,16 +20,16 @@ export function TransportBar({
   const project = useProject(projectStore);
 
   return (
-    <div className="transport">
+    <div className="flex items-center gap-3">
       <button
         type="button"
-        className="transport-btn"
         disabled={!started}
         onClick={() => (isPlaying ? scheduler.stop() : scheduler.play())}
+        className="font-mono text-[13px] min-w-18 px-3 py-1.5 rounded-lg text-you bg-you/15 border border-you/45 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPlaying ? '■ Stop' : '▶ Play'}
       </button>
-      <label className="tempo">
+      <label className="inline-flex items-center gap-2 font-mono text-xs text-muted">
         Tempo
         <input
           type="number"
@@ -37,10 +37,10 @@ export function TransportBar({
           max={300}
           value={project.tempoBpm}
           onChange={(e) => projectStore.setTempo(Number(e.target.value))}
+          className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
         BPM
       </label>
-      {!started && <span className="transport-hint">Start audio to play</span>}
     </div>
   );
 }

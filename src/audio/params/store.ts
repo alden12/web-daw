@@ -7,19 +7,21 @@
 import type { ParamSchema, ParamSpec, ParamValue, PatchValues } from './types';
 
 type Listener = (id: string, value: ParamValue) => void;
+type ByKind<K extends ParamSpec['kind']> = Extract<ParamSpec, { kind: K }>;
+
+// Lenient normalization (clamp/snap a trusted value), keyed by kind. Distinct
+// from validation (validate.ts), which rejects. Map dispatch, not switch.
+const COERCE: { [K in ParamSpec['kind']]: (spec: ByKind<K>, value: ParamValue) => ParamValue } = {
+  number: (spec, value) => {
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
+  },
+  enum: (spec, value) => (spec.options.includes(value as string) ? (value as string) : spec.default),
+  boolean: (_spec, value) => Boolean(value),
+};
 
 function coerce(spec: ParamSpec, value: ParamValue): ParamValue {
-  switch (spec.kind) {
-    case 'number': {
-      const n = typeof value === 'number' ? value : Number(value);
-      if (!Number.isFinite(n)) return spec.default;
-      return Math.min(spec.max, Math.max(spec.min, n));
-    }
-    case 'enum':
-      return spec.options.includes(value as string) ? (value as string) : spec.default;
-    case 'boolean':
-      return Boolean(value);
-  }
+  return (COERCE[spec.kind] as (spec: ParamSpec, value: ParamValue) => ParamValue)(spec, value);
 }
 
 export class ParamStore {

@@ -42,6 +42,17 @@ export function createDawMcp(
   // The server's mirror of the tab's project, kept current by the sync messages.
   const mirror = new ProjectStore(false);
 
+  // One handler per inbound sync message (map dispatch, not if/else). Mapped type
+  // makes leaving a message type unhandled a compile error.
+  type Inbound = { [K in BrowserToServer['type']]: (msg: Extract<BrowserToServer, { type: K }>) => void };
+  const inbound: Inbound = {
+    projectSnapshot: (msg) => mirror.load(msg.project),
+    projectStructure: (msg) => mirror.load(msg.project),
+    paramChanged: (msg) => mirror.getTrack(msg.trackId)?.params.set(msg.id, msg.value),
+    clipSnapshot: (msg) => mirror.getTrack(msg.trackId)?.clip.load(msg.clip),
+    effectParamChanged: (msg) => mirror.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value),
+  };
+
   let tab: WebSocket | null = null;
   const wss = new WebSocketServer({ port, host: '127.0.0.1' });
 
@@ -59,10 +70,7 @@ export function createDawMcp(
       } catch {
         return;
       }
-      if (msg.type === 'projectSnapshot' || msg.type === 'projectStructure') mirror.load(msg.project);
-      else if (msg.type === 'paramChanged') mirror.getTrack(msg.trackId)?.params.set(msg.id, msg.value);
-      else if (msg.type === 'clipSnapshot') mirror.getTrack(msg.trackId)?.clip.load(msg.clip);
-      else if (msg.type === 'effectParamChanged') mirror.getEffect(msg.trackId, msg.effectId)?.params.set(msg.id, msg.value);
+      (inbound[msg.type] as (m: BrowserToServer) => void)?.(msg);
     });
     socket.on('close', () => {
       if (tab === socket) tab = null;

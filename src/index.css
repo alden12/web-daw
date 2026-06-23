@@ -1,108 +1,80 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-  --roll-faint: rgba(0, 0, 0, 0.06);
-  --roll-black: rgba(0, 0, 0, 0.04);
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
+   center workbench reads brightest. Two-voice accents: you = teal, claude = coral. */
+@theme {
+  --color-ground: #101216;
+  --color-rail: #14171c;
+  --color-panel: #1a1d24;
+  --color-center: #22262f;
+  --color-card: #2b313c;
+  --color-line: #363d49;
+  --color-line-soft: #282e38;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-ink: #e8e6e0;
+  --color-bright: #ffffff;
+  --color-muted: #868c99;
+  --color-faint: #5c626e;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  --color-you: #56c7c2;
+  --color-claude: #d9775a;
+
+  --color-good: #2ecc71;
+  --color-warn: #f1c40f;
+
+  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-    --roll-faint: rgba(255, 255, 255, 0.06);
-    --roll-black: rgba(255, 255, 255, 0.04);
-  }
+/* Region grid: data-mode resizes the agent column. Kept in CSS so the column
+   change can transition (utilities can't animate grid-template-columns). */
+.app-body {
+  display: grid;
+  grid-template-columns: 200px 1fr 320px;
+  grid-template-rows: 1fr 244px;
+  grid-template-areas:
+    'library center agent'
+    'timeline timeline timeline';
+  transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
-
-#root {
-  max-width: 900px;
-  margin: 0 auto;
-  min-height: 100svh;
+[data-mode='converse'] .app-body {
+  grid-template-columns: 200px 1.1fr 0.9fr;
+}
+[data-mode='produce'] .app-body {
+  grid-template-columns: 200px 1fr 52px;
+}
+.agent-rail {
+  display: none;
+}
+[data-mode='produce'] .agent-full {
+  display: none;
+}
+[data-mode='produce'] .agent-rail {
   display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
-body {
-  margin: 0;
+/* Bar grid behind timeline clips (dynamic repeat utilities are unwieldy). */
+.lane-grid {
+  background-image: repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px 25%);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@media (prefers-reduced-motion: reduce) {
+  .app-body {
+    transition: none;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

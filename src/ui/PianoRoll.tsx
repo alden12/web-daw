@@ -53,30 +53,28 @@ export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; sche
     clipStore.addNote({ pitch, start, length: 1, velocity: 0.8 });
   };
 
-  // Background grid: cell lines, stronger beat lines, semitone rows.
+  // Background grid: beat lines, finer cell lines, semitone rows.
   const gridBg = [
-    `repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px ${BEAT_W}px)`,
-    `repeating-linear-gradient(90deg, var(--roll-faint) 0 1px, transparent 1px ${CELL_W}px)`,
-    `repeating-linear-gradient(0deg, var(--roll-faint) 0 1px, transparent 1px ${ROW_H}px)`,
+    `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${BEAT_W}px)`,
+    `repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${CELL_W}px)`,
+    `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${ROW_H}px)`,
   ].join(', ');
 
   return (
-    <div className="roll-scroll">
-      <div
-        className="roll-grid"
-        style={{ width, height, background: gridBg }}
-        onClick={addAt}
-      >
+    <div className="max-w-full h-full overflow-auto border border-line rounded-lg bg-ground">
+      <div className="relative cursor-copy" style={{ width, height, background: gridBg }} onClick={addAt}>
         {/* black-key row shading + octave labels */}
         {Array.from({ length: ROWS }, (_, row) => {
           const pitch = MAX_PITCH - row;
           return (
             <div
               key={pitch}
-              className={isBlackKey(pitch) ? 'roll-row black' : 'roll-row'}
+              className={`absolute left-0 right-0 pointer-events-none ${isBlackKey(pitch) ? 'bg-white/[0.035]' : ''}`}
               style={{ top: row * ROW_H, height: ROW_H }}
             >
-              {pitch % 12 === 0 && <span className="roll-label">{pitchName(pitch)}</span>}
+              {pitch % 12 === 0 && (
+                <span className="sticky left-0.5 font-mono text-[9px] text-muted pl-0.5">{pitchName(pitch)}</span>
+              )}
             </div>
           );
         })}
@@ -84,7 +82,7 @@ export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; sche
         {clip.notes.map((note) => (
           <div
             key={note.id}
-            className="roll-note"
+            className="absolute bg-you border border-you/40 rounded-sm cursor-pointer box-border hover:brightness-125"
             style={{
               left: note.start * BEAT_W,
               width: Math.max(2, note.length * BEAT_W - 1),
@@ -100,7 +98,7 @@ export function PianoRoll({ clipStore, scheduler }: { clipStore: ClipStore; sche
           />
         ))}
 
-        <div ref={playheadRef} className="roll-playhead" style={{ height }} />
+        <div ref={playheadRef} className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0" style={{ height }} />
       </div>
     </div>
   );

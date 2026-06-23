@@ -36,20 +36,26 @@ export interface EffectCatalogEntry {
   schema: ParamSchema;
 }
 
-export const EFFECT_CATALOG: Record<string, EffectCatalogEntry> = {
+export const EFFECT_CATALOG = {
   delay: { label: 'Delay', schema: delaySchema },
   distortion: { label: 'Distortion', schema: distortionSchema },
   reverb: { label: 'Reverb', schema: reverbSchema },
   filter: { label: 'Filter', schema: filterSchema },
-};
+} satisfies Record<string, EffectCatalogEntry>;
 
-/** Display/insertion order for add buttons and the MCP palette. */
-export const EFFECT_TYPES = ['delay', 'distortion', 'reverb', 'filter'] as const;
+/** Cataloged effect ids. The registry is typed off this, so every type has a factory. */
+export type EffectType = keyof typeof EFFECT_CATALOG;
 
-export const DEFAULT_EFFECT = 'delay';
+/** Display/insertion order for add buttons and the MCP palette (derived, never drifts). */
+export const EFFECT_TYPES = Object.keys(EFFECT_CATALOG) as EffectType[];
+
+export const DEFAULT_EFFECT: EffectType = 'delay';
+
+// Lenient string-keyed view for callers holding an untyped id (persistence, MCP).
+const byType: Record<string, EffectCatalogEntry> = EFFECT_CATALOG;
 
 export function effectCatalogEntry(type: string): EffectCatalogEntry {
-  return EFFECT_CATALOG[type] ?? EFFECT_CATALOG[DEFAULT_EFFECT];
+  return byType[type] ?? byType[DEFAULT_EFFECT];
 }
 
 export function effectSchema(type: string): ParamSchema {
