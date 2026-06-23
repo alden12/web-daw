@@ -1,67 +1,26 @@
 /**
- * Local persistence: the whole project (all tracks' instruments + clips +
- * transport) plus the authored edit log are saved together as one localStorage
- * blob, so saving/loading is a near-free projection of the same model everything
- * else consumes. State is restored from the project snapshot; the log rides along
- * so the activity feed and authored history survive a reload (undo/redo is
- * session-scoped and intentionally not persisted). localStorage for now; a
- * network/file backend can later slot in behind this same seam.
+ * Project persistence: restore the saved project + authored edit log into the
+ * stores on startup, and autosave on any change. Both go through the
+ * `ProjectRepository` seam (a bundle of project.json + log + content-addressed
+ * samples - see `projectRepository.ts`), so the storage backend (OPFS now, a disk
+ * folder or remote later) is swappable without touching this file. The log rides
+ * along in the same save so the activity feed and authored history survive a reload
+ * (undo/redo is session-scoped and intentionally not persisted).
  */
 import type { ProjectStore } from './project/projectStore';
-import type { ProjectData } from './project/types';
 import type { EditLog } from './commands/editLog';
-import type { EditEntry } from './commands/types';
+import { getRepository, type ProjectRepository } from './projectRepository';
 
-const STORAGE_KEY = 'web-daw:project:v7';
-// Older snapshots. Read for migration only; ProjectStore.load files parentless
-// tracks into their family group and migrates older clip shapes (v6 variants,
-// v4 single clip, v6 audioClip) into the v7 clip pool + placements. Pre-v6 blobs
-// have no edit log, so the feed starts empty.
-const LEGACY_KEYS = ['web-daw:project:v6', 'web-daw:project:v5', 'web-daw:project:v4', 'web-daw:project:v3'];
 const SAVE_DEBOUNCE_MS = 300;
-// Bound the persisted log (commands are tiny); deeper history awaits the
-// on-disk file format / IndexedDB slice. The in-memory log is unaffected.
-const MAX_PERSISTED_ENTRIES = 2000;
 
-interface StoredProject {
-  version: 7;
-  project: ProjectData;
-  log: EditEntry[];
-}
-
-/** Read the stored blob (current or legacy key). Legacy blobs have no `log`. */
-function loadStored(): { project: ProjectData; log: EditEntry[] } | null {
-  for (const key of [STORAGE_KEY, ...LEGACY_KEYS]) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const data = JSON.parse(raw) as { project?: ProjectData; log?: EditEntry[] };
-      if (data.project?.tracks) return { project: data.project, log: data.log ?? [] };
-    } catch {
-      // try the next key
-    }
-  }
-  return null;
-}
-
-function saveProject(project: ProjectStore, editLog: EditLog): void {
-  try {
-    const entries = editLog.getEntries();
-    const data: StoredProject = {
-      version: 7,
-      project: project.snapshot(),
-      log: entries.slice(-MAX_PERSISTED_ENTRIES),
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // storage full or unavailable - skip silently
-  }
-}
-
-/** Restore the saved project + edit log into the stores, if present. Call before
- *  wiring sync, so the first MCP snapshot reflects the restored project. */
-export function restoreProject(project: ProjectStore, editLog: EditLog): void {
-  const saved = loadStored();
+/** Restore the saved project + edit log into the stores, if present. Await this
+ *  before wiring sync, so the first MCP snapshot reflects the restored project. */
+export async function restoreProject(
+  project: ProjectStore,
+  editLog: EditLog,
+  repo: ProjectRepository = getRepository(),
+): Promise<void> {
+  const saved = await repo.load();
   if (!saved || !saved.project.tracks?.length) return;
   project.load(saved.project);
   editLog.restore(saved.log);
@@ -73,11 +32,15 @@ export function restoreProject(project: ProjectStore, editLog: EditLog): void {
  * log at save time captures it - there are no log-only changes). Returns a
  * disposer. Re-subscribes to track stores whenever the track set changes.
  */
-export function attachAutosave(project: ProjectStore, editLog: EditLog): () => void {
+export function attachAutosave(
+  project: ProjectStore,
+  editLog: EditLog,
+  repo: ProjectRepository = getRepository(),
+): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => saveProject(project, editLog), SAVE_DEBOUNCE_MS);
+    timer = setTimeout(() => void repo.save(project.snapshot(), editLog.getEntries()), SAVE_DEBOUNCE_MS);
   };
 
   // Per-track/group subscriptions are rebuilt on structural change (they come/go).
