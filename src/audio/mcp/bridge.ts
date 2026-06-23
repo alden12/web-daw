@@ -9,8 +9,9 @@ import type { AudioEngine } from '../engine/AudioEngine';
 import type { Scheduler } from '../sequencer/scheduler';
 import type { EditLog } from '../commands/editLog';
 import type { EditCommand } from '../commands/types';
+import type { VersionStore } from '../commands/history';
 import { DEFAULT_WS_PORT } from './protocol';
-import type { BrowserToServer, ServerToBrowser } from './protocol';
+import type { BrowserToServer, HistoryMethod, ServerToBrowser } from './protocol';
 
 export type McpStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -19,6 +20,7 @@ export interface McpBridgeDeps {
   engine: AudioEngine;
   scheduler: Scheduler;
   editLog: EditLog;
+  versionStore: VersionStore;
 }
 
 export interface McpBridgeOptions {
@@ -31,7 +33,7 @@ export interface McpBridgeHandle {
 }
 
 export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions = {}): McpBridgeHandle {
-  const { projectStore, engine, scheduler, editLog } = deps;
+  const { projectStore, engine, scheduler, editLog, versionStore } = deps;
   const url = options.url ?? `ws://localhost:${DEFAULT_WS_PORT}`;
   const setStatus = (s: McpStatus) => options.onStatus?.(s);
 
@@ -62,8 +64,36 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   };
   const liveTypes = new Set<string>(['selectTrack', 'selectClip', 'noteOn', 'noteOff', 'allNotesOff', 'transport']);
 
+  // Version-history RPC. Each method maps to a VersionStore call; Claude's commits
+  // and reverts are authored 'claude'. `diff` defaults `fromId` to the commit's
+  // parent ("what changed in this version"). Results are sent back as historyReply.
+  const p = (params: Record<string, unknown> | undefined) => params ?? {};
+  const historyMethods: { [K in HistoryMethod]: (params: Record<string, unknown>) => Promise<unknown> } = {
+    commit: (params) => versionStore.commit(params.message as string | undefined, 'claude'),
+    revert: (params) => versionStore.revertTo(params.commitId as string, 'claude'),
+    history: (params) => versionStore.history(params.limit as number | undefined),
+    state: async () => versionStore.getState(),
+    diff: async (params) => {
+      const toId = params.toId as string;
+      let fromId = params.fromId as string | undefined;
+      if (!fromId) fromId = (await versionStore.getCommit(toId))?.parent ?? toId;
+      return versionStore.diff(fromId, toId);
+    },
+  };
+
+  const handleHistoryRequest = async (msg: Extract<ServerToBrowser, { type: 'historyRequest' }>) => {
+    const fn = historyMethods[msg.method];
+    if (!fn) return send({ type: 'historyReply', id: msg.id, ok: false, error: `Unknown method ${msg.method}` });
+    try {
+      send({ type: 'historyReply', id: msg.id, ok: true, result: await fn(p(msg.params)) });
+    } catch (err) {
+      send({ type: 'historyReply', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   const handle = (msg: ServerToBrowser) => {
-    if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
+    if (msg.type === 'historyRequest') void handleHistoryRequest(msg);
+    else if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
     else editLog.dispatch(msg as EditCommand, 'claude');
   };
 

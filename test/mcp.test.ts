@@ -299,6 +299,60 @@ describe('MCP server (tracks)', () => {
     expect(list.effects[0].type).toBe('reverb');
   });
 
+  // The real bridge answers history RPCs from the tab's VersionStore. Here we stub
+  // the tab end: reply to each historyRequest with a canned result so we can test
+  // the server's request/reply plumbing and tool surface in isolation.
+  function answerHistory(replyFor: (method: string, params: Record<string, unknown>) => unknown): void {
+    tab!.on('message', (data) => {
+      const msg = JSON.parse(data.toString()) as { type: string; id: string; method: string; params?: Record<string, unknown> };
+      if (msg.type !== 'historyRequest') return;
+      tab!.send(JSON.stringify({ type: 'historyReply', id: msg.id, ok: true, result: replyFor(msg.method, msg.params ?? {}) }));
+    });
+  }
+
+  it('commit / list_history / diff / revert_to round-trip to the tab', async () => {
+    await connectTab();
+    answerHistory((method, params) => {
+      const replies: Record<string, unknown> = {
+        commit: { id: 'cm-1234', message: params.message, author: 'claude', time: 0, auto: false, entryCount: 3 },
+        history: [{ id: 'cm-1234', message: 'Set tempo', author: 'claude', time: 0, auto: false, entryCount: 3 }],
+        diff: ['tempo 120 -> 140', 'added track "Bass"'],
+        revert: { id: 'cm-5678', message: 'Revert to "Set tempo"', author: 'claude', time: 0, auto: false, entryCount: 0 },
+      };
+      return replies[method];
+    });
+
+    const committed = await call('commit', { message: 'Set tempo' });
+    expect(committed.isError).toBeFalsy();
+    expect(committed.content[0].text).toContain('cm-1234');
+    expect(committed.content[0].text).toContain('Set tempo');
+
+    const history = parse(await call('list_history'));
+    expect(history).toHaveLength(1);
+    expect(history[0].id).toBe('cm-1234');
+
+    const diff = await call('diff', { to: 'cm-1234' });
+    expect(diff.content[0].text).toContain('tempo 120 -> 140');
+    expect(diff.content[0].text).toContain('added track "Bass"');
+
+    const reverted = await call('revert_to', { commit: 'cm-1234' });
+    expect(reverted.content[0].text).toContain('cm-5678');
+  });
+
+  it('commit reports when there is nothing to commit', async () => {
+    await connectTab();
+    answerHistory(() => null); // VersionStore.commit returns null on a no-op
+    const res = await call('commit', { message: 'noop' });
+    expect(res.isError).toBeFalsy();
+    expect(res.content[0].text).toMatch(/nothing to commit/i);
+  });
+
+  it('history tools fail cleanly when no tab is connected', async () => {
+    const res = await call('commit', { message: 'x' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/no daw tab connected/i);
+  });
+
   it('remove_group cascades and removes its tracks', async () => {
     const messages = await connectTab();
     const trackId = await makeTrack('subtractive');
