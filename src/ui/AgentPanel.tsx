@@ -96,7 +96,7 @@ export function AgentPanel({
               onClick={onToggle}
               aria-label="Collapse activity panel"
               title="Collapse activity panel"
-              className="text-[13px] leading-none text-muted hover:text-ink cursor-pointer px-1"
+              className="text-lg leading-none text-muted hover:text-ink cursor-pointer px-1"
             >
               »
             </button>
@@ -106,42 +106,42 @@ export function AgentPanel({
           {tab === "versions" ? (
             <VersionTimeline versionStore={versionStore} editLog={editLog} />
           ) : (
-          <div>
-            {recent.length === 0 ? (
-              <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
-                Edits you and Claude make appear here.
-              </div>
-            ) : (
-              <ul className="flex flex-col gap-1">
-                {recent.map((entry) => {
-                  const isUndoRedo =
-                    entry.kind === "undo" || entry.kind === "redo";
-                  return (
-                    <li
-                      key={entry.seq}
-                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
-                        entry.author === "claude"
-                          ? "border-claude"
-                          : "border-you"
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === "claude" ? "bg-claude" : "bg-you"}`}
-                      />
-                      <span
-                        className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}
+            <div>
+              {recent.length === 0 ? (
+                <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
+                  Edits you and Claude make appear here.
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {recent.map((entry) => {
+                    const isUndoRedo =
+                      entry.kind === "undo" || entry.kind === "redo";
+                    return (
+                      <li
+                        key={entry.seq}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
+                          entry.author === "claude"
+                            ? "border-claude"
+                            : "border-you"
+                        }`}
                       >
-                        {entry.label ?? describeCommand(entry.command)}
-                      </span>
-                      <span className="ml-auto font-mono text-[10px] text-faint shrink-0">
-                        {entry.author}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === "claude" ? "bg-claude" : "bg-you"}`}
+                        />
+                        <span
+                          className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}
+                        >
+                          {entry.label ?? describeCommand(entry.command)}
+                        </span>
+                        <span className="ml-auto font-mono text-[10px] text-faint shrink-0">
+                          {entry.author}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       </div>

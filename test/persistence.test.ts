@@ -82,6 +82,30 @@ describe('project + edit-log persistence', () => {
     expect(entries.map((e) => e.author)).toEqual(['you', 'claude']);
   });
 
+  it('persists undo/redo so undo works after a restore (reload)', async () => {
+    vi.useFakeTimers();
+    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    log.dispatch({ type: 'setTempo', bpm: 132 });
+    await vi.runAllTimersAsync(); // save project + log + undo state
+    dispose();
+    vi.useRealTimers();
+
+    // Fresh stores (simulate reload), same repo.
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, repo);
+
+    expect(log2.getState().canUndo).toBe(true); // undo survived the reload
+    expect(project2.tempo).toBe(132);
+    log2.undo();
+    expect(project2.tempo).toBe(120); // back to before the tempo edit
+  });
+
   it('trims the persisted log to the last MAX_PERSISTED_ENTRIES', async () => {
     vi.useFakeTimers();
     const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });

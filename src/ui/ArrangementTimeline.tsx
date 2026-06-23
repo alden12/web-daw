@@ -161,7 +161,7 @@ function NoteMinis({
       tiles.push({ key: `${note.id}:${tau}`, tau, note });
   }
   const dividers: number[] = [];
-  let first = (-placement.offset) % clipLen;
+  let first = -placement.offset % clipLen;
   if (first < 0) first += clipLen;
   for (let tau = first; tau < placement.length; tau += clipLen)
     if (tau > 0.001) dividers.push(tau);
@@ -226,9 +226,14 @@ function Lane({
   dispatch: Dispatch;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
+  const [draft, setDraft] = useState<{ left: number; width: number } | null>(
+    null,
+  );
   const beatAt = (clientX: number) =>
-    xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
+    xToBeat(
+      clientX - (ref.current?.getBoundingClientRect().left ?? 0),
+      pxPerBeat,
+    );
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
 
@@ -236,7 +241,8 @@ function Lane({
   // accepts: dropping on the clip's own track places the existing clip; dropping on
   // another same-kind track copies the clip into that track's pool first, then
   // places it.
-  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndKindType(track.kind));
+  const accepts = (e: React.DragEvent) =>
+    e.dataTransfer.types.includes(clipDndKindType(track.kind));
   const onDragOver = (e: React.DragEvent) => {
     if (!accepts(e)) return;
     e.preventDefault();
@@ -252,8 +258,20 @@ function Lane({
     if (draggedId && track.clips.some((c) => c.id === draggedId)) {
       // Same track: place the existing clip.
       const id = newPlacementId();
-      dispatch({ type: "addPlacement", trackId: track.id, id, clipId: draggedId, startBeat });
-      onSelect(track.id, { id, clipId: draggedId, startBeat, offset: 0, length: 0 });
+      dispatch({
+        type: "addPlacement",
+        trackId: track.id,
+        id,
+        clipId: draggedId,
+        startBeat,
+      });
+      onSelect(track.id, {
+        id,
+        clipId: draggedId,
+        startBeat,
+        offset: 0,
+        length: 0,
+      });
       return;
     }
     // Cross-track: copy the dragged clip's content into this track, then place it.
@@ -262,7 +280,13 @@ function Lane({
     const clipId = newClipId();
     const id = newPlacementId();
     dispatch({ type: "pasteClip", trackId: track.id, id: clipId, content });
-    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat });
+    dispatch({
+      type: "addPlacement",
+      trackId: track.id,
+      id,
+      clipId,
+      startBeat,
+    });
     onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
   };
 
@@ -279,13 +303,26 @@ function Lane({
     const onMove = (ev: PointerEvent) => {
       const delta = beatAt(ev.clientX) - downBeat;
       if (isEdge) {
-        const length = Math.max(snapOn ? snapDiv : GRID, snapB(origin.length + delta));
+        const length = Math.max(
+          snapOn ? snapDiv : GRID,
+          snapB(origin.length + delta),
+        );
         if (length !== p.length)
-          dispatch({ type: "resizePlacement", trackId: track.id, placementId: p.id, length });
+          dispatch({
+            type: "resizePlacement",
+            trackId: track.id,
+            placementId: p.id,
+            length,
+          });
       } else {
         const startBeat = Math.max(0, snapB(origin.startBeat + delta));
         if (startBeat !== p.startBeat)
-          dispatch({ type: "movePlacement", trackId: track.id, placementId: p.id, startBeat });
+          dispatch({
+            type: "movePlacement",
+            trackId: track.id,
+            placementId: p.id,
+            startBeat,
+          });
       }
     };
     const onUp = () => {
@@ -301,7 +338,13 @@ function Lane({
     e.stopPropagation();
     const at = snapB(beatAt(e.clientX));
     if (at > p.startBeat && at < p.startBeat + p.length)
-      dispatch({ type: "splitPlacement", trackId: track.id, placementId: p.id, atBeat: at, newId: newPlacementId() });
+      dispatch({
+        type: "splitPlacement",
+        trackId: track.id,
+        placementId: p.id,
+        atBeat: at,
+        newId: newPlacementId(),
+      });
   };
 
   // Create a new empty clip sized to [start, start+length) and place it; the new
@@ -311,8 +354,21 @@ function Lane({
     if (track.kind !== "instrument") return;
     const clipId = newClipId();
     const id = newPlacementId();
-    dispatch({ type: "addClip", trackId: track.id, id: clipId, empty: true, lengthBeats: length });
-    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat: start, length });
+    dispatch({
+      type: "addClip",
+      trackId: track.id,
+      id: clipId,
+      empty: true,
+      lengthBeats: length,
+    });
+    dispatch({
+      type: "addPlacement",
+      trackId: track.id,
+      id,
+      clipId,
+      startBeat: start,
+      length,
+    });
     onSelect(track.id, { id, clipId, startBeat: start, offset: 0, length });
   };
 
@@ -329,7 +385,10 @@ function Lane({
       const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
       const end = snapB(Math.max(downBeat, beatAt(ev.clientX)));
       const length = Math.max(snapOn ? snapDiv : GRID, end - start);
-      setDraft({ left: beatToX(start, pxPerBeat), width: beatToX(length, pxPerBeat) });
+      setDraft({
+        left: beatToX(start, pxPerBeat),
+        width: beatToX(length, pxPerBeat),
+      });
     };
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
@@ -342,7 +401,10 @@ function Lane({
       }
       // Drag: an empty clip sized to the drag.
       const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
-      const length = Math.max(snapOn ? snapDiv : GRID, snapB(Math.max(downBeat, beatAt(ev.clientX))) - start);
+      const length = Math.max(
+        snapOn ? snapDiv : GRID,
+        snapB(Math.max(downBeat, beatAt(ev.clientX))) - start,
+      );
       createClip(start, length);
     };
     window.addEventListener("pointermove", onMove);
@@ -366,7 +428,8 @@ function Lane({
     >
       {track.placements.map((p) => {
         const clip = track.clips.find((c) => c.id === p.clipId);
-        const selected = selection?.trackId === track.id && selection.id === p.id;
+        const selected =
+          selection?.trackId === track.id && selection.id === p.id;
         return (
           <Block
             key={p.id}
@@ -378,7 +441,11 @@ function Lane({
             onDoubleClick={(e) => onBlockDouble(p, e)}
           >
             {clip && "store" in clip && (
-              <NoteMinis store={clip.store} placement={p} pxPerBeat={pxPerBeat} />
+              <NoteMinis
+                store={clip.store}
+                placement={p}
+                pxPerBeat={pxPerBeat}
+              />
             )}
           </Block>
         );
@@ -407,7 +474,9 @@ function Lane({
       {track.launchedClipId && (
         <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">
           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-you bg-ground/80 border border-you/50 rounded px-1.5 py-0.5">
-            ▶ {track.clips.find((c) => c.id === track.launchedClipId)?.name ?? "clip"}
+            ▶{" "}
+            {track.clips.find((c) => c.id === track.launchedClipId)?.name ??
+              "clip"}
           </span>
         </div>
       )}
@@ -438,13 +507,15 @@ function GroupHeader({
         onClick={() =>
           projectStore.setGroupCollapsed(group.id, !group.collapsed)
         }
-        className="w-3.5 text-[9px] text-muted cursor-pointer shrink-0"
+        className="w-3.5 text-lg text-muted cursor-pointer shrink-0"
       >
         {group.collapsed ? "▸" : "▾"}
       </button>
       <InlineRename
         value={group.name}
-        onCommit={(name) => dispatch({ type: "setGroup", groupId: group.id, name })}
+        onCommit={(name) =>
+          dispatch({ type: "setGroup", groupId: group.id, name })
+        }
         className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
       />
       <button
@@ -533,7 +604,9 @@ function TrackHeader({
       </button>
       <InlineRename
         value={track.name}
-        onCommit={(name) => dispatch({ type: "setTrack", trackId: track.id, name })}
+        onCommit={(name) =>
+          dispatch({ type: "setTrack", trackId: track.id, name })
+        }
         className="font-mono text-[13px] text-bright flex-1 min-w-0"
       />
       <input
@@ -585,16 +658,36 @@ export function ArrangementTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber(
+    "web-daw:arr-zoom",
+    24,
+    ZOOM.min,
+    ZOOM.max,
+  );
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
+  const [snapDiv, setSnapDiv] = usePersistentNumber(
+    "web-daw:arr-snap-div",
+    1,
+    0.5,
+    4,
+  );
   const [selection, setSelection] = useState<Selection>(null);
-  const [marker, setMarker] = useState<{ trackId: string; beat: number } | null>(null);
+  const [marker, setMarker] = useState<{
+    trackId: string;
+    beat: number;
+  } | null>(null);
   // The single in-flight clip-drag drop target, so only the lane under the cursor
   // shows the drop indicator (not every lane the drag has passed through).
-  const [dropTarget, setDropTarget] = useState<{ trackId: string; beat: number } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    trackId: string;
+    beat: number;
+  } | null>(null);
   const [viewportW, setViewportW] = useState(0);
-  const clipboard = useRef<{ clipId: string; offset: number; length: number } | null>(null);
+  const clipboard = useRef<{
+    clipId: string;
+    offset: number;
+    length: number;
+  } | null>(null);
 
   const beatsPerBar = DEFAULT_BEATS_PER_BAR;
   const lengthBeats = project.lengthBeats;
@@ -605,11 +698,17 @@ export function ArrangementTimeline({
   // and never stops short of the visible panel, so the bar grid fills it at any zoom.
   const arrangedEnd = Math.max(
     lengthBeats,
-    ...project.tracks.flatMap((t) => t.placements.map((p) => p.startBeat + p.length)),
+    ...project.tracks.flatMap((t) =>
+      t.placements.map((p) => p.startBeat + p.length),
+    ),
     0,
   );
-  const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - HEADER_W) / pxPerBeat : 0;
-  const viewBeats = Math.max(arrangedEnd + TRAIL_BEATS, Math.ceil(minViewBeats));
+  const minViewBeats =
+    pxPerBeat > 0 ? Math.max(0, viewportW - HEADER_W) / pxPerBeat : 0;
+  const viewBeats = Math.max(
+    arrangedEnd + TRAIL_BEATS,
+    Math.ceil(minViewBeats),
+  );
   const laneWidth = beatToX(viewBeats, pxPerBeat);
   const contentH = RULER_H + rows.length * ROW_PX;
 
@@ -634,7 +733,12 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
+      if (
+        el &&
+        (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ||
+          el.closest("[data-clip-rail]"))
+      )
+        return;
       if (e.key === "Escape") {
         setSelection(null);
         setMarker(null);
@@ -643,7 +747,11 @@ export function ArrangementTimeline({
       if (!selection) return;
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        dispatch({ type: "removePlacement", trackId: selection.trackId, placementId: selection.id });
+        dispatch({
+          type: "removePlacement",
+          trackId: selection.trackId,
+          placementId: selection.id,
+        });
         setSelection(null);
       }
     };
@@ -657,7 +765,12 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
+      if (
+        el &&
+        (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ||
+          el.closest("[data-clip-rail]"))
+      )
+        return;
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       if (key !== "c" && key !== "x" && key !== "v") return;
@@ -669,9 +782,17 @@ export function ArrangementTimeline({
         if (!p) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        clipboard.current = { clipId: p.clipId, offset: p.offset, length: p.length };
+        clipboard.current = {
+          clipId: p.clipId,
+          offset: p.offset,
+          length: p.length,
+        };
         if (key === "x") {
-          dispatch({ type: "removePlacement", trackId: selection.trackId, placementId: selection.id });
+          dispatch({
+            type: "removePlacement",
+            trackId: selection.trackId,
+            placementId: selection.id,
+          });
           setSelection(null);
         }
         return;
@@ -680,16 +801,37 @@ export function ArrangementTimeline({
       // paste: needs a clipboard and a target track that owns the clip. Prefer the
       // marker (track + beat); else after the selection; else the track's end.
       const cb = clipboard.current;
-      const targetId = marker?.trackId ?? selection?.trackId ?? projectStore.selectedId ?? undefined;
+      const targetId =
+        marker?.trackId ??
+        selection?.trackId ??
+        projectStore.selectedId ??
+        undefined;
       const t = targetId ? projectStore.getTrack(targetId) : undefined;
       if (!cb || !t || !t.clips.some((c) => c.id === cb.clipId)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const anchor = selection ? t.placements.find((x) => x.id === selection.id) : null;
-      const trackEnd = t.placements.reduce((m, p) => Math.max(m, p.startBeat + p.length), 0);
-      const startBeat = marker ? marker.beat : anchor ? anchor.startBeat + anchor.length : trackEnd;
+      const anchor = selection
+        ? t.placements.find((x) => x.id === selection.id)
+        : null;
+      const trackEnd = t.placements.reduce(
+        (m, p) => Math.max(m, p.startBeat + p.length),
+        0,
+      );
+      const startBeat = marker
+        ? marker.beat
+        : anchor
+          ? anchor.startBeat + anchor.length
+          : trackEnd;
       const id = newPlacementId();
-      dispatch({ type: "addPlacement", trackId: t.id, id, clipId: cb.clipId, startBeat, offset: cb.offset, length: cb.length });
+      dispatch({
+        type: "addPlacement",
+        trackId: t.id,
+        id,
+        clipId: cb.clipId,
+        startBeat,
+        offset: cb.offset,
+        length: cb.length,
+      });
       setMarker(null);
       setSelection({ trackId: t.id, id });
       projectStore.selectTrack(t.id);
@@ -731,7 +873,8 @@ export function ArrangementTimeline({
       const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
       setPxPerBeat(next);
       requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left) + HEADER_W;
+        el.scrollLeft =
+          beatAtCursor * next - (e.clientX - rect.left) + HEADER_W;
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -793,7 +936,11 @@ export function ArrangementTimeline({
         )}
         <div className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
-            <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={snapOn}
+              onChange={(e) => setSnapOn(e.target.checked)}
+            />
             Snap
           </label>
           <select
@@ -809,10 +956,24 @@ export function ArrangementTimeline({
             ))}
           </select>
           <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button type="button" title="Zoom out" className={zoomBtn} onClick={() => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))}>
+          <button
+            type="button"
+            title="Zoom out"
+            className={zoomBtn}
+            onClick={() =>
+              setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))
+            }
+          >
             −
           </button>
-          <button type="button" title="Zoom in" className={zoomBtn} onClick={() => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))}>
+          <button
+            type="button"
+            title="Zoom in"
+            className={zoomBtn}
+            onClick={() =>
+              setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))
+            }
+          >
             +
           </button>
         </div>
@@ -823,8 +984,15 @@ export function ArrangementTimeline({
           No tracks yet. Add an instrument from the library.
         </div>
       ) : (
-        <div ref={scrollRef} data-testid="arr-scroll" className="flex-1 min-h-0 overflow-auto">
-          <div className="relative" style={{ width: HEADER_W + laneWidth, height: contentH }}>
+        <div
+          ref={scrollRef}
+          data-testid="arr-scroll"
+          className="flex-1 min-h-0 overflow-auto"
+        >
+          <div
+            className="relative"
+            style={{ width: HEADER_W + laneWidth, height: contentH }}
+          >
             {/* ruler row: sticky top; the corner cell is sticky on both axes */}
             <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
               <div
@@ -837,15 +1005,22 @@ export function ArrangementTimeline({
                 loopEnd={lengthBeats}
                 pxPerBeat={pxPerBeat}
                 beatsPerBar={beatsPerBar}
-                onSetLoopStart={(beats) => dispatch({ type: "setLoopStart", beats })}
-                onSetLoopEnd={(beats) => dispatch({ type: "setLength", lengthBeats: beats })}
+                onSetLoopStart={(beats) =>
+                  dispatch({ type: "setLoopStart", beats })
+                }
+                onSetLoopEnd={(beats) =>
+                  dispatch({ type: "setLength", lengthBeats: beats })
+                }
               />
             </div>
 
             {rows.map((row) =>
               row.kind === "group" ? (
                 <div key={row.group.id} className="flex">
-                  <div className="sticky left-0 z-10 shrink-0" style={{ width: HEADER_W }}>
+                  <div
+                    className="sticky left-0 z-10 shrink-0"
+                    style={{ width: HEADER_W }}
+                  >
                     <GroupHeader
                       group={row.group}
                       depth={row.depth}
@@ -853,7 +1028,10 @@ export function ArrangementTimeline({
                       dispatch={dispatch}
                     />
                   </div>
-                  <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
+                  <div
+                    className={`${ROW} border-b border-line bg-center/40`}
+                    style={{ width: laneWidth }}
+                  />
                 </div>
               ) : (
                 <TrackRow
@@ -869,11 +1047,21 @@ export function ArrangementTimeline({
                   snapOn={snapOn}
                   snapDiv={snapDiv}
                   selection={selection}
-                  markerBeat={marker?.trackId === row.track.id ? marker.beat : null}
-                  dropBeat={dropTarget?.trackId === row.track.id ? dropTarget.beat : null}
+                  markerBeat={
+                    marker?.trackId === row.track.id ? marker.beat : null
+                  }
+                  dropBeat={
+                    dropTarget?.trackId === row.track.id
+                      ? dropTarget.beat
+                      : null
+                  }
                   onSelect={selectPlacement}
                   onMark={placeMarker}
-                  onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
+                  onHover={(beat) =>
+                    setDropTarget(
+                      beat === null ? null : { trackId: row.track.id, beat },
+                    )
+                  }
                 />
               ),
             )}
@@ -954,7 +1142,10 @@ function TrackRow({
           dispatch={dispatch}
         />
       ) : (
-        <div className={`${ROW} border-b border-line-soft`} style={{ width: laneWidth }} />
+        <div
+          className={`${ROW} border-b border-line-soft`}
+          style={{ width: laneWidth }}
+        />
       )}
     </div>
   );

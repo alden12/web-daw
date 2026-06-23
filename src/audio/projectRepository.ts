@@ -18,6 +18,7 @@
  */
 import type { ProjectData, TrackData } from './project/types';
 import type { Author, EditEntry } from './commands/types';
+import type { UndoState } from './commands/editLog';
 import { type BundleStore, createBundleStore } from './bundleStore';
 
 const FORMAT_VERSION = 1;
@@ -190,6 +191,17 @@ export class ProjectRepository {
     }
     await this.save(project, log);
     return { project, log };
+  }
+
+  // ---- undo/redo (session checkpoints, persisted so undo survives a reload) ----
+
+  writeUndo(state: UndoState): Promise<void> {
+    return this.store.writeText('undo.json', JSON.stringify(state));
+  }
+
+  async readUndo(): Promise<UndoState | null> {
+    const raw = await this.store.readText('undo.json');
+    return raw ? (JSON.parse(raw) as UndoState) : null;
   }
 
   // ---- version history (the commit DAG, under history/) ----

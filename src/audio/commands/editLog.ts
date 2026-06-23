@@ -24,14 +24,22 @@ import type { Author, EditCommand, EditEntry } from './types';
  * the checkpoint brackets - so undo/redo can describe what they reverted/reapplied
  * in the activity feed.
  */
-interface Checkpoint {
+export interface Checkpoint {
   snap: ProjectData;
   command: EditCommand;
   author: Author;
 }
 
+/** Persisted undo/redo stacks, so undo survives a reload (DESIGN.md section 7). */
+export interface UndoState {
+  undo: Checkpoint[];
+  redo: Checkpoint[];
+}
+
 const COALESCE_MS = 400;
 const MAX_DEPTH = 100;
+/** How many checkpoints to persist per stack (each holds a full snapshot). */
+const PERSIST_UNDO_DEPTH = 30;
 const COALESCABLE = new Set<EditCommand['type']>([
   'setParam',
   'setEffectParam',
@@ -167,11 +175,26 @@ export class EditLog {
     return this.entries;
   }
 
+  /** The undo/redo stacks for persistence (bounded; each checkpoint is a snapshot). */
+  getCheckpoints(): UndoState {
+    return {
+      undo: this.undoStack.slice(-PERSIST_UNDO_DEPTH),
+      redo: this.redoStack.slice(-PERSIST_UNDO_DEPTH),
+    };
+  }
+
+  /** Restore persisted undo/redo stacks (after restore()), so undo survives a reload. */
+  restoreCheckpoints(state: UndoState): void {
+    this.undoStack = state.undo ?? [];
+    this.redoStack = state.redo ?? [];
+    this.emit();
+  }
+
   /**
    * Replace the log with persisted entries (on reload). Continues `seq` from the
    * highest restored entry so new edits stay monotonic (correct even if older
-   * entries were trimmed). Undo/redo do not span a reload, so the checkpoint
-   * stacks start empty.
+   * entries were trimmed). Clears the checkpoint stacks; persisted undo/redo is
+   * layered back on afterwards via restoreCheckpoints().
    */
   restore(entries: EditEntry[]): void {
     this.entries = entries.slice();
