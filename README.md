@@ -27,6 +27,17 @@ yarn lint        # lint
 yarn test        # run tests
 ```
 
+## Contributing
+
+Contributions are welcome. By submitting a change you certify the
+[Developer Certificate of Origin](CONTRIBUTING.md) by signing off your commits
+(`git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
 ## License
 
-[MIT](LICENSE)
+[GNU AGPL-3.0-or-later](LICENSE).
+
+In short: the source is open and you are free to use, modify, and self-host it,
+but if you run a modified version as a network service you must publish your
+changes under the same license. The copyright holder may also offer the project
+under a separate commercial license; reach out if the AGPL does not fit your use.
