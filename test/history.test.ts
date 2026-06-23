@@ -83,4 +83,40 @@ describe('VersionStore (commit DAG)', () => {
     log.dispatch({ type: 'setTempo', bpm: 100 });
     expect(await vs.commit('forward')).toBeTruthy();
   });
+
+  it('reverts to an earlier commit and records it as a new HEAD', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    const v1 = await vs.commit('v1', 'you'); // one track
+    expect(v1).toBeTruthy();
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'fm', id: 't-2' }); // distinct, non-coalescing edit
+    const v2 = await vs.commit('v2', 'you'); // two tracks
+    expect(v2).toBeTruthy();
+    expect(project.getTrack('t-2')).toBeTruthy();
+
+    const rev = await vs.revertTo(v1!.id, 'you');
+    expect(project.getTrack('t-2')).toBeUndefined(); // live state jumped back to v1
+    expect(project.getTrack('t-1')).toBeTruthy();
+    // History is append-only: v1, v2, then the revert on top (newest first).
+    const hist = await vs.history();
+    expect(hist[0].id).toBe(rev!.id);
+    expect(hist.map((c) => c.message)).toEqual(['Revert to "v1"', 'v2', 'v1']);
+  });
+
+  it('diffs two commits in musical terms', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    const a = await vs.commit('a', 'you');
+    log.dispatch({ type: 'setTempo', bpm: 96 });
+    const b = await vs.commit('b', 'you');
+
+    expect(await vs.diff(a!.id, b!.id)).toContain('Tempo 120 -> 96 BPM');
+  });
 });

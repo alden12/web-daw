@@ -12,6 +12,7 @@
  */
 import type { ProjectStore } from '../project/projectStore';
 import { describeCommand } from './describe';
+import { diffProjects } from './diff';
 import type { Author, EditEntry } from './types';
 import type { EditLog } from './editLog';
 import { getRepository, type Commit, type ProjectRepository, type Refs } from '../projectRepository';
@@ -107,6 +108,48 @@ export class VersionStore {
     this.lastCommittedSeq = lastSeq;
     this.emit();
     return toSummary(commit);
+  }
+
+  /**
+   * Time-travel: load a commit's snapshot as the live project, recorded as a new
+   * HEAD commit (history stays append-only - git-revert style, not a detached
+   * HEAD). Subsequent edits checkpoint forward from here. No-op if id is unknown.
+   */
+  async revertTo(commitId: string, author: Author = 'you'): Promise<CommitSummary | null> {
+    const target = await this.repo.readCommit(commitId);
+    if (!target) return null;
+    this.project.load(target.snapshot); // live state jumps to the old snapshot
+    const lastSeq = this.maxSeq(); // the jump consumes any pending edits
+    const commit: Commit = {
+      id: `cm-${crypto.randomUUID().slice(0, 8)}`,
+      parent: this.headId(),
+      author,
+      message: `Revert to "${target.message}"`,
+      time: Date.now(),
+      auto: false,
+      entryCount: 0,
+      snapshot: target.snapshot,
+      entries: [],
+      lastSeq,
+    };
+    await this.repo.writeCommit(commit);
+    this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
+    await this.repo.writeRefs(this.refs);
+    this.lastCommittedSeq = lastSeq;
+    this.emit();
+    return toSummary(commit);
+  }
+
+  /** The full commit (with snapshot + entries) by id, or null. */
+  getCommit(id: string): Promise<Commit | null> {
+    return this.repo.readCommit(id);
+  }
+
+  /** Readable, musical changes between two commits' snapshots ("cutoff 400 -> 800"). */
+  async diff(fromId: string, toId: string): Promise<string[]> {
+    const [from, to] = await Promise.all([this.repo.readCommit(fromId), this.repo.readCommit(toId)]);
+    if (!from || !to) return [];
+    return diffProjects(from.snapshot, to.snapshot);
   }
 
   /** The commit chain from HEAD back to the root, newest first. */
