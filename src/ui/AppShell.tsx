@@ -143,9 +143,6 @@ export function AppShell() {
         dispatch={dispatch}
         isPlaying={isPlaying}
         started={started}
-        mcpStatus={mcpStatus}
-        agentCollapsed={agentCollapsed}
-        onToggleAgent={() => setAgentCollapsed(!agentCollapsed)}
       />
       <div
         ref={bodyRef}

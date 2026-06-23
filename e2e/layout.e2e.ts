@@ -72,16 +72,16 @@ test('an oversized persisted timeline height cannot crowd out the workbench', as
   expect(center.height).toBeLessThanOrEqual(body.height + 1);
 });
 
-test('the agent pane collapses to a rail and expands again', async ({ page }) => {
+test('the activity panel collapses to a rail and expands again', async ({ page }) => {
   await page.goto('/');
   await dismissStart(page);
   const full = (await box(page, 'agent')).width;
   expect(full).toBeGreaterThan(200);
 
   // The column animates (0.42s transition), so poll until it settles.
-  await page.getByRole('button', { name: /collapse agent pane/i }).click();
+  await page.getByRole('button', { name: /collapse activity panel/i }).click();
   await expect.poll(() => widthOf(page, 'agent')).toBeLessThan(80);
 
-  await page.getByRole('button', { name: /expand agent pane/i }).click();
+  await page.getByRole('button', { name: /expand activity panel/i }).click();
   await expect.poll(() => widthOf(page, 'agent')).toBeGreaterThan(200);
 });
