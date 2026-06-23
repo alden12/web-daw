@@ -24,11 +24,11 @@ export type ServerToBrowser =
   | { type: 'createTrack'; instrumentType: string; name?: string; id: string; groupId?: string }
   | { type: 'removeTrack'; trackId: string }
   | { type: 'selectTrack'; trackId: string }
-  | { type: 'setTrack'; trackId: string; muted?: boolean; volume?: number; name?: string }
+  | { type: 'setTrack'; trackId: string; muted?: boolean; solo?: boolean; volume?: number; name?: string }
   // Group structure (bus tree; id assigned by the creator so both ends agree)
   | { type: 'createGroup'; id: string; name?: string; parentId?: string | null }
   | { type: 'removeGroup'; groupId: string }
-  | { type: 'setGroup'; groupId: string; name?: string; muted?: boolean; volume?: number; collapsed?: boolean }
+  | { type: 'setGroup'; groupId: string; name?: string; muted?: boolean; solo?: boolean; volume?: number; collapsed?: boolean }
   | { type: 'moveTrack'; trackId: string; groupId: string }
   | { type: 'moveGroup'; groupId: string; parentId: string | null }
   // Parameters

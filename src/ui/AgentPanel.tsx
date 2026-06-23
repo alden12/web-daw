@@ -47,7 +47,7 @@ export function AgentPanel({
         title="Expand activity panel"
         className="[grid-area:agent] bg-panel border-l border-line flex flex-col items-center gap-3.5 py-3.5 cursor-pointer hover:bg-card/40"
       >
-        <span className="text-[13px] leading-none text-muted">«</span>
+        <span className="text-lg leading-none text-muted">«</span>
         <span className={`w-2 h-2 rounded-full ${DOT[mcpStatus]}`} />
         <span className="w-2 h-2 rounded-full bg-you" />
       </button>

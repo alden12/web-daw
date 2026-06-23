@@ -185,6 +185,7 @@ export function createDawMcp(
               instrument: t.kind === 'instrument' ? t.instrumentType : undefined,
               group: t.parentId,
               muted: t.muted,
+              solo: t.solo,
               volume: t.volume,
               clips: t.clips.length,
               placements: t.placements.length,
@@ -262,14 +263,15 @@ export function createDawMcp(
     'set_track',
     {
       title: 'Set track',
-      description: 'Set a track\'s mute, volume (0..1), and/or name.',
-      inputSchema: { ...trackArg, muted: z.boolean().optional(), volume: z.number().min(0).max(1).optional(), name: z.string().optional() },
+      description: 'Set a track\'s mute, solo, volume (0..1), and/or name.',
+      inputSchema: { ...trackArg, muted: z.boolean().optional(), solo: z.boolean().optional(), volume: z.number().min(0).max(1).optional(), name: z.string().optional() },
     },
-    async ({ track, muted, volume, name }) => {
+    async ({ track, muted, solo, volume, name }) => {
       const r = resolveTrack(track);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'setTrack', trackId: r.id, muted, volume, name })) return fail('No DAW tab connected.');
+      if (!sendToTab({ type: 'setTrack', trackId: r.id, muted, solo, volume, name })) return fail('No DAW tab connected.');
       if (muted !== undefined) mirror.setMuted(r.id, muted);
+      if (solo !== undefined) mirror.setSolo(r.id, solo);
       if (volume !== undefined) mirror.setVolume(r.id, volume);
       if (name !== undefined) mirror.renameTrack(r.id, name);
       return ok(`Updated track ${r.id}.`);
@@ -293,6 +295,7 @@ export function createDawMcp(
               name: g.name,
               parent: g.parentId,
               muted: g.muted,
+              solo: g.solo,
               volume: g.volume,
               collapsed: g.collapsed,
               effects: g.effects.length,
@@ -345,21 +348,23 @@ export function createDawMcp(
     'set_group',
     {
       title: 'Set group',
-      description: 'Set a group\'s name, mute, volume (0..1), and/or collapsed state. Muting a group silences everything routed through it.',
+      description: 'Set a group\'s name, mute, solo, volume (0..1), and/or collapsed state. Muting a group silences everything routed through it.',
       inputSchema: {
         group: z.string(),
         name: z.string().optional(),
         muted: z.boolean().optional(),
+        solo: z.boolean().optional(),
         volume: z.number().min(0).max(1).optional(),
         collapsed: z.boolean().optional(),
       },
     },
-    async ({ group, name, muted, volume, collapsed }) => {
+    async ({ group, name, muted, solo, volume, collapsed }) => {
       const r = resolveGroup(group);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'setGroup', groupId: r.id, name, muted, volume, collapsed })) return fail('No DAW tab connected.');
+      if (!sendToTab({ type: 'setGroup', groupId: r.id, name, muted, solo, volume, collapsed })) return fail('No DAW tab connected.');
       if (name !== undefined) mirror.renameGroup(r.id, name);
       if (muted !== undefined) mirror.setGroupMuted(r.id, muted);
+      if (solo !== undefined) mirror.setGroupSolo(r.id, solo);
       if (volume !== undefined) mirror.setGroupVolume(r.id, volume);
       if (collapsed !== undefined) mirror.setGroupCollapsed(r.id, collapsed);
       return ok(`Updated group ${r.id}.`);

@@ -28,6 +28,7 @@ const APPLY: ApplyMap = {
   removeTrack: (p, c) => p.removeTrack(c.trackId),
   setTrack: (p, c) => {
     if (c.muted !== undefined) p.setMuted(c.trackId, c.muted);
+    if (c.solo !== undefined) p.setSolo(c.trackId, c.solo);
     if (c.volume !== undefined) p.setVolume(c.trackId, c.volume);
     if (c.name !== undefined) p.renameTrack(c.trackId, c.name);
   },
@@ -37,6 +38,7 @@ const APPLY: ApplyMap = {
   setGroup: (p, c) => {
     if (c.name !== undefined) p.renameGroup(c.groupId, c.name);
     if (c.muted !== undefined) p.setGroupMuted(c.groupId, c.muted);
+    if (c.solo !== undefined) p.setGroupSolo(c.groupId, c.solo);
     if (c.volume !== undefined) p.setGroupVolume(c.groupId, c.volume);
     if (c.collapsed !== undefined) p.setGroupCollapsed(c.groupId, c.collapsed);
   },

@@ -65,6 +65,7 @@ export interface Group extends EffectHost {
   parentId: string | null;
   collapsed: boolean;
   muted: boolean;
+  solo: boolean;
   volume: number;
 }
 
@@ -73,6 +74,7 @@ interface BaseTrack extends EffectHost {
   name: string;
   parentId: string;
   muted: boolean;
+  solo: boolean;
   volume: number;
 }
 
@@ -169,6 +171,7 @@ export class ProjectStore {
       name: t.name,
       parentId: t.parentId,
       muted: t.muted,
+      solo: t.solo,
       volume: t.volume,
       effects: this.effectMetas(t),
     };
@@ -200,6 +203,7 @@ export class ProjectStore {
         parentId: g.parentId,
         collapsed: g.collapsed,
         muted: g.muted,
+        solo: g.solo,
         volume: g.volume,
         effects: this.effectMetas(g),
       })),
@@ -261,6 +265,7 @@ export class ProjectStore {
       parentId: opts.parentId ?? null,
       collapsed: false,
       muted: false,
+      solo: false,
       volume: 0.8,
       effects: [],
     };
@@ -319,6 +324,13 @@ export class ProjectStore {
     const g = this.getGroup(id);
     if (!g || g.muted === muted) return;
     g.muted = muted;
+    this.emit();
+  }
+
+  setGroupSolo(id: string, solo: boolean): void {
+    const g = this.getGroup(id);
+    if (!g || g.solo === solo) return;
+    g.solo = solo;
     this.emit();
   }
 
@@ -381,6 +393,7 @@ export class ProjectStore {
       instrumentType: type,
       parentId,
       muted: false,
+      solo: false,
       volume: 0.8,
       params,
       effects: [],
@@ -414,6 +427,7 @@ export class ProjectStore {
       name,
       parentId,
       muted: false,
+      solo: false,
       volume: 0.8,
       effects: [],
       clips: [{ id: clipId, name: clip.name ?? name, author: 'you', fileId: clip.fileId, gain: clip.gain ?? 1, durationSec }],
@@ -472,6 +486,13 @@ export class ProjectStore {
     const t = this.getTrack(id);
     if (!t || t.muted === muted) return;
     t.muted = muted;
+    this.emit();
+  }
+
+  setSolo(id: string, solo: boolean): void {
+    const t = this.getTrack(id);
+    if (!t || t.solo === solo) return;
+    t.solo = solo;
     this.emit();
   }
 
@@ -815,11 +836,12 @@ export class ProjectStore {
         parentId: g.parentId,
         collapsed: g.collapsed,
         muted: g.muted,
+        solo: g.solo,
         volume: g.volume,
         effects: this.snapshotEffects(g),
       })),
       tracks: this.tracks.map((t) => {
-        const base = { id: t.id, name: t.name, parentId: t.parentId, muted: t.muted, volume: t.volume };
+        const base = { id: t.id, name: t.name, parentId: t.parentId, muted: t.muted, solo: t.solo, volume: t.volume };
         const arrangement = {
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
@@ -934,6 +956,7 @@ export class ProjectStore {
       parentId: g.parentId ?? null,
       collapsed: g.collapsed ?? false,
       muted: g.muted ?? false,
+      solo: g.solo ?? false,
       volume: g.volume ?? 0.8,
       effects: this.loadEffects(g.effects),
     }));
@@ -947,6 +970,7 @@ export class ProjectStore {
         name: t.name,
         parentId: t.parentId,
         muted: t.muted ?? false,
+        solo: t.solo ?? false,
         volume: t.volume ?? 0.8,
       };
       if (t.kind === 'audio') {

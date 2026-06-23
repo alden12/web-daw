@@ -51,7 +51,7 @@ function Category({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 w-full text-left px-4 py-1.5 text-xs font-semibold text-ink cursor-pointer"
       >
-        <span className="w-2.5 text-[9px] text-muted">{open ? "▾" : "▸"}</span>
+        <span className="w-2.5 text-2xl text-muted">{open ? "▾" : "▸"}</span>
         {label}
       </button>
       {open && children}
@@ -101,7 +101,8 @@ export function LibraryPanel({
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node))
+        setMenuOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);

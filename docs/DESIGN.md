@@ -396,6 +396,11 @@ via the File System Access API (+ optional git export), **15E** remote sync / co
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
+- **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a
+  per-track/group flag; the engine silences anything not solo-active - see `engine/mix.ts`) and a
+  low-profile **fader** (a line with a triangle ticker; `ui/MixerControls.tsx`). *Pending:* a
+  **live level meter** overlaid on the fader (red when clipping) - the `Fader` already accepts
+  `level`/`clip`; needs per-bus metering in the `AudioEngine` (AnalyserNodes) + a rAF read loop.
 - **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
   manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
   marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
