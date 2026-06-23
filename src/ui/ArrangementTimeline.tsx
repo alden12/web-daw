@@ -31,7 +31,7 @@ import { useProject } from "../audio/project/useProject";
 import { useClip } from "../audio/sequencer/useClip";
 import { TransportBar } from "./TransportBar";
 import { InlineRename } from "./InlineRename";
-import { CLIP_DND_TYPE, clipDndTrackType } from "./clipDnd";
+import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "./clipDnd";
 import { Ruler } from "./timeline/Ruler";
 import {
   beatToX,
@@ -204,7 +204,11 @@ function Lane({
   snapOn,
   snapDiv,
   selection,
+  markerBeat,
+  dropBeat,
   onSelect,
+  onMark,
+  onHover,
   dispatch,
 }: {
   track: Track;
@@ -214,43 +218,53 @@ function Lane({
   snapOn: boolean;
   snapDiv: number;
   selection: Selection;
+  markerBeat: number | null;
+  dropBeat: number | null;
   onSelect: (trackId: string, p: Placement) => void;
+  onMark: (trackId: string, beat: number) => void;
+  onHover: (beat: number | null) => void;
   dispatch: Dispatch;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
-  const [dropBeat, setDropBeat] = useState<number | null>(null);
   const beatAt = (clientX: number) =>
     xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
 
-  // Drop a clip dragged from this track's clip rail at the cursor (a placement of
-  // the existing clip). The per-track marker type lets only this track's lane accept.
-  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndTrackType(track.id));
+  // Drop a clip dragged from a clip rail at the cursor. Any same-kind track's lane
+  // accepts: dropping on the clip's own track places the existing clip; dropping on
+  // another same-kind track copies the clip into that track's pool first, then
+  // places it.
+  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndKindType(track.kind));
   const onDragOver = (e: React.DragEvent) => {
     if (!accepts(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    setDropBeat(Math.max(0, floorB(beatAt(e.clientX))));
+    onHover(Math.max(0, floorB(beatAt(e.clientX))));
   };
   const onDrop = (e: React.DragEvent) => {
     if (!accepts(e)) return;
     e.preventDefault();
-    const clipId = e.dataTransfer.getData(CLIP_DND_TYPE);
-    setDropBeat(null);
-    if (!clipId || !track.clips.some((c) => c.id === clipId)) return;
+    onHover(null);
     const startBeat = Math.max(0, floorB(beatAt(e.clientX)));
+    const draggedId = e.dataTransfer.getData(CLIP_DND_TYPE);
+    if (draggedId && track.clips.some((c) => c.id === draggedId)) {
+      // Same track: place the existing clip.
+      const id = newPlacementId();
+      dispatch({ type: "addPlacement", trackId: track.id, id, clipId: draggedId, startBeat });
+      onSelect(track.id, { id, clipId: draggedId, startBeat, offset: 0, length: 0 });
+      return;
+    }
+    // Cross-track: copy the dragged clip's content into this track, then place it.
+    const content = getDraggedClip();
+    if (!content || content.kind !== track.kind) return;
+    const clipId = newClipId();
     const id = newPlacementId();
+    dispatch({ type: "pasteClip", trackId: track.id, id: clipId, content });
     dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat });
     onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
   };
-  // Clear the drop indicator when the drag ends anywhere (avoids dragleave flicker).
-  useEffect(() => {
-    const clear = () => setDropBeat(null);
-    window.addEventListener("dragend", clear);
-    return () => window.removeEventListener("dragend", clear);
-  }, []);
 
   // Drag a block: body -> move, right edge -> resize. Both snap and coalesce.
   const onBlockDown = (p: Placement, e: React.PointerEvent) => {
@@ -302,8 +316,8 @@ function Lane({
     onSelect(track.id, { id, clipId, startBeat: start, offset: 0, length });
   };
 
-  // Press on empty lane: a clean click drops a one-bar empty clip; a drag sketches
-  // a new empty clip sized to the drag. Both make a fresh clip (never a duplicate).
+  // Press on empty lane: a clean click drops a paste marker at that beat; a drag
+  // sketches a new empty clip sized to the drag.
   const onLaneDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const downBeat = beatAt(e.clientX);
@@ -322,8 +336,8 @@ function Lane({
       window.removeEventListener("pointerup", onUp);
       setDraft(null);
       if (!moved) {
-        // Click: a default one-bar empty clip at the clicked beat.
-        createClip(Math.max(0, floorB(downBeat)), beatsPerBar);
+        // Click: drop a paste marker (copy/paste lands here).
+        onMark(track.id, Math.max(0, floorB(downBeat)));
         return;
       }
       // Drag: an empty clip sized to the drag.
@@ -380,6 +394,15 @@ function Lane({
           className="absolute top-0 bottom-0 w-0.5 bg-you pointer-events-none"
           style={{ left: beatToX(dropBeat, pxPerBeat) }}
         />
+      )}
+      {markerBeat !== null && (
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-bright pointer-events-none"
+          style={{ left: beatToX(markerBeat, pxPerBeat) }}
+          title="Paste marker"
+        >
+          <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-bright" />
+        </div>
       )}
       {track.launchedClipId && (
         <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">
@@ -566,6 +589,10 @@ export function ArrangementTimeline({
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
   const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
   const [selection, setSelection] = useState<Selection>(null);
+  const [marker, setMarker] = useState<{ trackId: string; beat: number } | null>(null);
+  // The single in-flight clip-drag drop target, so only the lane under the cursor
+  // shows the drop indicator (not every lane the drag has passed through).
+  const [dropTarget, setDropTarget] = useState<{ trackId: string; beat: number } | null>(null);
   const [viewportW, setViewportW] = useState(0);
   const clipboard = useRef<{ clipId: string; offset: number; length: number } | null>(null);
 
@@ -586,11 +613,21 @@ export function ArrangementTimeline({
   const laneWidth = beatToX(viewBeats, pxPerBeat);
   const contentH = RULER_H + rows.length * ROW_PX;
 
-  // Selecting a placement makes its track + clip active, so the roll follows it.
+  // Selecting a placement makes its track + clip active, so the roll follows it
+  // (and clears any paste marker - selection and marker are mutually exclusive).
   const selectPlacement = (trackId: string, p: Placement) => {
     setSelection({ trackId, id: p.id });
+    setMarker(null);
     projectStore.selectTrack(trackId);
     projectStore.selectClip(trackId, p.clipId);
+  };
+
+  // Clicking an empty lane drops a paste marker (track + beat) and clears the
+  // selection - paste then lands at the marker.
+  const placeMarker = (trackId: string, beat: number) => {
+    setSelection(null);
+    setMarker({ trackId, beat });
+    projectStore.selectTrack(trackId);
   };
 
   // Delete removes the selected placement; Escape deselects (unless typing).
@@ -598,10 +635,13 @@ export function ArrangementTimeline({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
-      if (!selection) return;
       if (e.key === "Escape") {
         setSelection(null);
-      } else if (e.key === "Delete" || e.key === "Backspace") {
+        setMarker(null);
+        return;
+      }
+      if (!selection) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         dispatch({ type: "removePlacement", trackId: selection.trackId, placementId: selection.id });
         setSelection(null);
@@ -637,25 +677,34 @@ export function ArrangementTimeline({
         return;
       }
 
-      // paste: needs a clipboard and a target track that owns the clip.
+      // paste: needs a clipboard and a target track that owns the clip. Prefer the
+      // marker (track + beat); else after the selection; else the track's end.
       const cb = clipboard.current;
-      const targetId = selection?.trackId ?? projectStore.selectedId ?? undefined;
+      const targetId = marker?.trackId ?? selection?.trackId ?? projectStore.selectedId ?? undefined;
       const t = targetId ? projectStore.getTrack(targetId) : undefined;
       if (!cb || !t || !t.clips.some((c) => c.id === cb.clipId)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       const anchor = selection ? t.placements.find((x) => x.id === selection.id) : null;
       const trackEnd = t.placements.reduce((m, p) => Math.max(m, p.startBeat + p.length), 0);
-      const startBeat = anchor ? anchor.startBeat + anchor.length : trackEnd;
+      const startBeat = marker ? marker.beat : anchor ? anchor.startBeat + anchor.length : trackEnd;
       const id = newPlacementId();
       dispatch({ type: "addPlacement", trackId: t.id, id, clipId: cb.clipId, startBeat, offset: cb.offset, length: cb.length });
+      setMarker(null);
       setSelection({ trackId: t.id, id });
       projectStore.selectTrack(t.id);
       projectStore.selectClip(t.id, cb.clipId);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [selection, dispatch, projectStore]);
+  }, [selection, marker, dispatch, projectStore]);
+
+  // Clear the clip-drag drop indicator when any drag ends (drop or cancel).
+  useEffect(() => {
+    const clear = () => setDropTarget(null);
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
 
   // Keep the grid filling the panel: track the scroll viewport's width.
   useEffect(() => {
@@ -820,7 +869,11 @@ export function ArrangementTimeline({
                   snapOn={snapOn}
                   snapDiv={snapDiv}
                   selection={selection}
+                  markerBeat={marker?.trackId === row.track.id ? marker.beat : null}
+                  dropBeat={dropTarget?.trackId === row.track.id ? dropTarget.beat : null}
                   onSelect={selectPlacement}
+                  onMark={placeMarker}
+                  onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
                 />
               ),
             )}
@@ -849,7 +902,11 @@ function TrackRow({
   snapOn,
   snapDiv,
   selection,
+  markerBeat,
+  dropBeat,
   onSelect,
+  onMark,
+  onHover,
 }: {
   meta: TrackMeta;
   depth: number;
@@ -862,7 +919,11 @@ function TrackRow({
   snapOn: boolean;
   snapDiv: number;
   selection: Selection;
+  markerBeat: number | null;
+  dropBeat: number | null;
   onSelect: (trackId: string, p: Placement) => void;
+  onMark: (trackId: string, beat: number) => void;
+  onHover: (beat: number | null) => void;
 }) {
   const track = projectStore.getTrack(meta.id);
   return (
@@ -885,7 +946,11 @@ function TrackRow({
           snapOn={snapOn}
           snapDiv={snapDiv}
           selection={selection}
+          markerBeat={markerBeat}
+          dropBeat={dropBeat}
           onSelect={onSelect}
+          onMark={onMark}
+          onHover={onHover}
           dispatch={dispatch}
         />
       ) : (

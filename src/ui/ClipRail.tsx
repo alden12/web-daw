@@ -14,7 +14,7 @@ import type { ClipContent } from '../audio/project/types';
 import { useProject } from '../audio/project/useProject';
 import type { Dispatch } from '../audio/commands/types';
 import { newClipId } from '../audio/commands/ids';
-import { CLIP_DND_TYPE, clipDndTrackType } from './clipDnd';
+import { CLIP_DND_TYPE, clipDndKindType, clearDraggedClip, setDraggedClip } from './clipDnd';
 import { getClipClipboard, setClipClipboard } from './clipClipboard';
 
 export function ClipRail({
@@ -121,10 +121,14 @@ export function ClipRail({
             key={c.id}
             draggable
             onDragStart={(e) => {
+              const content = clipContentOf(c.id);
+              if (!content) return;
               e.dataTransfer.setData(CLIP_DND_TYPE, c.id);
-              e.dataTransfer.setData(clipDndTrackType(trackId), '');
+              e.dataTransfer.setData(clipDndKindType(track.kind), '');
               e.dataTransfer.effectAllowed = 'copy';
+              setDraggedClip(content);
             }}
+            onDragEnd={() => clearDraggedClip()}
             className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-grab active:cursor-grabbing ${
               active ? 'border-you/60 bg-you/15 text-bright' : 'border-line bg-card text-muted hover:bg-ground'
             }`}

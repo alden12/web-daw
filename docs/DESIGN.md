@@ -351,13 +351,21 @@ slices; within a theme, order is rough.
   follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it.
-- **Timeline & arrangement interactions - DONE (slice 13), the third "real DAW" piece.** The
-  bottom timeline is editable: zoom + scroll (reusing the piano-roll's beats<->px+ruler
-  primitive), place / move / resize / split / delete placements, copy-cut-paste, drag a clip
-  from the rail onto its lane, snap-to-grid, and a ruler owning the loop region. *Still pending
-  in this theme (model-independent):* track reorder by drag, track-height resize, track colors,
-  a richer visual summary of grouped tracks, split-at-playhead, and library drag-and-drop for
-  instruments/effects.
+- **Timeline & arrangement interactions - DONE (slice 13 + follow-ups), the third "real DAW"
+  piece.** The bottom timeline is editable: zoom + scroll (reusing the piano-roll's
+  beats<->px+ruler primitive), move / resize / split / delete placements, drag empty lane to
+  create a clip, copy-cut-paste, snap-to-grid, and a ruler owning the loop region. Follow-ups
+  added: clicking a lane drops a **paste marker** (copy/paste lands there), dragging a clip from
+  the rail places it onto **any same-kind track** (copying it into that track's pool), a **"+"
+  add-effect menu** at the end of the chain, and **Space** toggles the transport from anywhere.
+  *Still pending in this theme (model-independent):* track reorder by drag, track-height resize,
+  track colors, a richer visual summary of grouped tracks, split-at-playhead, and **library
+  drag-and-drop** - dragging an instrument/effect from the library onto the track edit panel
+  (the add-effect menu covers the quick path; full DnD, incl. instrument-on-track semantics, is
+  the larger item).
+- **Activity feed at scale.** The feed already caps the rendered list at 100; for very long
+  sessions, **virtualize / paginate** the history (and consider truncating or chunking the
+  persisted log) so it stays smooth.
 
 **Model evolutions - sequence early, they unlock the rest**
 
