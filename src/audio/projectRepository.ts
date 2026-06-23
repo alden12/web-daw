@@ -17,7 +17,7 @@
  * localStorage as a read-only fallback.
  */
 import type { ProjectData, TrackData } from './project/types';
-import type { EditEntry } from './commands/types';
+import type { Author, EditEntry } from './commands/types';
 import { type BundleStore, createBundleStore } from './bundleStore';
 
 const FORMAT_VERSION = 1;
@@ -41,6 +41,32 @@ export interface StoredProject {
 
 /** A bundle as a flat path -> bytes map (what gets zipped into a `.daw.zip`). */
 export type BundleFiles = Record<string, Uint8Array>;
+
+/**
+ * One node in the version-history DAG: a full snapshot plus the authored edits it
+ * bundles, and a pointer to its parent. The DAG is the durable source of truth;
+ * `project.json` is a replay cache of where HEAD currently is.
+ */
+export interface Commit {
+  id: string;
+  parent: string | null;
+  author: Author;
+  message: string;
+  time: number;
+  /** A system auto-checkpoint vs a user/Claude-named version. */
+  auto: boolean;
+  entryCount: number;
+  snapshot: ProjectData;
+  entries: EditEntry[];
+  /** Highest edit seq this commit includes (so reload knows where history ends). */
+  lastSeq: number;
+}
+
+/** Branch tips + the current branch (HEAD). Linear for now; branches are 15C. */
+export interface Refs {
+  head: string;
+  branches: Record<string, string | null>;
+}
 
 interface Manifest {
   formatVersion: number;
@@ -164,6 +190,26 @@ export class ProjectRepository {
     }
     await this.save(project, log);
     return { project, log };
+  }
+
+  // ---- version history (the commit DAG, under history/) ----
+
+  writeCommit(commit: Commit): Promise<void> {
+    return this.store.writeText(`history/commits/${commit.id}.json`, JSON.stringify(commit, null, 2));
+  }
+
+  async readCommit(id: string): Promise<Commit | null> {
+    const raw = await this.store.readText(`history/commits/${id}.json`);
+    return raw ? (JSON.parse(raw) as Commit) : null;
+  }
+
+  async readRefs(): Promise<Refs | null> {
+    const raw = await this.store.readText('history/refs.json');
+    return raw ? (JSON.parse(raw) as Refs) : null;
+  }
+
+  writeRefs(refs: Refs): Promise<void> {
+    return this.store.writeText('history/refs.json', JSON.stringify(refs, null, 2));
   }
 
   /** Re-store legacy `au-*` samples under content hashes; rewrite clip fileIds. */

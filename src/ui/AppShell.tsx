@@ -12,6 +12,7 @@ import { AudioEngine } from '../audio/engine/AudioEngine';
 import { Scheduler } from '../audio/sequencer/scheduler';
 import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { attachAutosave, restoreProject } from '../audio/persistence';
+import { VersionStore } from '../audio/commands/history';
 import { useProject } from '../audio/project/useProject';
 import { EditLog } from '../audio/commands/editLog';
 import { LibraryPanel } from './LibraryPanel';
@@ -75,18 +76,26 @@ export function AppShell() {
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
 
-  // Restore the saved project from the bundle, then autosave on any change.
-  // Restore is async (OPFS); attaching autosave only after it lands avoids a
-  // redundant immediate re-save of what we just loaded.
+  // Restore the saved project from the bundle, then autosave on any change and
+  // auto-checkpoint the version history. Restore is async (OPFS); the version
+  // store loads after it so HEAD reflects the restored project, and both attach
+  // only then (avoids a redundant immediate re-save of what we just loaded).
   useEffect(() => {
     let active = true;
-    let dispose = () => {};
-    void restoreProject(projectStore, editLog).then(() => {
-      if (active) dispose = attachAutosave(projectStore, editLog);
-    });
+    let disposeAutosave = () => {};
+    let disposeCheckpoints = () => {};
+    const versionStore = new VersionStore(projectStore, editLog);
+    void restoreProject(projectStore, editLog)
+      .then(() => versionStore.load())
+      .then(() => {
+        if (!active) return;
+        disposeAutosave = attachAutosave(projectStore, editLog);
+        disposeCheckpoints = versionStore.attach();
+      });
     return () => {
       active = false;
-      dispose();
+      disposeAutosave();
+      disposeCheckpoints();
     };
   }, [projectStore, editLog]);
 
