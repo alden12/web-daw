@@ -151,6 +151,13 @@ export class EditLog {
     this.emit();
   };
 
+  /** Break the coalesce chain so the next edit starts a fresh entry. Called at a
+   *  boundary (e.g. after a commit) so post-commit edits never fold into a
+   *  committed entry and slip past "uncommitted" tracking. */
+  resetCoalescing = (): void => {
+    this.lastKey = null;
+  };
+
   getState(): EditLogState {
     return this.cached;
   }

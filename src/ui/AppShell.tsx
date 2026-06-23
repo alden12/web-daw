@@ -6,7 +6,7 @@
  * timeline). All the wiring is unchanged from the old SynthPanel - this slice is
  * presentation only.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ProjectStore } from '../audio/project/projectStore';
 import { AudioEngine } from '../audio/engine/AudioEngine';
 import { Scheduler } from '../audio/sequencer/scheduler';
@@ -76,6 +76,8 @@ export function AppShell() {
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
 
+  const versionStore = useMemo(() => new VersionStore(projectStore, editLog), [projectStore, editLog]);
+
   // Restore the saved project from the bundle, then autosave on any change and
   // auto-checkpoint the version history. Restore is async (OPFS); the version
   // store loads after it so HEAD reflects the restored project, and both attach
@@ -84,7 +86,6 @@ export function AppShell() {
     let active = true;
     let disposeAutosave = () => {};
     let disposeCheckpoints = () => {};
-    const versionStore = new VersionStore(projectStore, editLog);
     void restoreProject(projectStore, editLog)
       .then(() => versionStore.load())
       .then(() => {
@@ -97,7 +98,7 @@ export function AppShell() {
       disposeAutosave();
       disposeCheckpoints();
     };
-  }, [projectStore, editLog]);
+  }, [projectStore, editLog, versionStore]);
 
   useEffect(() => () => {
     scheduler.dispose();
@@ -179,6 +180,7 @@ export function AppShell() {
         <AgentPanel
           mcpStatus={mcpStatus}
           editLog={editLog}
+          versionStore={versionStore}
           collapsed={agentCollapsed}
           onToggle={() => setAgentCollapsed(!agentCollapsed)}
         />

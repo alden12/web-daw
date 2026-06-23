@@ -106,6 +106,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.editLog.resetCoalescing(); // a commit is a boundary: don't fold later edits into a committed entry
     this.emit();
     return toSummary(commit);
   }
@@ -136,6 +137,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.editLog.resetCoalescing();
     this.emit();
     return toSummary(commit);
   }

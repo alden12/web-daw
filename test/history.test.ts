@@ -84,6 +84,19 @@ describe('VersionStore (commit DAG)', () => {
     expect(await vs.commit('forward')).toBeTruthy();
   });
 
+  it('treats a commit as a coalescing boundary (same-target edits after it are new)', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    // Same-target edits in one tick coalesce; commit, then edit the same target
+    // again in the same tick - it must NOT fold into the committed entry.
+    log.dispatch({ type: 'setTempo', bpm: 90 });
+    expect(await vs.commit('v1')).toBeTruthy();
+    log.dispatch({ type: 'setTempo', bpm: 91 });
+    expect(await vs.commit('v2')).toBeTruthy(); // would be null without the boundary reset
+  });
+
   it('reverts to an earlier commit and records it as a new HEAD', async () => {
     const { project, log, repo } = setup();
     const vs = new VersionStore(project, log, repo);
