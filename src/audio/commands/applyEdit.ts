@@ -31,7 +31,7 @@ const APPLY: ApplyMap = {
     if (c.volume !== undefined) p.setVolume(c.trackId, c.volume);
     if (c.name !== undefined) p.renameTrack(c.trackId, c.name);
   },
-  setAudioClip: (p, c) => p.setAudioClip(c.trackId, c.patch),
+  setAudioClip: (p, c) => p.setAudioClip(c.trackId, c.clipId, c.patch),
   createGroup: (p, c) => void p.addGroup({ id: c.id, name: c.name, parentId: c.parentId }),
   removeGroup: (p, c) => p.removeGroup(c.groupId),
   setGroup: (p, c) => {
@@ -51,38 +51,36 @@ const APPLY: ApplyMap = {
   moveEffect: (p, c) => p.moveEffect(c.hostId, c.effectId, c.toIndex),
   bypassEffect: (p, c) => p.setEffectBypass(c.hostId, c.effectId, c.bypassed),
   setEffectParam: (p, c) => p.getEffect(c.hostId, c.effectId)?.params.set(c.id, c.value),
-  addNote: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') t.clip.putNote(c.note);
-  },
-  // addNotes / editNotes both insert-or-replace by id (putNote): a new id adds,
-  // an existing id moves/resizes/re-velocities in place. One call, one edit.
+  // Note edits target a specific clip (defaulting to the active one). addNotes /
+  // editNotes both insert-or-replace by id (putNote): a new id adds, an existing
+  // id moves/resizes/re-velocities in place. One call, one edit.
+  addNote: (p, c) => p.getClipStore(c.trackId, c.clipId)?.putNote(c.note),
   addNotes: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') for (const n of c.notes) t.clip.putNote(n);
+    const store = p.getClipStore(c.trackId, c.clipId);
+    if (store) for (const n of c.notes) store.putNote(n);
   },
   editNotes: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') for (const n of c.notes) t.clip.putNote(n);
+    const store = p.getClipStore(c.trackId, c.clipId);
+    if (store) for (const n of c.notes) store.putNote(n);
   },
-  removeNote: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') t.clip.removeNote(c.id);
-  },
+  removeNote: (p, c) => p.getClipStore(c.trackId, c.clipId)?.removeNote(c.id),
   removeNotes: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') for (const id of c.ids) t.clip.removeNote(id);
+    const store = p.getClipStore(c.trackId, c.clipId);
+    if (store) for (const id of c.ids) store.removeNote(id);
   },
-  clearClip: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') t.clip.clear();
-  },
-  // The new variant is tagged with the dispatching author (two-voice: you/claude).
-  addVariant: (p, c, author) =>
-    void p.addVariant(c.trackId, { id: c.id, name: c.name, fromVariantId: c.fromVariantId, author }),
-  selectVariant: (p, c) => p.selectVariant(c.trackId, c.variantId),
-  removeVariant: (p, c) => p.removeVariant(c.trackId, c.variantId),
-  renameVariant: (p, c) => p.renameVariant(c.trackId, c.variantId, c.name),
+  clearClip: (p, c) => p.getClipStore(c.trackId, c.clipId)?.clear(),
+  setClipLength: (p, c) => p.setClipLength(c.trackId, c.clipId, c.lengthBeats),
+  // Clip pool. The new clip is tagged with the dispatching author (two-voice).
+  addClip: (p, c, author) => void p.addClip(c.trackId, { id: c.id, name: c.name, fromClipId: c.fromClipId, author }),
+  removeClip: (p, c) => p.removeClip(c.trackId, c.clipId),
+  renameClip: (p, c) => p.renameClip(c.trackId, c.clipId, c.name),
+  // Arrangement placements.
+  addPlacement: (p, c) =>
+    void p.addPlacement(c.trackId, { id: c.id, clipId: c.clipId, startBeat: c.startBeat, offset: c.offset, length: c.length }),
+  movePlacement: (p, c) => p.movePlacement(c.trackId, c.placementId, c.startBeat),
+  resizePlacement: (p, c) => p.resizePlacement(c.trackId, c.placementId, { offset: c.offset, length: c.length }),
+  removePlacement: (p, c) => p.removePlacement(c.trackId, c.placementId),
+  splitPlacement: (p, c) => p.splitPlacement(c.trackId, c.placementId, c.atBeat, c.newId),
   setTempo: (p, c) => p.setTempo(c.bpm),
   setLength: (p, c) => p.setLength(c.lengthBeats),
   setLoopStart: (p, c) => p.setLoopStart(c.beats),

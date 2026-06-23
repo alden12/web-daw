@@ -12,18 +12,19 @@ import type { ProjectData } from './project/types';
 import type { EditLog } from './commands/editLog';
 import type { EditEntry } from './commands/types';
 
-const STORAGE_KEY = 'web-daw:project:v6';
+const STORAGE_KEY = 'web-daw:project:v7';
 // Older snapshots. Read for migration only; ProjectStore.load files parentless
-// tracks into their family group and migrates single-clip tracks (v4) into one
-// default variant. Pre-v6 blobs have no edit log, so the feed starts empty.
-const LEGACY_KEYS = ['web-daw:project:v5', 'web-daw:project:v4', 'web-daw:project:v3'];
+// tracks into their family group and migrates older clip shapes (v6 variants,
+// v4 single clip, v6 audioClip) into the v7 clip pool + placements. Pre-v6 blobs
+// have no edit log, so the feed starts empty.
+const LEGACY_KEYS = ['web-daw:project:v6', 'web-daw:project:v5', 'web-daw:project:v4', 'web-daw:project:v3'];
 const SAVE_DEBOUNCE_MS = 300;
 // Bound the persisted log (commands are tiny); deeper history awaits the
 // on-disk file format / IndexedDB slice. The in-memory log is unaffected.
 const MAX_PERSISTED_ENTRIES = 2000;
 
 interface StoredProject {
-  version: 6;
+  version: 7;
   project: ProjectData;
   log: EditEntry[];
 }
@@ -47,7 +48,7 @@ function saveProject(project: ProjectStore, editLog: EditLog): void {
   try {
     const entries = editLog.getEntries();
     const data: StoredProject = {
-      version: 6,
+      version: 7,
       project: project.snapshot(),
       log: entries.slice(-MAX_PERSISTED_ENTRIES),
     };
@@ -85,7 +86,9 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog): () => v
     for (const u of trackUnsubs) u();
     trackUnsubs = [
       ...project.getTracks().flatMap((t) => [
-        ...(t.kind === 'instrument' ? [t.params.subscribe(schedule), t.clip.subscribe(schedule)] : []),
+        ...(t.kind === 'instrument'
+          ? [t.params.subscribe(schedule), ...t.clips.map((c) => c.store.subscribe(schedule))]
+          : []),
         ...t.effects.map((fx) => fx.params.subscribe(schedule)),
       ]),
       ...project.getGroups().flatMap((g) => g.effects.map((fx) => fx.params.subscribe(schedule))),

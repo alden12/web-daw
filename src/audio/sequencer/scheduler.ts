@@ -151,15 +151,30 @@ export class Scheduler {
       if (track.kind === 'instrument') {
         const instrument = this.engine.getInstrument(track.id);
         if (!instrument) continue;
-        const occurrences = notesStartingInBeatRange(track.clip.getClip().notes, fromBeats, horizonBeats, loopLen, loopStart);
-        for (const { note, atBeat } of occurrences) {
+        // Flatten the arrangement: each placement contributes its clip's notes
+        // (windowed by offset/length) shifted to the placement's start.
+        const events: NoteEvent[] = [];
+        for (const p of track.placements) {
+          const clip = track.clips.find((c) => c.id === p.clipId);
+          if (!clip) continue;
+          for (const n of clip.store.getClip().notes) {
+            if (n.start < p.offset || n.start >= p.offset + p.length) continue;
+            events.push({ ...n, start: p.startBeat + (n.start - p.offset) });
+          }
+        }
+        for (const { note, atBeat } of notesStartingInBeatRange(events, fromBeats, horizonBeats, loopLen, loopStart)) {
           const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
           instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
         }
       } else {
-        for (const atBeat of onsetsInBeatRange(track.audioClip.startBeat, fromBeats, horizonBeats, loopLen, loopStart)) {
-          const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-          this.engine.scheduleAudioClip(track.id, when);
+        // Each audio placement is a single onset at its start (plays the buffer).
+        for (const p of track.placements) {
+          const clip = track.clips.find((c) => c.id === p.clipId);
+          if (!clip) continue;
+          for (const atBeat of onsetsInBeatRange(p.startBeat, fromBeats, horizonBeats, loopLen, loopStart)) {
+            const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+            this.engine.scheduleAudioClip(track.id, clip, when);
+          }
         }
       }
     }

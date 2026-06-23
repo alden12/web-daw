@@ -42,6 +42,9 @@ const COALESCABLE = new Set<EditCommand['type']>([
   'setLength',
   'setLoopStart',
   'editNotes',
+  'setClipLength',
+  'movePlacement',
+  'resizePlacement',
 ]);
 
 /** Identity of a command's edit target, so successive edits to it can coalesce. */
@@ -63,10 +66,16 @@ function coalesceKey(c: EditCommand): string {
       return 'setLength';
     case 'setLoopStart':
       return 'setLoopStart';
+    case 'setClipLength':
+      return `setClipLength:${c.trackId}:${c.clipId ?? ''}`;
+    case 'movePlacement':
+      return `movePlacement:${c.trackId}:${c.placementId}`;
+    case 'resizePlacement':
+      return `resizePlacement:${c.trackId}:${c.placementId}`;
     // Coalesce a continuous drag of a stable selection into one entry; a new
     // gesture (different note set) gets a fresh key, so it starts a new edit.
     case 'editNotes':
-      return `editNotes:${c.trackId}:${c.notes.map((n) => n.id).sort().join(',')}`;
+      return `editNotes:${c.trackId}:${c.clipId ?? ''}:${c.notes.map((n) => n.id).sort().join(',')}`;
     default:
       return c.type;
   }

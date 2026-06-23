@@ -47,7 +47,7 @@ describe('EditLog', () => {
     expect((project.getTrack('t-1') as { params: { get(id: string): unknown } }).params.get('filter.cutoff')).toBe(4000);
 
     log.dispatch({ type: 'addNote', trackId: 't-1', note: { id: 'n-1', pitch: 60, start: 0, length: 1, velocity: 0.8 } });
-    const clip = () => (project.getTrack('t-1') as { clip: { getClip(): { notes: unknown[] } } }).clip.getClip().notes;
+    const clip = () => project.getClipStore('t-1')!.getClip().notes;
     expect(clip()).toHaveLength(1);
     log.undo();
     expect(clip()).toHaveLength(0);

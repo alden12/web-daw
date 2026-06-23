@@ -16,7 +16,7 @@
  * they route identically; only the source differs.
  */
 import type { PatchValues } from '../params/types';
-import type { ClipData } from '../sequencer/types';
+import type { ClipData, NoteEvent } from '../sequencer/types';
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export interface EffectMeta {
@@ -42,42 +42,71 @@ export interface GroupMeta {
 export type TrackKind = 'instrument' | 'audio';
 
 /** Who authored a piece of durable state (two-voice presence). Mirrors commands/types Author. */
-export type VariantAuthor = 'you' | 'claude';
+export type ClipAuthor = 'you' | 'claude';
 
 /**
- * A clip variant: a snapshot of the whole sound - clip notes + instrument params
- * + the effect chain (not just notes like an Ableton clip), so switching variants
- * morphs the devices to match. Cheap because every store already snapshots; a
- * variant is a bundle of three snapshots (DESIGN.md section 6).
+ * A placement of a clip on a track's arrangement timeline. The same clip can be
+ * placed multiple times. `offset`/`length` window into the clip (beats) so a
+ * placement can be split or trimmed without touching the underlying clip.
  */
+export interface Placement {
+  id: string;
+  clipId: string;
+  /** Onset on the arrangement, in beats. */
+  startBeat: number;
+  /** Start of the window into the clip, in beats. */
+  offset: number;
+  /** Length of the window into the clip, in beats. */
+  length: number;
+}
+
+/** A note clip (pattern) in an instrument track's pool. */
+export interface NoteClipData {
+  id: string;
+  name: string;
+  author: ClipAuthor;
+  notes: NoteEvent[];
+  lengthBeats: number;
+}
+
+/** Structural view of a note clip for the UI (no notes payload). */
+export interface NoteClipMeta {
+  id: string;
+  name: string;
+  author: ClipAuthor;
+  lengthBeats: number;
+}
+
+/**
+ * An audio clip in an audio track's pool: a reference to an OPFS-stored file. It
+ * is light (no buffer), so the same shape serves as both data and structural view.
+ */
+export interface AudioClipData {
+  id: string;
+  name: string;
+  author: ClipAuthor;
+  /** Handle id of the audio file in the OPFS audio store. */
+  fileId: string;
+  /** 0..1 clip gain. */
+  gain: number;
+  /** Cached natural duration in seconds (region sizing before/without decode). */
+  durationSec: number;
+}
+
+/** Legacy (pre-v7): a clip variant bundling the whole sound. Read only for migration. */
 export interface VariantData {
   id: string;
   name: string;
-  author: VariantAuthor;
+  author: ClipAuthor;
   clip: ClipData;
   params: PatchValues;
   effects: EffectData[];
 }
 
-/** Stable structural view of a variant for the UI (no snapshot payloads). */
-export interface VariantMeta {
-  id: string;
-  name: string;
-  author: VariantAuthor;
-}
-
-/** An audio clip on an audio track: a reference to an OPFS-stored file + placement. */
-export interface AudioClip {
-  id: string;
-  name: string;
-  /** Handle id of the audio file in the OPFS audio store. */
-  fileId: string;
-  /** Onset within the loop, in beats. */
+/** Legacy (pre-v7): a single positioned audio clip on a track. Read only for migration. */
+export interface LegacyAudioClip extends AudioClipData {
+  /** Onset within the loop, in beats (now carried by the placement). */
   startBeat: number;
-  /** 0..1 clip gain. */
-  gain: number;
-  /** Cached natural duration in seconds (region sizing before/without decode). */
-  durationSec: number;
 }
 
 interface BaseTrackMeta {
@@ -95,14 +124,18 @@ interface BaseTrackMeta {
 export interface InstrumentTrackMeta extends BaseTrackMeta {
   kind: 'instrument';
   instrumentType: string;
-  /** Variant stack (the active variant's chain is reflected in `effects`). */
-  variants: VariantMeta[];
-  activeVariantId: string;
+  /** The track's clip pool (note patterns). The active clip is shown in the roll. */
+  clips: NoteClipMeta[];
+  activeClipId: string;
+  /** Arrangement: placements of clips along time. */
+  placements: Placement[];
 }
 
 export interface AudioTrackMeta extends BaseTrackMeta {
   kind: 'audio';
-  audioClip: AudioClip;
+  clips: AudioClipData[];
+  activeClipId: string;
+  placements: Placement[];
 }
 
 export type TrackMeta = InstrumentTrackMeta | AudioTrackMeta;
@@ -116,21 +149,30 @@ export interface GroupData extends Omit<GroupMeta, 'effects'> {
   effects: EffectData[];
 }
 
-export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects' | 'variants'> {
-  /**
-   * The whole sound lives in the variant stack; the active variant holds the
-   * current params/clip/effects. Legacy v4 snapshots carry top-level
-   * params/clip/effects instead (migrated to one default variant on load).
-   */
-  variants: VariantData[];
-  /** Legacy v4 fields, read only for migration in ProjectStore.load. */
+export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId'> {
+  /** Track-level sound (synth patch). Optional for migration; defaulted on load. */
   params?: PatchValues;
-  clip?: ClipData;
   effects?: EffectData[];
+  clips?: NoteClipData[];
+  placements?: Placement[];
+  activeClipId?: string;
+  // --- legacy, read only for migration in ProjectStore.load ---
+  /** Pre-v7 variant stack. */
+  variants?: VariantData[];
+  /** Pre-v7 active variant id. */
+  activeVariantId?: string;
+  /** v4 single clip. */
+  clip?: ClipData;
 }
 
-export interface AudioTrackData extends Omit<AudioTrackMeta, 'effects'> {
-  effects: EffectData[];
+export interface AudioTrackData extends Omit<AudioTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId'> {
+  effects?: EffectData[];
+  clips?: AudioClipData[];
+  placements?: Placement[];
+  activeClipId?: string;
+  // --- legacy, read only for migration ---
+  /** Pre-v7 single positioned clip. */
+  audioClip?: LegacyAudioClip;
 }
 
 export type TrackData = InstrumentTrackData | AudioTrackData;

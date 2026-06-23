@@ -65,7 +65,7 @@ describe('ProjectStore', () => {
     const a = new ProjectStore(false);
     const t1 = a.addTrack('subtractive', { name: 'Lead' });
     t1.params.set('filter.cutoff', 1234);
-    t1.clip.addNote({ pitch: 60, start: 0 });
+    a.getClipStore(t1.id)!.addNote({ pitch: 60, start: 0 });
     const t2 = a.addTrack('fm', { name: 'Bass' });
     t2.params.set('fm.ratio', 3);
     a.setTempo(100);
@@ -77,7 +77,7 @@ describe('ProjectStore', () => {
     expect(b.tempo).toBe(100);
     const lead = b.getTrack(t1.id)!;
     expect(lead.params.get('filter.cutoff')).toBe(1234);
-    expect(lead.clip.getClip().notes).toHaveLength(1);
+    expect(b.getClipStore(t1.id)!.getClip().notes).toHaveLength(1);
     expect(b.getTrack(t2.id)!.params.get('fm.ratio')).toBe(3);
   });
 
@@ -235,13 +235,13 @@ describe('ProjectStore groups (bus tree)', () => {
 });
 
 describe('ProjectStore audio tracks', () => {
-  it('adds an audio track filed into the Audio group, with a clip', () => {
+  it('adds an audio track filed into the Audio group, with a clip + placement', () => {
     const p = new ProjectStore(false);
     const t = p.addAudioTrack({ fileId: 'au-xyz', name: 'Take 1', durationSec: 3.5 });
     expect(t.kind).toBe('audio');
-    expect(t.audioClip.fileId).toBe('au-xyz');
-    expect(t.audioClip.durationSec).toBe(3.5);
-    expect(t.audioClip.startBeat).toBe(0);
+    expect(t.clips[0].fileId).toBe('au-xyz');
+    expect(t.clips[0].durationSec).toBe(3.5);
+    expect(t.placements[0].startBeat).toBe(0);
     const group = p.getGroup(t.parentId)!;
     expect(group.name).toBe('Audio');
     expect(group.parentId).toBeNull();
@@ -255,16 +255,17 @@ describe('ProjectStore audio tracks', () => {
     expect(p.getEffect(t.id, fx.id)).toBe(fx);
   });
 
-  it('edits clip gain (clamped) and start beat; ignores instrument tracks', () => {
+  it('edits clip gain (clamped) and placement start beat; ignores instrument tracks', () => {
     const p = new ProjectStore(false);
     const audio = p.addAudioTrack({ fileId: 'au-1' });
-    p.setAudioClip(audio.id, { gain: 5, startBeat: 2 });
-    const clip = (p.getTrack(audio.id) as { audioClip: { gain: number; startBeat: number } }).audioClip;
-    expect(clip.gain).toBe(1);
-    expect(clip.startBeat).toBe(2);
+    p.setAudioClip(audio.id, undefined, { gain: 5 });
+    p.movePlacement(audio.id, audio.placements[0].id, 2);
+    const t = p.getTrack(audio.id) as { clips: { gain: number }[]; placements: { startBeat: number }[] };
+    expect(t.clips[0].gain).toBe(1); // clamped
+    expect(t.placements[0].startBeat).toBe(2);
     // no-op on an instrument track
     const inst = p.addTrack('subtractive');
-    expect(() => p.setAudioClip(inst.id, { gain: 0.5 })).not.toThrow();
+    expect(() => p.setAudioClip(inst.id, undefined, { gain: 0.5 })).not.toThrow();
   });
 
   it('round-trips a mixed instrument + audio project through snapshot/load', () => {
@@ -281,9 +282,9 @@ describe('ProjectStore audio tracks', () => {
     const loaded = b.getTrack(au.id)!;
     expect(loaded.kind).toBe('audio');
     if (loaded.kind === 'audio') {
-      expect(loaded.audioClip.fileId).toBe('au-9');
-      expect(loaded.audioClip.startBeat).toBe(4);
-      expect(loaded.audioClip.gain).toBe(0.7);
+      expect(loaded.clips[0].fileId).toBe('au-9');
+      expect(loaded.clips[0].gain).toBe(0.7);
+      expect(loaded.placements[0].startBeat).toBe(4);
     }
     expect(loaded.effects.map((e) => e.type)).toEqual(['delay']);
   });

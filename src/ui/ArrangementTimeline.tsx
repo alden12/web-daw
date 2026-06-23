@@ -10,10 +10,10 @@
  * single clip region with a mini note preview.
  */
 import { useEffect, useRef } from 'react';
-import type { ProjectStore } from '../audio/project/projectStore';
+import type { ProjectStore, Track } from '../audio/project/projectStore';
 import type { ClipStore } from '../audio/sequencer/clipStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
-import type { AudioClip, GroupMeta, TrackMeta } from '../audio/project/types';
+import type { GroupMeta, Placement, TrackMeta } from '../audio/project/types';
 import type { Dispatch } from '../audio/commands/types';
 import { newGroupId } from '../audio/commands/ids';
 import { useProject } from '../audio/project/useProject';
@@ -41,40 +41,77 @@ function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
   return rows;
 }
 
-function TrackPreview({ clipStore }: { clipStore: ClipStore }) {
-  const clip = useClip(clipStore);
-  const pitches = clip.notes.map((n) => n.pitch);
-  const lo = pitches.length ? Math.min(...pitches) : 48;
-  const hi = pitches.length ? Math.max(...pitches) : 72;
-  const span = Math.max(1, hi - lo);
+/**
+ * Read-only preview of a track's arrangement: each placement is a block positioned
+ * by its start/length over the loop length. (Editing - drag/move/split - lands in
+ * the next commit, when this gains its own ruler + zoom.)
+ */
+/** A placement block: position + label, shared by both track kinds. */
+function Block({ name, left, width, children }: { name?: string; left: number; width: number; children?: React.ReactNode }) {
   return (
-    <div className="absolute top-2 bottom-2 left-[0.4%] right-[0.4%] rounded bg-card border border-line border-t-2 border-t-you overflow-hidden">
-      {clip.notes.map((n) => (
-        <div
-          key={n.id}
-          className="absolute h-0.5 rounded-[1px] bg-you/85"
-          style={{
-            left: `${(n.start / clip.lengthBeats) * 100}%`,
-            width: `${Math.max(1.5, (n.length / clip.lengthBeats) * 100)}%`,
-            bottom: `${((n.pitch - lo) / span) * 70 + 14}%`,
-          }}
-        />
-      ))}
+    <div
+      className="absolute top-2 bottom-2 rounded bg-card border border-line border-t-2 border-t-you overflow-hidden"
+      style={{ left: `${left}%`, width: `${width}%` }}
+      title={name}
+    >
+      <div className="absolute inset-0 bg-you/15" />
+      {children}
+      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{name}</span>
     </div>
   );
 }
 
-function AudioLanePreview({ clip, lengthBeats, tempoBpm }: { clip: AudioClip; lengthBeats: number; tempoBpm: number }) {
-  const durationBeats = clip.durationSec * (tempoBpm / 60);
-  const width = Math.max(2, Math.min(100, (durationBeats / lengthBeats) * 100));
+/** An instrument placement: a mini note summary of the clip, windowed to the placement. */
+function InstrumentPlacement({ store, name, placement, lengthBeats }: { store: ClipStore; name?: string; placement: Placement; lengthBeats: number }) {
+  const clip = useClip(store);
+  const notes = clip.notes.filter((n) => n.start >= placement.offset && n.start < placement.offset + placement.length);
+  const pitches = notes.map((n) => n.pitch);
+  const lo = pitches.length ? Math.min(...pitches) : 48;
+  const hi = pitches.length ? Math.max(...pitches) : 72;
+  const span = Math.max(1, hi - lo);
   return (
-    <div
-      className="absolute top-2 bottom-2 rounded bg-card border border-line border-t-2 border-t-you overflow-hidden"
-      style={{ left: `${(clip.startBeat / lengthBeats) * 100}%`, width: `${width}%` }}
-    >
-      <div className="absolute inset-0 bg-you/15" />
-      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{clip.name}</span>
-    </div>
+    <Block name={name} left={(placement.startBeat / lengthBeats) * 100} width={Math.max(1, (placement.length / lengthBeats) * 100)}>
+      {notes.map((n) => (
+        <div
+          key={n.id}
+          className="absolute h-0.5 rounded-[1px] bg-you/85"
+          style={{
+            left: `${((n.start - placement.offset) / placement.length) * 100}%`,
+            width: `${Math.max(1.5, (n.length / placement.length) * 100)}%`,
+            bottom: `${((n.pitch - lo) / span) * 60 + 18}%`,
+          }}
+        />
+      ))}
+    </Block>
+  );
+}
+
+/**
+ * Read-only preview of a track's arrangement: each placement is a block positioned
+ * by its start/length over the loop length, with a mini note summary for instrument
+ * clips. (Editing - drag/move/split - lands in the next commit, with its own ruler.)
+ */
+function LaneClips({ track, lengthBeats }: { track: Track; lengthBeats: number }) {
+  if (track.kind === 'instrument') {
+    return (
+      <>
+        {track.placements.map((p) => {
+          const clip = track.clips.find((c) => c.id === p.clipId);
+          if (!clip) return null;
+          return <InstrumentPlacement key={p.id} store={clip.store} name={clip.name} placement={p} lengthBeats={lengthBeats} />;
+        })}
+      </>
+    );
+  }
+  return (
+    <>
+      {track.placements.map((p) => {
+        const clip = track.clips.find((c) => c.id === p.clipId);
+        return (
+          <Block key={p.id} name={clip?.name} left={(p.startBeat / lengthBeats) * 100} width={Math.max(1, (p.length / lengthBeats) * 100)} />
+        );
+      })}
+    </>
   );
 }
 
@@ -272,11 +309,7 @@ export function ArrangementTimeline({
               const track = projectStore.getTrack(meta.id);
               return (
                 <div key={meta.id} className={`${ROW} relative border-b border-line-soft lane-grid`}>
-                  {meta.kind === 'audio' ? (
-                    <AudioLanePreview clip={meta.audioClip} lengthBeats={lengthBeats} tempoBpm={project.tempoBpm} />
-                  ) : (
-                    track?.kind === 'instrument' && <TrackPreview clipStore={track.clip} />
-                  )}
+                  {track && <LaneClips track={track} lengthBeats={lengthBeats} />}
                 </div>
               );
             })}

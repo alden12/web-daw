@@ -33,10 +33,10 @@ describe('Scheduler integration (mocked clock)', () => {
     const project = new ProjectStore(false);
     project.setTempo(120); // bps = 2
     const a = project.addTrack('subtractive', { name: 'A' });
-    a.clip.addNote({ pitch: 60, start: 0 });
-    a.clip.addNote({ pitch: 62, start: 4 });
+    project.getClipStore(a.id)!.addNote({ pitch: 60, start: 0 });
+    project.getClipStore(a.id)!.addNote({ pitch: 62, start: 4 });
     const b = project.addTrack('fm', { name: 'B' });
-    b.clip.addNote({ pitch: 36, start: 2 });
+    project.getClipStore(b.id)!.addNote({ pitch: 36, start: 2 });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const scheduler = new Scheduler(engine as any, project);

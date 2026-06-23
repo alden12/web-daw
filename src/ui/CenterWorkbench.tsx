@@ -17,7 +17,8 @@ import { ResizeHandle } from './ResizeHandle';
 import { usePersistentNumber } from './usePersistent';
 
 function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Dispatch }) {
-  const clip = track.audioClip;
+  const clip = track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
+  if (!clip) return <div className="flex-1 min-h-0 p-3 text-muted text-sm">No audio clip.</div>;
   return (
     <div className="flex-1 min-h-0 p-3">
       <div className="h-full flex flex-col rounded-lg border border-line bg-card overflow-hidden">
@@ -35,19 +36,8 @@ function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Disp
             <span className="absolute left-2 top-1.5 font-mono text-[10px] text-muted">{clip.name}</span>
           </div>
           <div className="flex items-center gap-4">
-            <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
-              Start
-              <input
-                type="number"
-                min={0}
-                step={0.25}
-                value={clip.startBeat}
-                onChange={(e) => dispatch({ type: 'setAudioClip', trackId: track.id, patch: { startBeat: Number(e.target.value) } })}
-                className="w-16 font-mono text-[12px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
-              />
-              beats
-            </label>
-            <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted">
+            <span className="font-mono text-[10.5px] text-faint">Place it on the timeline below; drag to position.</span>
+            <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
               <input
                 type="range"
@@ -55,7 +45,7 @@ function AudioClipPanel({ track, dispatch }: { track: AudioTrack; dispatch: Disp
                 max={1}
                 step={0.01}
                 value={clip.gain}
-                onChange={(e) => dispatch({ type: 'setAudioClip', trackId: track.id, patch: { gain: Number(e.target.value) } })}
+                onChange={(e) => dispatch({ type: 'setAudioClip', trackId: track.id, clipId: clip.id, patch: { gain: Number(e.target.value) } })}
                 className="w-28"
               />
               <span className="text-faint w-8">{clip.gain.toFixed(2)}</span>
@@ -129,13 +119,19 @@ export function CenterWorkbench({
         <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:roll`}>
           <VariantStrip projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} orientation="vertical" />
           <div className="flex-1 min-w-0 min-h-0 p-3">
-            <PianoRoll
-              clipStore={selectedTrack.clip}
-              projectStore={projectStore}
-              scheduler={scheduler}
-              trackId={selectedTrack.id}
-              dispatch={dispatch}
-            />
+            {(() => {
+              const active = selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
+              // Key by the active clip so the roll remounts (re-fits, resets selection) on switch.
+              return (
+                <PianoRoll
+                  key={active.id}
+                  clipStore={active.store}
+                  scheduler={scheduler}
+                  trackId={selectedTrack.id}
+                  dispatch={dispatch}
+                />
+              );
+            })()}
           </div>
         </div>
       ) : (

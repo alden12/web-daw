@@ -18,8 +18,7 @@ function setup() {
   return { project, log };
 }
 
-const notesOf = (project: ProjectStore) =>
-  (project.getTrack('t-1') as { clip: { getClip(): { notes: NoteEvent[]; lengthBeats: number } } }).clip.getClip();
+const notesOf = (project: ProjectStore) => project.getClipStore('t-1')!.getClip();
 
 const entriesOfType = (log: EditLog, type: string) => log.getState().entries.filter((e) => e.command.type === type);
 
@@ -73,29 +72,46 @@ describe('plural clip commands', () => {
   });
 });
 
-describe('setLength', () => {
-  it('sets the project loop length and clamps notes that fall past the new end', () => {
+describe('setClipLength', () => {
+  it('sets the active clip length and clamps notes past the new end', () => {
     const { project, log } = setup();
     log.dispatch({ type: 'addNotes', trackId: 't-1', notes: [note({ id: 'far', start: 12, length: 4 })] });
     expect(notesOf(project).notes[0].start).toBe(12);
 
+    log.dispatch({ type: 'setClipLength', trackId: 't-1', lengthBeats: 8 });
+    expect(notesOf(project).lengthBeats).toBe(8);
+    const far = notesOf(project).notes[0];
+    expect(far.start).toBeLessThanOrEqual(8); // clamped inside the clip
+    expect(far.start + far.length).toBeLessThanOrEqual(8);
+  });
+
+  it('coalesces a clip-length drag into one undo step', () => {
+    const { project, log } = setup();
+    log.dispatch({ type: 'setClipLength', trackId: 't-1', lengthBeats: 12 });
+    log.dispatch({ type: 'setClipLength', trackId: 't-1', lengthBeats: 8 });
+    expect(entriesOfType(log, 'setClipLength')).toHaveLength(1);
+    expect(notesOf(project).lengthBeats).toBe(8);
+    log.undo();
+    expect(notesOf(project).lengthBeats).toBe(16);
+  });
+});
+
+describe('setLength (arrangement loop)', () => {
+  it('sets the loop length without touching clip lengths', () => {
+    const { project, log } = setup();
     log.dispatch({ type: 'setLength', lengthBeats: 8 });
     expect(project.length).toBe(8);
-    expect(notesOf(project).lengthBeats).toBe(8); // active clip kept in sync
-    const far = notesOf(project).notes[0];
-    expect(far.start).toBeLessThanOrEqual(8); // clamped inside the loop
-    expect(far.start + far.length).toBeLessThanOrEqual(8);
+    expect(notesOf(project).lengthBeats).toBe(16); // clip is independent
   });
 
   it('coalesces a loop-handle drag into one undo step', () => {
     const { project, log } = setup();
     log.dispatch({ type: 'setLength', lengthBeats: 12 });
-    log.dispatch({ type: 'setLength', lengthBeats: 8 });
     log.dispatch({ type: 'setLength', lengthBeats: 4 });
     expect(entriesOfType(log, 'setLength')).toHaveLength(1);
     expect(project.length).toBe(4);
     log.undo();
-    expect(project.length).toBe(16); // back to the default loop length
+    expect(project.length).toBe(16);
   });
 });
 

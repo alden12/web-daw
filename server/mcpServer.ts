@@ -25,7 +25,8 @@ const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
 const makeGroupId = () => `g-${randomId().slice(0, 8)}`;
 const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
-const makeVariantId = () => `v-${randomId().slice(0, 8)}`;
+const makeClipId = () => `c-${randomId().slice(0, 8)}`;
+const makePlacementId = () => `p-${randomId().slice(0, 8)}`;
 
 export interface DawMcp {
   server: McpServer;
@@ -54,10 +55,7 @@ export function createDawMcp(
       const t = mirror.getTrack(msg.trackId);
       if (t?.kind === 'instrument') t.params.set(msg.id, msg.value);
     },
-    clipSnapshot: (msg) => {
-      const t = mirror.getTrack(msg.trackId);
-      if (t?.kind === 'instrument') t.clip.load(msg.clip);
-    },
+    clipSnapshot: (msg) => mirror.getClipStore(msg.trackId, msg.clipId)?.load(msg.clip),
     effectParamChanged: (msg) => mirror.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
   };
 
@@ -185,11 +183,11 @@ export function createDawMcp(
               name: t.name,
               kind: t.kind,
               instrument: t.kind === 'instrument' ? t.instrumentType : undefined,
-              clip: t.kind === 'audio' ? t.audioClip.name : undefined,
               group: t.parentId,
               muted: t.muted,
               volume: t.volume,
-              notes: t.kind === 'instrument' ? t.clip.getClip().notes.length : undefined,
+              clips: t.clips.length,
+              placements: t.placements.length,
             })),
           },
           null,
@@ -577,12 +575,14 @@ export function createDawMcp(
   );
 
   // --- Clip notes -----------------------------------------------------------
+  // Note tools edit one clip in the track's pool - the active clip, or `clip` if given.
   const noteShape = {
     pitch: z.number().int().min(0).max(127),
     start: z.number().min(0).describe('onset in beats (4 beats = 1 bar)'),
     length: z.number().min(0).optional().describe('duration in beats (default 1)'),
     velocity: z.number().min(0).max(1).optional(),
   };
+  const clipArg = { clip: z.string().optional().describe('clip id (see list_clips); defaults to the active clip') };
   const makeNote = (n: { pitch: number; start: number; length?: number; velocity?: number }): NoteEvent => ({
     id: randomId(),
     pitch: n.pitch,
@@ -590,26 +590,34 @@ export function createDawMcp(
     length: n.length ?? 1,
     velocity: n.velocity ?? 0.8,
   });
+  /** Resolve an instrument track + the target clip store (active or `clip`). */
+  const resolveClip = (track?: string, clip?: string) => {
+    const r = resolveInstrumentTrack(track);
+    if ('error' in r) return r;
+    const store = mirror.getClipStore(r.id, clip);
+    if (!store) return { error: `Unknown clip "${clip}" on ${r.id}.` };
+    return { id: r.id, track: r.track, store };
+  };
 
   server.registerTool(
     'list_notes',
-    { title: 'List notes', description: 'Return a track\'s clip notes (id, pitch, start/length in beats, velocity).', inputSchema: trackArg },
-    async ({ track }) => {
-      const r = resolveInstrumentTrack(track);
+    { title: 'List notes', description: 'Return a clip\'s notes (id, pitch, start/length in beats, velocity).', inputSchema: { ...trackArg, ...clipArg } },
+    async ({ track, clip }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
-      return ok(JSON.stringify({ track: r.id, clip: r.track.clip.getClip() }, null, 2));
+      return ok(JSON.stringify({ track: r.id, clip: r.store.getClip() }, null, 2));
     },
   );
 
   server.registerTool(
     'add_note',
-    { title: 'Add note', description: 'Add one note to a track\'s clip. Times in beats. Returns the note id.', inputSchema: { ...trackArg, ...noteShape } },
-    async ({ track, pitch, start, length, velocity }) => {
-      const r = resolveInstrumentTrack(track);
+    { title: 'Add note', description: 'Add one note to a clip. Times in beats. Returns the note id.', inputSchema: { ...trackArg, ...clipArg, ...noteShape } },
+    async ({ track, clip, pitch, start, length, velocity }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
       const note = makeNote({ pitch, start, length, velocity });
-      if (!sendToTab({ type: 'addNote', trackId: r.id, note })) return fail('No DAW tab connected.');
-      r.track.clip.putNote(note);
+      if (!sendToTab({ type: 'addNote', trackId: r.id, clipId: clip, note })) return fail('No DAW tab connected.');
+      r.store.putNote(note);
       return ok(`Added note ${pitch} at beat ${start} to ${r.id} (id ${note.id}).`);
     },
   );
@@ -618,16 +626,16 @@ export function createDawMcp(
     'add_notes',
     {
       title: 'Add notes',
-      description: 'Add many notes to a track\'s clip at once (write a whole part). Times in beats.',
-      inputSchema: { ...trackArg, notes: z.array(z.object(noteShape)).min(1).max(512) },
+      description: 'Add many notes to a clip at once (write a whole part). Times in beats.',
+      inputSchema: { ...trackArg, ...clipArg, notes: z.array(z.object(noteShape)).min(1).max(512) },
     },
-    async ({ track, notes }) => {
-      const r = resolveInstrumentTrack(track);
+    async ({ track, clip, notes }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
       // One addNotes message = one feed entry + one undo step (not one per note).
       const made = notes.map(makeNote);
-      if (!sendToTab({ type: 'addNotes', trackId: r.id, notes: made })) return fail('No DAW tab connected.');
-      for (const note of made) r.track.clip.putNote(note);
+      if (!sendToTab({ type: 'addNotes', trackId: r.id, clipId: clip, notes: made })) return fail('No DAW tab connected.');
+      for (const note of made) r.store.putNote(note);
       return ok(`Added ${made.length} notes to ${r.id}.`);
     },
   );
@@ -637,26 +645,26 @@ export function createDawMcp(
     {
       title: 'Edit notes',
       description: 'Move / resize / re-velocity existing notes in place, by id, in one atomic edit. Times in beats.',
-      inputSchema: { ...trackArg, notes: z.array(z.object({ id: z.string(), ...noteShape })).min(1).max(512) },
+      inputSchema: { ...trackArg, ...clipArg, notes: z.array(z.object({ id: z.string(), ...noteShape })).min(1).max(512) },
     },
-    async ({ track, notes }) => {
-      const r = resolveInstrumentTrack(track);
+    async ({ track, clip, notes }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
       const edited: NoteEvent[] = notes.map((n) => ({ ...makeNote(n), id: n.id }));
-      if (!sendToTab({ type: 'editNotes', trackId: r.id, notes: edited })) return fail('No DAW tab connected.');
-      for (const note of edited) r.track.clip.putNote(note);
+      if (!sendToTab({ type: 'editNotes', trackId: r.id, clipId: clip, notes: edited })) return fail('No DAW tab connected.');
+      for (const note of edited) r.store.putNote(note);
       return ok(`Edited ${edited.length} notes on ${r.id}.`);
     },
   );
 
   server.registerTool(
     'remove_note',
-    { title: 'Remove note', description: 'Remove a note from a track\'s clip by id.', inputSchema: { ...trackArg, id: z.string() } },
-    async ({ track, id }) => {
-      const r = resolveInstrumentTrack(track);
+    { title: 'Remove note', description: 'Remove a note from a clip by id.', inputSchema: { ...trackArg, ...clipArg, id: z.string() } },
+    async ({ track, clip, id }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'removeNote', trackId: r.id, id })) return fail('No DAW tab connected.');
-      r.track.clip.removeNote(id);
+      if (!sendToTab({ type: 'removeNote', trackId: r.id, clipId: clip, id })) return fail('No DAW tab connected.');
+      r.store.removeNote(id);
       return ok(`Removed note ${id} from ${r.id}.`);
     },
   );
@@ -665,53 +673,61 @@ export function createDawMcp(
     'remove_notes',
     {
       title: 'Remove notes',
-      description: 'Remove many notes from a track\'s clip by id, in one atomic edit.',
-      inputSchema: { ...trackArg, ids: z.array(z.string()).min(1).max(512) },
+      description: 'Remove many notes from a clip by id, in one atomic edit.',
+      inputSchema: { ...trackArg, ...clipArg, ids: z.array(z.string()).min(1).max(512) },
     },
-    async ({ track, ids }) => {
-      const r = resolveInstrumentTrack(track);
+    async ({ track, clip, ids }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'removeNotes', trackId: r.id, ids })) return fail('No DAW tab connected.');
-      for (const id of ids) r.track.clip.removeNote(id);
+      if (!sendToTab({ type: 'removeNotes', trackId: r.id, clipId: clip, ids })) return fail('No DAW tab connected.');
+      for (const id of ids) r.store.removeNote(id);
       return ok(`Removed ${ids.length} notes from ${r.id}.`);
     },
   );
 
   server.registerTool(
     'clear_clip',
-    { title: 'Clear clip', description: 'Remove all notes from a track\'s clip.', inputSchema: trackArg },
-    async ({ track }) => {
-      const r = resolveInstrumentTrack(track);
+    { title: 'Clear clip', description: 'Remove all notes from a clip.', inputSchema: { ...trackArg, ...clipArg } },
+    async ({ track, clip }) => {
+      const r = resolveClip(track, clip);
       if ('error' in r) return fail(r.error);
-      if (!sendToTab({ type: 'clearClip', trackId: r.id })) return fail('No DAW tab connected.');
-      r.track.clip.clear();
+      if (!sendToTab({ type: 'clearClip', trackId: r.id, clipId: clip })) return fail('No DAW tab connected.');
+      r.store.clear();
       return ok(`Cleared clip on ${r.id}.`);
     },
   );
 
-  // --- Clip variants --------------------------------------------------------
-  // A variant bundles the whole sound (notes + params + effects). Generating
-  // takes: add_variant (forks the active one), select_variant to make it active,
-  // then the note/param tools edit it. Variants you create are tagged 'claude'.
-  const variantArg = { variant: z.string().describe('variant id (see list_variants)') };
+  server.registerTool(
+    'set_clip_length',
+    {
+      title: 'Set clip length',
+      description: 'Set a clip\'s pattern length in beats (clamps notes past the end).',
+      inputSchema: { ...trackArg, ...clipArg, lengthBeats: z.number().min(0.25).max(256) },
+    },
+    async ({ track, clip, lengthBeats }) => {
+      const r = resolveClip(track, clip);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'setClipLength', trackId: r.id, clipId: clip, lengthBeats })) return fail('No DAW tab connected.');
+      r.store.setLength(lengthBeats);
+      return ok(`Set clip length to ${lengthBeats} beats on ${r.id}.`);
+    },
+  );
+
+  // --- Clip pool ------------------------------------------------------------
+  // A track owns a pool of note clips (patterns); the active one is edited by the
+  // note tools and shown in the roll. Arrange them along time with the placement
+  // tools below. Clips you create are tagged 'claude'.
+  const clipIdArg = { clip_id: z.string().describe('clip id (see list_clips)') };
 
   server.registerTool(
-    'list_variants',
-    {
-      title: 'List variants',
-      description: 'Return a track\'s clip variants (id, name, author) and which is active.',
-      inputSchema: trackArg,
-    },
+    'list_clips',
+    { title: 'List clips', description: 'Return a track\'s clip pool (id, name, author) and which is active.', inputSchema: trackArg },
     async ({ track }) => {
-      const r = resolveInstrumentTrack(track);
+      const r = resolveTrack(track);
       if ('error' in r) return fail(r.error);
       return ok(
         JSON.stringify(
-          {
-            track: r.id,
-            activeVariantId: r.track.activeVariantId,
-            variants: r.track.variants.map((v) => ({ id: v.id, name: v.name, author: v.author })),
-          },
+          { track: r.id, activeClipId: r.track.activeClipId, clips: r.track.clips.map((c) => ({ id: c.id, name: c.name, author: c.author })) },
           null,
           2,
         ),
@@ -720,73 +736,133 @@ export function createDawMcp(
   );
 
   server.registerTool(
-    'add_variant',
+    'add_clip',
     {
-      title: 'Add variant',
-      description:
-        'Fork a track\'s active variant into a new editable one (the original is parked, non-destructive) and make it active. Returns the new variant id - then edit notes/params to shape the take.',
-      inputSchema: { ...trackArg, name: z.string().optional(), from: z.string().optional().describe('variant id to fork; defaults to active') },
+      title: 'Add clip',
+      description: 'Add a note clip to a track (copies `from`, or the active clip, into a new editable one) and make it active. Returns the new clip id.',
+      inputSchema: { ...trackArg, name: z.string().optional(), from: z.string().optional().describe('clip id to copy; defaults to active') },
     },
     async ({ track, name, from }) => {
       const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
-      const id = makeVariantId();
-      if (!sendToTab({ type: 'addVariant', trackId: r.id, id, name, fromVariantId: from }))
-        return fail('No DAW tab connected.');
-      mirror.addVariant(r.id, { id, name, fromVariantId: from, author: 'claude' });
-      return ok(`Forked variant on ${r.id} (id ${id}); it is now active.`);
+      const id = makeClipId();
+      if (!sendToTab({ type: 'addClip', trackId: r.id, id, name, fromClipId: from })) return fail('No DAW tab connected.');
+      mirror.addClip(r.id, { id, name, fromClipId: from, author: 'claude' });
+      return ok(`Added clip on ${r.id} (id ${id}); it is now active.`);
     },
   );
 
   server.registerTool(
-    'select_variant',
-    {
-      title: 'Select variant',
-      description: 'Make a variant active (morphs the whole sound: notes + params + effects).',
-      inputSchema: { ...trackArg, ...variantArg },
-    },
-    async ({ track, variant }) => {
-      const r = resolveInstrumentTrack(track);
+    'select_clip',
+    { title: 'Select clip', description: 'Make a clip active (shown/edited in the roll).', inputSchema: { ...trackArg, ...clipIdArg } },
+    async ({ track, clip_id }) => {
+      const r = resolveTrack(track);
       if ('error' in r) return fail(r.error);
-      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
-      if (!sendToTab({ type: 'selectVariant', trackId: r.id, variantId: variant })) return fail('No DAW tab connected.');
-      mirror.selectVariant(r.id, variant);
-      return ok(`Switched ${r.id} to variant ${variant}.`);
+      if (!r.track.clips.some((c) => c.id === clip_id)) return fail(`Unknown clip "${clip_id}" on ${r.id}.`);
+      if (!sendToTab({ type: 'selectClip', trackId: r.id, clipId: clip_id })) return fail('No DAW tab connected.');
+      mirror.selectClip(r.id, clip_id);
+      return ok(`Selected clip ${clip_id} on ${r.id}.`);
     },
   );
 
   server.registerTool(
-    'remove_variant',
-    {
-      title: 'Remove variant',
-      description: 'Delete a variant (a track must keep at least one).',
-      inputSchema: { ...trackArg, ...variantArg },
-    },
-    async ({ track, variant }) => {
-      const r = resolveInstrumentTrack(track);
+    'remove_clip',
+    { title: 'Remove clip', description: 'Delete a clip and its placements (a track must keep at least one).', inputSchema: { ...trackArg, ...clipIdArg } },
+    async ({ track, clip_id }) => {
+      const r = resolveTrack(track);
       if ('error' in r) return fail(r.error);
-      if (r.track.variants.length <= 1) return fail(`Track ${r.id} has only one variant; cannot remove it.`);
-      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
-      if (!sendToTab({ type: 'removeVariant', trackId: r.id, variantId: variant })) return fail('No DAW tab connected.');
-      mirror.removeVariant(r.id, variant);
-      return ok(`Removed variant ${variant} from ${r.id}.`);
+      if (r.track.clips.length <= 1) return fail(`Track ${r.id} has only one clip; cannot remove it.`);
+      if (!r.track.clips.some((c) => c.id === clip_id)) return fail(`Unknown clip "${clip_id}" on ${r.id}.`);
+      if (!sendToTab({ type: 'removeClip', trackId: r.id, clipId: clip_id })) return fail('No DAW tab connected.');
+      mirror.removeClip(r.id, clip_id);
+      return ok(`Removed clip ${clip_id} from ${r.id}.`);
     },
   );
 
   server.registerTool(
-    'rename_variant',
-    {
-      title: 'Rename variant',
-      description: 'Rename a variant.',
-      inputSchema: { ...trackArg, ...variantArg, name: z.string().min(1) },
-    },
-    async ({ track, variant, name }) => {
-      const r = resolveInstrumentTrack(track);
+    'rename_clip',
+    { title: 'Rename clip', description: 'Rename a clip.', inputSchema: { ...trackArg, ...clipIdArg, name: z.string().min(1) } },
+    async ({ track, clip_id, name }) => {
+      const r = resolveTrack(track);
       if ('error' in r) return fail(r.error);
-      if (!r.track.variants.some((v) => v.id === variant)) return fail(`Unknown variant "${variant}" on ${r.id}.`);
-      if (!sendToTab({ type: 'renameVariant', trackId: r.id, variantId: variant, name })) return fail('No DAW tab connected.');
-      mirror.renameVariant(r.id, variant, name);
-      return ok(`Renamed variant ${variant} to "${name}" on ${r.id}.`);
+      if (!r.track.clips.some((c) => c.id === clip_id)) return fail(`Unknown clip "${clip_id}" on ${r.id}.`);
+      if (!sendToTab({ type: 'renameClip', trackId: r.id, clipId: clip_id, name })) return fail('No DAW tab connected.');
+      mirror.renameClip(r.id, clip_id, name);
+      return ok(`Renamed clip ${clip_id} to "${name}" on ${r.id}.`);
+    },
+  );
+
+  // --- Arrangement placements -----------------------------------------------
+  server.registerTool(
+    'list_placements',
+    { title: 'List placements', description: 'Return a track\'s arrangement placements (id, clipId, startBeat, offset, length).', inputSchema: trackArg },
+    async ({ track }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      return ok(JSON.stringify({ track: r.id, placements: r.track.placements }, null, 2));
+    },
+  );
+
+  server.registerTool(
+    'add_placement',
+    {
+      title: 'Add placement',
+      description: 'Place a clip on the arrangement at `start_beat` (clip defaults to the active one). Returns the placement id.',
+      inputSchema: { ...trackArg, start_beat: z.number().min(0), clip: z.string().optional(), length: z.number().min(0.25).optional() },
+    },
+    async ({ track, start_beat, clip, length }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      const id = makePlacementId();
+      const clipId = clip ?? r.track.activeClipId;
+      if (!sendToTab({ type: 'addPlacement', trackId: r.id, id, clipId, startBeat: start_beat, length })) return fail('No DAW tab connected.');
+      mirror.addPlacement(r.id, { id, clipId, startBeat: start_beat, length });
+      return ok(`Placed clip ${clipId} at beat ${start_beat} on ${r.id} (id ${id}).`);
+    },
+  );
+
+  server.registerTool(
+    'move_placement',
+    {
+      title: 'Move placement',
+      description: 'Move a placement to a new start beat.',
+      inputSchema: { ...trackArg, placement_id: z.string(), start_beat: z.number().min(0) },
+    },
+    async ({ track, placement_id, start_beat }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'movePlacement', trackId: r.id, placementId: placement_id, startBeat: start_beat })) return fail('No DAW tab connected.');
+      mirror.movePlacement(r.id, placement_id, start_beat);
+      return ok(`Moved placement ${placement_id} to beat ${start_beat} on ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'remove_placement',
+    { title: 'Remove placement', description: 'Remove a placement from the arrangement (the clip stays in the pool).', inputSchema: { ...trackArg, placement_id: z.string() } },
+    async ({ track, placement_id }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'removePlacement', trackId: r.id, placementId: placement_id })) return fail('No DAW tab connected.');
+      mirror.removePlacement(r.id, placement_id);
+      return ok(`Removed placement ${placement_id} from ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'split_placement',
+    {
+      title: 'Split placement',
+      description: 'Split a placement at an absolute beat into two regions over the same clip.',
+      inputSchema: { ...trackArg, placement_id: z.string(), at_beat: z.number().min(0) },
+    },
+    async ({ track, placement_id, at_beat }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      const newId = makePlacementId();
+      if (!sendToTab({ type: 'splitPlacement', trackId: r.id, placementId: placement_id, atBeat: at_beat, newId })) return fail('No DAW tab connected.');
+      mirror.splitPlacement(r.id, placement_id, at_beat, newId);
+      return ok(`Split placement ${placement_id} at beat ${at_beat} on ${r.id}.`);
     },
   );
 

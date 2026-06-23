@@ -13,6 +13,7 @@
  */
 import { ParamStore } from '../params/store';
 import { ClipStore } from '../sequencer/clipStore';
+import { GRID } from '../sequencer/types';
 import {
   INSTRUMENT_CATALOG,
   catalogEntry,
@@ -21,7 +22,18 @@ import {
   DEFAULT_INSTRUMENT,
 } from '../instruments/catalog';
 import { EFFECT_CATALOG, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
-import type { ProjectData, TrackMeta, GroupMeta, AudioClip, VariantData, VariantAuthor } from './types';
+import type { PatchValues } from '../params/types';
+import type {
+  ProjectData,
+  TrackMeta,
+  GroupMeta,
+  AudioClipData,
+  Placement,
+  ClipAuthor,
+  EffectData,
+  InstrumentTrackData,
+  AudioTrackData,
+} from './types';
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
@@ -63,27 +75,37 @@ interface BaseTrack extends EffectHost {
   volume: number;
 }
 
+/** A note clip (pattern) at runtime: meta + its own ClipStore (the notes). */
+export interface NoteClip {
+  id: string;
+  name: string;
+  author: ClipAuthor;
+  store: ClipStore;
+}
+
 /**
- * An instrument track: a synth (params) playing a note clip. The live
- * `params`/`clip`/`effects` are the working copy of the active variant; the
- * parked variants are snapshots in `variants` (the active entry is refreshed
- * from the live stores on fold). Switching/forking loads a variant into the
- * live stores IN PLACE so the engine's bindings (created once per track id)
- * stay valid - see materializeVariant.
+ * An instrument track: a synth (track-level `params` + effect chain) that plays
+ * a pool of note clips arranged along time as `placements`. Each clip owns its
+ * own ClipStore, so edits persist per clip with no syncing; the scheduler reads
+ * placements -> clip notes as pure data. `activeClipId` is the clip shown/edited
+ * in the piano roll. The engine binds one instrument + one effect chain per track
+ * (to `params`/`effects`), never to clips.
  */
 export interface InstrumentTrack extends BaseTrack {
   kind: 'instrument';
   instrumentType: string;
   params: ParamStore;
-  clip: ClipStore;
-  variants: VariantData[];
-  activeVariantId: string;
+  clips: NoteClip[];
+  activeClipId: string;
+  placements: Placement[];
 }
 
-/** An audio track: a recorded/imported audio clip played back as a buffer. */
+/** An audio track: a pool of audio clips (buffer refs) arranged as `placements`. */
 export interface AudioTrack extends BaseTrack {
   kind: 'audio';
-  audioClip: AudioClip;
+  clips: AudioClipData[];
+  activeClipId: string;
+  placements: Placement[];
 }
 
 /** A track at runtime. Both kinds share the base fields + the effect chain. */
@@ -125,8 +147,11 @@ export class ProjectStore {
   private nextEffectId(): string {
     return `fx-${crypto.randomUUID().slice(0, 8)}`;
   }
-  private nextVariantId(): string {
-    return `v-${crypto.randomUUID().slice(0, 8)}`;
+  private nextClipId(): string {
+    return `c-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  private nextPlacementId(): string {
+    return `p-${crypto.randomUUID().slice(0, 8)}`;
   }
 
   private effectMetas(host: EffectHost): TrackMeta['effects'] {
@@ -143,13 +168,20 @@ export class ProjectStore {
       effects: this.effectMetas(t),
     };
     return t.kind === 'audio'
-      ? { ...base, kind: 'audio', audioClip: { ...t.audioClip } }
+      ? {
+          ...base,
+          kind: 'audio',
+          clips: t.clips.map((c) => ({ ...c })),
+          activeClipId: t.activeClipId,
+          placements: t.placements.map((p) => ({ ...p })),
+        }
       : {
           ...base,
           kind: 'instrument',
           instrumentType: t.instrumentType,
-          variants: t.variants.map((v) => ({ id: v.id, name: v.name, author: v.author })),
-          activeVariantId: t.activeVariantId,
+          clips: t.clips.map((c) => ({ id: c.id, name: c.name, author: c.author, lengthBeats: c.store.getClip().lengthBeats })),
+          activeClipId: t.activeClipId,
+          placements: t.placements.map((p) => ({ ...p })),
         };
   }
 
@@ -329,12 +361,12 @@ export class ProjectStore {
         : this.ensureFamilyGroup(instrumentFamily(type)).id;
     const trackId = opts.id ?? this.nextId();
     const params = new ParamStore(instrumentSchema(type));
+    // Derive the seed clip/placement ids from the (agreed) track id so the browser
+    // and the MCP mirror seed the SAME ids - addTrack runs independently on each
+    // side, and divergent ids would make clip/placement tools address something
+    // the other end doesn't have. Forks/new placements get communicated random ids.
+    const clipId = `c-${trackId}`;
     const clip = new ClipStore({ lengthBeats: this.lengthBeats });
-    // Derive the seed variant's id from the (agreed) track id so the browser and
-    // the MCP mirror seed the SAME id - addTrack runs independently on each side,
-    // and a divergent default-variant id would make variant tools address a
-    // variant the other end doesn't have. Forks get communicated random ids.
-    const variantId = `v-${trackId}`;
     const track: InstrumentTrack = {
       kind: 'instrument',
       id: trackId,
@@ -344,11 +376,11 @@ export class ProjectStore {
       muted: false,
       volume: 0.8,
       params,
-      clip,
       effects: [],
-      // The whole sound is the active variant; the live stores are its working copy.
-      variants: [{ id: variantId, name: 'A', author: 'you', clip: clip.snapshot(), params: params.snapshot(), effects: [] }],
-      activeVariantId: variantId,
+      clips: [{ id: clipId, name: 'A', author: 'you', store: clip }],
+      activeClipId: clipId,
+      // One placement of the seed clip at the start, so a new track plays its clip.
+      placements: [{ id: `p-${trackId}`, clipId, startBeat: 0, offset: 0, length: clip.getClip().lengthBeats }],
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -366,6 +398,8 @@ export class ProjectStore {
       opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(AUDIO_FAMILY).id;
     const trackId = opts.id ?? this.nextId();
     const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
+    const clipId = `c-${trackId}`;
+    const durationSec = clip.durationSec ?? 0;
     const track: AudioTrack = {
       kind: 'audio',
       id: trackId,
@@ -374,14 +408,11 @@ export class ProjectStore {
       muted: false,
       volume: 0.8,
       effects: [],
-      audioClip: {
-        id: `ac-${crypto.randomUUID().slice(0, 8)}`,
-        name: clip.name ?? name,
-        fileId: clip.fileId,
-        startBeat: clip.startBeat ?? 0,
-        gain: clip.gain ?? 1,
-        durationSec: clip.durationSec ?? 0,
-      },
+      clips: [{ id: clipId, name: clip.name ?? name, author: 'you', fileId: clip.fileId, gain: clip.gain ?? 1, durationSec }],
+      activeClipId: clipId,
+      placements: [
+        { id: `p-${trackId}`, clipId, startBeat: clip.startBeat ?? 0, offset: 0, length: this.secondsToBeats(durationSec) },
+      ],
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -389,17 +420,19 @@ export class ProjectStore {
     return track;
   }
 
-  /** Edit an audio clip's placement/gain (no-op on instrument tracks). */
-  setAudioClip(trackId: string, patch: Partial<Pick<AudioClip, 'startBeat' | 'gain' | 'name'>>): void {
+  /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */
+  private secondsToBeats(durationSec: number): number {
+    return Math.max(1, durationSec * (this.tempoBpm / 60));
+  }
+
+  /** Edit an audio clip's gain/name in the pool (no-op on instrument tracks). */
+  setAudioClip(trackId: string, clipId: string | undefined, patch: { gain?: number; name?: string }): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== 'audio') return;
-    const next = {
-      ...t.audioClip,
-      ...(patch.startBeat !== undefined ? { startBeat: Math.max(0, patch.startBeat) } : {}),
-      ...(patch.gain !== undefined ? { gain: clamp(patch.gain, 0, 1) } : {}),
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-    };
-    t.audioClip = next;
+    const clip = t.clips.find((c) => c.id === (clipId ?? t.activeClipId));
+    if (!clip) return;
+    if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, 1);
+    if (patch.name !== undefined) clip.name = patch.name;
     this.emit();
   }
 
@@ -450,9 +483,9 @@ export class ProjectStore {
   }
 
   /**
-   * Set the project loop length (beats). Single-loop model: the scheduler loops
-   * on this, and each instrument track's active clip is kept the same length (so
-   * the piano-roll grid and playback agree, and notes past the end are clamped).
+   * Set the arrangement loop length (beats): the scheduler loops the region
+   * [loopStart, lengthBeats]. Clip lengths are independent (set per clip in the
+   * piano roll), so this no longer touches clips.
    */
   setLength(beats: number): void {
     const next = clamp(beats, MIN_LENGTH, MAX_LENGTH);
@@ -460,7 +493,6 @@ export class ProjectStore {
     this.lengthBeats = next;
     // Keep the loop start inside the new end.
     this.loopStartBeats = clamp(this.loopStartBeats, 0, next - MIN_LOOP);
-    for (const t of this.tracks) if (t.kind === 'instrument') t.clip.setLength(next);
     this.emit();
   }
 
@@ -476,31 +508,18 @@ export class ProjectStore {
     this.emit();
   }
 
-  // --- variants (instrument tracks) -----------------------------------------
-  /** A unique, human variant name (A, B, C, ... AA) not already used on the track. */
-  private nextVariantName(t: InstrumentTrack): string {
-    const used = new Set(t.variants.map((v) => v.name));
+  // --- clip pool + arrangement (instrument & audio) -------------------------
+  /** A unique, human clip name (A, B, C, ... AA) not already used on the track. */
+  private nextClipName(t: Track): string {
+    const used = new Set(t.clips.map((c) => c.name));
     for (let i = 0; ; i++) {
       const name = String.fromCharCode(65 + (i % 26)).repeat(Math.floor(i / 26) + 1);
       if (!used.has(name)) return name;
     }
   }
 
-  /** Snapshot the live stores back into the active variant (it is otherwise stale). */
-  private foldActiveVariant(t: InstrumentTrack): void {
-    const v = t.variants.find((x) => x.id === t.activeVariantId);
-    if (!v) return;
-    v.clip = t.clip.snapshot();
-    v.params = t.params.snapshot();
-    v.effects = this.snapshotEffects(t);
-  }
-
-  /**
-   * Reconcile a host's live effect chain against a target list IN PLACE: reuse
-   * existing EffectInstances by id (load their params) so the engine's binding
-   * survives; create fresh instances for new ids; drop removed; match order.
-   */
-  private loadEffectsInPlace(host: EffectHost, want: VariantData['effects']): void {
+  /** Reconcile an effect chain against a target list IN PLACE (reuse by id, keep bindings). */
+  private loadEffectsInPlace(host: EffectHost, want: EffectData[]): void {
     const byId = new Map(host.effects.map((fx) => [fx.id, fx] as const));
     host.effects = want.map((w) => {
       const existing = byId.get(w.id);
@@ -515,76 +534,140 @@ export class ProjectStore {
     });
   }
 
-  /** Load a variant's bundle into the track's live stores in place; make it active. */
-  private materializeVariant(t: InstrumentTrack, v: VariantData): void {
-    t.params.load(v.params);
-    t.clip.load(v.clip);
-    this.loadEffectsInPlace(t, v.effects);
-    t.activeVariantId = v.id;
+  /** The ClipStore for an instrument track's clip (the active one if `clipId` omitted). */
+  getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
+    const t = this.getTrack(trackId);
+    if (t?.kind !== 'instrument') return undefined;
+    return t.clips.find((c) => c.id === (clipId ?? t.activeClipId))?.store;
   }
 
-  /** Deep, independent copy of a variant's payload (clip notes + params + effects). */
-  private cloneVariantPayload(v: VariantData): Pick<VariantData, 'clip' | 'params' | 'effects'> {
-    return {
-      clip: { notes: v.clip.notes.map((n) => ({ ...n })), lengthBeats: v.clip.lengthBeats },
-      params: { ...v.params },
-      effects: v.effects.map((fx) => ({ ...fx, params: { ...fx.params } })),
-    };
+  /** Natural length (beats) of a clip in a track's pool: notes length, or audio duration. */
+  private naturalLength(t: Track, clipId: string): number {
+    if (t.kind === 'instrument') return t.clips.find((c) => c.id === clipId)?.store.getClip().lengthBeats ?? 4;
+    const c = t.clips.find((x) => x.id === clipId);
+    return c ? this.secondsToBeats(c.durationSec) : 4;
   }
 
-  /** Fork a variant ("Try"): clone the source (default active), park it, edit the copy. */
-  addVariant(
+  /** Fork/create a note clip ("Try"): copy `fromClipId` (default active) or start empty; make active. */
+  addClip(
     trackId: string,
-    opts: { id?: string; name?: string; fromVariantId?: string; author?: VariantAuthor } = {},
-  ): VariantData | undefined {
+    opts: { id?: string; name?: string; fromClipId?: string; author?: ClipAuthor } = {},
+  ): NoteClip | undefined {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== 'instrument') return undefined;
-    this.foldActiveVariant(t);
-    const source =
-      t.variants.find((v) => v.id === (opts.fromVariantId ?? t.activeVariantId)) ??
-      t.variants.find((v) => v.id === t.activeVariantId)!;
-    const id = opts.id && !t.variants.some((v) => v.id === opts.id) ? opts.id : this.nextVariantId();
-    const variant: VariantData = {
+    const source = t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0];
+    const id = opts.id && !t.clips.some((c) => c.id === opts.id) ? opts.id : this.nextClipId();
+    const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
+    const clip: NoteClip = {
       id,
-      name: opts.name ?? this.nextVariantName(t),
+      name: opts.name ?? this.nextClipName(t),
       author: opts.author ?? 'you',
-      ...this.cloneVariantPayload(source),
+      store: new ClipStore({ notes: seed.notes.map((n) => ({ ...n })), lengthBeats: seed.lengthBeats }),
     };
-    t.variants.push(variant);
-    this.materializeVariant(t, variant);
+    t.clips.push(clip);
+    t.activeClipId = id;
     this.emit();
-    return variant;
+    return clip;
   }
 
-  /** Switch the active variant: fold the current one, then materialize the target. */
-  selectVariant(trackId: string, variantId: string): void {
+  /** Make a clip the active one (shown/edited in the piano roll). */
+  selectClip(trackId: string, clipId: string): void {
     const t = this.getTrack(trackId);
-    if (!t || t.kind !== 'instrument' || t.activeVariantId === variantId) return;
-    const target = t.variants.find((v) => v.id === variantId);
-    if (!target) return;
-    this.foldActiveVariant(t);
-    this.materializeVariant(t, target);
+    if (!t || t.activeClipId === clipId || !t.clips.some((c) => c.id === clipId)) return;
+    t.activeClipId = clipId;
     this.emit();
   }
 
-  /** Remove a variant (never the last); reassign + materialize a neighbour if active. */
-  removeVariant(trackId: string, variantId: string): void {
+  /** Remove a clip (never the last) and any placements of it; reassign active if needed. */
+  removeClip(trackId: string, clipId: string): void {
     const t = this.getTrack(trackId);
-    if (!t || t.kind !== 'instrument' || t.variants.length <= 1) return;
-    const idx = t.variants.findIndex((v) => v.id === variantId);
+    if (!t || t.clips.length <= 1) return;
+    const idx = t.clips.findIndex((c) => c.id === clipId);
     if (idx === -1) return;
-    const removingActive = t.activeVariantId === variantId;
-    t.variants.splice(idx, 1);
-    if (removingActive) this.materializeVariant(t, t.variants[Math.min(idx, t.variants.length - 1)]);
+    t.clips.splice(idx, 1);
+    t.placements = t.placements.filter((p) => p.clipId !== clipId);
+    if (t.activeClipId === clipId) t.activeClipId = t.clips[Math.min(idx, t.clips.length - 1)].id;
     this.emit();
   }
 
-  renameVariant(trackId: string, variantId: string, name: string): void {
+  renameClip(trackId: string, clipId: string, name: string): void {
     const t = this.getTrack(trackId);
-    if (!t || t.kind !== 'instrument') return;
-    const v = t.variants.find((x) => x.id === variantId);
-    if (!v || v.name === name) return;
-    v.name = name;
+    if (!t) return;
+    const c = t.clips.find((x) => x.id === clipId);
+    if (!c || c.name === name) return;
+    c.name = name;
+    this.emit();
+  }
+
+  /** Set an instrument clip's pattern length (beats), re-clamping its notes. */
+  setClipLength(trackId: string, clipId: string | undefined, lengthBeats: number): void {
+    const store = this.getClipStore(trackId, clipId);
+    store?.setLength(lengthBeats);
+    this.emit();
+  }
+
+  // --- placements (arrangement) ---------------------------------------------
+  /** Place a clip on the arrangement at `startBeat` (clip defaults to the active one). */
+  addPlacement(
+    trackId: string,
+    opts: { id?: string; clipId?: string; startBeat?: number; offset?: number; length?: number },
+  ): Placement | undefined {
+    const t = this.getTrack(trackId);
+    if (!t) return undefined;
+    const clipId = opts.clipId ?? t.activeClipId;
+    if (!t.clips.some((c) => c.id === clipId)) return undefined;
+    const id = opts.id && !t.placements.some((p) => p.id === opts.id) ? opts.id : this.nextPlacementId();
+    const placement: Placement = {
+      id,
+      clipId,
+      startBeat: Math.max(0, opts.startBeat ?? 0),
+      offset: Math.max(0, opts.offset ?? 0),
+      length: opts.length ?? this.naturalLength(t, clipId),
+    };
+    t.placements.push(placement);
+    this.emit();
+    return placement;
+  }
+
+  movePlacement(trackId: string, placementId: string, startBeat: number): void {
+    const p = this.getTrack(trackId)?.placements.find((x) => x.id === placementId);
+    if (!p) return;
+    p.startBeat = Math.max(0, startBeat);
+    this.emit();
+  }
+
+  resizePlacement(trackId: string, placementId: string, patch: { offset?: number; length?: number }): void {
+    const p = this.getTrack(trackId)?.placements.find((x) => x.id === placementId);
+    if (!p) return;
+    if (patch.offset !== undefined) p.offset = Math.max(0, patch.offset);
+    if (patch.length !== undefined) p.length = Math.max(GRID, patch.length);
+    this.emit();
+  }
+
+  removePlacement(trackId: string, placementId: string): void {
+    const t = this.getTrack(trackId);
+    if (!t) return;
+    const before = t.placements.length;
+    t.placements = t.placements.filter((p) => p.id !== placementId);
+    if (t.placements.length !== before) this.emit();
+  }
+
+  /** Split a placement at an absolute beat into two windows over the same clip. */
+  splitPlacement(trackId: string, placementId: string, atBeat: number, newId?: string): void {
+    const t = this.getTrack(trackId);
+    const p = t?.placements.find((x) => x.id === placementId);
+    if (!t || !p) return;
+    const local = atBeat - p.startBeat;
+    if (local <= 0 || local >= p.length) return;
+    const right: Placement = {
+      id: newId && !t.placements.some((x) => x.id === newId) ? newId : this.nextPlacementId(),
+      clipId: p.clipId,
+      startBeat: p.startBeat + local,
+      offset: p.offset + local,
+      length: p.length - local,
+    };
+    p.length = local;
+    t.placements.push(right);
     this.emit();
   }
 
@@ -673,24 +756,30 @@ export class ProjectStore {
       })),
       tracks: this.tracks.map((t) => {
         const base = { id: t.id, name: t.name, parentId: t.parentId, muted: t.muted, volume: t.volume };
+        const arrangement = {
+          activeClipId: t.activeClipId,
+          placements: t.placements.map((p) => ({ ...p })),
+        };
         if (t.kind === 'audio') {
-          return { ...base, kind: 'audio' as const, effects: this.snapshotEffects(t), audioClip: { ...t.audioClip } };
+          return {
+            ...base,
+            kind: 'audio' as const,
+            effects: this.snapshotEffects(t),
+            clips: t.clips.map((c) => ({ ...c })),
+            ...arrangement,
+          };
         }
-        // The active variant is otherwise stale (the live stores are truth) - fold first.
-        this.foldActiveVariant(t);
         return {
           ...base,
           kind: 'instrument' as const,
           instrumentType: t.instrumentType,
-          activeVariantId: t.activeVariantId,
-          variants: t.variants.map((v) => ({
-            id: v.id,
-            name: v.name,
-            author: v.author,
-            clip: { notes: v.clip.notes.map((n) => ({ ...n })), lengthBeats: v.clip.lengthBeats },
-            params: { ...v.params },
-            effects: v.effects.map((fx) => ({ ...fx, params: { ...fx.params } })),
-          })),
+          params: t.params.snapshot(),
+          effects: this.snapshotEffects(t),
+          clips: t.clips.map((c) => {
+            const data = c.store.snapshot();
+            return { id: c.id, name: c.name, author: c.author, notes: data.notes.map((n) => ({ ...n })), lengthBeats: data.lengthBeats };
+          }),
+          ...arrangement,
         };
       }),
       tempoBpm: this.tempoBpm,
@@ -708,35 +797,68 @@ export class ProjectStore {
     });
   }
 
+  private static author(a: unknown): ClipAuthor {
+    return a === 'claude' ? 'claude' : 'you';
+  }
+
   /**
-   * The persisted variant stack for an instrument track. Migrates legacy v4
-   * tracks (top-level params/clip/effects, no `variants`) into one default
-   * variant, so older snapshots are read forward.
+   * The note-clip pool + active id + placements for an instrument track, reading
+   * forward from any older shape:
+   * - v7: `clips`/`activeClipId`/`placements` as stored.
+   * - v6 variants: one clip per variant (notes only; per-variant params/effects are
+   *   dropped - the track sound is migrated separately from the active variant).
+   * - v4 single `clip`: one clip "A".
+   * Migrated projects get a single placement of the active clip at beat 0, so they
+   * play exactly as before.
    */
-  private normalizeVariants(t: ProjectData['tracks'][number], projLen: number): VariantData[] {
-    // Legacy tracks predate `kind`; anything not explicitly audio is an instrument.
-    if (t.kind === 'audio') return [];
-    const author = (a: unknown): VariantAuthor => (a === 'claude' ? 'claude' : 'you');
-    if (t.variants?.length) {
-      return t.variants.map((v) => ({
-        id: v.id,
-        name: v.name,
-        author: author(v.author),
-        clip: v.clip ?? { notes: [], lengthBeats: projLen },
-        params: v.params ?? {},
-        effects: v.effects ?? [],
-      }));
+  private noteClipPool(
+    t: InstrumentTrackData,
+    projLen: number,
+  ): { clips: NoteClip[]; activeClipId: string; placements: Placement[] } {
+    const mk = (id: string, name: string, author: ClipAuthor, clip: { notes?: unknown; lengthBeats?: number }): NoteClip => ({
+      id,
+      name,
+      author,
+      store: new ClipStore({ notes: (clip.notes as never) ?? [], lengthBeats: clip.lengthBeats ?? projLen }),
+    });
+
+    let clips: NoteClip[];
+    if (t.clips?.length) {
+      clips = t.clips.map((c) => mk(c.id, c.name, ProjectStore.author(c.author), c));
+    } else if (t.variants?.length) {
+      clips = t.variants.map((v) => mk(v.id, v.name, ProjectStore.author(v.author), v.clip ?? {}));
+    } else {
+      clips = [mk(this.nextClipId(), 'A', 'you', t.clip ?? {})];
     }
-    return [
-      {
-        id: this.nextVariantId(),
-        name: 'A',
-        author: 'you',
-        clip: t.clip ?? { notes: [], lengthBeats: projLen },
-        params: t.params ?? {},
-        effects: t.effects ?? [],
-      },
-    ];
+
+    const wantActive = t.activeClipId ?? t.activeVariantId;
+    const activeClipId = wantActive && clips.some((c) => c.id === wantActive) ? wantActive : clips[0].id;
+    const placements: Placement[] = t.placements?.length
+      ? t.placements.map((p) => ({ ...p }))
+      : [{ id: this.nextPlacementId(), clipId: activeClipId, startBeat: 0, offset: 0, length: clips.find((c) => c.id === activeClipId)!.store.getClip().lengthBeats }];
+    return { clips, activeClipId, placements };
+  }
+
+  /** The track-level sound for an instrument track (v7 top-level, else the active variant). */
+  private instrumentSound(t: InstrumentTrackData): { params: PatchValues; effects: EffectData[] } {
+    const active = t.variants?.find((v) => v.id === (t.activeVariantId ?? t.variants?.[0]?.id)) ?? t.variants?.[0];
+    return { params: t.params ?? active?.params ?? {}, effects: t.effects ?? active?.effects ?? [] };
+  }
+
+  /** The audio-clip pool + active id + placements for an audio track (migrates `audioClip`). */
+  private audioClipPool(t: AudioTrackData): { clips: AudioClipData[]; activeClipId: string; placements: Placement[] } {
+    if (t.clips?.length) {
+      const activeClipId = t.activeClipId && t.clips.some((c) => c.id === t.activeClipId) ? t.activeClipId : t.clips[0].id;
+      return { clips: t.clips.map((c) => ({ ...c })), activeClipId, placements: (t.placements ?? []).map((p) => ({ ...p })) };
+    }
+    const a = t.audioClip;
+    if (!a) return { clips: [], activeClipId: '', placements: [] };
+    const clip: AudioClipData = { id: a.id, name: a.name, author: ProjectStore.author(a.author), fileId: a.fileId, gain: a.gain ?? 1, durationSec: a.durationSec ?? 0 };
+    return {
+      clips: [clip],
+      activeClipId: clip.id,
+      placements: [{ id: this.nextPlacementId(), clipId: clip.id, startBeat: a.startBeat ?? 0, offset: 0, length: this.secondsToBeats(clip.durationSec) }],
+    };
   }
 
   load(data: ProjectData): void {
@@ -763,27 +885,31 @@ export class ProjectStore {
         volume: t.volume ?? 0.8,
       };
       if (t.kind === 'audio') {
-        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), audioClip: { ...t.audioClip } };
+        const pool = this.audioClipPool(t);
+        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), ...pool };
       }
-      // Legacy tracks predate `kind`; treat them as instrument tracks.
-      const variants = this.normalizeVariants(t, projLen);
-      const activeVariantId =
-        t.activeVariantId && variants.some((v) => v.id === t.activeVariantId) ? t.activeVariantId : variants[0].id;
+      // Legacy tracks predate `kind`; treat them as instrument tracks. The sound
+      // (params + effects) is track-level; the clip pool + placements come from
+      // whatever shape was stored (v7 clips, v6 variants, or a v4 single clip).
+      const sound = this.instrumentSound(t);
+      const { clips, activeClipId, placements } = this.noteClipPool(t, projLen);
+      // Reuse the prior track's ParamStore + effect instances by id so the engine's
+      // per-track bindings stay live across the load (clips are not engine-bound).
       const reuse = prev.get(t.id);
       const reused = reuse?.kind === 'instrument' && reuse.instrumentType === t.instrumentType ? reuse : undefined;
+      const params = reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType));
+      params.load(sound.params);
       const track: InstrumentTrack = {
         ...base,
         kind: 'instrument',
         instrumentType: t.instrumentType,
-        params: reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType)),
-        clip: reused?.clip ?? new ClipStore({ lengthBeats: projLen }),
+        params,
         effects: reused?.effects ?? [],
-        variants,
-        activeVariantId,
+        clips,
+        activeClipId,
+        placements,
       };
-      // Load the active variant into the live stores in place (reuses effect
-      // instances by id), keeping any reused bindings live.
-      this.materializeVariant(track, variants.find((v) => v.id === activeVariantId)!);
+      this.loadEffectsInPlace(track, sound.effects);
       return track;
     });
     // Repair: every track must belong to a real group (migrates flat/legacy
