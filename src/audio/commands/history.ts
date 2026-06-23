@@ -10,7 +10,9 @@
  * same kind of node. Linear for now (one branch, append); the storage is a DAG so
  * branches/merges (15C) and time-travel/diff (15B.3) drop in without reshaping.
  */
-import type { ProjectStore } from '../project/projectStore';
+import { ProjectStore } from '../project/projectStore';
+import type { ProjectData } from '../project/types';
+import { applyEdit } from './applyEdit';
 import { describeCommand } from './describe';
 import { diffProjects } from './diff';
 import type { Author, EditEntry } from './types';
@@ -19,6 +21,13 @@ import { getRepository, type Commit, type ProjectRepository, type Refs } from '.
 
 /** A burst of edits within this window collapses into one auto-checkpoint. */
 const CHECKPOINT_DEBOUNCE_MS = 4000;
+
+/**
+ * Keyframe cadence: store a full snapshot at most every Nth commit; the commits
+ * between are deltas that replay forward from it. Bounds both per-commit size and
+ * the replay length needed to reconstruct any commit (DESIGN.md section 7).
+ */
+const KEYFRAME_INTERVAL = 16;
 
 /** A commit without its (large) snapshot/entries - for listing history. */
 export interface CommitSummary {
@@ -43,6 +52,8 @@ export class VersionStore {
   private readonly repo: ProjectRepository;
   private refs: Refs = { head: 'main', branches: { main: null } };
   private lastCommittedSeq = -1;
+  /** Delta commits written since the last keyframe (drives keyframe cadence). */
+  private commitsSinceKeyframe = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -59,6 +70,7 @@ export class VersionStore {
       this.refs = refs;
       const head = this.headId() ? await this.repo.readCommit(this.headId()!) : null;
       this.lastCommittedSeq = head?.lastSeq ?? -1;
+      this.commitsSinceKeyframe = await this.distanceToKeyframe(this.headId());
     } else {
       // No history yet: start the DAG from here, rather than retro-committing the
       // restored working log (which has no commits behind it).
@@ -90,6 +102,14 @@ export class VersionStore {
     const entries = this.uncommitted();
     if (entries.length === 0) return null;
     const lastSeq = entries.reduce((m, e) => Math.max(m, e.seq), this.lastCommittedSeq);
+    // Keyframe when there is nothing to replay from (the root), on cadence, or when
+    // the commit holds undo/redo entries - those restore a snapshot rather than
+    // applying forward, so they can't be replayed; storing the snapshot makes this
+    // commit a valid replay base and keeps every delta commit pure-forward.
+    const keyframe =
+      this.headId() === null ||
+      this.commitsSinceKeyframe + 1 >= KEYFRAME_INTERVAL ||
+      entries.some((e) => e.kind === 'undo' || e.kind === 'redo');
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
       parent: this.headId(),
@@ -98,7 +118,7 @@ export class VersionStore {
       time: Date.now(),
       auto,
       entryCount: entries.length,
-      snapshot: this.project.snapshot(),
+      ...(keyframe ? { snapshot: this.project.snapshot() } : {}),
       entries,
       lastSeq,
     };
@@ -106,6 +126,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.commitsSinceKeyframe = keyframe ? 0 : this.commitsSinceKeyframe + 1;
     this.editLog.resetCoalescing(); // a commit is a boundary: don't fold later edits into a committed entry
     this.emit();
     return toSummary(commit);
@@ -119,7 +140,9 @@ export class VersionStore {
   async revertTo(commitId: string, author: Author = 'you'): Promise<CommitSummary | null> {
     const target = await this.repo.readCommit(commitId);
     if (!target) return null;
-    this.project.load(target.snapshot); // live state jumps to the old snapshot
+    const snapshot = await this.materialize(commitId); // reconstruct (target may be a delta)
+    if (!snapshot) return null;
+    this.project.load(snapshot); // live state jumps to the old snapshot
     const lastSeq = this.maxSeq(); // the jump consumes any pending edits
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
@@ -129,7 +152,7 @@ export class VersionStore {
       time: Date.now(),
       auto: false,
       entryCount: 0,
-      snapshot: target.snapshot,
+      snapshot, // a revert is a discontinuity, so it anchors a fresh keyframe
       entries: [],
       lastSeq,
     };
@@ -137,6 +160,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.commitsSinceKeyframe = 0;
     this.editLog.resetCoalescing();
     this.emit();
     return toSummary(commit);
@@ -147,11 +171,11 @@ export class VersionStore {
     return this.repo.readCommit(id);
   }
 
-  /** Readable, musical changes between two commits' snapshots ("cutoff 400 -> 800"). */
+  /** Readable, musical changes between two commits ("cutoff 400 -> 800"). */
   async diff(fromId: string, toId: string): Promise<string[]> {
-    const [from, to] = await Promise.all([this.repo.readCommit(fromId), this.repo.readCommit(toId)]);
+    const [from, to] = await Promise.all([this.materialize(fromId), this.materialize(toId)]);
     if (!from || !to) return [];
-    return diffProjects(from.snapshot, to.snapshot);
+    return diffProjects(from, to);
   }
 
   /** The commit chain from HEAD back to the root, newest first. */
@@ -174,6 +198,48 @@ export class VersionStore {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Reconstruct a commit's full project state: walk back to the nearest keyframe
+   * (a commit carrying a snapshot), then replay the intervening delta commits'
+   * edits forward through `applyEdit` on a headless store. Delta commits are
+   * pure-forward by construction (undo/redo force a keyframe), so this is exact.
+   * Returns null if the commit (or its keyframe) is missing.
+   */
+  private async materialize(commitId: string): Promise<ProjectData | null> {
+    const forward: Commit[] = [];
+    let id: string | null = commitId;
+    let base: Commit | null = null;
+    while (id) {
+      const c = await this.repo.readCommit(id);
+      if (!c) return null;
+      if (c.snapshot) {
+        base = c;
+        break;
+      }
+      forward.push(c);
+      id = c.parent;
+    }
+    if (!base?.snapshot) return null;
+    const store = new ProjectStore(false);
+    store.load(base.snapshot); // the keyframe already includes its own entries
+    for (const c of forward.reverse()) {
+      for (const e of c.entries) applyEdit(store, e.command, e.author);
+    }
+    return store.snapshot();
+  }
+
+  /** How many delta commits sit between `id` and the nearest keyframe (0 if it is one). */
+  private async distanceToKeyframe(id: string | null): Promise<number> {
+    let n = 0;
+    while (id) {
+      const c = await this.repo.readCommit(id);
+      if (!c || c.snapshot) break;
+      n++;
+      id = c.parent;
+    }
+    return n;
   }
 
   private headId(): string | null {

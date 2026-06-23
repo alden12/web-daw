@@ -6,9 +6,10 @@
  *   project.daw/
  *     manifest.json     formatVersion, project id, project-schema version
  *     project.json      the materialized ProjectData snapshot (working state)
- *     log.json          the persisted authored edit log (interim; becomes history/ in 15B)
+ *     log.json          the persisted authored edit log (drives the activity feed)
  *     meta.json         human-facing name + modified time
  *     samples/<sha256>  audio sample bytes, content-addressed (dedup + integrity)
+ *     history/          the commit DAG: refs.json + commits/<id>.json (keyframe + delta)
  *
  * Samples are content-addressed: `putSample` hashes the bytes and stores them under
  * that hash, so the same file imported twice is stored once and a clip's `fileId`
@@ -44,9 +45,14 @@ export interface StoredProject {
 export type BundleFiles = Record<string, Uint8Array>;
 
 /**
- * One node in the version-history DAG: a full snapshot plus the authored edits it
- * bundles, and a pointer to its parent. The DAG is the durable source of truth;
- * `project.json` is a replay cache of where HEAD currently is.
+ * One node in the version-history DAG: the authored edits it bundles and a pointer
+ * to its parent. Storage is **keyframe + delta** (like video): most commits store
+ * only their `entries` (the semantic delta) and reconstruct on demand by replaying
+ * forward from the nearest ancestor that carries a `snapshot` (a keyframe). A
+ * keyframe is written for the root, every Nth commit, a revert (a discontinuity),
+ * and any commit containing undo/redo entries (which can't be replayed forward) -
+ * so every delta commit is pure-forward and replays exactly. The DAG is the durable
+ * source of truth; `project.json` is the working-state cache of where HEAD is.
  */
 export interface Commit {
   id: string;
@@ -57,7 +63,8 @@ export interface Commit {
   /** A system auto-checkpoint vs a user/Claude-named version. */
   auto: boolean;
   entryCount: number;
-  snapshot: ProjectData;
+  /** Present only on keyframes; delta commits omit it and replay forward (materialize). */
+  snapshot?: ProjectData;
   entries: EditEntry[];
   /** Highest edit seq this commit includes (so reload knows where history ends). */
   lastSeq: number;
@@ -207,7 +214,9 @@ export class ProjectRepository {
   // ---- version history (the commit DAG, under history/) ----
 
   writeCommit(commit: Commit): Promise<void> {
-    return this.store.writeText(`history/commits/${commit.id}.json`, JSON.stringify(commit, null, 2));
+    // Minified: commits are internal storage, not the readable export artifact
+    // (that is project.json / the .daw.zip), and delta commits are tiny.
+    return this.store.writeText(`history/commits/${commit.id}.json`, JSON.stringify(commit));
   }
 
   async readCommit(id: string): Promise<Commit | null> {
