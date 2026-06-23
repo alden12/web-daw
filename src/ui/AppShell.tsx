@@ -165,7 +165,7 @@ export function AppShell() {
         className="app-body flex-1 min-h-0 relative"
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? 'none' : undefined }}
       >
-        <LibraryPanel projectStore={projectStore} dispatch={dispatch} />
+        <LibraryPanel projectStore={projectStore} editLog={editLog} dispatch={dispatch} />
         <CenterWorkbench projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} selectedTrack={selectedTrack} />
         <AgentPanel
           mcpStatus={mcpStatus}

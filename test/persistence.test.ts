@@ -178,4 +178,47 @@ describe('project + edit-log persistence', () => {
     const buf = await repo.getSample(clips[0].fileId);
     expect(new Uint8Array(buf)).toEqual(new Uint8Array(bytes));
   });
+
+  it('round-trips a project + samples through a portable bundle export/import', async () => {
+    const bytes = new Uint8Array([9, 8, 7]).buffer;
+    const source = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const hash = await source.putSample(new Blob([bytes]));
+
+    const project = {
+      groups: [],
+      tempoBpm: 128,
+      lengthBeats: 16,
+      selectedTrackId: null,
+      tracks: [
+        {
+          kind: 'audio',
+          id: 't-a',
+          name: 'Aud',
+          parentId: 'master',
+          muted: false,
+          volume: 1,
+          effects: [],
+          placements: [],
+          activeClipId: 'c-1',
+          launchedClipId: null,
+          clips: [{ id: 'c-1', name: 'A', author: 'you', fileId: hash, gain: 1, durationSec: 1 }],
+        },
+      ],
+    } as unknown as ProjectData;
+    const log = [{ seq: 0, command: { type: 'setTempo', bpm: 128 }, author: 'you' as const, time: 1 }];
+
+    const files = await source.exportBundle(project, log);
+    // Readable JSON entries plus the referenced sample as real .wav bytes.
+    const proj = JSON.parse(new TextDecoder().decode(files['project.json'])) as ProjectData;
+    expect(proj.tempoBpm).toBe(128);
+    expect(files[`samples/${hash}.wav`]).toBeTruthy();
+
+    // Import into a brand-new, empty repository.
+    const dest = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const restored = await dest.importBundle(files);
+    expect(restored.project.tempoBpm).toBe(128);
+    expect(restored.log.map((e) => e.command.type)).toEqual(['setTempo']);
+    const sample = await dest.getSample(hash);
+    expect(new Uint8Array(sample)).toEqual(new Uint8Array(bytes));
+  });
 });
