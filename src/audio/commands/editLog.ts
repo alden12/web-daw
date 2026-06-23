@@ -13,7 +13,7 @@
  * In-memory for this slice; persisting the log is the next step (the entry type
  * is serializable by construction).
  */
-import type { ProjectStore } from '../project/projectStore';
+import { ProjectStore } from '../project/projectStore';
 import type { ProjectData } from '../project/types';
 import { applyEdit } from './applyEdit';
 import { describeCommand } from './describe';
@@ -30,15 +30,33 @@ export interface Checkpoint {
   author: Author;
 }
 
-/** Persisted undo/redo stacks, so undo survives a reload (DESIGN.md section 7). */
+/** One step in a packed stack: the command a checkpoint brackets. */
+interface PackedStep {
+  command: EditCommand;
+  author: Author;
+}
+
+/**
+ * A persisted undo/redo stack in *delta* form: one base snapshot plus the command
+ * of each checkpoint. Every other checkpoint snapshot is recovered by replaying
+ * those commands through `applyEdit` (the same keyframe+delta idea as the commit
+ * DAG). The in-memory stacks still hold full snapshots for instant undo - only the
+ * persisted form is delta-encoded, turning ~30 snapshots on disk into one.
+ */
+export interface PackedStack {
+  base: ProjectData | null;
+  steps: PackedStep[];
+}
+
+/** Persisted undo/redo stacks (delta-encoded), so undo survives a reload (DESIGN.md section 7). */
 export interface UndoState {
-  undo: Checkpoint[];
-  redo: Checkpoint[];
+  undo: PackedStack;
+  redo: PackedStack;
 }
 
 const COALESCE_MS = 400;
 const MAX_DEPTH = 100;
-/** How many checkpoints to persist per stack (each holds a full snapshot). */
+/** How many checkpoints to persist per stack (delta-encoded: one base snapshot + commands). */
 const PERSIST_UNDO_DEPTH = 30;
 const COALESCABLE = new Set<EditCommand['type']>([
   'setParam',
@@ -175,18 +193,18 @@ export class EditLog {
     return this.entries;
   }
 
-  /** The undo/redo stacks for persistence (bounded; each checkpoint is a snapshot). */
+  /** The undo/redo stacks for persistence, bounded then delta-encoded (one base snapshot each). */
   getCheckpoints(): UndoState {
     return {
-      undo: this.undoStack.slice(-PERSIST_UNDO_DEPTH),
-      redo: this.redoStack.slice(-PERSIST_UNDO_DEPTH),
+      undo: packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH)),
+      redo: packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH)),
     };
   }
 
-  /** Restore persisted undo/redo stacks (after restore()), so undo survives a reload. */
-  restoreCheckpoints(state: UndoState): void {
-    this.undoStack = state.undo ?? [];
-    this.redoStack = state.redo ?? [];
+  /** Restore persisted undo/redo stacks (after restore()), rebuilding snapshots by replay. */
+  restoreCheckpoints(state: UndoState | null): void {
+    this.undoStack = unpackUndo(state?.undo);
+    this.redoStack = unpackRedo(state?.redo);
     this.emit();
   }
 
@@ -222,4 +240,61 @@ export class EditLog {
     this.rebuild();
     for (const l of this.listeners) l();
   }
+}
+
+// ---- delta-encoding of the persisted undo/redo stacks ----
+//
+// A checkpoint's snapshot is the live state at push time, and the live state is
+// always `applyEdit(previousCheckpoint.snapshot, previousCheckpoint.command)`. So a
+// stack is fully reconstructable from one base snapshot + each checkpoint's command.
+// The two stacks chain in opposite directions: an undo checkpoint's snapshot is the
+// state *before* its command (chains forward from the bottom), a redo checkpoint's is
+// the state *after* its command (chains forward from the top) - hence two encoders.
+
+/** Pack an undo stack: anchor at the bottom snapshot; steps replay forward up it. */
+function packUndo(stack: Checkpoint[]): PackedStack {
+  if (stack.length === 0) return { base: null, steps: [] };
+  return { base: stack[0].snap, steps: stack.map((cp) => ({ command: cp.command, author: cp.author })) };
+}
+
+/** Pack a redo stack: anchor at the top snapshot; steps replay forward back down it. */
+function packRedo(stack: Checkpoint[]): PackedStack {
+  if (stack.length === 0) return { base: null, steps: [] };
+  return { base: stack[stack.length - 1].snap, steps: stack.map((cp) => ({ command: cp.command, author: cp.author })) };
+}
+
+/** Rebuild an undo stack from packed form; a legacy array (full snapshots) passes through. */
+function unpackUndo(packed: PackedStack | Checkpoint[] | null | undefined): Checkpoint[] {
+  if (Array.isArray(packed)) return packed;
+  if (!packed?.base) return [];
+  const store = new ProjectStore(false);
+  store.load(packed.base);
+  const out: Checkpoint[] = [];
+  let snap: ProjectData = packed.base;
+  packed.steps.forEach((step, i) => {
+    out.push({ snap, command: step.command, author: step.author });
+    if (i < packed.steps.length - 1) {
+      applyEdit(store, step.command, step.author); // advance to the next checkpoint's snapshot
+      snap = store.snapshot();
+    }
+  });
+  return out;
+}
+
+/** Rebuild a redo stack from packed form; a legacy array (full snapshots) passes through. */
+function unpackRedo(packed: PackedStack | Checkpoint[] | null | undefined): Checkpoint[] {
+  if (Array.isArray(packed)) return packed;
+  if (!packed?.base) return [];
+  const n = packed.steps.length;
+  const store = new ProjectStore(false);
+  store.load(packed.base);
+  const out: Checkpoint[] = new Array(n);
+  let snap: ProjectData = packed.base;
+  out[n - 1] = { snap, command: packed.steps[n - 1].command, author: packed.steps[n - 1].author };
+  for (let i = n - 2; i >= 0; i--) {
+    applyEdit(store, packed.steps[i].command, packed.steps[i].author); // step one checkpoint earlier
+    snap = store.snapshot();
+    out[i] = { snap, command: packed.steps[i].command, author: packed.steps[i].author };
+  }
+  return out;
 }
