@@ -126,6 +126,12 @@ room to draw.
 
 ## 6. Clip variants (fearless iteration)
 
+> **Update (slice 13):** the variant *stack that bundled the sound* (below) was superseded by a
+> **track-level sound + a pool of clips** (clips are just notes; params/effects belong to the
+> track) - see section 11. The fearless-iteration intent survives as the clip pool + non-
+> destructive editing; "Try"/fork becomes duplicate (drag-loop / copy-paste), and the
+> Session/Grid view becomes those pool clips seen as launchable slots. Kept here for rationale.
+
 The point: remove the fear of experimenting by making it non-destructive and complete.
 
 - **A variant snapshots the whole sound** - clip notes plus the instrument's params plus
@@ -285,15 +291,27 @@ that the scheduler loops (project `loopStart` + `setLoopStart`, two ruler handle
 past the end to scroll/expand into), fit-notes-to-window on track load, pinch / Cmd-scroll /
 Shift-scroll zoom, narrower velocity bars + a resizable velocity lane, deselect on Escape /
 click-outside, and a workbench relayout - variants moved to a left rail beside the roll, with a
-resizable device|roll divider and a wrapping instrument/effects rack).
+resizable device|roll divider and a wrapping instrument/effects rack),
+13 (arrangement clip model + editable timeline - the second & third "real DAW" pieces: a track
+now owns a **pool of clips** (each its own ClipStore) and an **arrangement of placements**
+{clipId, startBeat, offset, length} along time; track-level sound (params + effect chain), so a
+clip is just notes; the scheduler flattens placements -> events and **tiles a clip when its
+window outruns it** (drag-out loop), with audio re-triggered per clip-length. The bottom
+timeline became editable: place / select / move / resize / split / delete placements, copy /
+cut / paste, drag a clip from the rail onto its lane, a bar/beat ruler owning the loop region,
+time zoom + snap, a sticky-header spreadsheet scroll, inline rename of tracks / groups / clips,
+and "+ Clip" / lane edits create empty clips. Persistence bumped to v7 with a v6-variant
+migration (one clip per variant, sound from the active variant). The top toolbar was removed -
+transport moved to the arrangement header, undo/redo to the activity panel, the brand to the
+library).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
-**authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
-(slice 11) are in place; the remaining
-early model evolution is generalizing variants into **a track that owns a set of clip slots**
-and building the **Session/clip-launch grid** on top (the same variants seen as launchable
-slots - one model, two views), plus copy-paste and linear arrangement editing. The raw backlog
-below is grouped into themed slices; within a theme, order is rough.
+**authored edit log** (slice 9), **clip variants** (slice 10), **log persistence** (slice 11),
+and the **arrangement clip model + editable timeline** (slice 13: a track owns a pool of clips
+arranged as positioned placements, with linear editing and copy-paste) are in place. The
+remaining early model evolution is building the **Session/clip-launch grid** on top of the same
+clip pool (the clips seen as launchable slots - one model, two views). The raw backlog below is
+grouped into themed slices; within a theme, order is rough.
 
 **Near-term - UI on top of the current model**
 
@@ -317,13 +335,13 @@ below is grouped into themed slices; within a theme, order is rough.
   follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it.
-- **Timeline & arrangement interactions (the third "real DAW" piece - depends on the
-  arrangement clip model below).** Scroll / zoom / pan the timeline (reusing the piano-roll's
-  beats<->px+ruler primitive), drag clips between bars, split at the playhead, resize, and
-  snap-to-grid. Only meaningful once clips are first-class positioned objects, so it follows
-  the model evolution. Also in this theme (model-independent, can ride along): track reorder
-  by drag, track-height resize, track colors, a visual summary of grouped tracks, and library
-  drag-and-drop for instruments/effects.
+- **Timeline & arrangement interactions - DONE (slice 13), the third "real DAW" piece.** The
+  bottom timeline is editable: zoom + scroll (reusing the piano-roll's beats<->px+ruler
+  primitive), place / move / resize / split / delete placements, copy-cut-paste, drag a clip
+  from the rail onto its lane, snap-to-grid, and a ruler owning the loop region. *Still pending
+  in this theme (model-independent):* track reorder by drag, track-height resize, track colors,
+  a richer visual summary of grouped tracks, split-at-playhead, and library drag-and-drop for
+  instruments/effects.
 
 **Model evolutions - sequence early, they unlock the rest**
 
@@ -342,22 +360,20 @@ below is grouped into themed slices; within a theme, order is rough.
   morphs the devices too. "Try"/fork is non-destructive (the original is parked); Claude
   generates takes tagged coral; switching/forking loads a variant into the live stores in
   place so the engine bindings survive. Edits flow through the same `dispatch`/MCP seam, so
-  undo/redo and the activity feed cover them. *Remaining:* generalize variants into a set of
-  **clip slots** and build the Ableton-style **Session/Grid view** on top - each track a column
-  of launchable clips with its variants stacked vertically, scenes launching a row across
-  tracks (the same variants seen as launchable slots - one model, two views).
-- **Arrangement clip model (the fundamental / second "real DAW" piece - sequence before the
-  timeline interactions above).** Today a track owns exactly one clip (the active variant's),
-  under a single global `lengthBeats` loop, so the timeline is a read-only preview. The
-  keystone change is making clips **first-class positioned instances**: a track holds a list
-  of clip placements (clip ref + start beat + length + content offset) along time, replacing
-  the one-global-loop assumption. This ripples through the scheduler (play clips at their
-  positions, not one looping clip), MCP tools, and persistence (migration + version bump).
-  Open design question to settle in this slice: how **variants** interact with multiple
-  arranged clips (today a variant snapshots the whole sound including the single clip). Once
-  this lands, placing / splitting / moving clips, clip start-end, copy-paste of clips, and
-  MIDI import as clips all become tractable - and the Session/Grid view is the same model seen
-  as launchable slots.
+  undo/redo and the activity feed cover them. Slice 13 superseded the variant *stack* with a
+  track-level sound + a **pool of clips** (see below); the v6 variant format migrates to it.
+  *Remaining:* build the Ableton-style **Session/Grid view** on the same clip pool - each track
+  a column of launchable clips, scenes launching a row across tracks (the same clips seen as
+  launchable slots - one model, two views).
+- **Arrangement clip model - DONE (slice 13), the fundamental / second "real DAW" piece.** A
+  track now owns a **pool of clips** (each its own ClipStore) and an **arrangement of
+  placements** {clipId, startBeat, offset, length} along time; the sound (instrument params +
+  effect chain) is track-level, so a clip is just notes. The scheduler flattens placements ->
+  events and tiles a clip whose window outruns it (drag-out loop); audio re-triggers per
+  clip-length. This rippled through the command vocabulary, MCP tools, and persistence (v7 +
+  v6-variant migration: one clip per variant, sound from the active variant). This unlocked the
+  timeline interactions above; MIDI import as clips and the Session/Grid view ride on the same
+  model.
 - **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
   per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
   up/down without changing pitch) and other sample-accurate audio work become tractable.

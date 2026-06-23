@@ -1,19 +1,20 @@
 /**
  * The clip pool for the selected track: a chip per clip (a note pattern), plus
- * "+ Clip" to add a new empty one (duplicate via drag-loop / copy-paste on the
- * timeline). Clicking a chip makes it the
- * active clip (shown/edited in the roll); double-click renames; the active clip is
- * what the arrangement places. Two-voice colour tags who authored each clip - you
- * (teal) vs Claude (coral). Selecting is navigation (direct on the store); add /
- * remove / rename go through dispatch, so undo/redo + the activity feed cover them.
+ * "+ Clip" to add a new empty one. Clicking a chip makes it the active clip
+ * (shown/edited in the roll); double-click renames; drag a chip onto this track's
+ * lane in the arrangement to place that clip there. Two-voice colour tags who
+ * authored each clip - you (teal) vs Claude (coral). Selecting is navigation
+ * (direct on the store); add / remove / rename go through dispatch, so undo/redo +
+ * the activity feed cover them.
  */
 import { useState } from 'react';
 import type { ProjectStore } from '../audio/project/projectStore';
 import { useProject } from '../audio/project/useProject';
 import type { Dispatch } from '../audio/commands/types';
 import { newClipId } from '../audio/commands/ids';
+import { CLIP_DND_TYPE, clipDndTrackType } from './clipDnd';
 
-export function VariantStrip({
+export function ClipRail({
   projectStore,
   trackId,
   dispatch,
@@ -68,12 +69,18 @@ export function VariantStrip({
         return (
           <div
             key={c.id}
-            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-pointer ${
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(CLIP_DND_TYPE, c.id);
+              e.dataTransfer.setData(clipDndTrackType(trackId), '');
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-grab active:cursor-grabbing ${
               active ? 'border-you/60 bg-you/15 text-bright' : 'border-line bg-card text-muted hover:bg-ground'
             }`}
             onClick={() => projectStore.selectClip(trackId, c.id)}
             onDoubleClick={() => setEditingId(c.id)}
-            title={`${c.author === 'claude' ? 'Claude' : 'You'} - double-click to rename`}
+            title={`${c.author === 'claude' ? 'Claude' : 'You'} - drag onto the lane to place, double-click to rename`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
             <span>{c.name}</span>
@@ -96,7 +103,7 @@ export function VariantStrip({
       {track.kind === 'instrument' && (
         <button
           type="button"
-          title="Add a clip (copies the active one)"
+          title="Add a new empty clip"
           onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
           className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
         >

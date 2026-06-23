@@ -12,7 +12,7 @@ import type { Dispatch } from '../audio/commands/types';
 import { InstrumentPanel } from './InstrumentPanel';
 import { EffectChain } from './EffectChain';
 import { PianoRoll } from './PianoRoll';
-import { VariantStrip } from './VariantStrip';
+import { ClipRail } from './ClipRail';
 import { InlineRename } from './InlineRename';
 import { ResizeHandle } from './ResizeHandle';
 import { usePersistentNumber } from './usePersistent';
@@ -133,7 +133,7 @@ export function CenterWorkbench({
 
       {selectedTrack.kind === 'instrument' ? (
         <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:roll`}>
-          <VariantStrip projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} orientation="vertical" />
+          <ClipRail projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} orientation="vertical" />
           <div className="flex-1 min-w-0 min-h-0 p-3">
             {(() => {
               const active = selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];

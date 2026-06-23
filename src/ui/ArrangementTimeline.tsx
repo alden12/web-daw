@@ -31,6 +31,7 @@ import { useProject } from "../audio/project/useProject";
 import { useClip } from "../audio/sequencer/useClip";
 import { TransportBar } from "./TransportBar";
 import { InlineRename } from "./InlineRename";
+import { CLIP_DND_TYPE, clipDndTrackType } from "./clipDnd";
 import { Ruler } from "./timeline/Ruler";
 import {
   beatToX,
@@ -218,10 +219,38 @@ function Lane({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
+  const [dropBeat, setDropBeat] = useState<number | null>(null);
   const beatAt = (clientX: number) =>
     xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
+
+  // Drop a clip dragged from this track's clip rail at the cursor (a placement of
+  // the existing clip). The per-track marker type lets only this track's lane accept.
+  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndTrackType(track.id));
+  const onDragOver = (e: React.DragEvent) => {
+    if (!accepts(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropBeat(Math.max(0, floorB(beatAt(e.clientX))));
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!accepts(e)) return;
+    e.preventDefault();
+    const clipId = e.dataTransfer.getData(CLIP_DND_TYPE);
+    setDropBeat(null);
+    if (!clipId || !track.clips.some((c) => c.id === clipId)) return;
+    const startBeat = Math.max(0, floorB(beatAt(e.clientX)));
+    const id = newPlacementId();
+    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat });
+    onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
+  };
+  // Clear the drop indicator when the drag ends anywhere (avoids dragleave flicker).
+  useEffect(() => {
+    const clear = () => setDropBeat(null);
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
 
   // Drag a block: body -> move, right edge -> resize. Both snap and coalesce.
   const onBlockDown = (p: Placement, e: React.PointerEvent) => {
@@ -314,7 +343,10 @@ function Lane({
   return (
     <div
       ref={ref}
+      data-testid="lane"
       onPointerDown={onLaneDown}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       className={`${ROW} relative border-b border-line-soft cursor-copy`}
       style={{ width, background: laneBg }}
     >
@@ -341,6 +373,12 @@ function Lane({
         <div
           className="absolute top-1.5 bottom-1.5 rounded border border-dashed border-you bg-you/15 pointer-events-none"
           style={{ left: draft.left, width: Math.max(2, draft.width) }}
+        />
+      )}
+      {dropBeat !== null && (
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-you pointer-events-none"
+          style={{ left: beatToX(dropBeat, pxPerBeat) }}
         />
       )}
     </div>

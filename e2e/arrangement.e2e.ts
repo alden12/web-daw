@@ -104,6 +104,36 @@ test('a track can be renamed inline', async ({ page }) => {
   await expect(page.getByTestId('arr-scroll').getByText('My Bass')).toBeVisible();
 });
 
+test('drag a clip from the rail onto its lane places it', async ({ page }) => {
+  await page.goto('/');
+  await dismissStart(page);
+
+  await expect(placements(page)).toHaveCount(1); // the seed placement of clip A
+
+  // HTML5 drag-and-drop: dispatch dragstart on the chip, then dragover + drop on
+  // the lane sharing one DataTransfer (Playwright's mouse drag does not drive
+  // native DnD reliably). The drop x sets the beat.
+  const chip = page.getByTitle(/drag onto the lane/).first();
+  const lane = page.getByTestId('lane').first();
+  const box = (await lane.boundingBox())!;
+  const x = box.x + 420;
+  const y = box.y + box.height / 2;
+  await page.evaluate(
+    ([src, tgt, px, py]) => {
+      const dt = new DataTransfer();
+      const opts = (cx: number, cy: number) => ({ bubbles: true, cancelable: true, dataTransfer: dt, clientX: cx, clientY: cy });
+      (src as Element).dispatchEvent(new DragEvent('dragstart', opts(0, 0)));
+      (tgt as Element).dispatchEvent(new DragEvent('dragover', opts(px as number, py as number)));
+      (tgt as Element).dispatchEvent(new DragEvent('drop', opts(px as number, py as number)));
+      (src as Element).dispatchEvent(new DragEvent('dragend', opts(0, 0)));
+    },
+    [await chip.elementHandle(), await lane.elementHandle(), x, y] as const,
+  );
+
+  await expect(placements(page)).toHaveCount(2);
+  await expect(page.getByText('Placed clip')).toBeVisible();
+});
+
 test('a group can be renamed inline', async ({ page }) => {
   await page.goto('/');
   await dismissStart(page);
