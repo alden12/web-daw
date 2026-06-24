@@ -492,9 +492,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     at a time. **[foundational]**
   - *Timeline resize handle vs loop markers - DONE (slice 26).* The bottom-timeline resize handle straddled
     the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
-  - *Draggable resize areas (deferred to its own slice)* - per-track height + drag-expandable clip area. Not a
-    plain `ResizeHandle` reuse: the arrangement bakes a fixed `ROW_PX` into its lane layout, placement offsets,
-    and ruler math, so variable row heights ripple through that. **[foundational]**
+  - *Clip-rail width drag-resize - DONE.* The clip pool beside the piano roll is now drag-resizable
+    (persisted width via the shared `ResizeHandle`), like the device rack and side panels.
+  - *Per-track timeline row height (deferred to its own slice)* - confirmed **per-track** (each lane its own
+    height + bottom-edge handle, persisted by track id), not a uniform lane height. Not a plain `ResizeHandle`
+    reuse: the arrangement bakes a fixed `ROW_PX` into its lane layout (`contentH = RULER_H + rows.length *
+    ROW_PX`), placement offsets, playhead, and ruler math, so variable row heights ripple through all of that.
+    **[foundational]**
+  - *Resize handles: keep `ResizeHandle`, don't build a heavyweight `ResizableBox`.* The pointer-drag/axis/
+    body-cursor primitive (`ResizeHandle`) is the right shared layer; what sits above it (where the size lives,
+    grid offset vs flex child vs scroll-anchored divider, persistence) genuinely differs per site, so one box
+    would accrete props. Low-hanging cleanup instead: fold the arrangement header-column divider (still bespoke)
+    onto `ResizeHandle`, and optionally extract a tiny `useResizable` hook pairing `usePersistentNumber` with the
+    `clientPos - rect.left/top` math that repeats across the workbench handles.
   - *Clip delete always available* - show the × even on the last clip; deleting the last one replaces
     it with a fresh empty clip (ids minted in the UI, so replay stays deterministic).
   - *Feed: committed vs uncommitted styling* - drop the separate "autosaved" marker; render committed
@@ -612,6 +622,9 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 
 **Instruments, content & ecosystem**
 
+- **MIDI effects (arpeggiator, octavator)** - a third device class on the note path, transforming
+  notes before the instrument. Cataloged + schema-driven + per-track chain like audio effects;
+  pure `(notes, range, ctx)` transforms run in the scheduler. Full design in section 15.
 - **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
   instrument catalog and the slice-8 audio-clip storage.
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
@@ -769,3 +782,71 @@ The escape hatch for true low-latency monitored tracking: the **Tauri desktop ba
 ASIO) could own capture/monitoring natively while the same web UI/model rides on top. Staged
 plan: web-first with hardware monitoring + latency compensation (covers most recording), then
 the native backend for users who need monitored low-latency input.
+
+## 15. MIDI effects (design thinking)
+
+A **MIDI effect** transforms the stream of note events *before* it reaches the instrument -
+the symmetric counterpart to an audio effect, which transforms the signal *after*. First
+targets: an **arpeggiator** (turn held/overlapping notes into a rhythmic sequence) and an
+**octavator** (double each note up/down one or more octaves). They are not instruments and not
+audio effects; they are a third device class on the note path.
+
+Where they sit in the architecture (the keystone, reused):
+
+- **Catalog + registry, same as everything.** A MIDI effect is declared once as a param schema
+  + catalog entry (a new `src/audio/midi/catalog.ts`) and realized by a pure transform factory
+  in a registry (`Record<MidiEffectType, ...>` off the catalog keys, so a cataloged type with
+  no factory is a compile error). UI, MCP, automation, and persistence are projections of the
+  schema, exactly like instruments/audio effects - no per-type branching. The library's add
+  menus, the MCP palette, and the device rack pick them up by iterating the catalog.
+- **A per-track MIDI-effect chain**, ordered, living on the `InstrumentTrack` (alongside
+  `params` + the audio `effects` chain): `midiEffects: MidiEffectInstance[]`. Audio tracks have
+  no note path, so no MIDI chain. Each entry is `{ id, type, bypassed, params: ParamStore }`,
+  the same shape as `EffectInstance` - reuse the chain CRUD (add/remove/move/bypass) and the
+  `EffectChain` UI, just over a different host list.
+- **Pure functions on notes, not on the audio graph.** Unlike audio effects (Web Audio nodes
+  bound by the engine), a MIDI effect is a pure `(notes, ctx) -> notes` transform. The DOM-free
+  Node MCP server can hold the catalog *and* the transforms (they touch no Web Audio), which
+  keeps the engine/`registry` split clean and lets the agent reason about note output.
+
+Where they run (the seam): the **scheduler** already reads a placement's clip notes as pure
+data per tick and emits onsets to the instrument (`scheduler.ts`, `tileClipNotes` /
+`notesStartingInBeatRange`). A MIDI effect chain is applied to that per-clip note list as a
+fold - `chain.reduce((notes, fx) => fx.bypassed ? notes : transform[fx.type](notes, ctx),
+clipNotes)` - *before* the onset math. `ctx` carries tempo, beats-per-bar, the loop/clip
+length, and the placement window, so an arpeggiator can quantize to a rate and a swing.
+
+Two honest subtleties to design around:
+
+- **Time-expanding transforms vs the lookahead window.** An arpeggiator emits notes that did
+  not exist in the clip, at rates finer than the source notes. The scheduler's bounded
+  lookahead means the transform must be a *function of an absolute beat range* (produce all
+  arp steps whose onsets fall in `[fromBeats, horizonBeats)`), not a stateful streaming filter
+  - otherwise notes straddling a tick boundary get dropped or doubled. Model each MIDI effect
+  as `notesInRange(clipNotes, range, ctx) -> notes`, mirroring how audio onsets are already
+  computed, so it composes with looping/tiling.
+- **Note-offs / held chords.** The arpeggiator needs to know which notes are held together at a
+  given beat to cycle them. Clip notes already carry `start` + `length` (so a "held chord" is
+  notes overlapping a beat), which is enough to compute arp steps purely from the clip - no
+  live note-on/off state required for *playback*. Live keyboard input through a MIDI effect
+  (real-time arpeggiation of what you play) is a later extension that needs the held-set state
+  and reuses the same transforms.
+
+Fit with the rest:
+
+- **MCP**: arms the same catalog-driven verbs as audio effects - `add_midi_effect`,
+  `set_midi_effect_parameter`, `bypass_midi_effect`, `move_midi_effect`, `list_midi_effects` -
+  validated at the boundary from the schema (`specToZod`). The agent can build an arpeggiated
+  part by adding the device and setting params, not by writing out every note.
+- **Persistence / history / undo**: the chain serializes like the audio chain (type + params +
+  bypass); every add/remove/param change is a durable authored edit, so the feed, undo/redo,
+  and version history cover MIDI effects for free.
+- **Automation**: because params are schema-driven `ParamStore`s, arp rate/gate/swing automate
+  through the same automation lane work as any other parameter.
+
+Slice sketch (when picked up): (1) catalog + registry + per-track chain model + the
+`(notes, range, ctx)` seam in the scheduler + persistence, with the **octavator** as the
+trivial first transform (stateless, no new timing) to prove the path end to end; (2) the
+**arpeggiator** (rate/mode/gate/octaves/swing) over the range-based transform; (3) MCP tools +
+reuse the `EffectChain` UI for the MIDI chain. Live-input (real-time) arpeggiation is a later
+extension once MIDI device input (section, "Recording & input") lands.

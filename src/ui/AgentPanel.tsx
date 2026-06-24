@@ -69,7 +69,7 @@ export function AgentPanel({
       .slice(0, 120);
   }, [entries, notes, commits]);
   const histBtn =
-    "font-mono text-[12px] w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed";
+    "flex items-center justify-center font-mono text-xl w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed";
 
   if (collapsed) {
     return (
@@ -100,11 +100,7 @@ export function AgentPanel({
             <option value="activity">Activity</option>
             <option value="versions">Versions</option>
           </select>
-          <div
-            className="flex gap-1 text-2xl"
-            role="group"
-            aria-label="History"
-          >
+          <div className="flex gap-1" role="group" aria-label="History">
             <button
               type="button"
               title="Undo (Cmd/Ctrl-Z)"

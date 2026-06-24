@@ -545,6 +545,11 @@ function GroupHeader({
         label="Group actions"
         items={[
           {
+            label: "Add empty track",
+            onClick: () =>
+              dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: group.id }),
+          },
+          {
             label: "Delete group and its contents",
             danger: true,
             onClick: () => dispatch({ type: "removeGroup", groupId: group.id }),
@@ -913,12 +918,23 @@ export function ArrangementTimeline({
           align="left"
           items={[
             {
-              label: "Add empty track",
-              onClick: () => dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId() }),
-            },
-            {
               label: "Add group",
               onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
+            },
+            // "Create empty track in ...": every track lives in a group, so pick the
+            // destination group (or spin up a new one) rather than auto-filing it.
+            ...project.groups.map((g) => ({
+              label: `New track in ${g.name}`,
+              onClick: () =>
+                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: g.id }),
+            })),
+            {
+              label: "New track in a new group",
+              onClick: () => {
+                const groupId = newGroupId();
+                dispatch({ type: "createGroup", id: groupId });
+                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId });
+              },
             },
           ]}
         />
@@ -1080,8 +1096,12 @@ export function ArrangementTimeline({
             aria-orientation="vertical"
             title="Drag to resize the header column"
             onPointerDown={onHeaderResize}
-            className="group absolute top-0 bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
-            style={{ left: headerW }}
+            // Start below the ruler row: the divider overlaps the loop-start handle
+            // (both land at x = headerW when the loop starts at beat 0), and at z-30
+            // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
+            // px free keeps the marker row draggable.
+            className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+            style={{ left: headerW, top: RULER_H }}
           >
             <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
           </div>
