@@ -494,6 +494,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     trigger.bottom + 4` with no viewport clamp, so a trigger near the bottom edge (e.g. the last track's ⋮)
     opens a menu that runs off the bottom; same for the right edge. Fix: measure the popover and flip
     above / clamp inside the viewport when it would overflow (in [ui/Menu.tsx](src/ui/Menu.tsx)).
+  - *BUG: a held note sticks on when you switch tracks mid-press.* The computer-keyboard play
+    handler in [ui/AppShell.tsx](src/ui/AppShell.tsx) reads `projectStore.selectedId` on **keyup** to
+    pick which instrument to release. Press a key (note-on on track A), select track B, then release:
+    keyup calls `noteOff` on track B's instrument, so track A's voice never releases and rings forever.
+    Fix: remember which instrument id each held key/midi was started on (a `Map<midi, instrumentId>`)
+    and route the matching note-off there regardless of the current selection; belt-and-braces, call
+    `allNotesOff()` on the previously-selected instrument when the selection changes. (Web MIDI / the
+    on-screen keyboard will want the same per-source held-note bookkeeping.)
   - *BUG: center panel doesn't reflow when the right activity panel expands.* Toggling the right-hand
     activity panel open/wider does not shrink the center workbench content to match, so the center can
     be overlapped / clipped instead of reflowing into the remaining width. Fix the grid/flex sizing so
