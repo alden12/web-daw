@@ -121,7 +121,11 @@ function PatchLeaf({
         onClick={onAdd}
         className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
       >
-        <span className="w-1.75 h-1.75 rounded-sm bg-claude shrink-0" />
+        <span
+          aria-hidden="true"
+          title={`Saved by ${patch.author === "claude" ? "Claude" : "you"}`}
+          className={`w-1.75 h-1.75 rounded-sm shrink-0 ${patch.author === "claude" ? "bg-claude" : "bg-you"}`}
+        />
         <span className="truncate">{patch.name}</span>
       </button>
       <button
