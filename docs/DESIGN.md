@@ -485,10 +485,16 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   kebab **context menu**, and a **draggable resize area**, alongside the existing `ResizeHandle`):
   - *Editable title everywhere* - one component for inline-rename + truncate-with-full-title-on-hover,
     applied to track / instrument / effect / clip names (consolidates `InlineRename`). **[foundational]**
-  - *Kebab (⋮) context menus* - replace the patch × and the "add group" button with ⋮ menus:
-    tracks/patches get Delete (and later Duplicate); the add menu offers Add group / Add empty track. **[foundational]**
-  - *Draggable resize areas* - per-track height (drag the track's bottom edge) and a drag-expandable
-    clip area, reusing the resize primitive. **[foundational]**
+  - *Kebab (⋮) context menus - DONE (slice 26).* A reusable icon-only `Menu` ([ui/Menu.tsx](src/ui/Menu.tsx))
+    replaces the track/group/patch × and the "+ Group" button: rows get Delete (Duplicate later), the add
+    menu offers Add empty track / Add group. The popover renders in a **portal** (fixed-positioned) so it is
+    never clipped by a row's overflow or painted over by a sibling row's controls, and only one menu is open
+    at a time. **[foundational]**
+  - *Timeline resize handle vs loop markers - DONE (slice 26).* The bottom-timeline resize handle straddled
+    the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
+  - *Draggable resize areas (deferred to its own slice)* - per-track height + drag-expandable clip area. Not a
+    plain `ResizeHandle` reuse: the arrangement bakes a fixed `ROW_PX` into its lane layout, placement offsets,
+    and ruler math, so variable row heights ripple through that. **[foundational]**
   - *Clip delete always available* - show the × even on the last clip; deleting the last one replaces
     it with a fresh empty clip (ids minted in the UI, so replay stays deterministic).
   - *Feed: committed vs uncommitted styling* - drop the separate "autosaved" marker; render committed
