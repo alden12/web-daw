@@ -1,11 +1,15 @@
 /**
- * Transport controls: play/stop the scheduler and edit the project tempo. Tempo
- * is read/written through the project store, so MCP and the UI stay in sync.
+ * Transport controls: play/stop the scheduler, edit the project tempo, and toggle
+ * the metronome. Tempo is read/written through the project store, so MCP and the UI
+ * stay in sync; the metronome is a transient playback preference (persisted locally,
+ * pushed to the scheduler), not part of the project/edit stream.
  */
+import { useEffect } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
 import { useProject } from "../audio/project/useProject";
+import { usePersistentBoolean } from "./usePersistent";
 
 export function TransportBar({
   projectStore,
@@ -21,6 +25,12 @@ export function TransportBar({
   started: boolean;
 }) {
   const project = useProject(projectStore);
+  const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
+
+  // The scheduler reads this flag each tick; keep it in sync with the preference.
+  useEffect(() => {
+    scheduler.setMetronomeEnabled(metronome);
+  }, [scheduler, metronome]);
 
   return (
     <div className="flex items-center gap-3">
@@ -46,6 +56,35 @@ export function TransportBar({
         />
         BPM
       </label>
+      <button
+        type="button"
+        aria-label="Metronome"
+        aria-pressed={metronome}
+        title={metronome ? "Metronome on" : "Metronome off"}
+        onClick={() => setMetronome(!metronome)}
+        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer ${
+          metronome
+            ? "text-you bg-you/15 border-you/45"
+            : "text-muted bg-card border-line hover:text-ink"
+        }`}
+      >
+        {/* a small metronome: trapezoid body + pendulum */}
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
+          <path d="M6 2 H10 L12.5 14 H3.5 Z" />
+          <line x1="4.3" y1="10" x2="11.7" y2="10" />
+          <line x1="8" y1="10" x2="11" y2="3.5" />
+        </svg>
+      </button>
     </div>
   );
 }

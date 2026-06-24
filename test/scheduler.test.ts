@@ -1,6 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { beatsToSeconds, notesStartingInBeatRange, onsetsInBeatRange, tileClipNotes } from '../src/audio/sequencer/scheduler';
+import {
+  beatsToSeconds,
+  metronomeClicksInBeatRange,
+  notesStartingInBeatRange,
+  onsetsInBeatRange,
+  tileClipNotes,
+} from '../src/audio/sequencer/scheduler';
 import type { NoteEvent } from '../src/audio/sequencer/types';
+
+describe('metronomeClicksInBeatRange', () => {
+  it('clicks on each whole beat in the half-open range, accenting the bar', () => {
+    expect(metronomeClicksInBeatRange(0, 4, 0, 16, 4)).toEqual([
+      { atBeat: 0, accent: true },
+      { atBeat: 1, accent: false },
+      { atBeat: 2, accent: false },
+      { atBeat: 3, accent: false },
+    ]);
+  });
+  it('accents every bar boundary (downbeat) across bars', () => {
+    expect(metronomeClicksInBeatRange(0, 8, 0, 16, 4).filter((c) => c.accent).map((c) => c.atBeat)).toEqual([0, 4]);
+  });
+  it('maps continuous beats through the loop so accents follow the loop start', () => {
+    // loopLen 4 from 0: continuous beats 4,5 wrap to musical 0,1 -> beat 4 accents.
+    expect(metronomeClicksInBeatRange(4, 6, 0, 4, 4)).toEqual([{ atBeat: 4, accent: true }, { atBeat: 5, accent: false }]);
+  });
+  it('offsets the musical beat by a non-zero loop start', () => {
+    // loopStart 2, loopLen 4: continuous beat 2 -> musical 2+(2%4)=4 -> accent (bar).
+    expect(metronomeClicksInBeatRange(2, 3, 2, 4, 4)).toEqual([{ atBeat: 2, accent: true }]);
+  });
+  it('starts at the first whole beat at or after a fractional from', () => {
+    expect(metronomeClicksInBeatRange(1.5, 4, 0, 16, 4).map((c) => c.atBeat)).toEqual([2, 3]);
+  });
+  it('returns nothing for an empty/inverted range or non-positive loop/bar', () => {
+    expect(metronomeClicksInBeatRange(2, 2, 0, 16, 4)).toEqual([]);
+    expect(metronomeClicksInBeatRange(0, 4, 0, 0, 4)).toEqual([]);
+    expect(metronomeClicksInBeatRange(0, 4, 0, 16, 0)).toEqual([]);
+  });
+});
 
 describe('onsetsInBeatRange (audio clip onsets)', () => {
   const LOOP = 4;
