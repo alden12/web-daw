@@ -646,13 +646,13 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   the arrangement output (bottom panel) - notes -> (midi fx ->) instrument -> effects -> output. The
   thing you primarily edit is at the top with its sound controls right beneath it (rather than the
   rack crammed at the bottom). MIDI effects (section 15) will slot between the roll and the rack.
-- **Audio waveform overview (NEXT recording slice).** Draw the amplitude trace (peak overview)
-  on audio clips - in the arrangement placement block and the center audio-clip panel (which has
-  a placeholder waiting for it). Approach: decode the OPFS bytes once via an `OfflineAudioContext`,
-  compute a cached min/max **peaks** array per `fileId`, render to a small **canvas** scaled to the
-  block width and tiled to the placement window (mirroring `NoteMinis`). Pure peak-bucketing is the
-  testable core; falls back to today's filled block while decoding / on failure. Mono mix + capped
-  resolution for v1. (Amplitude waveform, not a spectrogram - the latter is a separate, larger job.)
+- **Audio waveform overview - DONE (slice 32).** Audio clips show their amplitude trace - in the
+  arrangement placement block and the center audio-clip panel. `waveform.ts` decodes the OPFS bytes
+  once via an `OfflineAudioContext`, computes a cached min/max **peaks** array per `fileId` (pure,
+  unit-tested `computePeaks`; 2048 buckets; mono mix), and `Waveform.tsx` draws it to a **canvas**
+  that fills its parent (ResizeObserver redraw on zoom), in the theme accent. Falls back to the plain
+  block while decoding / on failure. v1 stretches the clip across the block (a recorded take's
+  placement is its natural length, so 1:1); tiling looped windows + a spectrogram are follow-ups.
 - **Recording follow-ups (later):** MCP arm/record tools, input level meter, remembered device +
   eager enumeration, software-monitoring option, loopback **latency calibration** (store the offset
   on the region), punch-in at the playhead, multi-track arm, stereo.

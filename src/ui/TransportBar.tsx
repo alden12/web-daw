@@ -116,7 +116,7 @@ export function TransportBar({
             ? rec.status === "counting"
               ? "Counting in… (click to cancel)"
               : "Stop recording"
-            : "Record a take onto a new audio track"
+            : "Record a clip"
         }
         onClick={() => recorder.toggle()}
         className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${

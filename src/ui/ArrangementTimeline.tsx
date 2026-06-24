@@ -43,6 +43,7 @@ import { InlineRename } from "./InlineRename";
 import { Fader, MuteSolo } from "./MixerControls";
 import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "./clipDnd";
 import { Ruler } from "./timeline/Ruler";
+import { Waveform } from "./Waveform";
 import {
   beatToX,
   floorBeat,
@@ -460,13 +461,11 @@ function Lane({
             onPointerDown={(e) => onBlockDown(p, e)}
             onDoubleClick={(e) => onBlockDouble(p, e)}
           >
-            {clip && "store" in clip && (
-              <NoteMinis
-                store={clip.store}
-                placement={p}
-                pxPerBeat={pxPerBeat}
-              />
-            )}
+            {clip && "store" in clip ? (
+              <NoteMinis store={clip.store} placement={p} pxPerBeat={pxPerBeat} />
+            ) : clip && "fileId" in clip ? (
+              <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full opacity-80" />
+            ) : null}
           </Block>
         );
       })}
