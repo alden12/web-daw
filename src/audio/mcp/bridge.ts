@@ -10,8 +10,10 @@ import type { Scheduler } from '../sequencer/scheduler';
 import type { EditLog } from '../commands/editLog';
 import type { EditCommand } from '../commands/types';
 import type { VersionStore } from '../commands/history';
+import { newEffectId, newTrackId } from '../commands/ids';
+import { listPatches, savePatch, newPatchId } from '../patches/library';
 import { DEFAULT_WS_PORT } from './protocol';
-import type { BrowserToServer, HistoryMethod, ServerToBrowser } from './protocol';
+import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from './protocol';
 
 export type McpStatus = 'connecting' | 'connected' | 'disconnected';
 
@@ -93,8 +95,67 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     }
   };
 
+  // Patch-library RPC. Patches live in this tab (localStorage), so the server can
+  // only reach them through us. `save` captures a track's live sound; `apply`
+  // dispatches a createTrackFromPatch edit authored 'claude' (coral, undoable,
+  // replayable - effect ids minted here and carried in the command).
+  const patchMethods: { [K in PatchMethod]: (params: Record<string, unknown>) => unknown } = {
+    list: () =>
+      listPatches().map((pt) => ({
+        id: pt.id,
+        name: pt.name,
+        author: pt.author,
+        instrument: pt.instrumentType,
+        effects: pt.effects.map((fx) => fx.type),
+      })),
+    save: (params) => {
+      const trackId = (params.trackId as string | undefined) ?? projectStore.selectedId ?? undefined;
+      const track = trackId ? projectStore.getTrack(trackId) : undefined;
+      if (!track) throw new Error('No track specified and none selected.');
+      if (track.kind !== 'instrument') throw new Error(`Track ${track.id} is an audio track; patches need an instrument track.`);
+      const patch = {
+        id: newPatchId(),
+        name: (params.name as string | undefined)?.trim() || track.name,
+        author: 'claude' as const,
+        instrumentType: track.instrumentType,
+        params: track.params.snapshot(),
+        effects: track.effects.map((fx) => ({ type: fx.type, bypassed: fx.bypassed, params: fx.params.snapshot() })),
+        createdAt: Date.now(),
+      };
+      savePatch(patch);
+      return { id: patch.id, name: patch.name };
+    },
+    apply: (params) => {
+      const query = String(params.patch ?? '').trim();
+      const all = listPatches();
+      const patch = all.find((pt) => pt.id === query) ?? all.find((pt) => pt.name.toLowerCase() === query.toLowerCase());
+      if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
+      const command: EditCommand = {
+        type: 'createTrackFromPatch',
+        id: newTrackId(),
+        name: (params.name as string | undefined)?.trim() || patch.name,
+        instrumentType: patch.instrumentType,
+        params: patch.params,
+        effects: patch.effects.map((fx) => ({ id: newEffectId(), type: fx.type, bypassed: fx.bypassed, params: fx.params })),
+      };
+      editLog.dispatch(command, 'claude');
+      return { trackId: command.id, name: command.name };
+    },
+  };
+
+  const handlePatchRequest = (msg: Extract<ServerToBrowser, { type: 'patchRequest' }>) => {
+    const fn = patchMethods[msg.method];
+    if (!fn) return send({ type: 'patchReply', id: msg.id, ok: false, error: `Unknown method ${msg.method}` });
+    try {
+      send({ type: 'patchReply', id: msg.id, ok: true, result: fn(p(msg.params)) });
+    } catch (err) {
+      send({ type: 'patchReply', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   const handle = (msg: ServerToBrowser) => {
     if (msg.type === 'historyRequest') void handleHistoryRequest(msg);
+    else if (msg.type === 'patchRequest') handlePatchRequest(msg);
     else if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
     else editLog.dispatch(msg as EditCommand, 'claude');
   };

@@ -492,9 +492,11 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   any other; `ProjectStore.addTrackFromPatch` loads the values through the same coercing
   setters. The library tree restructured to a collapsible **Instruments** section that lists the
   catalog (each leaf chipped with its `family` - Synths / Bass / Keys - iterated, not hardcoded)
-  with a nested **Patches** sub-section, and an **Effects** section beside it. MCP patch tools
-  (save/apply/list) are a deferred follow-on; patch-created tracks already sync to Claude's
-  mirror via the existing full-structure snapshot.
+  with a nested **Patches** sub-section, and an **Effects** section beside it. **MCP patch tools**
+  let Claude drive the library too - `list_patches` / `save_patch` / `apply_patch` ride a
+  `patchRequest`/`patchReply` RPC (the same shape as the history RPC, since patches live in the
+  tab's localStorage): `save` captures a track's live sound authored `claude`, `apply` dispatches
+  a `createTrackFromPatch` edit (coral, undoable). Patch row dots are two-voice colored by author.
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
 - **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a

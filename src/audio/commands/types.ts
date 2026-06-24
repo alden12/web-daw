@@ -22,6 +22,7 @@ type NonEditType =
   | 'allNotesOff'
   | 'transport'
   | 'historyRequest'
+  | 'patchRequest'
   | 'note';
 
 /** The durable-edit subset of the MCP protocol (shapes shared, never duplicated). */

@@ -18,6 +18,14 @@ import type { ClipContent, ProjectData } from '../project/types';
  */
 export type HistoryMethod = 'commit' | 'revert' | 'history' | 'diff' | 'state';
 
+/**
+ * Patch-library RPC. Saved patches live in the tab (localStorage), so the server
+ * cannot read or write them directly: patch tools send a `patchRequest` and await
+ * the matching `patchReply` (correlated by `id`), the same shape as the history RPC.
+ * `list` reads the library, `save` captures a track's sound, `apply` adds a track.
+ */
+export type PatchMethod = 'list' | 'save' | 'apply';
+
 /** Sent by the browser tab to the server (state sync + RPC replies). */
 export type BrowserToServer =
   | { type: 'projectSnapshot'; project: ProjectData }
@@ -25,7 +33,8 @@ export type BrowserToServer =
   | { type: 'paramChanged'; trackId: string; id: string; value: ParamValue }
   | { type: 'clipSnapshot'; trackId: string; clipId: string; clip: ClipData }
   | { type: 'effectParamChanged'; hostId: string; effectId: string; id: string; value: ParamValue }
-  | { type: 'historyReply'; id: string; ok: boolean; result?: unknown; error?: string };
+  | { type: 'historyReply'; id: string; ok: boolean; result?: unknown; error?: string }
+  | { type: 'patchReply'; id: string; ok: boolean; result?: unknown; error?: string };
 
 /** Sent by the server to the browser tab (commands). */
 export type ServerToBrowser =
@@ -86,6 +95,8 @@ export type ServerToBrowser =
   | { type: 'setLoopStart'; beats: number }
   | { type: 'transport'; action: 'play' | 'stop' }
   // Version-history RPC (expects a matching historyReply, correlated by `id`)
-  | { type: 'historyRequest'; id: string; method: HistoryMethod; params?: Record<string, unknown> };
+  | { type: 'historyRequest'; id: string; method: HistoryMethod; params?: Record<string, unknown> }
+  // Patch-library RPC (expects a matching patchReply, correlated by `id`)
+  | { type: 'patchRequest'; id: string; method: PatchMethod; params?: Record<string, unknown> };
 
 export const DEFAULT_WS_PORT = 8765;

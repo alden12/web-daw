@@ -367,6 +367,60 @@ describe('MCP server (tracks)', () => {
     expect(res.content[0].text).toMatch(/no daw tab connected/i);
   });
 
+  // Patches live in the tab's localStorage; stub the tab end to reply to each
+  // patchRequest so we can test the server's plumbing and tool surface in isolation.
+  function answerPatch(replyFor: (method: string, params: Record<string, unknown>) => unknown): void {
+    tab!.on('message', (data) => {
+      const msg = JSON.parse(data.toString()) as { type: string; id: string; method: string; params?: Record<string, unknown> };
+      if (msg.type !== 'patchRequest') return;
+      tab!.send(JSON.stringify({ type: 'patchReply', id: msg.id, ok: true, result: replyFor(msg.method, msg.params ?? {}) }));
+    });
+  }
+
+  it('list_patches / save_patch / apply_patch round-trip to the tab', async () => {
+    await connectTab();
+    answerPatch((method, params) => {
+      const replies: Record<string, unknown> = {
+        list: [{ id: 'pt-1', name: 'Warm Pad', author: 'you', instrument: 'subtractive', effects: ['delay'] }],
+        save: { id: 'pt-9', name: params.name },
+        apply: { trackId: 't-new', name: params.name ?? 'Warm Pad' },
+      };
+      return replies[method];
+    });
+
+    const list = parse(await call('list_patches'));
+    expect(list[0].name).toBe('Warm Pad');
+    expect(list[0].instrument).toBe('subtractive');
+
+    const saved = await call('save_patch', { name: 'My Patch' });
+    expect(saved.isError).toBeFalsy();
+    expect(saved.content[0].text).toContain('pt-9');
+    expect(saved.content[0].text).toContain('My Patch');
+
+    const applied = await call('apply_patch', { patch: 'Warm Pad', name: 'Lead' });
+    expect(applied.isError).toBeFalsy();
+    expect(applied.content[0].text).toContain('t-new');
+    expect(applied.content[0].text).toContain('Lead');
+  });
+
+  it('patch tools fail cleanly when no tab is connected', async () => {
+    expect((await call('list_patches')).isError).toBe(true);
+    expect((await call('save_patch', { name: 'x' })).isError).toBe(true);
+    expect((await call('apply_patch', { patch: 'x' })).isError).toBe(true);
+  });
+
+  it('surfaces a patch error from the tab (e.g. unknown patch)', async () => {
+    await connectTab();
+    tab!.on('message', (data) => {
+      const msg = JSON.parse(data.toString()) as { type: string; id: string };
+      if (msg.type !== 'patchRequest') return;
+      tab!.send(JSON.stringify({ type: 'patchReply', id: msg.id, ok: false, error: 'No patch matching "ghost".' }));
+    });
+    const res = await call('apply_patch', { patch: 'ghost' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/no patch matching/i);
+  });
+
   it('remove_group cascades and removes its tracks', async () => {
     const messages = await connectTab();
     const trackId = await makeTrack('subtractive');
