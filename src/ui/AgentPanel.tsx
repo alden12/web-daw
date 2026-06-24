@@ -143,13 +143,13 @@ export function AgentPanel({
                         <li
                           key={`c-${c.id}`}
                           className="flex items-center gap-2 px-2.5 py-1 my-0.5 text-faint"
-                          title={`${c.auto ? "Auto-checkpoint" : "Saved version"} by ${c.author}`}
+                          title={`${c.auto ? "Autosaved" : "Saved"} · ${c.message} (by ${c.author})`}
                         >
-                          <span className="h-px flex-1 bg-line" />
-                          <span className="font-mono text-[10px] shrink-0">
+                          <span className="h-px w-3 shrink-0 bg-line" />
+                          <span className="font-mono text-[10px] min-w-0 truncate">
                             {c.auto ? "autosaved" : "saved"} · {c.message}
                           </span>
-                          <span className="h-px w-3 bg-line" />
+                          <span className="h-px flex-1 bg-line" />
                         </li>
                       );
                     }
@@ -163,7 +163,7 @@ export function AgentPanel({
                           }`}
                         >
                           <span className="text-[11px] shrink-0 text-muted">“</span>
-                          <span className="text-[11.5px] italic text-muted">{n.text}</span>
+                          <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
                         </li>
                       );
                     }
