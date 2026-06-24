@@ -52,7 +52,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // log authored 'claude' (so they are logged, undoable, two-voice) via the same
   // applyEdit path the UI uses. Navigation / live notes / transport are not edits
   // and are applied directly. The mapped type keeps the live set exhaustive.
-  type LiveType = 'selectTrack' | 'selectClip' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
+  type LiveType = 'selectTrack' | 'selectClip' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport' | 'note';
   type LiveHandlers = { [K in LiveType]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
   const live: LiveHandlers = {
     selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
@@ -61,8 +61,10 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
     allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
     transport: (msg) => (msg.action === 'play' ? scheduler.play() : scheduler.stop()),
+    // Feed annotation from Claude: a line of intent narration in the activity feed.
+    note: (msg) => editLog.note(msg.text, 'claude'),
   };
-  const liveTypes = new Set<string>(['selectTrack', 'selectClip', 'noteOn', 'noteOff', 'allNotesOff', 'transport']);
+  const liveTypes = new Set<string>(['selectTrack', 'selectClip', 'noteOn', 'noteOff', 'allNotesOff', 'transport', 'note']);
 
   // Version-history RPC. Each method maps to a VersionStore call; Claude's commits
   // and reverts are authored 'claude'. `diff` defaults `fromId` to the commit's

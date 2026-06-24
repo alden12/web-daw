@@ -1071,6 +1071,18 @@ export function createDawMcp(
     },
   );
 
+  // --- Activity feed annotation ---------------------------------------------
+  server.registerTool(
+    'note',
+    {
+      title: 'Note in the activity feed',
+      description:
+        'Post a short line of narration to the activity feed describing what you are about to do or why (e.g. "building a dreamy pad for the chorus"). Purely a feed annotation - it changes nothing and is not undoable. Use it to give the user context as you work.',
+      inputSchema: { text: z.string().min(1).max(200) },
+    },
+    async ({ text }) => (sendToTab({ type: 'note', text }) ? ok('Noted in the feed.') : fail('No DAW tab connected.')),
+  );
+
   // --- Live notes -----------------------------------------------------------
   server.registerTool(
     'note_on',

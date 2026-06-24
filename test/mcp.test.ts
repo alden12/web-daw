@@ -353,6 +353,20 @@ describe('MCP server (tracks)', () => {
     expect(res.content[0].text).toMatch(/no daw tab connected/i);
   });
 
+  it('note posts a feed annotation to the tab', async () => {
+    const messages = await connectTab();
+    const res = await call('note', { text: 'building the demo' });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes('note'));
+    expect(messages).toContainEqual({ type: 'note', text: 'building the demo' });
+  });
+
+  it('note fails cleanly when no tab is connected', async () => {
+    const res = await call('note', { text: 'hi' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/no daw tab connected/i);
+  });
+
   it('remove_group cascades and removes its tracks', async () => {
     const messages = await connectTab();
     const trackId = await makeTrack('subtractive');

@@ -38,6 +38,8 @@ export interface CommitSummary {
   time: number;
   auto: boolean;
   entryCount: number;
+  /** Highest edit seq this commit included - positions it in the activity feed. */
+  lastSeq: number;
 }
 
 export interface VersionState {
@@ -262,5 +264,14 @@ function autoMessage(entries: EditEntry[]): string {
 }
 
 function toSummary(c: Commit): CommitSummary {
-  return { id: c.id, parent: c.parent, author: c.author, message: c.message, time: c.time, auto: c.auto, entryCount: c.entryCount };
+  return {
+    id: c.id,
+    parent: c.parent,
+    author: c.author,
+    message: c.message,
+    time: c.time,
+    auto: c.auto,
+    entryCount: c.entryCount,
+    lastSeq: c.lastSeq,
+  };
 }

@@ -74,6 +74,8 @@ export type ServerToBrowser =
   // Clip launching (a launched clip loops over the transport, overriding placements)
   | { type: 'launchClip'; trackId: string; clipId: string | null }
   | { type: 'stopAllClips' }
+  // Feed annotation: a line of intent narration shown in the activity feed (not an edit)
+  | { type: 'note'; text: string }
   // Live notes (polyphonic)
   | { type: 'noteOn'; trackId: string; midi: number; velocity?: number }
   | { type: 'noteOff'; trackId: string; midi: number }
