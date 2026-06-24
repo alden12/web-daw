@@ -13,6 +13,12 @@ import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
+import {
+  type Patch,
+  listPatches,
+  removePatch,
+  subscribePatches,
+} from "../audio/patches/library";
 import { exportProjectFile, importProjectFile } from "./projectFile";
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
@@ -82,6 +88,39 @@ function Leaf({
   );
 }
 
+/** A saved-patch row: click the name to add a track, the × to delete the patch. */
+function PatchLeaf({
+  patch,
+  onAdd,
+  onDelete,
+}: {
+  patch: Patch;
+  onAdd: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="group flex items-center w-full pl-8 pr-2 hover:bg-you/10">
+      <button
+        type="button"
+        onClick={onAdd}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
+      >
+        <span className="w-1.75 h-1.75 rounded-sm bg-claude shrink-0" />
+        <span className="truncate">{patch.name}</span>
+      </button>
+      <button
+        type="button"
+        title="Delete patch"
+        aria-label={`Delete patch ${patch.name}`}
+        onClick={onDelete}
+        className="shrink-0 px-1.5 text-faint opacity-0 group-hover:opacity-100 hover:text-claude cursor-pointer"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export function LibraryPanel({
   projectStore,
   editLog,
@@ -93,9 +132,38 @@ export function LibraryPanel({
 }) {
   const [importError, setImportError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [patches, setPatches] = useState<Patch[]>(() => listPatches());
   const menuRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+
+  // The patch library is global (cross-project); mirror it into React state.
+  useEffect(() => {
+    const sync = () => setPatches(listPatches());
+    sync();
+    return subscribePatches(sync);
+  }, []);
+
+  // Apply a saved patch as one authored edit. Effect ids are minted here and carried
+  // in the command, so undo/redo and history replay reproduce the same track exactly.
+  const addFromPatch = (patch: Patch) =>
+    dispatch({
+      type: "createTrackFromPatch",
+      id: newTrackId(),
+      name: patch.name,
+      instrumentType: patch.instrumentType,
+      params: patch.params,
+      effects: patch.effects.map((fx) => ({
+        id: newEffectId(),
+        type: fx.type,
+        bypassed: fx.bypassed,
+        params: fx.params,
+      })),
+    });
+
+  // Group catalog instruments by their declared family (Synths / Bass / Keys …),
+  // iterated from the catalog so the tree never hardcodes the set.
+  const families = [...new Set(instrumentInfos().map((i) => i.family))];
 
   // Close the project menu on an outside click.
   useEffect(() => {
@@ -240,20 +308,40 @@ export function LibraryPanel({
       <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-faint px-4 pt-3 pb-1.5">
         Instruments
       </div>
-      <Category label="Synths">
-        {instrumentInfos().map((def) => (
-          <Leaf
-            key={def.type}
-            label={def.label}
-            onClick={() =>
-              dispatch({
-                type: "createTrack",
-                instrumentType: def.type,
-                id: newTrackId(),
-              })
-            }
-          />
-        ))}
+      {families.map((family) => (
+        <Category key={family} label={family}>
+          {instrumentInfos()
+            .filter((def) => def.family === family)
+            .map((def) => (
+              <Leaf
+                key={def.type}
+                label={def.label}
+                onClick={() =>
+                  dispatch({
+                    type: "createTrack",
+                    instrumentType: def.type,
+                    id: newTrackId(),
+                  })
+                }
+              />
+            ))}
+        </Category>
+      ))}
+      <Category label="Patches">
+        {patches.length === 0 ? (
+          <p className="pl-8 pr-4 py-1.5 text-[11.5px] text-faint">
+            Save an instrument as a patch to reuse it here.
+          </p>
+        ) : (
+          patches.map((patch) => (
+            <PatchLeaf
+              key={patch.id}
+              patch={patch}
+              onAdd={() => addFromPatch(patch)}
+              onDelete={() => removePatch(patch.id)}
+            />
+          ))
+        )}
       </Category>
 
       <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-faint px-4 pt-3 pb-1.5">

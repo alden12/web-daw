@@ -483,6 +483,17 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 - **Group/track selection + group-FX editing in the workbench** (next, small). Select a
   group or track and edit its effect rack in the center workbench; generalize selection
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
+- **Patches (instrument presets) - DONE (slice 24).** Save an instrument track's
+  sound - its instrument type, parameter values, and effect chain - as a named **patch**
+  in the library tree, then add a new track from it like a built-in instrument. Patches are
+  **global** (cross-project), so they live in localStorage (`src/audio/patches/library.ts`),
+  not the project bundle. Applying one is a single authored `createTrackFromPatch` edit that
+  carries pre-minted effect ids, so it is undoable, two-voice, and replay-deterministic like
+  any other; `ProjectStore.addTrackFromPatch` loads the values through the same coercing
+  setters. The library tree restructured to an **Instruments** section grouping the catalog by
+  `family` (iterated, not hardcoded) plus a **Patches** category. MCP patch tools
+  (save/apply/list) are a deferred follow-on; patch-created tracks already sync to Claude's
+  mirror via the existing full-structure snapshot.
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
 - **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a

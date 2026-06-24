@@ -9,6 +9,7 @@
  * transport), plus the browser-only audio edits that have no wire message yet.
  */
 import type { ServerToBrowser } from '../mcp/protocol';
+import type { PatchValues } from '../params/types';
 
 export type Author = 'you' | 'claude';
 
@@ -38,7 +39,19 @@ export type LocalEdit =
       gain?: number;
       groupId?: string;
     }
-  | { type: 'setAudioClip'; trackId: string; clipId?: string; patch: { gain?: number; name?: string } };
+  | { type: 'setAudioClip'; trackId: string; clipId?: string; patch: { gain?: number; name?: string } }
+  | {
+      // Add an instrument track from a saved patch (instrument + params + effect
+      // chain). Effect ids are pre-minted by the caller and carried here, so
+      // replaying the command reproduces the same track/effect ids exactly.
+      type: 'createTrackFromPatch';
+      id: string;
+      name?: string;
+      groupId?: string;
+      instrumentType: string;
+      params: PatchValues;
+      effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    };
 
 /** Every durable, authored edit. Serializable by construction. */
 export type EditCommand = ProtocolEdit | LocalEdit;

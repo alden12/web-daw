@@ -5,14 +5,16 @@
  * For an audio track, an audio-clip panel takes the place of the instrument +
  * piano roll; the effect chain is shared (audio tracks have inserts too).
  */
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type {
   ProjectStore,
   Track,
   AudioTrack,
+  InstrumentTrack,
 } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
+import { savePatch, newPatchId } from "../audio/patches/library";
 import { InstrumentPanel } from "./InstrumentPanel";
 import { EffectChain } from "./EffectChain";
 import { PianoRoll } from "./PianoRoll";
@@ -20,6 +22,72 @@ import { ClipRail } from "./ClipRail";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber } from "./usePersistent";
+
+/**
+ * "Save as patch": capture the instrument + its params + effect chain as a named,
+ * reusable library entry. Clicking reveals an inline name field (defaulting to the
+ * track name); Enter or Save writes it to the global patch library.
+ */
+function SavePatchControl({ track }: { track: InstrumentTrack }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+
+  const save = () => {
+    savePatch({
+      id: newPatchId(),
+      name: name.trim() || track.name,
+      author: "you",
+      instrumentType: track.instrumentType,
+      params: track.params.snapshot(),
+      effects: track.effects.map((fx) => ({
+        type: fx.type,
+        bypassed: fx.bypassed,
+        params: fx.params.snapshot(),
+      })),
+      createdAt: Date.now(),
+    });
+    setNaming(false);
+    setName("");
+  };
+
+  if (!naming)
+    return (
+      <button
+        type="button"
+        title="Save this instrument + effects as a reusable patch"
+        onClick={() => {
+          setName(track.name);
+          setNaming(true);
+        }}
+        className="font-mono text-[10.5px] px-2 py-0.5 rounded border border-line text-muted hover:text-ink hover:border-you cursor-pointer"
+      >
+        Save as patch
+      </button>
+    );
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") setNaming(false);
+        }}
+        placeholder="Patch name…"
+        className="w-32 font-mono text-[11px] px-1.5 py-0.5 rounded border border-line bg-ground text-bright placeholder:text-faint"
+      />
+      <button
+        type="button"
+        onClick={save}
+        className="font-mono text-[10.5px] px-2 py-0.5 rounded border border-you/45 bg-you/15 text-you cursor-pointer"
+      >
+        Save
+      </button>
+    </span>
+  );
+}
 
 function AudioClipPanel({
   track,
@@ -139,6 +207,9 @@ export function CenterWorkbench({
           className="font-semibold text-sm text-bright"
         />
         <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
+        {selectedTrack.kind === "instrument" && (
+          <SavePatchControl track={selectedTrack} />
+        )}
         {activeClip && (
           <span className="ml-auto inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
             clip

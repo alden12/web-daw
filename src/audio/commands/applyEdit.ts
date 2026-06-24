@@ -20,6 +20,7 @@ type ApplyMap = {
 
 const APPLY: ApplyMap = {
   createTrack: (p, c) => void p.addTrack(c.instrumentType, { name: c.name, id: c.id, groupId: c.groupId }),
+  createTrackFromPatch: (p, c) => void p.addTrackFromPatch(c),
   addAudioTrack: (p, c) =>
     void p.addAudioTrack(
       { fileId: c.fileId, name: c.name, durationSec: c.durationSec, startBeat: c.startBeat, gain: c.gain },

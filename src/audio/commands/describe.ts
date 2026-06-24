@@ -34,6 +34,7 @@ type DescribeMap = {
 
 const DESCRIBE: DescribeMap = {
   createTrack: (c, ctx) => `Added ${instLabel(c.instrumentType)} track${on(ctx, c.id, '')}`,
+  createTrackFromPatch: (c) => `Added ${c.name ? `"${c.name}"` : 'a patch'} from the library`,
   addAudioTrack: (c) => `Imported ${c.name ?? 'audio'}`,
   removeTrack: () => 'Removed track',
   setTrack: (c, ctx) => {
