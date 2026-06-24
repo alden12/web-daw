@@ -24,7 +24,7 @@ function useWaveform(fileId: string): Peaks | null {
   return peaks;
 }
 
-function draw(canvas: HTMLCanvasElement, peaks: Peaks, color: string): void {
+function draw(canvas: HTMLCanvasElement, peaks: Peaks, gain: number, color: string, clipColor: string): void {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   if (!w || !h || !peaks.min.length) return;
@@ -35,35 +35,50 @@ function draw(canvas: HTMLCanvasElement, peaks: Peaks, color: string): void {
   if (!ctx) return;
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = color;
   const mid = h / 2;
   const n = peaks.min.length;
   // One vertical bar per pixel column; the clip's peaks are stretched to fill the
-  // width (a recorded take's placement is its natural length, so this is 1:1).
+  // width (a recorded take's placement is its natural length, so this is 1:1). Peaks
+  // are scaled by the clip gain so the trace grows as you boost; any column that
+  // would exceed full scale (clip) is drawn in the warning colour and capped.
   for (let x = 0; x < w; x++) {
     const bucket = Math.min(n - 1, Math.floor((x / w) * n));
-    const top = mid - peaks.max[bucket] * mid;
-    const bottom = mid - peaks.min[bucket] * mid;
+    const hi = peaks.max[bucket] * gain;
+    const lo = peaks.min[bucket] * gain;
+    const clipped = hi > 1 || lo < -1;
+    const top = mid - Math.min(1, hi) * mid;
+    const bottom = mid - Math.max(-1, lo) * mid;
+    ctx.fillStyle = clipped ? clipColor : color;
     ctx.fillRect(x, top, 1, Math.max(1, bottom - top));
   }
 }
 
-export function Waveform({ fileId, className = "" }: { fileId: string; className?: string }) {
+export function Waveform({
+  fileId,
+  gain = 1,
+  className = "",
+}: {
+  fileId: string;
+  /** Scales the trace (clip gain); columns past full scale show clipping. */
+  gain?: number;
+  className?: string;
+}) {
   const peaks = useWaveform(fileId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks) return;
-    // Resolve the theme accent once (canvas needs a concrete color, not a CSS var).
-    const color =
-      getComputedStyle(document.documentElement).getPropertyValue("--color-you").trim() || "#56c7c2";
-    const render = () => draw(canvas, peaks, color);
+    // Resolve theme colours once (canvas needs concrete colours, not CSS vars).
+    const root = getComputedStyle(document.documentElement);
+    const color = root.getPropertyValue("--color-you").trim() || "#56c7c2";
+    const clipColor = root.getPropertyValue("--color-claude").trim() || "#e0795f";
+    const render = () => draw(canvas, peaks, gain, color, clipColor);
     render();
     const ro = new ResizeObserver(render);
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [peaks]);
+  }, [peaks, gain]);
 
   if (!peaks) return null;
   return <canvas ref={canvasRef} aria-hidden="true" className={`pointer-events-none ${className}`} />;

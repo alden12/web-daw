@@ -464,7 +464,7 @@ function Lane({
             {clip && "store" in clip ? (
               <NoteMinis store={clip.store} placement={p} pxPerBeat={pxPerBeat} />
             ) : clip && "fileId" in clip ? (
-              <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full opacity-80" />
+              <Waveform fileId={clip.fileId} gain={clip.gain} className="absolute inset-0 w-full h-full opacity-80" />
             ) : null}
           </Block>
         );

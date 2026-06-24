@@ -1,20 +1,15 @@
 /**
  * The selected track's effect chain, rendered inline in the signal-chain strip:
- * one compact card per effect (bypass / reorder / remove + its knobs), then the
- * add-effect buttons. Sits in CenterWorkbench's horizontal-scrolling row after
- * the instrument card. Every edit goes through the project store, the same model
- * MCP drives.
+ * one compact card per effect (bypass / reorder / remove + its knobs). Sits in
+ * CenterWorkbench's horizontal-scrolling row after the instrument card. Every edit
+ * goes through the project store, the same model MCP drives. (Adding an effect from
+ * the UI is being reworked - removed for now; MCP add_effect still works.)
  */
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { useProject } from "../audio/project/useProject";
-import {
-  effectInfos,
-  effectCatalogEntry,
-  effectSchema,
-} from "../audio/effects/catalog";
+import { effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
-import { newEffectId } from "../audio/commands/ids";
 import { Knob } from "./Knob";
 
 const ARROW = <div className="self-center text-faint text-sm px-0.5">→</div>;
@@ -31,20 +26,6 @@ export function EffectChain({
   dispatch: Dispatch;
 }) {
   const project = useProject(projectStore);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const addRef = useRef<HTMLDivElement>(null);
-
-  // Close the add-effect menu on an outside click.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (addRef.current && !addRef.current.contains(e.target as Node))
-        setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [menuOpen]);
-
   const track = project.tracks.find((t) => t.id === trackId);
   if (!track) return null;
   const effects = track.effects;
@@ -155,47 +136,6 @@ export function EffectChain({
           </Fragment>
         );
       })}
-
-      {ARROW}
-      <div ref={addRef} className="relative self-center shrink-0">
-        <button
-          type="button"
-          title="Add an effect"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((o) => !o)}
-          className="font-mono text-[12px] w-8 h-8 rounded-full border border-line bg-card text-ink cursor-pointer hover:border-you hover:text-you"
-        >
-          +
-        </button>
-        {menuOpen && (
-          <div
-            role="menu"
-            className="absolute left-0 top-9 z-20 min-w-32 flex flex-col gap-0.5 p-1 rounded-lg border border-line bg-panel shadow-lg"
-          >
-            {effectInfos().map((def) => (
-              <button
-                key={def.type}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  dispatch({
-                    type: "addEffect",
-                    hostId: trackId,
-                    effectType: def.type,
-                    id: newEffectId(),
-                  });
-                  setMenuOpen(false);
-                }}
-                className="flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-line" />
-                {def.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
     </>
   );
 }

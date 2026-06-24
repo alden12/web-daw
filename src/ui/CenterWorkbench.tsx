@@ -20,6 +20,7 @@ import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
 import { InstrumentPanel } from "./InstrumentPanel";
 import { EffectChain } from "./EffectChain";
+import { Fader } from "./MixerControls";
 import { PianoRoll } from "./PianoRoll";
 import { ClipRail } from "./ClipRail";
 import { Waveform } from "./Waveform";
@@ -97,18 +98,28 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
 
 function AudioClipPanel({
   track,
+  scheduler,
   tempoBpm,
   dispatch,
 }: {
   track: AudioTrack;
+  scheduler: Scheduler;
   tempoBpm: number;
   dispatch: Dispatch;
 }) {
   const clip =
     track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
+  const bps = tempoBpm / 60;
+  const dur = clip?.durationSec || 0;
+  const durBeats = Math.max(0.001, dur * bps);
+  const loopStartSec = clip?.loopStartSec ?? 0;
+  const loopEndSec = clip?.loopEndSec ?? dur;
+
   // Measure the preview width so the clip fills it: px-per-beat = width / clip-beats.
   const previewRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
   const [previewW, setPreviewW] = useState(0);
+  const pxPerBeat = previewW > 0 ? previewW / durBeats : 0;
   useEffect(() => {
     const el = previewRef.current;
     if (!el) return;
@@ -119,6 +130,42 @@ function AudioClipPanel({
     return () => ro.disconnect();
   }, []);
 
+  // Live ticker: sweep the loop region in sync with the transport. The clip can be
+  // placed several times; we follow whichever placement currently holds the playhead
+  // and map its phase into the region (so it loops with the audio).
+  const clipId = clip?.id;
+  const placements = track.placements;
+  useEffect(() => {
+    let raf = 0;
+    const regionBeats = Math.max(0.001, (loopEndSec - loopStartSec) * bps);
+    const loopStartBeats = loopStartSec * bps;
+    const tick = () => {
+      const el = playheadRef.current;
+      if (el) {
+        let x: number | null = null;
+        if (clipId && scheduler.isPlaying && pxPerBeat > 0) {
+          const pos = scheduler.getPositionBeats();
+          const active = placements.find(
+            (p) =>
+              p.clipId === clipId &&
+              pos >= p.startBeat &&
+              pos < p.startBeat + p.length,
+          );
+          if (active) {
+            let phase = (pos - active.startBeat) % regionBeats;
+            if (phase < 0) phase += regionBeats;
+            x = beatToX(loopStartBeats + phase, pxPerBeat);
+          }
+        }
+        el.style.opacity = x === null ? "0" : "1";
+        if (x !== null) el.style.transform = `translateX(${x}px)`;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [scheduler, clipId, placements, pxPerBeat, loopStartSec, loopEndSec, bps]);
+
   if (!clip)
     return (
       <div className="flex-1 min-h-0 p-3 text-muted text-sm">
@@ -126,14 +173,17 @@ function AudioClipPanel({
       </div>
     );
 
-  const bps = tempoBpm / 60;
-  const dur = clip.durationSec || 0;
-  const durBeats = Math.max(0.001, dur * bps);
-  const pxPerBeat = previewW > 0 ? previewW / durBeats : 0;
-  const loopStartSec = clip.loopStartSec ?? 0;
-  const loopEndSec = clip.loopEndSec ?? dur;
-  const setClip = (patch: { gain?: number; loopStartSec?: number; loopEndSec?: number }) =>
-    dispatch({ type: "setAudioClip", trackId: track.id, clipId: clip.id, patch });
+  const setClip = (patch: {
+    gain?: number;
+    loopStartSec?: number;
+    loopEndSec?: number;
+  }) =>
+    dispatch({
+      type: "setAudioClip",
+      trackId: track.id,
+      clipId: clip.id,
+      patch,
+    });
 
   return (
     <div className="flex-1 min-h-0 p-3">
@@ -153,7 +203,8 @@ function AudioClipPanel({
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
           {/* Beat-grid ruler (drag the two handles to set the loop region) over the
-              waveform; the area outside the loop is dimmed. */}
+              waveform; the area outside the loop is dimmed; the playhead sweeps the
+              region during playback. */}
           <div ref={previewRef} className="relative">
             {previewW > 0 && dur > 0 && (
               <Ruler
@@ -167,7 +218,11 @@ function AudioClipPanel({
             )}
             <div className="relative h-20 rounded-b bg-ground border border-line border-t-0 overflow-hidden">
               <div className="absolute inset-y-0 left-0 right-0 bg-you/15" />
-              <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full" />
+              <Waveform
+                fileId={clip.fileId}
+                gain={clip.gain}
+                className="absolute inset-0 w-full h-full"
+              />
               {pxPerBeat > 0 && loopStartSec > 0 && (
                 <div
                   className="absolute inset-y-0 left-0 bg-ground/65"
@@ -180,22 +235,21 @@ function AudioClipPanel({
                   style={{ left: beatToX(loopEndSec * bps, pxPerBeat) }}
                 />
               )}
+              <div
+                ref={playheadRef}
+                className="absolute top-0 bottom-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-10"
+              />
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="font-mono text-[10px] text-faint">
-              Drag the ruler handles to set the loop region.
-            </span>
+          <div className="flex items-center gap-3">
             <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
-              <input
-                type="range"
-                min={0}
-                max={4}
-                step={0.01}
+              <Fader
                 value={clip.gain}
-                onChange={(e) => setClip({ gain: Number(e.target.value) })}
-                className="w-28"
+                max={4}
+                width={80}
+                title="Clip gain"
+                onChange={(v) => setClip({ gain: v })}
               />
               <span className="text-faint w-10">{clip.gain.toFixed(2)}×</span>
             </label>
@@ -375,7 +429,12 @@ export function CenterWorkbench({
             })()}
           </div>
         ) : (
-          <AudioClipPanel track={selectedTrack} tempoBpm={project.tempoBpm} dispatch={dispatch} />
+          <AudioClipPanel
+            track={selectedTrack}
+            scheduler={scheduler}
+            tempoBpm={project.tempoBpm}
+            dispatch={dispatch}
+          />
         )}
       </div>
 
