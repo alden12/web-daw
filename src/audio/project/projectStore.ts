@@ -41,6 +41,8 @@ const MAX_BPM = 300;
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
+const MAX_AUDIO_GAIN = 4; // ~+12 dB - lets a quiet recording be boosted
+const MIN_LOOP_SEC = 0.05; // seconds - smallest audio loop region
 /** Default group family imported/recorded audio is filed into (the librarian). */
 const AUDIO_FAMILY = 'Audio';
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -518,14 +520,29 @@ export class ProjectStore {
     return Math.max(1, durationSec * (this.tempoBpm / 60));
   }
 
-  /** Edit an audio clip's gain/name in the pool (no-op on instrument tracks). */
-  setAudioClip(trackId: string, clipId: string | undefined, patch: { gain?: number; name?: string }): void {
+  /** Edit an audio clip's gain / name / loop region in the pool (no-op on instrument tracks). */
+  setAudioClip(
+    trackId: string,
+    clipId: string | undefined,
+    patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number },
+  ): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== 'audio') return;
     const clip = t.clips.find((c) => c.id === (clipId ?? t.activeClipId));
     if (!clip) return;
-    if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, 1);
+    if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, MAX_AUDIO_GAIN);
     if (patch.name !== undefined) clip.name = patch.name;
+    // The loop region is a slice of the buffer in seconds, clamped inside the clip
+    // with a minimum span; either end may be set independently.
+    const dur = clip.durationSec || 0;
+    if (patch.loopStartSec !== undefined) {
+      const end = clip.loopEndSec ?? dur;
+      clip.loopStartSec = clamp(patch.loopStartSec, 0, Math.max(0, end - MIN_LOOP_SEC));
+    }
+    if (patch.loopEndSec !== undefined) {
+      const start = clip.loopStartSec ?? 0;
+      clip.loopEndSec = clamp(patch.loopEndSec, start + MIN_LOOP_SEC, dur || patch.loopEndSec);
+    }
     this.emit();
   }
 

@@ -47,6 +47,36 @@ export function TransportBar({
       <button
         type="button"
         disabled={!started}
+        aria-label="Record"
+        aria-pressed={recording}
+        title={
+          recording
+            ? rec.status === "counting"
+              ? "Counting in… (click to cancel)"
+              : "Stop recording"
+            : "Record a clip"
+        }
+        onClick={() => recorder.toggle()}
+        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          recording
+            ? "text-claude bg-claude/15 border-claude/55"
+            : "text-claude/80 bg-card border-line hover:border-claude/55"
+        }`}
+      >
+        <span
+          className={`w-3 h-3 rounded-full bg-current ${rec.status === "counting" ? "animate-pulse" : ""}`}
+        />
+      </button>
+
+      {rec.status === "error" && rec.error && (
+        <span className="font-mono text-[10.5px] text-claude" role="alert">
+          {rec.error}
+        </span>
+      )}
+
+      <button
+        type="button"
+        disabled={!started}
         // Stopping while recording finalizes the take (recorder.stop also stops the
         // transport), so Stop never leaves a recording dangling.
         onClick={() =>
@@ -103,38 +133,6 @@ export function TransportBar({
           <line x1="8" y1="10" x2="11" y2="3.5" />
         </svg>
       </button>
-
-      <span className="w-px h-5 bg-line shrink-0" />
-
-      <button
-        type="button"
-        disabled={!started}
-        aria-label="Record"
-        aria-pressed={recording}
-        title={
-          recording
-            ? rec.status === "counting"
-              ? "Counting in… (click to cancel)"
-              : "Stop recording"
-            : "Record a clip"
-        }
-        onClick={() => recorder.toggle()}
-        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-          recording
-            ? "text-claude bg-claude/15 border-claude/55"
-            : "text-claude/80 bg-card border-line hover:border-claude/55"
-        }`}
-      >
-        <span
-          className={`w-3 h-3 rounded-full bg-current ${rec.status === "counting" ? "animate-pulse" : ""}`}
-        />
-      </button>
-
-      {rec.status === "error" && rec.error && (
-        <span className="font-mono text-[10.5px] text-claude" role="alert">
-          {rec.error}
-        </span>
-      )}
     </div>
   );
 }

@@ -97,10 +97,17 @@ export interface AudioClipData {
   author: ClipAuthor;
   /** Handle id of the audio file in the OPFS audio store. */
   fileId: string;
-  /** 0..1 clip gain. */
+  /** Clip gain (0..MAX_AUDIO_GAIN; >1 boosts a quiet recording). */
   gain: number;
   /** Cached natural duration in seconds (region sizing before/without decode). */
   durationSec: number;
+  /**
+   * The slice of the buffer that plays, in seconds. The scheduler tiles this slice
+   * across a placement, so a placement longer than the slice repeats it (looping).
+   * Omitted = the whole clip (0 .. durationSec).
+   */
+  loopStartSec?: number;
+  loopEndSec?: number;
 }
 
 /** Legacy (pre-v7): a clip variant bundling the whole sound. Read only for migration. */

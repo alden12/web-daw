@@ -5,7 +5,7 @@
  * For an audio track, an audio-clip panel takes the place of the instrument +
  * piano roll; the effect chain is shared (audio tracks have inserts too).
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ProjectStore,
   Track,
@@ -15,6 +15,7 @@ import type {
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
+import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
 import { InstrumentPanel } from "./InstrumentPanel";
@@ -22,6 +23,8 @@ import { EffectChain } from "./EffectChain";
 import { PianoRoll } from "./PianoRoll";
 import { ClipRail } from "./ClipRail";
 import { Waveform } from "./Waveform";
+import { Ruler } from "./timeline/Ruler";
+import { beatToX } from "./timeline/timeGrid";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber } from "./usePersistent";
@@ -94,19 +97,44 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
 
 function AudioClipPanel({
   track,
+  tempoBpm,
   dispatch,
 }: {
   track: AudioTrack;
+  tempoBpm: number;
   dispatch: Dispatch;
 }) {
   const clip =
     track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
+  // Measure the preview width so the clip fills it: px-per-beat = width / clip-beats.
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [previewW, setPreviewW] = useState(0);
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const measure = () => setPreviewW(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (!clip)
     return (
       <div className="flex-1 min-h-0 p-3 text-muted text-sm">
         No audio clip.
       </div>
     );
+
+  const bps = tempoBpm / 60;
+  const dur = clip.durationSec || 0;
+  const durBeats = Math.max(0.001, dur * bps);
+  const pxPerBeat = previewW > 0 ? previewW / durBeats : 0;
+  const loopStartSec = clip.loopStartSec ?? 0;
+  const loopEndSec = clip.loopEndSec ?? dur;
+  const setClip = (patch: { gain?: number; loopStartSec?: number; loopEndSec?: number }) =>
+    dispatch({ type: "setAudioClip", trackId: track.id, clipId: clip.id, patch });
+
   return (
     <div className="flex-1 min-h-0 p-3">
       <div className="h-full flex flex-col rounded-lg border border-line bg-card overflow-hidden">
@@ -117,42 +145,59 @@ function AudioClipPanel({
           <span className="font-mono text-[12.5px] text-bright truncate">
             {clip.name}
           </span>
-          {clip.durationSec > 0 && (
+          {dur > 0 && (
             <span className="ml-auto font-mono text-[10.5px] text-faint">
-              {clip.durationSec.toFixed(2)}s
+              {dur.toFixed(2)}s
             </span>
           )}
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
-          {/* Region preview: the amplitude waveform over a faint fill (or just the
-              fill while it decodes / if decoding fails). */}
-          <div className="relative h-20 rounded bg-ground border border-line border-t-2 border-t-you overflow-hidden">
-            <div className="absolute inset-y-0 left-0 right-0 bg-you/15" />
-            <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full" />
-            <span className="absolute left-2 top-1.5 font-mono text-[10px] text-muted">
-              {clip.name}
-            </span>
+          {/* Beat-grid ruler (drag the two handles to set the loop region) over the
+              waveform; the area outside the loop is dimmed. */}
+          <div ref={previewRef} className="relative">
+            {previewW > 0 && dur > 0 && (
+              <Ruler
+                viewBeats={durBeats}
+                loopStart={loopStartSec * bps}
+                loopEnd={loopEndSec * bps}
+                pxPerBeat={pxPerBeat}
+                onSetLoopStart={(b) => setClip({ loopStartSec: b / bps })}
+                onSetLoopEnd={(b) => setClip({ loopEndSec: b / bps })}
+              />
+            )}
+            <div className="relative h-20 rounded-b bg-ground border border-line border-t-0 overflow-hidden">
+              <div className="absolute inset-y-0 left-0 right-0 bg-you/15" />
+              <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full" />
+              {pxPerBeat > 0 && loopStartSec > 0 && (
+                <div
+                  className="absolute inset-y-0 left-0 bg-ground/65"
+                  style={{ width: beatToX(loopStartSec * bps, pxPerBeat) }}
+                />
+              )}
+              {pxPerBeat > 0 && loopEndSec < dur && (
+                <div
+                  className="absolute inset-y-0 right-0 bg-ground/65"
+                  style={{ left: beatToX(loopEndSec * bps, pxPerBeat) }}
+                />
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-4">
+            <span className="font-mono text-[10px] text-faint">
+              Drag the ruler handles to set the loop region.
+            </span>
             <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
               <input
                 type="range"
                 min={0}
-                max={1}
+                max={4}
                 step={0.01}
                 value={clip.gain}
-                onChange={(e) =>
-                  dispatch({
-                    type: "setAudioClip",
-                    trackId: track.id,
-                    clipId: clip.id,
-                    patch: { gain: Number(e.target.value) },
-                  })
-                }
+                onChange={(e) => setClip({ gain: Number(e.target.value) })}
                 className="w-28"
               />
-              <span className="text-faint w-8">{clip.gain.toFixed(2)}</span>
+              <span className="text-faint w-10">{clip.gain.toFixed(2)}×</span>
             </label>
           </div>
         </div>
@@ -203,6 +248,7 @@ export function CenterWorkbench({
   dispatch: Dispatch;
   selectedTrack: Track | undefined;
 }) {
+  const project = useProject(projectStore);
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The instrument+effects rack is a resizable, wrapping panel above the roll.
@@ -329,7 +375,7 @@ export function CenterWorkbench({
             })()}
           </div>
         ) : (
-          <AudioClipPanel track={selectedTrack} dispatch={dispatch} />
+          <AudioClipPanel track={selectedTrack} tempoBpm={project.tempoBpm} dispatch={dispatch} />
         )}
       </div>
 

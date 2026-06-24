@@ -249,12 +249,14 @@ export class Scheduler {
           instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
         }
       } else {
-        // Each audio placement triggers the buffer at its start, re-triggering
-        // every clip-length so a window dragged past the clip loops the sample.
+        // Each audio placement triggers the clip's loop region at its start,
+        // re-triggering every region-length so a placement longer than the region
+        // repeats (loops) it; the engine plays exactly that slice of the buffer.
         for (const p of placements) {
           const clip = track.clips.find((c) => c.id === p.clipId);
           if (!clip) continue;
-          const clipBeats = clip.durationSec > 0 ? (clip.durationSec * bpm) / 60 : Infinity;
+          const regionSec = (clip.loopEndSec ?? clip.durationSec) - (clip.loopStartSec ?? 0);
+          const clipBeats = regionSec > 0 ? (regionSec * bpm) / 60 : Infinity;
           for (let tau = 0; tau < p.length; tau += Math.max(GRID, clipBeats)) {
             for (const atBeat of onsetsInBeatRange(p.startBeat + tau, fromBeats, horizonBeats, loopLen, loopStart)) {
               const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;

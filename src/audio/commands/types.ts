@@ -40,7 +40,12 @@ export type LocalEdit =
       gain?: number;
       groupId?: string;
     }
-  | { type: 'setAudioClip'; trackId: string; clipId?: string; patch: { gain?: number; name?: string } }
+  | {
+      type: 'setAudioClip';
+      trackId: string;
+      clipId?: string;
+      patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number };
+    }
   | {
       // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool
       // and place it. Clip + placement ids are pre-minted by the caller and carried
