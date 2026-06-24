@@ -27,7 +27,12 @@ import type { Recorder } from "../audio/recording/recorder";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { GRID } from "../audio/sequencer/types";
-import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
+import {
+  newClipId,
+  newGroupId,
+  newPlacementId,
+  newTrackId,
+} from "../audio/commands/ids";
 import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
 import { useProject } from "../audio/project/useProject";
@@ -54,6 +59,11 @@ const HEADER_MIN = 150;
 const HEADER_MAX = 460;
 const RULER_H = 22; // px - must match Ruler's internal height
 const INDENT = 14; // px per tree depth
+// A fixed leading gutter before the mute/solo controls, shared by group rows (holds
+// the collapse arrow) and track rows (holds the audio record-enable, else empty), so
+// mute/solo line up across both. GUTTER_PAD is the row's base left padding.
+const GUTTER = "w-4 shrink-0";
+const GUTTER_PAD = 8; // px
 const RESIZE_PX = 7; // grab zone on a block's right edge
 const DRAG_THRESH = 4; // px before an empty-lane press counts as a drag (no add)
 const TRAIL_BEATS = 16; // empty grid drawn past the content end (room to arrange into)
@@ -82,8 +92,11 @@ function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
     if (group.collapsed) return;
     for (const sub of groups.filter((g) => g.parentId === group.id))
       walk(sub, depth + 1);
+    // Tracks sit at their group's depth (not indented one further), so a group and
+    // its tracks share the leading gutter and their mute/solo controls line up; the
+    // group's distinct styling (uppercase, darker bg) carries the hierarchy.
     for (const t of tracks.filter((t) => t.parentId === group.id))
-      rows.push({ kind: "track", track: t, depth: depth + 1 });
+      rows.push({ kind: "track", track: t, depth });
   };
   for (const g of groups.filter((g) => g.parentId === null)) walk(g, 0);
   // Defensive: surface any orphaned tracks (model keeps every track in a group).
@@ -505,8 +518,10 @@ function GroupHeader({
   return (
     <div
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line bg-center`}
-      style={{ paddingLeft: 8 + depth * INDENT }}
+      style={{ paddingLeft: GUTTER_PAD + depth * INDENT }}
     >
+      {/* Leading gutter (shared with track rows) holds the collapse arrow, so the
+          mute/solo controls line up between group and track headers. */}
       <button
         type="button"
         aria-expanded={!group.collapsed}
@@ -514,7 +529,7 @@ function GroupHeader({
         onClick={() =>
           projectStore.setGroupCollapsed(group.id, !group.collapsed)
         }
-        className="w-3.5 text-2xl -m-0.75 text-muted cursor-pointer shrink-0"
+        className={`${GUTTER} flex items-center justify-center text-2xl leading-none text-muted cursor-pointer`}
       >
         {group.collapsed ? "▸" : "▾"}
       </button>
@@ -549,7 +564,12 @@ function GroupHeader({
           {
             label: "Add empty track",
             onClick: () =>
-              dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: group.id }),
+              dispatch({
+                type: "createTrack",
+                instrumentType: DEFAULT_INSTRUMENT,
+                id: newTrackId(),
+                groupId: group.id,
+              }),
           },
           {
             label: "Delete group and its contents",
@@ -585,26 +605,32 @@ function TrackHeader({
       onClick={() => projectStore.selectTrack(track.id)}
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
         selected
-          ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))] shadow-[inset_3px_0_0_var(--color-you)]"
+          ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))] shadow-[inset_2px_0_0_var(--color-you)]"
           : "bg-panel"
       }`}
-      style={{ paddingLeft: 10 + depth * INDENT }}
+      style={{ paddingLeft: GUTTER_PAD + depth * INDENT }}
     >
-      {track.kind === "audio" && (
-        <button
-          type="button"
-          aria-label="Record enable"
-          aria-pressed={armed}
-          title={armed ? "Armed for recording" : "Arm for recording"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onArmToggle();
-          }}
-          className={`shrink-0 w-3.5 h-3.5 rounded-full border cursor-pointer ${
-            armed ? "bg-claude border-claude" : "border-muted hover:border-claude"
-          }`}
-        />
-      )}
+      {/* Leading gutter (same slot as a group's collapse arrow): the audio
+          record-enable lives here so mute/solo align with group rows. */}
+      <div className={`${GUTTER} flex items-center justify-center`}>
+        {track.kind === "audio" && (
+          <button
+            type="button"
+            aria-label="Record enable"
+            aria-pressed={armed}
+            title={armed ? "Armed for recording" : "Arm for recording"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onArmToggle();
+            }}
+            className={`w-2.5 h-2.5 rounded-full border cursor-pointer ${
+              armed
+                ? "bg-claude border-claude"
+                : "border-muted hover:border-claude"
+            }`}
+          />
+        )}
+      </div>
       <MuteSolo
         muted={track.muted}
         solo={track.solo}
@@ -684,6 +710,18 @@ export function ArrangementTimeline({
     0.5,
     4,
   );
+  // Recording settings live in the toolbar's settings menu (right). The count-in is
+  // a persisted preference pushed to the recorder; the device list/selection are
+  // recorder state. (The Record button itself stays in the transport.)
+  const [countInBars, setCountInBars] = usePersistentNumber(
+    "web-daw:count-in-bars",
+    1,
+    0,
+    2,
+  );
+  useEffect(() => {
+    recorder.setCountInBars(countInBars);
+  }, [recorder, countInBars]);
   const [selection, setSelection] = useState<Selection>(null);
   const [marker, setMarker] = useState<{
     trackId: string;
@@ -886,8 +924,7 @@ export function ArrangementTimeline({
       const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
       setPxPerBeat(next);
       requestAnimationFrame(() => {
-        el.scrollLeft =
-          beatAtCursor * next - (e.clientX - rect.left) + headerW;
+        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left) + headerW;
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -915,7 +952,8 @@ export function ArrangementTimeline({
     const el = scrollRef.current;
     if (!el) return;
     const left = el.getBoundingClientRect().left;
-    const move = (ev: PointerEvent) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
+    const move = (ev: PointerEvent) =>
+      setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -940,27 +978,80 @@ export function ArrangementTimeline({
         />
         <span className="w-px h-5 bg-line shrink-0" />
         <Menu
-          label="Add a track or group"
+          label="Timeline options"
           align="left"
           items={[
             {
               label: "Add group",
-              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
-            },
-            // "Create empty track in ...": every track lives in a group, so pick the
-            // destination group (or spin up a new one) rather than auto-filing it.
-            ...project.groups.map((g) => ({
-              label: `New track in ${g.name}`,
               onClick: () =>
-                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: g.id }),
-            })),
+                dispatch({ type: "createGroup", id: newGroupId() }),
+            },
+            // Every track lives in a group, so adding one picks the destination group
+            // (or a fresh group). Nested as a submenu so the menu stays short.
             {
-              label: "New track in a new group",
-              onClick: () => {
-                const groupId = newGroupId();
-                dispatch({ type: "createGroup", id: groupId });
-                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId });
-              },
+              label: "New track in",
+              submenu: [
+                ...project.groups.map((g) => ({
+                  label: g.name,
+                  onClick: () =>
+                    dispatch({
+                      type: "createTrack",
+                      instrumentType: DEFAULT_INSTRUMENT,
+                      id: newTrackId(),
+                      groupId: g.id,
+                    }),
+                })),
+                {
+                  label: "New group",
+                  onClick: () => {
+                    const groupId = newGroupId();
+                    dispatch({ type: "createGroup", id: groupId });
+                    dispatch({
+                      type: "createTrack",
+                      instrumentType: DEFAULT_INSTRUMENT,
+                      id: newTrackId(),
+                      groupId,
+                    });
+                  },
+                },
+              ],
+            },
+            { separator: true },
+            // Recording settings live here too (one toolbar menu, not a second kebab).
+            {
+              label: "Count-in",
+              submenu: [
+                {
+                  label: "No count-in",
+                  checked: countInBars === 0,
+                  onClick: () => setCountInBars(0),
+                },
+                {
+                  label: "1 bar",
+                  checked: countInBars === 1,
+                  onClick: () => setCountInBars(1),
+                },
+                {
+                  label: "2 bars",
+                  checked: countInBars === 2,
+                  onClick: () => setCountInBars(2),
+                },
+              ],
+            },
+            {
+              label: "Input device",
+              submenu: [
+                {
+                  label: "Default input",
+                  checked: rec.deviceId === null,
+                  onClick: () => recorder.setDevice(null),
+                },
+                ...rec.devices.map((d) => ({
+                  label: d.label || "Microphone",
+                  checked: rec.deviceId === d.deviceId,
+                  onClick: () => recorder.setDevice(d.deviceId),
+                })),
+              ],
             },
           ]}
         />
@@ -1028,99 +1119,104 @@ export function ArrangementTimeline({
         </div>
       ) : (
         <div className="relative flex-1 min-h-0">
-        <div
-          ref={scrollRef}
-          data-testid="arr-scroll"
-          className="absolute inset-0 overflow-auto"
-        >
           <div
-            className="relative"
-            style={{ width: headerW + laneWidth, height: contentH }}
+            ref={scrollRef}
+            data-testid="arr-scroll"
+            className="absolute inset-0 overflow-auto"
           >
-            {/* ruler row: sticky top; the corner cell is sticky on both axes */}
-            <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
+            <div
+              className="relative"
+              style={{ width: headerW + laneWidth, height: contentH }}
+            >
+              {/* ruler row: sticky top; the corner cell is sticky on both axes */}
               <div
-                className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
-                style={{ width: headerW, height: RULER_H }}
-              />
-              <Ruler
-                viewBeats={viewBeats}
-                loopStart={project.loopStart}
-                loopEnd={lengthBeats}
-                pxPerBeat={pxPerBeat}
-                beatsPerBar={beatsPerBar}
-                onSetLoopStart={(beats) =>
-                  dispatch({ type: "setLoopStart", beats })
-                }
-                onSetLoopEnd={(beats) =>
-                  dispatch({ type: "setLength", lengthBeats: beats })
-                }
-              />
-            </div>
-
-            {rows.map((row) =>
-              row.kind === "group" ? (
-                <div key={row.group.id} className="flex">
-                  <div
-                    className="sticky left-0 z-10 shrink-0"
-                    style={{ width: headerW }}
-                  >
-                    <GroupHeader
-                      group={row.group}
-                      depth={row.depth}
-                      projectStore={projectStore}
-                      dispatch={dispatch}
-                    />
-                  </div>
-                  <div
-                    className={`${ROW} border-b border-line bg-center/40`}
-                    style={{ width: laneWidth }}
-                  />
-                </div>
-              ) : (
-                <TrackRow
-                  key={row.track.id}
-                  meta={row.track}
-                  depth={row.depth}
-                  selectedTrack={row.track.id === project.selectedTrackId}
-                  armed={rec.armedTrackId === row.track.id}
-                  onArmToggle={() =>
-                    recorder.setArmedTrack(rec.armedTrackId === row.track.id ? null : row.track.id)
-                  }
-                  projectStore={projectStore}
-                  dispatch={dispatch}
-                  headerW={headerW}
-                  laneWidth={laneWidth}
+                className="sticky top-0 z-20 flex"
+                style={{ height: RULER_H }}
+              >
+                <div
+                  className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
+                  style={{ width: headerW, height: RULER_H }}
+                />
+                <Ruler
+                  viewBeats={viewBeats}
+                  loopStart={project.loopStart}
+                  loopEnd={lengthBeats}
                   pxPerBeat={pxPerBeat}
                   beatsPerBar={beatsPerBar}
-                  snapOn={snapOn}
-                  snapDiv={snapDiv}
-                  selection={selection}
-                  markerBeat={
-                    marker?.trackId === row.track.id ? marker.beat : null
+                  onSetLoopStart={(beats) =>
+                    dispatch({ type: "setLoopStart", beats })
                   }
-                  dropBeat={
-                    dropTarget?.trackId === row.track.id
-                      ? dropTarget.beat
-                      : null
-                  }
-                  onSelect={selectPlacement}
-                  onMark={placeMarker}
-                  onHover={(beat) =>
-                    setDropTarget(
-                      beat === null ? null : { trackId: row.track.id, beat },
-                    )
+                  onSetLoopEnd={(beats) =>
+                    dispatch({ type: "setLength", lengthBeats: beats })
                   }
                 />
-              ),
-            )}
+              </div>
 
-            <div
-              ref={playheadRef}
-              className="absolute top-0 bottom-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
-            />
+              {rows.map((row) =>
+                row.kind === "group" ? (
+                  <div key={row.group.id} className="flex">
+                    <div
+                      className="sticky left-0 z-10 shrink-0"
+                      style={{ width: headerW }}
+                    >
+                      <GroupHeader
+                        group={row.group}
+                        depth={row.depth}
+                        projectStore={projectStore}
+                        dispatch={dispatch}
+                      />
+                    </div>
+                    <div
+                      className={`${ROW} border-b border-line bg-center/40`}
+                      style={{ width: laneWidth }}
+                    />
+                  </div>
+                ) : (
+                  <TrackRow
+                    key={row.track.id}
+                    meta={row.track}
+                    depth={row.depth}
+                    selectedTrack={row.track.id === project.selectedTrackId}
+                    armed={rec.armedTrackId === row.track.id}
+                    onArmToggle={() =>
+                      recorder.setArmedTrack(
+                        rec.armedTrackId === row.track.id ? null : row.track.id,
+                      )
+                    }
+                    projectStore={projectStore}
+                    dispatch={dispatch}
+                    headerW={headerW}
+                    laneWidth={laneWidth}
+                    pxPerBeat={pxPerBeat}
+                    beatsPerBar={beatsPerBar}
+                    snapOn={snapOn}
+                    snapDiv={snapDiv}
+                    selection={selection}
+                    markerBeat={
+                      marker?.trackId === row.track.id ? marker.beat : null
+                    }
+                    dropBeat={
+                      dropTarget?.trackId === row.track.id
+                        ? dropTarget.beat
+                        : null
+                    }
+                    onSelect={selectPlacement}
+                    onMark={placeMarker}
+                    onHover={(beat) =>
+                      setDropTarget(
+                        beat === null ? null : { trackId: row.track.id, beat },
+                      )
+                    }
+                  />
+                ),
+              )}
+
+              <div
+                ref={playheadRef}
+                className="absolute top-0 bottom-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
+              />
+            </div>
           </div>
-        </div>
           <div
             role="separator"
             aria-orientation="vertical"

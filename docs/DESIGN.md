@@ -635,6 +635,12 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   edit (clip + placement, ids pre-minted -> deterministic replay), else a fresh track. The
   transport Stop (and spacebar) now finalize the take, not just halt it. Audio tracks get the
   vertical clip rail (recordings as chips) with a footer Record button.
+- **Recording UI polish - DONE (slice 30).** Mute/solo line up across group and track headers via
+  a shared leading "gutter" (collapse arrow for groups, record-enable for audio tracks, empty
+  otherwise; tracks render at their group's depth). Recording settings (count-in, input device)
+  moved off the transport into the existing toolbar menu (now "Timeline options"), alongside the
+  per-group "New track in" - all three are **nested submenus** so the menu stays short. `Menu`
+  gained submenu flyouts, radio (`checked`) items, and separators to support this.
 - **Recording follow-ups (slice C / later):** MCP arm/record tools, input level meter, remembered
   device + eager enumeration, software-monitoring option, loopback **latency calibration**
   (store the offset on the region), punch-in at the playhead, multi-track arm, stereo.

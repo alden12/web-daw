@@ -2,9 +2,9 @@ import { test, expect, type Page } from '@playwright/test';
 
 /**
  * Recording controls wiring (UI only - does NOT click Record, so no microphone is
- * touched): the transport shows a Record button and a count-in selector, and the
- * count-in preference persists across a reload. The live capture path (getUserMedia
- * + worklet + WAV + addAudioTrack) is verified manually.
+ * touched): the transport shows a Record button, and the count-in (in the toolbar's
+ * Timeline options menu) persists across a reload. The live capture path
+ * (getUserMedia + worklet + WAV + addAudioTrack) is verified manually.
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
@@ -14,17 +14,24 @@ async function startAudio(page: Page) {
   if (await start.count()) await start.click();
 }
 
-test('the transport exposes recording controls and persists the count-in', async ({ page }) => {
+async function openCountIn(page: Page) {
+  await page.getByRole('button', { name: 'Timeline options' }).click();
+  await page.getByRole('menuitem', { name: 'Count-in' }).hover();
+}
+
+test('the transport exposes a Record button and persists the count-in choice', async ({ page }) => {
   await page.goto('/');
   await startAudio(page);
 
-  await expect(page.getByRole('button', { name: 'Record' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Record', exact: true })).toBeVisible();
 
-  const countIn = page.locator('select[title="Count-in before recording"]');
-  await expect(countIn).toHaveValue('1'); // default: 1 bar
-  await countIn.selectOption('2');
+  // Default is 1 bar; switch to 2 bars via the settings menu's Count-in submenu.
+  await openCountIn(page);
+  await expect(page.getByRole('menuitemradio', { name: '1 bar' })).toHaveAttribute('aria-checked', 'true');
+  await page.getByRole('menuitemradio', { name: '2 bars' }).click();
 
   await page.reload();
   await startAudio(page);
-  await expect(page.locator('select[title="Count-in before recording"]')).toHaveValue('2');
+  await openCountIn(page);
+  await expect(page.getByRole('menuitemradio', { name: '2 bars' })).toHaveAttribute('aria-checked', 'true');
 });
