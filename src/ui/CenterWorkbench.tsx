@@ -268,45 +268,11 @@ export function CenterWorkbench({
         )}
       </div>
 
-      {/* device rack: fixed (resizable) height, wraps to fill the width */}
-      <div
-        ref={deviceRef}
-        className="relative shrink-0 flex flex-col border-b border-line"
-        style={{ height: deviceH }}
-        key={`${selectedTrack.id}:dev`}
-      >
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
-            {selectedTrack.kind === "instrument" && (
-              <InstrumentPanel
-                params={selectedTrack.params}
-                instrumentType={selectedTrack.instrumentType}
-                trackId={selectedTrack.id}
-                dispatch={dispatch}
-              />
-            )}
-            <EffectChain
-              projectStore={projectStore}
-              trackId={selectedTrack.id}
-              dispatch={dispatch}
-            />
-          </div>
-        </div>
-        <ResizeHandle
-          ariaLabel="Resize devices"
-          orientation="horizontal"
-          onResize={(y) =>
-            setDeviceH(
-              y - (deviceRef.current?.getBoundingClientRect().top ?? 0),
-            )
-          }
-          style={{ left: 0, right: 0, bottom: 0 }}
-        />
-      </div>
-
-      {/* Both kinds share the resizable clip rail on the left; the right is the
-          piano roll (instrument) or the audio-clip panel (audio). For audio, the
-          rail's footer is a record button that records a take into this track. */}
+      {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
+          instrument + effect rack below, then the arrangement output (bottom panel).
+          Both kinds share the resizable clip rail on the left; the right is the piano
+          roll (instrument) or the audio-clip panel (audio). For audio, the rail's
+          footer is a record button that records a take into this track. */}
       <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:body`}>
         <div
           ref={clipRailRef}
@@ -357,6 +323,43 @@ export function CenterWorkbench({
         ) : (
           <AudioClipPanel track={selectedTrack} dispatch={dispatch} />
         )}
+      </div>
+
+      {/* device rack: instrument + effects, below the notes (resizable height, drag
+          its top edge), so the flow reads notes -> instrument -> effects -> output. */}
+      <div
+        ref={deviceRef}
+        className="relative shrink-0 flex flex-col border-t border-line"
+        style={{ height: deviceH }}
+        key={`${selectedTrack.id}:dev`}
+      >
+        <ResizeHandle
+          ariaLabel="Resize devices"
+          orientation="horizontal"
+          onResize={(y) =>
+            setDeviceH(
+              (deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y,
+            )
+          }
+          style={{ left: 0, right: 0, top: 0 }}
+        />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
+            {selectedTrack.kind === "instrument" && (
+              <InstrumentPanel
+                params={selectedTrack.params}
+                instrumentType={selectedTrack.instrumentType}
+                trackId={selectedTrack.id}
+                dispatch={dispatch}
+              />
+            )}
+            <EffectChain
+              projectStore={projectStore}
+              trackId={selectedTrack.id}
+              dispatch={dispatch}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
