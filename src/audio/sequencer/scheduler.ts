@@ -186,6 +186,18 @@ export class Scheduler {
     return loopLen > 0 ? loopStart + (cont % loopLen) : 0;
   }
 
+  /**
+   * Looped beat position at an arbitrary audio-clock `time`, using the current
+   * anchor (valid while playing). Recording uses this to map the capture's start
+   * time to the arrangement beat where the take should land.
+   */
+  beatAtTime(time: number): number {
+    const loopStart = this.project.loopStart;
+    const loopLen = this.project.length - loopStart;
+    const cont = this.anchorBeat + (time - this.anchorTime) * this.lastBps;
+    return loopLen > 0 ? loopStart + (cont % loopLen) : cont;
+  }
+
   private reanchor(): void {
     const now = this.engine.currentTime;
     this.anchorBeat += (now - this.anchorTime) * this.lastBps;

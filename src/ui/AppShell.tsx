@@ -11,6 +11,7 @@ import { ProjectStore } from '../audio/project/projectStore';
 import { AudioEngine } from '../audio/engine/AudioEngine';
 import { Scheduler } from '../audio/sequencer/scheduler';
 import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
+import { Recorder } from '../audio/recording/recorder';
 import { attachAutosave, restoreProject } from '../audio/persistence';
 import { VersionStore } from '../audio/commands/history';
 import { useProject } from '../audio/project/useProject';
@@ -41,6 +42,7 @@ export function AppShell() {
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
+  const [recorder] = useState(() => new Recorder(engine, scheduler, projectStore, editLog.dispatch));
   const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
   const dispatch = editLog.dispatch;
 
@@ -101,9 +103,10 @@ export function AppShell() {
   }, [projectStore, editLog, versionStore]);
 
   useEffect(() => () => {
+    recorder.dispose();
     scheduler.dispose();
     engine.dispose();
-  }, [scheduler, engine]);
+  }, [recorder, scheduler, engine]);
 
   useEffect(() => {
     const handle = connectMcpBridge({ projectStore, engine, scheduler, editLog, versionStore }, { onStatus: setMcpStatus });
@@ -187,6 +190,7 @@ export function AppShell() {
         <ArrangementTimeline
           projectStore={projectStore}
           scheduler={scheduler}
+          recorder={recorder}
           dispatch={dispatch}
           isPlaying={isPlaying}
           started={started}

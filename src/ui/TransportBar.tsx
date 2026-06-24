@@ -7,30 +7,48 @@
 import { useEffect } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
 import { useProject } from "../audio/project/useProject";
-import { usePersistentBoolean } from "./usePersistent";
+import { useRecorder } from "./useRecorder";
+import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+
+const COUNT_IN_OPTIONS = [
+  { label: "No count-in", value: 0 },
+  { label: "1 bar count-in", value: 1 },
+  { label: "2 bar count-in", value: 2 },
+];
 
 export function TransportBar({
   projectStore,
   scheduler,
+  recorder,
   dispatch,
   isPlaying,
   started,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
+  recorder: Recorder;
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
 }) {
   const project = useProject(projectStore);
+  const rec = useRecorder(recorder);
   const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
+  const [countInBars, setCountInBars] = usePersistentNumber("web-daw:count-in-bars", 1, 0, 2);
 
   // The scheduler reads this flag each tick; keep it in sync with the preference.
   useEffect(() => {
     scheduler.setMetronomeEnabled(metronome);
   }, [scheduler, metronome]);
+  // The recorder reads the count-in length when a take starts.
+  useEffect(() => {
+    recorder.setCountInBars(countInBars);
+  }, [recorder, countInBars]);
+
+  const recording = rec.status === "recording" || rec.status === "counting";
 
   return (
     <div className="flex items-center gap-3">
@@ -85,6 +103,63 @@ export function TransportBar({
           <line x1="8" y1="10" x2="11" y2="3.5" />
         </svg>
       </button>
+
+      <span className="w-px h-5 bg-line shrink-0" />
+
+      <button
+        type="button"
+        disabled={!started}
+        aria-label="Record"
+        aria-pressed={recording}
+        title={
+          recording
+            ? rec.status === "counting"
+              ? "Counting in… (click to cancel)"
+              : "Stop recording"
+            : "Record a take onto a new audio track"
+        }
+        onClick={() => recorder.toggle()}
+        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/80 bg-card border-line hover:border-claude/55"
+        }`}
+      >
+        <span className={`w-3 h-3 rounded-full bg-current ${rec.status === "counting" ? "animate-pulse" : ""}`} />
+      </button>
+
+      <select
+        value={countInBars}
+        onChange={(e) => setCountInBars(Number(e.target.value))}
+        title="Count-in before recording"
+        className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
+      >
+        {COUNT_IN_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+
+      {rec.devices.length > 1 && (
+        <select
+          value={rec.deviceId ?? ""}
+          onChange={(e) => recorder.setDevice(e.target.value || null)}
+          title="Input device"
+          className="max-w-32 font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink truncate"
+        >
+          <option value="">Default input</option>
+          {rec.devices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || "Microphone"}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {rec.status === "error" && rec.error && (
+        <span className="font-mono text-[10.5px] text-claude" role="alert">
+          {rec.error}
+        </span>
+      )}
     </div>
   );
 }

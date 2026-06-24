@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectStore, Track } from "../audio/project/projectStore";
 import type { ClipStore } from "../audio/sequencer/clipStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { Recorder } from "../audio/recording/recorder";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { GRID } from "../audio/sequencer/types";
@@ -626,12 +627,14 @@ function TrackHeader({
 export function ArrangementTimeline({
   projectStore,
   scheduler,
+  recorder,
   dispatch,
   isPlaying,
   started,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
+  recorder: Recorder;
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
@@ -908,6 +911,7 @@ export function ArrangementTimeline({
         <TransportBar
           projectStore={projectStore}
           scheduler={scheduler}
+          recorder={recorder}
           dispatch={dispatch}
           isPlaying={isPlaying}
           started={started}

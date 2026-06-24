@@ -56,6 +56,15 @@ export class AudioEngine {
   /** A master-level bus for the metronome click (independent of any track). */
   private metronomeGain: GainNode | null = null;
   private metronomeVolume = 0.6;
+  // --- live input capture (recording) ---
+  private workletReady = false;
+  private inputStream: MediaStream | null = null;
+  private inputSource: MediaStreamAudioSourceNode | null = null;
+  private captureNode: AudioWorkletNode | null = null;
+  /** Silent sink: keeps the capture worklet pulled by the graph without monitoring. */
+  private captureSink: GainNode | null = null;
+  private captureChunks: Float32Array[] = [];
+  private capturing = false;
   private readonly nodes = new Map<string, TrackNode>();
   private readonly audioNodes = new Map<string, AudioTrackNode>();
   private readonly groupNodes = new Map<string, GroupNode>();
@@ -328,6 +337,116 @@ export class AudioEngine {
     }
   }
 
+  // --- live input capture (recording) --------------------------------------
+  /**
+   * Best-effort round-trip latency estimate (seconds) for recording compensation:
+   * output + base latency. The browser does not expose input latency, so this is
+   * a v1 estimate; a loopback calibration would make it exact (see DESIGN.md 14).
+   */
+  inputLatencySec(): number {
+    const ctx = this.ctx;
+    if (!ctx) return 0;
+    const c = ctx as AudioContext & { outputLatency?: number };
+    return (c.outputLatency ?? 0) + (ctx.baseLatency ?? 0);
+  }
+
+  /** Enumerate audio input devices (labels require a prior getUserMedia grant). */
+  async listInputDevices(): Promise<{ deviceId: string; label: string }[]> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === "audioinput").map((d) => ({ deviceId: d.deviceId, label: d.label }));
+  }
+
+  /**
+   * Open a mic input and wire it for capture: `MediaStreamSource -> captureNode ->
+   * silent sink`. The voice DSP is disabled (or Chrome mangles the signal). The
+   * source feeds the worklet only during `startRecording`; monitoring is hardware/
+   * direct by default, so the input is never routed to the audible output.
+   */
+  async enableInput(deviceId?: string): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx) throw new Error("Audio engine not started");
+    this.disableInput();
+    if (!this.workletReady) {
+      await ctx.audioWorklet.addModule(`${import.meta.env.BASE_URL}capture-worklet.js`);
+      this.workletReady = true;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+    });
+    this.inputStream = stream;
+    this.inputSource = ctx.createMediaStreamSource(stream);
+    this.captureNode = new AudioWorkletNode(ctx, "capture-processor");
+    this.captureNode.port.onmessage = (e) => {
+      if (this.capturing && e.data instanceof Float32Array) this.captureChunks.push(e.data);
+    };
+    // A zero-gain sink to the destination so the worklet is pulled (and thus runs)
+    // without being heard. The source is connected only while recording.
+    this.captureSink = ctx.createGain();
+    this.captureSink.gain.value = 0;
+    this.captureNode.connect(this.captureSink);
+    this.captureSink.connect(ctx.destination);
+  }
+
+  /** Begin collecting input frames; returns the audio-clock start time (seconds). */
+  startRecording(): number {
+    const ctx = this.ctx;
+    if (!ctx || !this.inputSource || !this.captureNode) throw new Error("Input not enabled");
+    this.captureChunks = [];
+    this.capturing = true;
+    this.inputSource.connect(this.captureNode);
+    return ctx.currentTime;
+  }
+
+  /**
+   * Stop collecting and return the captured mono samples. Awaits a short drain so
+   * worklet messages already posted (but not yet delivered) are not dropped.
+   */
+  async stopRecording(): Promise<{ samples: Float32Array; sampleRate: number } | null> {
+    const ctx = this.ctx;
+    if (!ctx || !this.capturing) return null;
+    try {
+      this.inputSource?.disconnect(this.captureNode!);
+    } catch {
+      // already disconnected
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    this.capturing = false;
+    const total = this.captureChunks.reduce((n, c) => n + c.length, 0);
+    const samples = new Float32Array(total);
+    let offset = 0;
+    for (const c of this.captureChunks) {
+      samples.set(c, offset);
+      offset += c.length;
+    }
+    this.captureChunks = [];
+    return { samples, sampleRate: ctx.sampleRate };
+  }
+
+  /** Close the mic input and tear down the capture nodes. */
+  disableInput(): void {
+    this.capturing = false;
+    this.captureChunks = [];
+    try {
+      this.inputSource?.disconnect();
+      this.captureNode?.disconnect();
+      this.captureSink?.disconnect();
+    } catch {
+      // already torn down
+    }
+    for (const track of this.inputStream?.getTracks() ?? []) track.stop();
+    this.inputStream = null;
+    this.inputSource = null;
+    this.captureNode = null;
+    this.captureSink = null;
+  }
+
   /** Stop all currently-playing audio clips (called on transport stop). */
   stopAllAudio(): void {
     for (const node of this.audioNodes.values()) this.disposeAudioSources(node);
@@ -340,6 +459,8 @@ export class AudioEngine {
   dispose(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.disableInput();
+    this.workletReady = false;
     for (const node of this.nodes.values()) {
       this.disposeEffects(node.effects);
       node.instrument.dispose();

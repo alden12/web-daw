@@ -619,8 +619,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 
 **Recording & input**
 
-- **Live audio capture** (section 14): getUserMedia + worklet/MediaRecorder, recording
-  latency compensation, calibration.
+- **Metronome - DONE (slice 27).** Engine `scheduleClick`, scheduler emits whole-beat clicks in
+  the lookahead window (bar accent follows the loop), transport toggle. A transient preference,
+  not an edit.
+- **Live audio capture - core DONE (slice 28).** getUserMedia (voice DSP off) -> capture
+  AudioWorklet (`public/capture-worklet.js`, per-quantum float32 via postMessage, no
+  SharedArrayBuffer) -> WAV (`recording/wav.ts`) -> `putAudio` hash -> one `addAudioTrack` edit
+  (so persistence/replay match import; capture is a side effect, the edit is pure data). A
+  `Recorder` controller holds the transient arm/record state; count-in (0/1/2 bars) pre-rolls
+  metronome clicks before capture. Latency is a fixed `outputLatency+baseLatency` estimate
+  baked into the take's start beat. Monitoring is hardware/direct (input is never routed to
+  output). Records into a NEW audio track from the loop start.
+- **Recording follow-ups (slice C / later):** MCP arm/record tools, input level meter, remembered
+  device + eager enumeration, software-monitoring option, loopback **latency calibration**
+  (store the offset on the region), punch-in at the playhead, arm an existing track, stereo.
 - **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
   reuses the same arm / record / quantize machinery as audio.
 
