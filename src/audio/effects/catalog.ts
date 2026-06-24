@@ -41,6 +41,12 @@ export const chorusSchema: ParamSchema = [
   { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 0.5, taper: 'linear', smoothMs: 20 },
 ] as const;
 
+export const tremoloSchema: ParamSchema = [
+  { id: 'tremolo.rate', label: 'Rate', kind: 'number', min: 0.1, max: 16, default: 4, unit: 'Hz', taper: 'exponential', smoothMs: 20 },
+  { id: 'tremolo.depth', label: 'Depth', kind: 'number', min: 0, max: 1, default: 0.6, taper: 'linear', smoothMs: 20 },
+  { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 1, taper: 'linear', smoothMs: 20 },
+] as const;
+
 export interface EffectInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -83,3 +89,4 @@ registerEffect({ type: 'distortion', label: 'Distortion', schema: distortionSche
 registerEffect({ type: 'reverb', label: 'Reverb', schema: reverbSchema });
 registerEffect({ type: 'filter', label: 'Filter', schema: filterSchema });
 registerEffect({ type: 'chorus', label: 'Chorus', schema: chorusSchema });
+registerEffect({ type: 'tremolo', label: 'Tremolo', schema: tremoloSchema });

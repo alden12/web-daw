@@ -12,6 +12,8 @@ import type { ParamStore } from '../params/store';
 import type { Instrument } from './types';
 import { SubtractiveInstrument } from './Subtractive';
 import { FmInstrument } from './Fm';
+import { SupersawInstrument } from './Supersaw';
+import { OrganInstrument } from './Organ';
 import { DEFAULT_INSTRUMENT } from './catalog';
 
 type InstrumentFactory = (ctx: AudioContext, store: ParamStore) => Instrument;
@@ -31,5 +33,7 @@ export function createInstrument(type: string, ctx: AudioContext, store: ParamSt
 // --- built-in factories (self-registered) ---------------------------------
 registerInstrumentFactory('subtractive', (ctx, store) => new SubtractiveInstrument(ctx, store));
 registerInstrumentFactory('fm', (ctx, store) => new FmInstrument(ctx, store));
+registerInstrumentFactory('supersaw', (ctx, store) => new SupersawInstrument(ctx, store));
+registerInstrumentFactory('organ', (ctx, store) => new OrganInstrument(ctx, store));
 
 export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from './catalog';
