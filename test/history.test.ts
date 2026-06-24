@@ -133,6 +133,57 @@ describe('VersionStore (commit DAG)', () => {
     expect(await vs.diff(a!.id, b!.id)).toContain('Tempo 120 -> 96 BPM');
   });
 
+  // --- feed notes anchored to commits ---------------------------------------
+
+  it('sweeps uncommitted feed notes into the commit, and replay ignores them', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.note('about to add the bass', 'claude');
+    log.dispatch({ type: 'createTrack', instrumentType: 'fm', id: 't-1' });
+    const c = await vs.commit('bass in', 'claude');
+    expect(c?.noteCount).toBe(1);
+
+    const stored = await repo.readCommit(c!.id);
+    expect(stored!.notes?.map((n) => n.text)).toEqual(['about to add the bass']);
+    // Notes are not edits: entryCount counts only the edit, and a revert (replay)
+    // reconstructs state purely from edits - the note never executes.
+    expect(stored!.entryCount).toBe(1);
+    await vs.revertTo(c!.id, 'you');
+    expect(project.getTrack('t-1')).toBeTruthy();
+  });
+
+  it('does not commit on a note alone (a note creates no uncommitted edit)', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+    log.note('just thinking out loud', 'claude');
+    expect(await vs.commit('nope')).toBeNull(); // nothing to commit yet
+
+    // The pending note rides into the next real commit.
+    log.dispatch({ type: 'setTempo', bpm: 100 });
+    const c = await vs.commit('first real change', 'claude');
+    expect((await repo.readCommit(c!.id))!.notes?.map((n) => n.text)).toEqual(['just thinking out loud']);
+  });
+
+  it('anchors each note to the commit it was posted before, not a later one', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.note('first idea', 'claude');
+    log.dispatch({ type: 'setTempo', bpm: 80 });
+    const a = await vs.commit('a', 'claude');
+
+    log.note('second idea', 'claude');
+    log.dispatch({ type: 'setTempo', bpm: 90 });
+    const b = await vs.commit('b', 'claude');
+
+    expect((await repo.readCommit(a!.id))!.notes?.map((n) => n.text)).toEqual(['first idea']);
+    expect((await repo.readCommit(b!.id))!.notes?.map((n) => n.text)).toEqual(['second idea']);
+  });
+
   // --- keyframe + delta storage ---------------------------------------------
 
   it('stores deltas after the root keyframe and replays them exactly', async () => {

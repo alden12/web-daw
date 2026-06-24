@@ -44,6 +44,22 @@ describe('EditLog.restore', () => {
     log.dispatch({ type: 'setTempo', bpm: 90 });
     expect(log.getState().entries.at(-1)?.seq).toBe(6);
   });
+
+  it('restores feed notes and continues seq past the highest of both streams', () => {
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    log.restore(
+      [{ seq: 3, command: { type: 'setTempo', bpm: 100 }, author: 'you', time: 1 }],
+      [{ seq: 7, text: 'warming up the pad', author: 'claude', time: 2 }],
+    );
+
+    expect(log.getNotes().map((n) => n.text)).toEqual(['warming up the pad']);
+    expect(log.getState().notes).toHaveLength(1);
+
+    // seq continues from max(entry 3, note 7) + 1, so the next note lands at 8.
+    log.note('next move', 'claude');
+    expect(log.getNotes().at(-1)?.seq).toBe(8);
+  });
 });
 
 describe('project + edit-log persistence', () => {
@@ -80,6 +96,26 @@ describe('project + edit-log persistence', () => {
     const entries = log2.getState().entries;
     expect(entries.map((e) => e.command.type)).toEqual(['createTrack', 'setTempo']);
     expect(entries.map((e) => e.author)).toEqual(['you', 'claude']);
+  });
+
+  it('persists a feed note posted with no following edit (saved via the log subscription)', async () => {
+    vi.useFakeTimers();
+    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    // A note changes no project state, so only the edit-log subscription can save it.
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    log.note('about to layer a pad on top', 'claude');
+    await vi.runAllTimersAsync();
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, repo);
+    expect(log2.getNotes().map((n) => n.text)).toEqual(['about to layer a pad on top']);
   });
 
   it('persists undo/redo so undo works after a restore (reload)', async () => {
@@ -244,7 +280,7 @@ describe('project + edit-log persistence', () => {
 
     const reads: string[] = [];
     const repo = new ProjectRepository(new MemoryBundleStore(), {
-      loadLegacy: () => ({ project: legacyProject, log: [] }),
+      loadLegacy: () => ({ project: legacyProject, log: [], notes: [] }),
       legacySampleReader: async (id) => {
         reads.push(id);
         return id === 'au-x' ? bytes : null;
@@ -292,11 +328,13 @@ describe('project + edit-log persistence', () => {
       ],
     } as unknown as ProjectData;
     const log = [{ seq: 0, command: { type: 'setTempo', bpm: 128 }, author: 'you' as const, time: 1 }];
+    const notes = [{ seq: 1, text: 'set the groove tempo', author: 'claude' as const, time: 2 }];
 
-    const files = await source.exportBundle(project, log);
+    const files = await source.exportBundle(project, log, notes);
     // Readable JSON entries plus the referenced sample as real .wav bytes.
     const proj = JSON.parse(new TextDecoder().decode(files['project.json'])) as ProjectData;
     expect(proj.tempoBpm).toBe(128);
+    expect(files['notes.json']).toBeTruthy();
     expect(files[`samples/${hash}.wav`]).toBeTruthy();
 
     // Import into a brand-new, empty repository.
@@ -304,6 +342,7 @@ describe('project + edit-log persistence', () => {
     const restored = await dest.importBundle(files);
     expect(restored.project.tempoBpm).toBe(128);
     expect(restored.log.map((e) => e.command.type)).toEqual(['setTempo']);
+    expect(restored.notes.map((n) => n.text)).toEqual(['set the groove tempo']);
     const sample = await dest.getSample(hash);
     expect(new Uint8Array(sample)).toEqual(new Uint8Array(bytes));
   });

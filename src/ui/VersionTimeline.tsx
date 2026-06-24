@@ -6,7 +6,7 @@
  * the bundle), so it refetches when the version store or edit log changes.
  */
 import { useEffect, useState } from 'react';
-import type { EditLog } from '../audio/commands/editLog';
+import type { EditLog, FeedNote } from '../audio/commands/editLog';
 import type { CommitSummary, VersionStore } from '../audio/commands/history';
 
 function timeAgo(ms: number, now: number): string {
@@ -25,6 +25,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
   const [message, setMessage] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [diff, setDiff] = useState<string[] | null>(null);
+  const [notes, setNotes] = useState<FeedNote[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // Keep relative times fresh without calling Date.now() during render.
@@ -60,10 +61,15 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
     if (openId === c.id) {
       setOpenId(null);
       setDiff(null);
+      setNotes(null);
       return;
     }
     setOpenId(c.id);
     setDiff(null);
+    setNotes(null);
+    // The intent narration captured with this version (notes are not edits).
+    if (c.noteCount > 0) void versionStore.getCommit(c.id).then((full) => setNotes(full?.notes ?? []));
+    else setNotes([]);
     if (!c.parent) {
       setDiff([]); // root commit: nothing before it
       return;
@@ -112,10 +118,27 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.author === 'claude' ? 'bg-claude' : 'bg-you'}`} />
                   <span className="font-mono text-[11.5px] truncate text-ink">{c.message}</span>
                   {c.auto && <span className="font-mono text-[9px] uppercase tracking-wide text-faint shrink-0">auto</span>}
+                  {c.noteCount > 0 && (
+                    <span
+                      title={`${c.noteCount} intent ${c.noteCount === 1 ? 'note' : 'notes'}`}
+                      className="font-mono text-[10px] text-claude shrink-0"
+                    >
+                      “{c.noteCount}
+                    </span>
+                  )}
                   <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{timeAgo(c.time, now)}</span>
                 </button>
                 {open && (
                   <div className="px-2.5 pb-2 pt-0.5 flex flex-col gap-1.5">
+                    {notes && notes.length > 0 && (
+                      <ul className="flex flex-col gap-0.5 border-l-2 border-claude/50 pl-2">
+                        {notes.map((n) => (
+                          <li key={n.seq} className="font-mono text-[10.5px] italic text-muted wrap-break-word">
+                            “{n.text}”
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {diff === null ? (
                       <span className="font-mono text-[10.5px] text-faint">Diffing…</span>
                     ) : diff.length === 0 ? (

@@ -110,9 +110,11 @@ function coalesceKey(c: EditCommand): string {
 /**
  * A feed-only annotation - a line of intent narration (e.g. Claude saying what it
  * is doing), shown in the activity feed but NOT an edit: it changes no project
- * state, so it stays out of the replayable edit stream (commits never carry it).
- * Shares the edit `seq` counter so it interleaves with edits in feed order.
- * Session-only for now (not persisted across reload).
+ * state, so it stays out of the *replayable* edit stream (materialize/applyEdit
+ * never touch it). Shares the edit `seq` counter so it interleaves with edits in
+ * feed order. Persisted as a parallel stream (notes.json) and swept into each
+ * commit, so the narration survives a reload and the version timeline reads as a
+ * narrated changelog (DESIGN.md section 7).
  */
 export interface FeedNote {
   seq: number;
@@ -246,14 +248,17 @@ export class EditLog {
   }
 
   /**
-   * Replace the log with persisted entries (on reload). Continues `seq` from the
-   * highest restored entry so new edits stay monotonic (correct even if older
-   * entries were trimmed). Clears the checkpoint stacks; persisted undo/redo is
-   * layered back on afterwards via restoreCheckpoints().
+   * Replace the log + feed notes with their persisted forms (on reload). Continues
+   * `seq` from the highest restored seq across *both* streams, so new edits and
+   * notes stay monotonic (correct even if older items were trimmed). Clears the
+   * checkpoint stacks; persisted undo/redo is layered back on afterwards via
+   * restoreCheckpoints().
    */
-  restore(entries: EditEntry[]): void {
+  restore(entries: EditEntry[], notes: FeedNote[] = []): void {
     this.entries = entries.slice();
-    this.seq = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.feedNotes = notes.slice();
+    const maxEntry = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.seq = notes.reduce((m, n) => Math.max(m, n.seq + 1), maxEntry);
     this.undoStack = [];
     this.redoStack = [];
     this.lastKey = null;
