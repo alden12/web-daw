@@ -31,6 +31,7 @@ import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/comm
 import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
 import { useProject } from "../audio/project/useProject";
+import { useRecorder } from "./useRecorder";
 import { useClip } from "../audio/sequencer/useClip";
 import { TransportBar } from "./TransportBar";
 import { InlineRename } from "./InlineRename";
@@ -565,12 +566,17 @@ function TrackHeader({
   track,
   depth,
   selected,
+  armed,
+  onArmToggle,
   projectStore,
   dispatch,
 }: {
   track: TrackMeta;
   depth: number;
   selected: boolean;
+  /** Audio tracks only: armed to receive the next recorded take. */
+  armed: boolean;
+  onArmToggle: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
 }) {
@@ -584,6 +590,21 @@ function TrackHeader({
       }`}
       style={{ paddingLeft: 10 + depth * INDENT }}
     >
+      {track.kind === "audio" && (
+        <button
+          type="button"
+          aria-label="Record enable"
+          aria-pressed={armed}
+          title={armed ? "Armed for recording" : "Arm for recording"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onArmToggle();
+          }}
+          className={`shrink-0 w-3.5 h-3.5 rounded-full border cursor-pointer ${
+            armed ? "bg-claude border-claude" : "border-muted hover:border-claude"
+          }`}
+        />
+      )}
       <MuteSolo
         muted={track.muted}
         solo={track.solo}
@@ -640,6 +661,7 @@ export function ArrangementTimeline({
   started: boolean;
 }) {
   const project = useProject(projectStore);
+  const rec = useRecorder(recorder);
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
@@ -1061,6 +1083,10 @@ export function ArrangementTimeline({
                   meta={row.track}
                   depth={row.depth}
                   selectedTrack={row.track.id === project.selectedTrackId}
+                  armed={rec.armedTrackId === row.track.id}
+                  onArmToggle={() =>
+                    recorder.setArmedTrack(rec.armedTrackId === row.track.id ? null : row.track.id)
+                  }
                   projectStore={projectStore}
                   dispatch={dispatch}
                   headerW={headerW}
@@ -1120,6 +1146,8 @@ function TrackRow({
   meta,
   depth,
   selectedTrack,
+  armed,
+  onArmToggle,
   projectStore,
   dispatch,
   headerW,
@@ -1138,6 +1166,8 @@ function TrackRow({
   meta: TrackMeta;
   depth: number;
   selectedTrack: boolean;
+  armed: boolean;
+  onArmToggle: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
   headerW: number;
@@ -1161,6 +1191,8 @@ function TrackRow({
           track={meta}
           depth={depth}
           selected={selectedTrack}
+          armed={armed}
+          onArmToggle={onArmToggle}
           projectStore={projectStore}
           dispatch={dispatch}
         />

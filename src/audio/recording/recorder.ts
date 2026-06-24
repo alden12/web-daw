@@ -16,7 +16,7 @@ import type { AudioEngine } from "../engine/AudioEngine";
 import type { Scheduler } from "../sequencer/scheduler";
 import type { ProjectStore } from "../project/projectStore";
 import type { Dispatch } from "../commands/types";
-import { newTrackId } from "../commands/ids";
+import { newClipId, newPlacementId, newTrackId } from "../commands/ids";
 import { audioStorageAvailable, putAudio } from "../audioStore";
 import { encodeWav } from "./wav";
 
@@ -32,11 +32,13 @@ export interface RecorderState {
   devices: { deviceId: string; label: string }[];
   /** Count-in length in bars (0 = none). */
   countInBars: number;
+  /** The audio track armed to receive the take; null = record into a new track. */
+  armedTrackId: string | null;
   error: string | null;
 }
 
 export class Recorder {
-  private state: RecorderState = { status: "idle", deviceId: null, devices: [], countInBars: 1, error: null };
+  private state: RecorderState = { status: "idle", deviceId: null, devices: [], countInBars: 1, armedTrackId: null, error: null };
   private readonly listeners = new Set<() => void>();
   private countInTimer: ReturnType<typeof setTimeout> | null = null;
   private startBeat = 0;
@@ -74,6 +76,19 @@ export class Recorder {
   }
   setCountInBars(bars: number): void {
     this.set({ countInBars: Math.max(0, bars) });
+  }
+  /** Arm an audio track to receive the next take (null = a fresh track). */
+  setArmedTrack(trackId: string | null): void {
+    this.set({ armedTrackId: trackId });
+  }
+  /** Arm a track and start (or, if already recording, stop) - the clip-rail trigger. */
+  recordInto(trackId: string): void {
+    if (this.isActive) {
+      void this.stop();
+      return;
+    }
+    this.set({ armedTrackId: trackId });
+    void this.start();
   }
 
   /** Refresh the device list (labels populate once mic permission is granted). */
@@ -154,24 +169,39 @@ export class Recorder {
     // played (clamped to the start). A loopback calibration refines this later.
     const offsetBeats = this.engine.inputLatencySec() * (this.project.tempo / 60);
     const startBeat = Math.max(0, this.startBeat - offsetBeats);
-    this.dispatch({
-      type: "addAudioTrack",
-      id: newTrackId(),
-      fileId,
-      name: this.nextTakeName(),
-      durationSec,
-      startBeat,
-    });
+    const name = this.nextTakeName();
+
+    // Record into the armed audio track if one is set (and still valid); otherwise
+    // create a fresh track for the take.
+    const armed = this.state.armedTrackId ? this.project.getTrack(this.state.armedTrackId) : undefined;
+    if (armed && armed.kind === "audio") {
+      this.dispatch({
+        type: "addAudioClip",
+        trackId: armed.id,
+        id: newClipId(),
+        placementId: newPlacementId(),
+        fileId,
+        name,
+        durationSec,
+        startBeat,
+      });
+    } else {
+      this.dispatch({ type: "addAudioTrack", id: newTrackId(), fileId, name, durationSec, startBeat });
+    }
   }
 
-  /** "Take N", N being the next unused index among existing Take tracks. */
+  /** "Take N", N being the next unused index among existing Take tracks/clips. */
   private nextTakeName(): string {
-    const used = this.project
-      .getStructure()
-      .tracks.map((t) => /^Take (\d+)$/.exec(t.name)?.[1])
-      .filter((n): n is string => n !== undefined && n !== null)
-      .map(Number);
-    return `Take ${used.length ? Math.max(...used) + 1 : 1}`;
+    const nums: number[] = [];
+    const add = (name: string) => {
+      const m = /^Take (\d+)$/.exec(name);
+      if (m) nums.push(Number(m[1]));
+    };
+    for (const t of this.project.getStructure().tracks) {
+      add(t.name);
+      for (const c of t.clips) add(c.name);
+    }
+    return `Take ${nums.length ? Math.max(...nums) + 1 : 1}`;
   }
 
   dispose(): void {

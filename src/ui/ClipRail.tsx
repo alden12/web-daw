@@ -7,7 +7,7 @@
  * (direct on the store); add / remove / rename go through dispatch, so undo/redo +
  * the activity feed cover them.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import type { ClipContent } from '../audio/project/types';
@@ -23,6 +23,7 @@ export function ClipRail({
   trackId,
   dispatch,
   orientation = 'horizontal',
+  footer,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -30,6 +31,8 @@ export function ClipRail({
   dispatch: Dispatch;
   /** 'horizontal' chip row; 'vertical' left rail (stacked, beside the roll). */
   orientation?: 'horizontal' | 'vertical';
+  /** Bottom action; replaces the instrument "+ Clip" button (e.g. a record button for audio). */
+  footer?: ReactNode;
 }) {
   const project = useProject(projectStore);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -163,30 +166,35 @@ export function ClipRail({
             </button>
             <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
             <span>{c.name}</span>
-            <button
-              type="button"
-              title={clips.length > 1 ? 'Remove clip' : 'Clear clip (replaces it with a fresh empty one)'}
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteClip(c.id);
-              }}
-              className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
-            >
-              ×
-            </button>
+            {/* Audio's last clip has no empty-clip fallback, so hide its no-op delete. */}
+            {!(track.kind === 'audio' && clips.length <= 1) && (
+              <button
+                type="button"
+                title={clips.length > 1 ? 'Remove clip' : 'Clear clip (replaces it with a fresh empty one)'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteClip(c.id);
+                }}
+                className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}
-      {track.kind === 'instrument' && (
-        <button
-          type="button"
-          title="Add a new empty clip"
-          onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
-          className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
-        >
-          + Clip
-        </button>
-      )}
+      {footer !== undefined
+        ? footer
+        : track.kind === 'instrument' && (
+            <button
+              type="button"
+              title="Add a new empty clip"
+              onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
+              className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
+            >
+              + Clip
+            </button>
+          )}
     </div>
   );
 }

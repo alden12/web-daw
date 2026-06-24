@@ -13,7 +13,9 @@ import type {
   InstrumentTrack,
 } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
+import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
 import { InstrumentPanel } from "./InstrumentPanel";
 import { EffectChain } from "./EffectChain";
@@ -159,17 +161,46 @@ function AudioClipPanel({
   );
 }
 
+/** Record a new take into this audio track (arms it first); stops if recording. */
+function AudioRecordButton({
+  trackId,
+  recorder,
+  recording,
+}: {
+  trackId: string;
+  recorder: Recorder;
+  recording: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => recorder.recordInto(trackId)}
+      title={recording ? "Stop recording" : "Record a new take into this track"}
+      className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-md border cursor-pointer ${
+        recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/85 border-claude/40 hover:bg-claude/10"
+      }`}
+    >
+      <span className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`} />
+      {recording ? "Stop" : "Rec"}
+    </button>
+  );
+}
+
 export function CenterWorkbench({
   projectStore,
   scheduler,
+  recorder,
   dispatch,
   selectedTrack,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
+  recorder: Recorder;
   dispatch: Dispatch;
   selectedTrack: Track | undefined;
 }) {
+  const rec = useRecorder(recorder);
+  const recording = rec.status === "recording" || rec.status === "counting";
   // The instrument+effects rack is a resizable, wrapping panel above the roll.
   const [deviceH, setDeviceH] = usePersistentNumber(
     "web-daw:devices-height",
@@ -273,30 +304,38 @@ export function CenterWorkbench({
         />
       </div>
 
-      {selectedTrack.kind === "instrument" ? (
-        <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:roll`}>
-          <div
-            ref={clipRailRef}
-            className="relative shrink-0 flex"
-            style={{ width: clipRailW }}
-          >
-            <ClipRail
-              projectStore={projectStore}
-              scheduler={scheduler}
-              trackId={selectedTrack.id}
-              dispatch={dispatch}
-              orientation="vertical"
-            />
-            <ResizeHandle
-              ariaLabel="Resize clips"
-              onResize={(x) =>
-                setClipRailW(
-                  x - (clipRailRef.current?.getBoundingClientRect().left ?? 0),
-                )
-              }
-              style={{ right: 0, top: 0, bottom: 0 }}
-            />
-          </div>
+      {/* Both kinds share the resizable clip rail on the left; the right is the
+          piano roll (instrument) or the audio-clip panel (audio). For audio, the
+          rail's footer is a record button that records a take into this track. */}
+      <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:body`}>
+        <div
+          ref={clipRailRef}
+          className="relative shrink-0 flex"
+          style={{ width: clipRailW }}
+        >
+          <ClipRail
+            projectStore={projectStore}
+            scheduler={scheduler}
+            trackId={selectedTrack.id}
+            dispatch={dispatch}
+            orientation="vertical"
+            footer={
+              selectedTrack.kind === "audio" ? (
+                <AudioRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />
+              ) : undefined
+            }
+          />
+          <ResizeHandle
+            ariaLabel="Resize clips"
+            onResize={(x) =>
+              setClipRailW(
+                x - (clipRailRef.current?.getBoundingClientRect().left ?? 0),
+              )
+            }
+            style={{ right: 0, top: 0, bottom: 0 }}
+          />
+        </div>
+        {selectedTrack.kind === "instrument" ? (
           <div className="flex-1 min-w-0 min-h-0 p-3">
             {(() => {
               const active =
@@ -315,14 +354,10 @@ export function CenterWorkbench({
               );
             })()}
           </div>
-        </div>
-      ) : (
-        <AudioClipPanel
-          track={selectedTrack}
-          dispatch={dispatch}
-          key={`${selectedTrack.id}:audio`}
-        />
-      )}
+        ) : (
+          <AudioClipPanel track={selectedTrack} dispatch={dispatch} />
+        )}
+      </div>
     </div>
   );
 }

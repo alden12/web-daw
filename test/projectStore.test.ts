@@ -247,6 +247,34 @@ describe('ProjectStore audio tracks', () => {
     expect(group.parentId).toBeNull();
   });
 
+  it('records a take into an existing audio track (clip pool + placement, active)', () => {
+    const p = new ProjectStore(false);
+    const t = p.addAudioTrack({ fileId: 'au-1', name: 'Vox', durationSec: 1 });
+    p.setTempo(120); // 2 beats/sec, so 2s -> 4 beats
+    p.addAudioClip({ trackId: t.id, id: 'c-take', placementId: 'p-take', fileId: 'au-2', name: 'Take 2', durationSec: 2, startBeat: 8 });
+    const got = p.getTrack(t.id)!;
+    expect(got.clips.map((c) => c.id)).toEqual([`c-${t.id}`, 'c-take']);
+    expect(got.activeClipId).toBe('c-take');
+    const placement = got.placements.find((pl) => pl.id === 'p-take')!;
+    expect(placement.clipId).toBe('c-take');
+    expect(placement.startBeat).toBe(8);
+    expect(placement.length).toBe(4); // 2s at 120bpm
+  });
+
+  it('addAudioClip is idempotent on the clip id (safe to replay) and no-ops on instrument tracks', () => {
+    const p = new ProjectStore(false);
+    const t = p.addAudioTrack({ fileId: 'au-1' });
+    const spec = { trackId: t.id, id: 'c-dup', placementId: 'p-dup', fileId: 'au-2', durationSec: 1 };
+    p.addAudioClip(spec);
+    p.addAudioClip(spec); // replay: no duplicate clip/placement
+    const got = p.getTrack(t.id)!;
+    expect(got.clips.filter((c) => c.id === 'c-dup')).toHaveLength(1);
+    expect(got.placements.filter((pl) => pl.id === 'p-dup')).toHaveLength(1);
+    const inst = p.addTrack(instrumentInfos()[0].type);
+    p.addAudioClip({ trackId: inst.id, id: 'c-x', placementId: 'p-x', fileId: 'au-3' });
+    expect((p.getTrack(inst.id) as { clips: unknown[] }).clips.some((c) => (c as { id: string }).id === 'c-x')).toBe(false);
+  });
+
   it('audio tracks carry an effect chain like instrument tracks', () => {
     const p = new ProjectStore(false);
     const t = p.addAudioTrack({ fileId: 'au-1' });
