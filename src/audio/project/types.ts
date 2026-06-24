@@ -108,6 +108,15 @@ export interface AudioClipData {
    */
   loopStartSec?: number;
   loopEndSec?: number;
+  /**
+   * Slide of the audio under the beat grid, in seconds (the clip's content offset).
+   * The grid and the loop window stay fixed; this moves the buffer underneath them,
+   * so a different part of the recording sits under the window and plays. Positive =
+   * the audio is slid later/right (silence appears under the window's head); negative
+   * = slid earlier/left (a later part of the buffer plays). Omitted = 0 (no slide).
+   * See `audioPlayWindow` for how it resolves to a buffer slice.
+   */
+  gridOffsetSec?: number;
 }
 
 /** Legacy (pre-v7): a clip variant bundling the whole sound. Read only for migration. */

@@ -114,10 +114,16 @@ function AudioClipPanel({
   const durBeats = Math.max(0.001, dur * bps);
   const loopStartSec = clip?.loopStartSec ?? 0;
   const loopEndSec = clip?.loopEndSec ?? dur;
+  // Grid slide: the audio's content offset, in beats. The beat grid stays fixed and
+  // the waveform (with its loop region) pans under it, so a transient can be lined up
+  // with a bar line. Positive = the audio sits later (a gap on the downbeat).
+  const gridOffsetSec = clip?.gridOffsetSec ?? 0;
+  const gridOffsetBeats = gridOffsetSec * bps;
 
   // Measure the preview width so the clip fills it: px-per-beat = width / clip-beats.
   const previewRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const slideRef = useRef<{ x: number; base: number } | null>(null);
   const [previewW, setPreviewW] = useState(0);
   const pxPerBeat = previewW > 0 ? previewW / durBeats : 0;
   useEffect(() => {
@@ -138,6 +144,8 @@ function AudioClipPanel({
   useEffect(() => {
     let raf = 0;
     const regionBeats = Math.max(0.001, (loopEndSec - loopStartSec) * bps);
+    // The loop window is fixed on the grid (the slide moves the audio under it, not
+    // the window), so the playhead sweeps the window's grid position straight.
     const loopStartBeats = loopStartSec * bps;
     const tick = () => {
       const el = playheadRef.current;
@@ -177,6 +185,7 @@ function AudioClipPanel({
     gain?: number;
     loopStartSec?: number;
     loopEndSec?: number;
+    gridOffsetSec?: number;
   }) =>
     dispatch({
       type: "setAudioClip",
@@ -184,6 +193,22 @@ function AudioClipPanel({
       clipId: clip.id,
       patch,
     });
+
+  // Drag the waveform body horizontally to slide the audio under the fixed grid.
+  const onSlideDown = (e: React.PointerEvent) => {
+    if (pxPerBeat <= 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    slideRef.current = { x: e.clientX, base: gridOffsetSec };
+  };
+  const onSlideMove = (e: React.PointerEvent) => {
+    const d = slideRef.current;
+    if (!d || !e.buttons || pxPerBeat <= 0) return;
+    const dxBeats = (e.clientX - d.x) / pxPerBeat;
+    setClip({ gridOffsetSec: d.base + dxBeats / bps });
+  };
+  const endSlide = () => {
+    slideRef.current = null;
+  };
 
   return (
     <div className="flex-1 min-h-0 p-3">
@@ -205,7 +230,10 @@ function AudioClipPanel({
           {/* Beat-grid ruler (drag the two handles to set the loop region) over the
               waveform; the area outside the loop is dimmed; the playhead sweeps the
               region during playback. */}
-          <div ref={previewRef} className="relative">
+          <div
+            ref={previewRef}
+            className="relative flex-1 min-h-0 flex flex-col"
+          >
             {previewW > 0 && dur > 0 && (
               <Ruler
                 viewBeats={durBeats}
@@ -216,22 +244,36 @@ function AudioClipPanel({
                 onSetLoopEnd={(b) => setClip({ loopEndSec: b / bps })}
               />
             )}
-            <div className="relative h-20 rounded-b bg-ground border border-line border-t-0 overflow-hidden">
-              <div className="absolute inset-y-0 left-0 right-0 bg-you/15" />
+            <div
+              onPointerDown={onSlideDown}
+              onPointerMove={onSlideMove}
+              onPointerUp={endSlide}
+              onDoubleClick={() => setClip({ gridOffsetSec: 0 })}
+              title="Drag to slide the audio under the grid (double-click to reset)"
+              className="relative flex-1 min-h-0 rounded-b bg-ground border border-line border-t-0 overflow-hidden cursor-ew-resize touch-none"
+            >
+              {/* The waveform pans under the fixed grid; its left edge is buffer
+                  time 0, shifted right by the slide. A canvas is a replaced element,
+                  so it needs an explicit height (h-full) to fill the box - top/bottom
+                  insets alone leave it at its intrinsic size. */}
               <Waveform
                 fileId={clip.fileId}
                 gain={clip.gain}
-                className="absolute inset-0 w-full h-full"
+                className="absolute top-0 h-full pointer-events-none"
+                style={{
+                  left: beatToX(gridOffsetBeats, pxPerBeat),
+                  width: previewW || "100%",
+                }}
               />
               {pxPerBeat > 0 && loopStartSec > 0 && (
                 <div
-                  className="absolute inset-y-0 left-0 bg-ground/65"
+                  className="absolute inset-y-0 left-0 bg-ground/65 pointer-events-none"
                   style={{ width: beatToX(loopStartSec * bps, pxPerBeat) }}
                 />
               )}
               {pxPerBeat > 0 && loopEndSec < dur && (
                 <div
-                  className="absolute inset-y-0 right-0 bg-ground/65"
+                  className="absolute inset-y-0 right-0 bg-ground/65 pointer-events-none"
                   style={{ left: beatToX(loopEndSec * bps, pxPerBeat) }}
                 />
               )}
@@ -242,6 +284,23 @@ function AudioClipPanel({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <span className="font-mono text-[11px] text-muted">
+              Offset
+              <span className="ml-2 text-faint">
+                {gridOffsetSec >= 0 ? "+" : "−"}
+                {Math.abs(gridOffsetSec).toFixed(2)}s
+              </span>
+              {gridOffsetSec !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setClip({ gridOffsetSec: 0 })}
+                  title="Reset offset"
+                  className="ml-2 text-faint hover:text-ink cursor-pointer"
+                >
+                  reset
+                </button>
+              )}
+            </span>
             <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
               <Fader
@@ -469,6 +528,7 @@ export function CenterWorkbench({
             <EffectChain
               projectStore={projectStore}
               trackId={selectedTrack.id}
+              showFirstArrow={selectedTrack.kind === "instrument"}
               dispatch={dispatch}
             />
           </div>

@@ -44,7 +44,7 @@ export type LocalEdit =
       type: 'setAudioClip';
       trackId: string;
       clipId?: string;
-      patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number };
+      patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number };
     }
   | {
       // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool

@@ -524,7 +524,7 @@ export class ProjectStore {
   setAudioClip(
     trackId: string,
     clipId: string | undefined,
-    patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number },
+    patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number },
   ): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== 'audio') return;
@@ -532,6 +532,12 @@ export class ProjectStore {
     if (!clip) return;
     if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, MAX_AUDIO_GAIN);
     if (patch.name !== undefined) clip.name = patch.name;
+    // Grid slide: an alignment nudge, bounded to ±the clip length so the audio can
+    // never be slid entirely out of reach of the downbeat.
+    if (patch.gridOffsetSec !== undefined) {
+      const bound = clip.durationSec || Infinity;
+      clip.gridOffsetSec = clamp(patch.gridOffsetSec, -bound, bound);
+    }
     // The loop region is a slice of the buffer in seconds, clamped inside the clip
     // with a minimum span; either end may be set independently.
     const dur = clip.durationSec || 0;

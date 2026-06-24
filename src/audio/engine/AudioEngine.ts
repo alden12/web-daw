@@ -23,6 +23,7 @@ import { createEffect } from '../effects/registry';
 import type { Effect } from '../effects/types';
 import { getAudioBuffer } from '../audioStore';
 import { soloMutedTrackIds } from './mix';
+import { audioPlayWindow } from './audioWindow';
 
 interface TrackNode {
   instrument: Instrument;
@@ -287,12 +288,20 @@ export class AudioEngine {
     } else {
       source.connect(node.input);
     }
-    // Play only the clip's loop region (a slice of the buffer); the scheduler
-    // re-triggers it to tile/repeat across a placement. Omitted region = whole buffer.
-    const offset = Math.max(0, Math.min(clip.loopStartSec ?? 0, buffer.duration));
-    const end = clip.loopEndSec !== undefined ? Math.min(clip.loopEndSec, buffer.duration) : buffer.duration;
-    const span = end - offset;
-    if (offset > 0 || span < buffer.duration) source.start(when, offset, Math.max(0, span));
+    // Play only the slice of the buffer under the (grid-fixed) loop window; the
+    // scheduler re-triggers it to tile/repeat across a placement. The clip's grid
+    // slide moves the buffer under the window, so the played slice shifts with it.
+    const win = audioPlayWindow(clip.loopStartSec, clip.loopEndSec, clip.gridOffsetSec, buffer.duration);
+    if (!win) {
+      try {
+        source.disconnect();
+      } catch {
+        /* not connected */
+      }
+      return; // the window fell entirely off the buffer - nothing to play
+    }
+    if (win.offset > 0 || win.span < buffer.duration || win.delaySec > 0)
+      source.start(when + win.delaySec, win.offset, win.span);
     else source.start(when);
     node.sources.add(source);
     source.onended = () => {
