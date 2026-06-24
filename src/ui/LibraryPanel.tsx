@@ -8,8 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
-import { INSTRUMENT_CATALOG } from "../audio/instruments/catalog";
-import { EFFECT_CATALOG } from "../audio/effects/catalog";
+import { instrumentInfos } from "../audio/instruments/catalog";
+import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
@@ -241,14 +241,14 @@ export function LibraryPanel({
         Instruments
       </div>
       <Category label="Synths">
-        {Object.entries(INSTRUMENT_CATALOG).map(([type, def]) => (
+        {instrumentInfos().map((def) => (
           <Leaf
-            key={type}
+            key={def.type}
             label={def.label}
             onClick={() =>
               dispatch({
                 type: "createTrack",
-                instrumentType: type,
+                instrumentType: def.type,
                 id: newTrackId(),
               })
             }
@@ -260,9 +260,9 @@ export function LibraryPanel({
         Effects
       </div>
       <Category label="All effects">
-        {Object.entries(EFFECT_CATALOG).map(([type, def]) => (
+        {effectInfos().map((def) => (
           <Leaf
-            key={type}
+            key={def.type}
             label={def.label}
             fx
             onClick={() => {
@@ -271,7 +271,7 @@ export function LibraryPanel({
                 dispatch({
                   type: "addEffect",
                   hostId,
-                  effectType: type,
+                  effectType: def.type,
                   id: newEffectId(),
                 });
             }}

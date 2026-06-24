@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ParamStore } from '../src/audio/params/store';
-import { EFFECT_CATALOG, effectSchema } from '../src/audio/effects/catalog';
+import { effectInfos, effectSchema } from '../src/audio/effects/catalog';
 import { createEffect } from '../src/audio/effects/registry';
 
 /**
@@ -49,7 +49,7 @@ function fakeCtx() {
 }
 
 describe('effects', () => {
-  for (const type of Object.keys(EFFECT_CATALOG)) {
+  for (const { type } of effectInfos()) {
     it(`${type}: constructs with input/output and applies bindings without wiring to undefined`, () => {
       const store = new ParamStore(effectSchema(type));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,7 +70,7 @@ describe('effects', () => {
   }
 
   it('every effect schema includes a mix param', () => {
-    for (const [, def] of Object.entries(EFFECT_CATALOG)) {
+    for (const def of effectInfos()) {
       expect(def.schema.some((s) => s.id === 'mix')).toBe(true);
     }
   });

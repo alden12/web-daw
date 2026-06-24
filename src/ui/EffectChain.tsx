@@ -8,7 +8,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { useProject } from "../audio/project/useProject";
-import { EFFECT_CATALOG, effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
+import { effectInfos, effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId } from "../audio/commands/ids";
 import { Knob } from "./Knob";
@@ -165,13 +165,13 @@ export function EffectChain({
             role="menu"
             className="absolute left-0 top-9 z-20 min-w-32 flex flex-col gap-0.5 p-1 rounded-lg border border-line bg-panel shadow-lg"
           >
-            {Object.entries(EFFECT_CATALOG).map(([type, def]) => (
+            {effectInfos().map((def) => (
               <button
-                key={type}
+                key={def.type}
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  dispatch({ type: "addEffect", hostId: trackId, effectType: type, id: newEffectId() });
+                  dispatch({ type: "addEffect", hostId: trackId, effectType: def.type, id: newEffectId() });
                   setMenuOpen(false);
                 }}
                 className="flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[12.5px] text-ink cursor-pointer hover:bg-you/10"

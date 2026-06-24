@@ -15,13 +15,13 @@ import { ParamStore } from '../params/store';
 import { ClipStore } from '../sequencer/clipStore';
 import { GRID } from '../sequencer/types';
 import {
-  INSTRUMENT_CATALOG,
+  hasInstrument,
   catalogEntry,
   instrumentSchema,
   instrumentFamily,
   DEFAULT_INSTRUMENT,
 } from '../instruments/catalog';
-import { EFFECT_CATALOG, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
+import { hasEffect, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
 import type { PatchValues } from '../params/types';
 import type {
   ProjectData,
@@ -379,7 +379,7 @@ export class ProjectStore {
 
   // --- tracks ---------------------------------------------------------------
   addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
-    const type = instrumentType in INSTRUMENT_CATALOG ? instrumentType : DEFAULT_INSTRUMENT;
+    const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
     const parentId =
       opts.groupId && this.getGroup(opts.groupId)
@@ -772,7 +772,7 @@ export class ProjectStore {
   addEffect(hostId: string, type: string, id?: string): EffectInstance | undefined {
     const host = this.getEffectHost(hostId);
     if (!host) return undefined;
-    const fxType = type in EFFECT_CATALOG ? type : DEFAULT_EFFECT;
+    const fxType = hasEffect(type) ? type : DEFAULT_EFFECT;
     if (id) {
       const existing = host.effects.find((fx) => fx.id === id);
       if (existing) return existing;

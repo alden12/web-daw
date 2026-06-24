@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectStore } from '../src/audio/project/projectStore';
-import { INSTRUMENT_CATALOG } from '../src/audio/instruments/catalog';
+import { instrumentInfos } from '../src/audio/instruments/catalog';
 
 describe('ProjectStore', () => {
   it('seeds one subtractive track by default and selects it', () => {
@@ -292,14 +292,14 @@ describe('ProjectStore audio tracks', () => {
 
 describe('instrument catalog', () => {
   it('exposes a label and a valid schema for every instrument type', () => {
-    for (const [type, def] of Object.entries(INSTRUMENT_CATALOG)) {
+    for (const def of instrumentInfos()) {
       expect(def.label).toBeTruthy();
       expect(def.schema.length).toBeGreaterThan(0);
       for (const spec of def.schema) {
         expect(spec.id).toBeTruthy();
         if (spec.kind === 'number') expect(spec.min).toBeLessThanOrEqual(spec.max);
       }
-      expect(type).toBeTruthy();
+      expect(def.type).toBeTruthy();
     }
   });
 });

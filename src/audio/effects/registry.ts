@@ -3,6 +3,9 @@
  * createEffect to realize a track's chain. Pure catalog data (labels/schemas)
  * lives in catalog.ts so non-audio consumers (ProjectStore, MCP server) stay
  * DOM-free.
+ *
+ * Factories are registered, mirroring the data registry in catalog.ts:
+ * `registerEffectFactory` is the audio half of the extension point.
  */
 import type { ParamStore } from '../params/store';
 import type { Effect } from './types';
@@ -10,21 +13,28 @@ import { DelayEffect } from './Delay';
 import { DistortionEffect } from './Distortion';
 import { ReverbEffect } from './Reverb';
 import { FilterEffect } from './Filter';
-import { DEFAULT_EFFECT, type EffectType } from './catalog';
+import { ChorusEffect } from './Chorus';
+import { DEFAULT_EFFECT } from './catalog';
 
 type EffectFactory = (ctx: AudioContext, store: ParamStore) => Effect;
 
-// Typed off the catalog keys: a cataloged effect without a factory won't compile.
-const FACTORIES: Record<EffectType, EffectFactory> = {
-  delay: (ctx, store) => new DelayEffect(ctx, store),
-  distortion: (ctx, store) => new DistortionEffect(ctx, store),
-  reverb: (ctx, store) => new ReverbEffect(ctx, store),
-  filter: (ctx, store) => new FilterEffect(ctx, store),
-};
+const FACTORIES = new Map<string, EffectFactory>();
+
+/** Register the audio factory for an effect type (pair with registerEffect). */
+export function registerEffectFactory(type: string, factory: EffectFactory): void {
+  FACTORIES.set(type, factory);
+}
 
 export function createEffect(type: string, ctx: AudioContext, store: ParamStore): Effect {
-  const make = FACTORIES[type as EffectType] ?? FACTORIES[DEFAULT_EFFECT];
+  const make = FACTORIES.get(type) ?? FACTORIES.get(DEFAULT_EFFECT)!;
   return make(ctx, store);
 }
 
-export { EFFECT_CATALOG, EFFECT_TYPES, effectSchema, effectCatalogEntry, DEFAULT_EFFECT } from './catalog';
+// --- built-in factories (self-registered) ---------------------------------
+registerEffectFactory('delay', (ctx, store) => new DelayEffect(ctx, store));
+registerEffectFactory('distortion', (ctx, store) => new DistortionEffect(ctx, store));
+registerEffectFactory('reverb', (ctx, store) => new ReverbEffect(ctx, store));
+registerEffectFactory('filter', (ctx, store) => new FilterEffect(ctx, store));
+registerEffectFactory('chorus', (ctx, store) => new ChorusEffect(ctx, store));
+
+export { effectInfos, effectSchema, effectCatalogEntry, hasEffect, DEFAULT_EFFECT } from './catalog';

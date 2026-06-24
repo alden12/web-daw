@@ -14,8 +14,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { RawData } from 'ws';
 import { ProjectStore } from '../src/audio/project/projectStore';
 import type { Track, InstrumentTrack, EffectInstance, Group } from '../src/audio/project/projectStore';
-import { INSTRUMENT_CATALOG, instrumentSchema, instrumentFamily } from '../src/audio/instruments/catalog';
-import { EFFECT_CATALOG, effectSchema } from '../src/audio/effects/catalog';
+import { instrumentInfos, hasInstrument, instrumentSchema, instrumentFamily } from '../src/audio/instruments/catalog';
+import { effectInfos, hasEffect, effectSchema } from '../src/audio/effects/catalog';
 import { validateParam } from '../src/audio/params/validate';
 import type { NoteEvent } from '../src/audio/sequencer/types';
 import { DEFAULT_WS_PORT } from '../src/audio/mcp/protocol';
@@ -209,7 +209,7 @@ export function createDawMcp(
             tempoBpm: mirror.tempo,
             lengthBeats: mirror.length,
             selectedTrackId: mirror.selectedId,
-            instruments: Object.entries(INSTRUMENT_CATALOG).map(([id, def]) => ({ id, label: def.label, family: def.family })),
+            instruments: instrumentInfos().map((def) => ({ id: def.type, label: def.label, family: def.family })),
             tracks: mirror.getTracks().map((t) => ({
               id: t.id,
               name: t.name,
@@ -242,8 +242,8 @@ export function createDawMcp(
       },
     },
     async ({ instrument, name, group }) => {
-      if (!(instrument in INSTRUMENT_CATALOG)) {
-        return fail(`Unknown instrument "${instrument}". Options: ${Object.keys(INSTRUMENT_CATALOG).join(', ')}.`);
+      if (!hasInstrument(instrument)) {
+        return fail(`Unknown instrument "${instrument}". Options: ${instrumentInfos().map((i) => i.type).join(', ')}.`);
       }
       if (!connected()) return fail('No DAW tab connected.');
       let groupId: string;
@@ -494,7 +494,7 @@ export function createDawMcp(
         JSON.stringify(
           {
             host: r.hostId,
-            available: Object.entries(EFFECT_CATALOG).map(([id, def]) => ({ id, label: def.label })),
+            available: effectInfos().map((def) => ({ id: def.type, label: def.label })),
             effects: r.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed })),
           },
           null,
@@ -514,8 +514,8 @@ export function createDawMcp(
     async ({ track, group, effect }) => {
       const r = resolveHost(track, group);
       if ('error' in r) return fail(r.error);
-      if (!(effect in EFFECT_CATALOG)) {
-        return fail(`Unknown effect "${effect}". Options: ${Object.keys(EFFECT_CATALOG).join(', ')}.`);
+      if (!hasEffect(effect)) {
+        return fail(`Unknown effect "${effect}". Options: ${effectInfos().map((e) => e.type).join(', ')}.`);
       }
       const id = makeEffectId();
       if (!sendToTab({ type: 'addEffect', hostId: r.hostId, effectType: effect, id })) return fail('No DAW tab connected.');
