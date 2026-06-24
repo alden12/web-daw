@@ -1,10 +1,12 @@
 /**
- * An inline-renameable label: shows text, turns into an input on double-click,
- * and commits on Enter / blur (Escape cancels). Shared by the timeline track and
- * group headers and the center workbench header so renaming feels the same
- * everywhere. `className` carries the font/colour so the label and its input
- * match their surroundings; pointer events are stopped so editing never triggers
- * the row's select/drag.
+ * An inline-renameable label: shows text (truncating, with the full value on hover),
+ * turns into an input on double-click, and commits on Enter / blur (Escape cancels).
+ * The canonical editable-title component - shared by the timeline track/group headers,
+ * the center workbench header, and the clip rail so renaming feels the same everywhere.
+ * `className` carries the font/colour so the label and its input match their
+ * surroundings; pointer events are stopped so editing never triggers the row's
+ * select/drag. The hover title defaults to the full value plus a rename hint (so a
+ * truncated name is readable on hover); pass `title` to override it.
  */
 import { useState } from "react";
 
@@ -12,7 +14,7 @@ export function InlineRename({
   value,
   onCommit,
   className = "",
-  title = "Double-click to rename",
+  title,
 }: {
   value: string;
   onCommit: (name: string) => void;
@@ -59,7 +61,7 @@ export function InlineRename({
         setDraft(value);
         setEditing(true);
       }}
-      title={title}
+      title={title ?? `${value} (double-click to rename)`}
       className={`${className} truncate cursor-text`}
     >
       {value}

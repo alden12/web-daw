@@ -480,6 +480,30 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 
 **Near-term - UI on top of the current model**
 
+- **UI tidy-ups (batch, slices 25-26 + follow-ons).** A pass of small/medium polish, several
+  sharing three reusable primitives built once and reused (an editable/truncating **title**, a
+  kebab **context menu**, and a **draggable resize area**, alongside the existing `ResizeHandle`):
+  - *Editable title everywhere* - one component for inline-rename + truncate-with-full-title-on-hover,
+    applied to track / instrument / effect / clip names (consolidates `InlineRename`). **[foundational]**
+  - *Kebab (⋮) context menus* - replace the patch × and the "add group" button with ⋮ menus:
+    tracks/patches get Delete (and later Duplicate); the add menu offers Add group / Add empty track. **[foundational]**
+  - *Draggable resize areas* - per-track height (drag the track's bottom edge) and a drag-expandable
+    clip area, reusing the resize primitive. **[foundational]**
+  - *Clip delete always available* - show the × even on the last clip; deleting the last one replaces
+    it with a fresh empty clip (ids minted in the UI, so replay stays deterministic).
+  - *Feed: committed vs uncommitted styling* - drop the separate "autosaved" marker; render committed
+    entries as normal white text and uncommitted ones greyed/italic, "saved" on hover (compare entry
+    seq to the latest commit's `lastSeq`).
+  - *Feed: group same-device edits* - collapse consecutive param edits on one instrument/effect into a
+    single grouped row to save space (display-only; distinct from edit coalescing).
+  - *Remove the instrument family chip* in the library (added then judged unnecessary).
+  - *Selected track-header opacity* - a selected track header used a translucent tint, letting the
+    lane's clip notes bleed through the sticky header column; use an opaque teal-tinted panel color.
+  - *Master gain* - a project-level master gain (the engine already has the master `GainNode`); a slider
+    in the timeline's top-left above the track headers, plus model/persistence (+ MCP).
+  - *Library drag-and-drop (feature, own slice)* - drag an instrument / patch / effect onto a track, the
+    empty lane area, or the instrument slot to create (or replace) a track's device, with a confirm
+    dialog when replacing an existing instrument + effects.
 - **Group/track selection + group-FX editing in the workbench** (next, small). Select a
   group or track and edit its effect rack in the center workbench; generalize selection
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).

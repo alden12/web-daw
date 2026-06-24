@@ -73,13 +73,11 @@ function Category({
 function Leaf({
   label,
   fx,
-  chip,
   indent = "pl-8",
   onClick,
 }: {
   label: string;
   fx?: boolean;
-  chip?: string;
   indent?: string;
   onClick: () => void;
 }) {
@@ -87,17 +85,13 @@ function Leaf({
     <button
       type="button"
       onClick={onClick}
+      title={label}
       className={`flex items-center gap-2.5 w-full text-left ${indent} pr-4 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10`}
     >
       <span
         className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`}
       />
       <span className="truncate">{label}</span>
-      {chip && (
-        <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wide text-faint bg-line/40 rounded px-1 py-0.5">
-          {chip}
-        </span>
-      )}
     </button>
   );
 }
@@ -326,7 +320,6 @@ export function LibraryPanel({
           <Leaf
             key={def.type}
             label={def.label}
-            chip={def.family}
             onClick={() =>
               dispatch({
                 type: "createTrack",
