@@ -490,6 +490,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     menu offers Add empty track / Add group. The popover renders in a **portal** (fixed-positioned) so it is
     never clipped by a row's overflow or painted over by a sibling row's controls, and only one menu is open
     at a time. **[foundational]**
+  - *BUG: context-menu popover can open offscreen.* `Menu` positions its portal popover at `top:
+    trigger.bottom + 4` with no viewport clamp, so a trigger near the bottom edge (e.g. the last track's ⋮)
+    opens a menu that runs off the bottom; same for the right edge. Fix: measure the popover and flip
+    above / clamp inside the viewport when it would overflow (in [ui/Menu.tsx](src/ui/Menu.tsx)).
   - *Timeline resize handle vs loop markers - DONE (slice 26).* The bottom-timeline resize handle straddled
     the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
   - *Clip-rail width drag-resize - DONE.* The clip pool beside the piano roll is now drag-resizable
