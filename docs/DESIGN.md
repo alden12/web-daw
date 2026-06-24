@@ -653,6 +653,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   that fills its parent (ResizeObserver redraw on zoom), in the theme accent. Falls back to the plain
   block while decoding / on failure. v1 stretches the clip across the block (a recorded take's
   placement is its natural length, so 1:1); tiling looped windows + a spectrogram are follow-ups.
+- **Audio clip beat grid + loop region (NEXT slice).** A bar/beat `Ruler` over the waveform in the
+  audio-clip panel + draggable loop start/end handles. Looping needs no scheduler rework: store the
+  region (`loopStartSec`/`loopEndSec`) on the clip, play that slice via `source.start(when, offset,
+  duration)`, and the existing per-placement re-trigger tiles it (a longer placement repeats the
+  region). Same slice: allow clip **gain > 1** (boost quiet recordings; clamp ~4x / +12 dB, master
+  limiter guards clipping).
+- **Audio pitch & time (own slice, harder).** (a) **Pitch-shift** - change a clip's key while keeping
+  its speed; and (b) **time-stretch** - change speed while keeping pitch (also the basis for warp /
+  tempo-following audio). Web Audio's `playbackRate`/`detune` couple the two, so both need a real
+  pitch/time algorithm (phase vocoder / WSOLA). Pragmatic path: integrate a JS/WASM library
+  (SoundTouch.js for a first cut; signalsmith-stretch / Rubber Band for quality), run it **offline**
+  over the decoded buffer to produce a derived buffer cached by `(fileId, semitones, ratio)`, and
+  point the clip at it; a ±semitone + tempo-ratio control on the clip. Realtime worklet shifting +
+  Ableton-style **warp markers** (align transients to the grid) build on this later.
 - **Recording follow-ups (later):** MCP arm/record tools, input level meter, remembered device +
   eager enumeration, software-monitoring option, loopback **latency calibration** (store the offset
   on the region), punch-in at the playhead, multi-track arm, stereo.
