@@ -721,6 +721,22 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   pure `(notes, range, ctx)` transforms run in the scheduler. Full design in section 15.
 - **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
   instrument catalog and the slice-8 audio-clip storage.
+- **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or:
+  - *Synthesized classic voices (preferred for 808/909/707/606/LinnDrum).* The analog machines are
+    very synthesizable (sine + pitch-drop kick; noise + bandpass snare/hats), so model each voice as
+    a schema-driven instrument in the catalog/registry rather than shipping static WAVs. This fits the
+    parameter-schema keystone (tunable + automatable + MCP-drivable for free), reuses the synth engine,
+    and **sidesteps sample licensing entirely** - the legendary Roland recordings have murky rights.
+  - *Sampled kits via the **Sampler instrument** (above) for acoustic / character kits.* The constraint
+    for a (possibly distributed) web app is a license that permits **redistribution inside software**,
+    not just "free to use in your music": prioritize **CC0** (public domain, zero friction) then
+    **CC-BY** (keep a CREDITS file); avoid CC-BY-NC and "royalty-free for music only" packs. Verify the
+    actual license text per pack before bundling - terms drift. Curate small for the web (one velocity
+    layer per voice; OPFS content-addressed storage already exists). Clean, openly-licensed sources to
+    lean on: **DrumGizmo** kits (Black Pearl / MuldjordKit / Crocell, CC-BY-SA / some CC0; full
+    multi-velocity acoustic), **AVLDrumkits** (same lineage), **Salamander Drumkit** (CC-BY),
+    **Hydrogen** drumkits (GPL/CC, incl. some electronic kits), **Freesound** filtered to CC0, and the
+    **TidalCycles Dirt-Samples** one-shot collection (GitHub; mixed licensing, check per folder).
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
