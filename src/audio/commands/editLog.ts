@@ -306,9 +306,8 @@ function packRedo(stack: Checkpoint[]): PackedStack {
   return { base: stack[stack.length - 1].snap, steps: stack.map((cp) => ({ command: cp.command, author: cp.author })) };
 }
 
-/** Rebuild an undo stack from packed form; a legacy array (full snapshots) passes through. */
-function unpackUndo(packed: PackedStack | Checkpoint[] | null | undefined): Checkpoint[] {
-  if (Array.isArray(packed)) return packed;
+/** Rebuild an undo stack from packed form (base snapshot + forward-replayed steps). */
+function unpackUndo(packed: PackedStack | null | undefined): Checkpoint[] {
   if (!packed?.base) return [];
   const store = new ProjectStore(false);
   store.load(packed.base);
@@ -324,9 +323,8 @@ function unpackUndo(packed: PackedStack | Checkpoint[] | null | undefined): Chec
   return out;
 }
 
-/** Rebuild a redo stack from packed form; a legacy array (full snapshots) passes through. */
-function unpackRedo(packed: PackedStack | Checkpoint[] | null | undefined): Checkpoint[] {
-  if (Array.isArray(packed)) return packed;
+/** Rebuild a redo stack from packed form (top snapshot + steps replayed back down it). */
+function unpackRedo(packed: PackedStack | null | undefined): Checkpoint[] {
   if (!packed?.base) return [];
   const n = packed.steps.length;
   const store = new ProjectStore(false);
