@@ -61,6 +61,33 @@ describe('EditLog', () => {
     expect(project.getTrack('t-1')?.instrumentType).toBe('fm');
   });
 
+  it('a recorded MIDI take punches in over the lane, and undo restores what was beneath', () => {
+    const { project, log } = setup();
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    project.removePlacement('t-1', 'p-t-1'); // drop the auto-seeded placement for a clean lane
+    project.addPlacement('t-1', { id: 'p-old', startBeat: 0, length: 8 }); // seed clip beneath
+    const lane = () => project.getStructure().tracks.find((t) => t.id === 't-1')!.placements;
+
+    log.dispatch({
+      type: 'addNoteClip',
+      trackId: 't-1',
+      id: 'c-take',
+      placementId: 'p-take',
+      notes: [{ id: 'n1', pitch: 60, start: 0, length: 1, velocity: 0.8 }],
+      lengthBeats: 4,
+      startBeat: 0,
+    });
+    // [0,4) of the seed clip is punched out; only the take + the [4,8) remnant remain.
+    expect(lane().map((p) => p.id).sort()).toEqual(['p-old', 'p-take']);
+    expect(lane().find((p) => p.id === 'p-old')!.startBeat).toBe(4);
+
+    log.undo();
+    const restored = lane();
+    expect(restored.map((p) => p.id)).toEqual(['p-old']);
+    expect(restored[0].startBeat).toBe(0);
+    expect(restored[0].length).toBe(8);
+  });
+
   it('undo reverts a parameter change and a note edit', () => {
     const { project, log } = setup();
     log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });

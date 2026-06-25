@@ -1,12 +1,17 @@
 /**
  * The recording controller: orchestrates a take from arm to placement, and holds
  * the transient recording state the transport UI subscribes to (it is NOT part of
- * the project/edit stream - like selection and transport). The realtime sample
- * path lives in the AudioEngine (Web Audio); this coordinates engine + scheduler +
- * storage and then emits ONE durable edit (`addAudioTrack`) carrying the recorded
- * sample's content hash - the same edit audio import uses, so replay/persistence
- * come for free and stay deterministic (the capture is a side effect; the edit is
- * pure data).
+ * the project/edit stream - like selection and transport). It records into the
+ * armed track, or - if nothing is explicitly armed - the selected track; the
+ * target's kind picks the mode: an audio track (or none) captures the mic, an
+ * instrument track captures live MIDI notes.
+ *
+ * The realtime sample path lives in the AudioEngine (Web Audio); MIDI notes are
+ * captured here via noteOn/noteOff stamped against arrangement beats. Either way
+ * the take ends in ONE durable edit (`addAudioTrack`/`addAudioClip` or
+ * `addNoteClip`) of pure data, so replay/persistence come for free and stay
+ * deterministic (the capture is a side effect; the edit is pure data). A take
+ * punches in over the lane - its clip replaces whatever it overlaps.
  *
  * Count-in: before capture, schedule N bars of metronome clicks on the audio clock
  * and start the transport + capture when they finish, so the performer plays in
@@ -16,12 +21,22 @@ import type { AudioEngine } from "../engine/AudioEngine";
 import type { Scheduler } from "../sequencer/scheduler";
 import type { ProjectStore } from "../project/projectStore";
 import type { Dispatch } from "../commands/types";
-import { newClipId, newPlacementId, newTrackId } from "../commands/ids";
+import { newClipId, newNoteId, newPlacementId, newTrackId } from "../commands/ids";
 import { audioStorageAvailable, putAudio } from "../audioStore";
+import { GRID, type NoteEvent } from "../sequencer/types";
 import { encodeWav } from "./wav";
 
 const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
 const COUNT_IN_LEAD_SEC = 0.12; // small lead so the first click is not clipped
+
+/** What the next take captures: audio from the mic, or MIDI notes played live. */
+type CaptureMode = "audio" | "midi";
+
+/** A note still held down mid-take (its onset beat, awaiting a note-off to close it). */
+interface HeldNote {
+  startBeat: number;
+  velocity: number;
+}
 
 export type RecorderStatus = "idle" | "requesting" | "counting" | "recording" | "error";
 
@@ -42,6 +57,13 @@ export class Recorder {
   private readonly listeners = new Set<() => void>();
   private countInTimer: ReturnType<typeof setTimeout> | null = null;
   private startBeat = 0;
+  // The take in flight: what it captures and where it lands. For MIDI, notes are
+  // accumulated live - `held` is keyed by pitch (a note awaiting its note-off);
+  // `captured` holds the finished notes (absolute arrangement beats).
+  private mode: CaptureMode = "audio";
+  private targetTrackId: string | null = null;
+  private readonly held = new Map<number, HeldNote>();
+  private captured: { pitch: number; velocity: number; startBeat: number; endBeat: number }[] = [];
 
   private readonly engine: AudioEngine;
   private readonly scheduler: Scheduler;
@@ -105,21 +127,32 @@ export class Recorder {
     else void this.start();
   }
 
-  /** Arm the mic, run the count-in, then start the transport + capture. */
+  /**
+   * Run the count-in, then start the transport + capture. The take lands in the
+   * armed track, or - if nothing is explicitly armed - the selected track. An
+   * instrument target records MIDI (no mic); an audio target (or no target)
+   * records audio.
+   */
   async start(): Promise<void> {
     if (this.isActive) return;
     if (!this.engine.started) {
       this.set({ status: "error", error: "Start audio first" });
       return;
     }
-    if (!audioStorageAvailable()) {
+    const targetId = this.state.armedTrackId ?? this.project.selectedId;
+    const target = targetId ? this.project.getTrack(targetId) : undefined;
+    this.mode = target?.kind === "instrument" ? "midi" : "audio";
+    this.targetTrackId = targetId ?? null;
+    if (this.mode === "audio" && !audioStorageAvailable()) {
       this.set({ status: "error", error: "Recording needs audio storage (unavailable here)" });
       return;
     }
     try {
       this.set({ status: "requesting", error: null });
-      await this.engine.enableInput(this.state.deviceId ?? undefined);
-      await this.refreshDevices();
+      if (this.mode === "audio") {
+        await this.engine.enableInput(this.state.deviceId ?? undefined);
+        await this.refreshDevices();
+      }
 
       const interval = 60 / this.project.tempo; // seconds per beat
       const countBeats = this.state.countInBars * BEATS_PER_BAR;
@@ -132,8 +165,13 @@ export class Recorder {
         this.countInTimer = null;
         if (this.state.status === "idle") return; // stopped during the count-in
         if (!this.scheduler.isPlaying) this.scheduler.play();
-        const startTime = this.engine.startRecording();
-        this.startBeat = this.scheduler.beatAtTime(startTime);
+        if (this.mode === "audio") {
+          this.startBeat = this.scheduler.beatAtTime(this.engine.startRecording());
+        } else {
+          this.held.clear();
+          this.captured = [];
+          this.startBeat = this.scheduler.beatAtTime(this.engine.currentTime);
+        }
         this.set({ status: "recording" });
       };
 
@@ -149,13 +187,44 @@ export class Recorder {
     }
   }
 
-  /** Stop the take: assemble the WAV, store it, and place it on a new audio track. */
+  /**
+   * Capture a live note-on while a MIDI take is recording (a no-op otherwise). The
+   * onset is stamped against arrangement beats now; the matching note-off closes it.
+   */
+  noteOn(midi: number, velocity = 0.8): void {
+    if (this.state.status !== "recording" || this.mode !== "midi") return;
+    this.held.set(midi, { startBeat: this.scheduler.beatAtTime(this.engine.currentTime), velocity });
+  }
+
+  /** Close a held note at the current beat (a no-op if it was not being captured). */
+  noteOff(midi: number): void {
+    if (this.mode !== "midi") return;
+    const note = this.held.get(midi);
+    if (!note) return;
+    this.held.delete(midi);
+    const endBeat = this.scheduler.beatAtTime(this.engine.currentTime);
+    this.captured.push({ pitch: midi, velocity: note.velocity, startBeat: note.startBeat, endBeat });
+  }
+
+  /** Stop the take and place it: a WAV on an audio track, or a note clip on the MIDI track. */
   async stop(): Promise<void> {
     if (this.countInTimer) {
       clearTimeout(this.countInTimer);
       this.countInTimer = null;
     }
     const wasCounting = this.state.status === "counting";
+    if (this.mode === "midi") {
+      this.finishMidiTake(wasCounting);
+    } else {
+      await this.finishAudioTake(wasCounting);
+    }
+    // The arm is one-shot: the next take defaults back to the selected track.
+    this.set({ armedTrackId: null });
+    this.targetTrackId = null;
+  }
+
+  /** Assemble the captured WAV, store it, and place it (punching in over the lane). */
+  private async finishAudioTake(wasCounting: boolean): Promise<void> {
     const capture = wasCounting ? null : await this.engine.stopRecording();
     if (this.scheduler.isPlaying) this.scheduler.stop();
     this.engine.disableInput();
@@ -171,23 +240,51 @@ export class Recorder {
     const startBeat = Math.max(0, this.startBeat - offsetBeats);
     const name = this.nextTakeName();
 
-    // Record into the armed audio track if one is set (and still valid); otherwise
+    // Record into the target audio track if one is set (and still valid); otherwise
     // create a fresh track for the take.
-    const armed = this.state.armedTrackId ? this.project.getTrack(this.state.armedTrackId) : undefined;
-    if (armed && armed.kind === "audio") {
-      this.dispatch({
-        type: "addAudioClip",
-        trackId: armed.id,
-        id: newClipId(),
-        placementId: newPlacementId(),
-        fileId,
-        name,
-        durationSec,
-        startBeat,
-      });
+    const target = this.targetTrackId ? this.project.getTrack(this.targetTrackId) : undefined;
+    if (target && target.kind === "audio") {
+      this.dispatch({ type: "addAudioClip", trackId: target.id, id: newClipId(), placementId: newPlacementId(), fileId, name, durationSec, startBeat });
     } else {
       this.dispatch({ type: "addAudioTrack", id: newTrackId(), fileId, name, durationSec, startBeat });
     }
+  }
+
+  /** Close any held notes, then place the captured notes as a new clip on the MIDI track. */
+  private finishMidiTake(wasCounting: boolean): void {
+    const stopBeat = this.scheduler.beatAtTime(this.engine.currentTime);
+    if (this.scheduler.isPlaying) this.scheduler.stop();
+    this.set({ status: "idle" });
+    if (wasCounting) {
+      this.held.clear();
+      this.captured = [];
+      return;
+    }
+    // Close notes still held at stop (give them a minimum sounding length).
+    for (const [pitch, note] of this.held) {
+      this.captured.push({ pitch, velocity: note.velocity, startBeat: note.startBeat, endBeat: Math.max(stopBeat, note.startBeat + GRID) });
+    }
+    this.held.clear();
+    const captured = this.captured;
+    this.captured = [];
+
+    const target = this.targetTrackId ? this.project.getTrack(this.targetTrackId) : undefined;
+    if (!captured.length || !target || target.kind !== "instrument") return;
+
+    // Anchor the clip at the bar the take began in, so notes keep their groove
+    // relative to the bar and the clip lines up with the grid. The clip is sized
+    // up to whole bars to cover the last note.
+    const clipStart = Math.max(0, Math.floor(this.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR);
+    const notes: NoteEvent[] = captured.map((n) => ({
+      id: newNoteId(),
+      pitch: n.pitch,
+      start: Math.max(0, n.startBeat - clipStart),
+      length: Math.max(GRID, n.endBeat - n.startBeat),
+      velocity: n.velocity,
+    }));
+    const span = Math.max(...notes.map((n) => n.start + n.length));
+    const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
+    this.dispatch({ type: "addNoteClip", trackId: target.id, id: newClipId(), placementId: newPlacementId(), name: this.nextTakeName(), notes, lengthBeats, startBeat: clipStart });
   }
 
   /** "Take N", N being the next unused index among existing Take tracks/clips. */

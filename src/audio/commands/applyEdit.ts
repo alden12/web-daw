@@ -35,6 +35,9 @@ const APPLY: ApplyMap = {
   },
   setAudioClip: (p, c) => p.setAudioClip(c.trackId, c.clipId, c.patch),
   addAudioClip: (p, c) => p.addAudioClip(c),
+  // A recorded MIDI take: create the clip (with its notes), punch it in over the
+  // lane, and place it. Tagged with the dispatching author (two-voice).
+  addNoteClip: (p, c, author) => p.addNoteClip(c, author),
   createGroup: (p, c) => void p.addGroup({ id: c.id, name: c.name, parentId: c.parentId }),
   removeGroup: (p, c) => p.removeGroup(c.groupId),
   setGroup: (p, c) => {

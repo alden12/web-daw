@@ -13,7 +13,7 @@
  */
 import { ParamStore } from '../params/store';
 import { ClipStore } from '../sequencer/clipStore';
-import { GRID } from '../sequencer/types';
+import { GRID, type NoteEvent } from '../sequencer/types';
 import {
   hasInstrument,
   catalogEntry,
@@ -504,15 +504,66 @@ export class ProjectStore {
     t.clips.push({ id: spec.id, name: spec.name ?? 'Take', author: 'you', fileId: spec.fileId, gain: spec.gain ?? 1, durationSec });
     t.activeClipId = spec.id;
     if (!t.placements.some((p) => p.id === spec.placementId)) {
-      t.placements.push({
-        id: spec.placementId,
-        clipId: spec.id,
-        startBeat: Math.max(0, spec.startBeat ?? 0),
-        offset: 0,
-        length: this.secondsToBeats(durationSec),
-      });
+      const startBeat = Math.max(0, spec.startBeat ?? 0);
+      const length = this.secondsToBeats(durationSec);
+      // A recorded take punches in over the lane: replace whatever it overlaps.
+      this.replaceRegion(t, startBeat, startBeat + length, spec.placementId);
+      t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length });
     }
     this.emit();
+  }
+
+  /**
+   * Add a note clip (a recorded MIDI take) to an instrument track's pool and place
+   * it on the arrangement, punching in over whatever it overlaps. Clip + placement
+   * ids and every note id are supplied by the caller (carried in the `addNoteClip`
+   * edit), so this is a pure function of its argument and replays exactly. No-op on
+   * a non-instrument track.
+   */
+  addNoteClip(
+    spec: { trackId: string; id: string; placementId: string; name?: string; notes: NoteEvent[]; lengthBeats: number; startBeat: number },
+    author: ClipAuthor = 'you',
+  ): void {
+    const t = this.getTrack(spec.trackId);
+    if (!t || t.kind !== 'instrument' || t.clips.some((c) => c.id === spec.id)) return;
+    const lengthBeats = Math.max(GRID, spec.lengthBeats);
+    t.clips.push({
+      id: spec.id,
+      name: spec.name ?? this.nextClipName(t),
+      author,
+      store: new ClipStore({ notes: spec.notes.map((n) => ({ ...n })), lengthBeats }),
+    });
+    t.activeClipId = spec.id;
+    if (!t.placements.some((p) => p.id === spec.placementId)) {
+      const startBeat = Math.max(0, spec.startBeat);
+      this.replaceRegion(t, startBeat, startBeat + lengthBeats, spec.placementId);
+      t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length: lengthBeats });
+    }
+    this.emit();
+  }
+
+  /**
+   * Punch-in: clear the arrangement region [start, end) on a track so an incoming
+   * placement replaces only what is beneath it. Placements fully inside the region
+   * are dropped, ones straddling an edge are trimmed, and one that spans the whole
+   * region is split into its surviving left/right remnants. The split remnant's id
+   * is derived from `idPrefix` (the incoming placement id) so replay is deterministic.
+   */
+  private replaceRegion(t: Track, start: number, end: number, idPrefix: string): void {
+    if (end <= start) return;
+    t.placements = t.placements.flatMap((p) => {
+      const pEnd = p.startBeat + p.length;
+      if (pEnd <= start || p.startBeat >= end) return [p]; // no overlap
+      const keepLeft = p.startBeat < start; // some of p survives before the region
+      const keepRight = pEnd > end; // some of p survives after the region
+      if (keepLeft && keepRight) {
+        const right: Placement = { id: `${idPrefix}-r-${p.id}`, clipId: p.clipId, startBeat: end, offset: p.offset + (end - p.startBeat), length: pEnd - end };
+        return [{ ...p, length: start - p.startBeat }, right];
+      }
+      if (keepLeft) return [{ ...p, length: start - p.startBeat }];
+      if (keepRight) return [{ ...p, startBeat: end, offset: p.offset + (end - p.startBeat), length: pEnd - end }];
+      return []; // fully covered -> drop
+    });
   }
 
   /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */

@@ -31,7 +31,7 @@ export function ClipRail({
   dispatch: Dispatch;
   /** 'horizontal' chip row; 'vertical' left rail (stacked, beside the roll). */
   orientation?: 'horizontal' | 'vertical';
-  /** Bottom action; replaces the instrument "+ Clip" button (e.g. a record button for audio). */
+  /** Bottom action below the clip list (e.g. a record button), for either kind. */
   footer?: ReactNode;
 }) {
   const project = useProject(projectStore);
@@ -183,18 +183,19 @@ export function ClipRail({
           </div>
         );
       })}
-      {footer !== undefined
-        ? footer
-        : track.kind === 'instrument' && (
-            <button
-              type="button"
-              title="Add a new empty clip"
-              onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
-              className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
-            >
-              + Clip
-            </button>
-          )}
+      {/* Instrument tracks keep "+ Clip"; audio clips only ever arrive by recording
+          or import. Both kinds get the record button below (passed as `footer`). */}
+      {track.kind === 'instrument' && (
+        <button
+          type="button"
+          title="Add a new empty clip"
+          onClick={() => dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true })}
+          className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
+        >
+          + Clip
+        </button>
+      )}
+      {footer}
     </div>
   );
 }

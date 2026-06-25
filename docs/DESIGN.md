@@ -729,8 +729,17 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 - **Recording follow-ups (later):** MCP arm/record tools, input level meter, remembered device +
   eager enumeration, software-monitoring option, loopback **latency calibration** (store the offset
   on the region), punch-in at the playhead, multi-track arm, stereo.
-- **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
-  reuses the same arm / record / quantize machinery as audio.
+- **MIDI recording - DONE (slice 40).** Recording now works for instrument tracks too: the
+  target's kind picks the mode (an audio track captures the mic, an instrument track captures
+  live MIDI notes). Record arms the armed track, or - if nothing is explicitly armed - the
+  selected track, and a take **punches in** over the lane (its clip replaces whatever it overlaps,
+  trimming/splitting straddlers; undo restores them via the snapshot checkpoint). Live notes are
+  tapped from the computer keyboard in `AppShell` and stamped against arrangement beats by the
+  `Recorder`; on stop they become one `addNoteClip` edit (clip + notes + placement, ids pre-minted,
+  pure data). Notes land on the 16th grid (the `ClipStore` snaps, like the rest of the app). Record
+  buttons sit on the transport, every track header, and the clip rail (both kinds).
+  *Follow-ups:* Web MIDI API device input (real keyboards + velocity), record-without-quantize,
+  overdub (merge into the existing clip instead of replacing), MCP arm/record tools.
 
 **Instruments, content & ecosystem**
 
