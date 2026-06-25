@@ -56,7 +56,7 @@ export function EffectChain({
               className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}
             >
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
-                <span className="font-mono text-[12px] font-semibold text-bright mr-1">
+                <span className="font-mono text-[12px] font-semibold text-bright mr-1 truncate" title={effectCatalogEntry(fx.type).label}>
                   {effectCatalogEntry(fx.type).label}
                 </span>
                 <button

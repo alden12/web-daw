@@ -569,7 +569,7 @@ function TrackHeader({
       onClick={() => projectStore.selectTrack(track.id)}
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
         selected
-          ? "bg-you/10 shadow-[inset_3px_0_0_var(--color-you)]"
+          ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))] shadow-[inset_3px_0_0_var(--color-you)]"
           : "bg-panel"
       }`}
       style={{ paddingLeft: 10 + depth * INDENT }}

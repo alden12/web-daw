@@ -20,11 +20,14 @@ export function InstrumentPanel({
   dispatch: Dispatch;
 }) {
   const schema = instrumentSchema(instrumentType);
+  const label = catalogEntry(instrumentType).label;
   return (
     <div className="shrink-0 border border-line rounded-xl bg-card">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line text-[12px] font-semibold text-bright">
-        {catalogEntry(instrumentType).label}
-        <span className="ml-auto font-mono text-[9px] tracking-wider uppercase text-faint">instr</span>
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+        <span className="ml-auto font-mono text-[9px] tracking-wider uppercase text-faint shrink-0">instr</span>
       </div>
       <div className="flex gap-3 px-3 py-3">
         {schema.map((spec) => (

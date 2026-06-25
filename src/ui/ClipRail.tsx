@@ -45,6 +45,18 @@ export function ClipRail({
     if (trimmed) dispatch({ type: 'renameClip', trackId, clipId, name: trimmed });
   };
 
+  // Delete a clip. A track must keep at least one clip, so deleting the last one
+  // replaces it with a fresh empty clip (a blank-slate reset). The new id is minted
+  // here and carried in the edit, so undo/redo and history replay stay deterministic.
+  const deleteClip = (clipId: string) => {
+    if (clips.length > 1) {
+      dispatch({ type: 'removeClip', trackId, clipId });
+    } else {
+      dispatch({ type: 'addClip', trackId, id: newClipId(), empty: true });
+      dispatch({ type: 'removeClip', trackId, clipId });
+    }
+  };
+
   // Launch toggles the clip's override; launching auto-starts the transport so you
   // hear it immediately (no-op if audio is not started or already playing).
   const toggleLaunch = (clipId: string) => {
@@ -151,19 +163,17 @@ export function ClipRail({
             </button>
             <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
             <span>{c.name}</span>
-            {clips.length > 1 && (
-              <button
-                type="button"
-                title="Remove clip"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  dispatch({ type: 'removeClip', trackId, clipId: c.id });
-                }}
-                className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
-              >
-                ×
-              </button>
-            )}
+            <button
+              type="button"
+              title={clips.length > 1 ? 'Remove clip' : 'Clear clip (replaces it with a fresh empty one)'}
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteClip(c.id);
+              }}
+              className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+            >
+              ×
+            </button>
           </div>
         );
       })}
