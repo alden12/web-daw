@@ -60,6 +60,14 @@ export interface Placement {
   length: number;
 }
 
+/**
+ * A clip's portable content for copy/paste (no ids). Kind-tagged so a paste can
+ * refuse to cross instrument <-> audio; audio shares the source fileId (no copy).
+ */
+export type ClipContent =
+  | { kind: 'instrument'; name: string; notes: NoteEvent[]; lengthBeats: number }
+  | { kind: 'audio'; name: string; fileId: string; gain: number; durationSec: number };
+
 /** A note clip (pattern) in an instrument track's pool. */
 export interface NoteClipData {
   id: string;
@@ -129,6 +137,8 @@ export interface InstrumentTrackMeta extends BaseTrackMeta {
   activeClipId: string;
   /** Arrangement: placements of clips along time. */
   placements: Placement[];
+  /** Launched clip looping over the transport, overriding placements; null = arrangement. */
+  launchedClipId: string | null;
 }
 
 export interface AudioTrackMeta extends BaseTrackMeta {
@@ -136,6 +146,8 @@ export interface AudioTrackMeta extends BaseTrackMeta {
   clips: AudioClipData[];
   activeClipId: string;
   placements: Placement[];
+  /** Launched clip looping over the transport, overriding placements; null = arrangement. */
+  launchedClipId: string | null;
 }
 
 export type TrackMeta = InstrumentTrackMeta | AudioTrackMeta;
@@ -149,13 +161,16 @@ export interface GroupData extends Omit<GroupMeta, 'effects'> {
   effects: EffectData[];
 }
 
-export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId'> {
+export interface InstrumentTrackData
+  extends Omit<InstrumentTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId' | 'launchedClipId'> {
   /** Track-level sound (synth patch). Optional for migration; defaulted on load. */
   params?: PatchValues;
   effects?: EffectData[];
   clips?: NoteClipData[];
   placements?: Placement[];
   activeClipId?: string;
+  /** Launched clip id (optional; older snapshots default to null = arrangement). */
+  launchedClipId?: string | null;
   // --- legacy, read only for migration in ProjectStore.load ---
   /** Pre-v7 variant stack. */
   variants?: VariantData[];
@@ -165,11 +180,14 @@ export interface InstrumentTrackData extends Omit<InstrumentTrackMeta, 'effects'
   clip?: ClipData;
 }
 
-export interface AudioTrackData extends Omit<AudioTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId'> {
+export interface AudioTrackData
+  extends Omit<AudioTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId' | 'launchedClipId'> {
   effects?: EffectData[];
   clips?: AudioClipData[];
   placements?: Placement[];
   activeClipId?: string;
+  /** Launched clip id (optional; older snapshots default to null = arrangement). */
+  launchedClipId?: string | null;
   // --- legacy, read only for migration ---
   /** Pre-v7 single positioned clip. */
   audioClip?: LegacyAudioClip;

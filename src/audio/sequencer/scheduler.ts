@@ -171,6 +171,11 @@ export class Scheduler {
 
     for (const track of this.project.getTracks()) {
       if (track.muted) continue;
+      // A launched clip overrides the arrangement: play it as one full-region
+      // placement, so the existing tiling loops it over the transport.
+      const placements = track.launchedClipId
+        ? [{ id: '__launch', clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
+        : track.placements;
       if (track.kind === 'instrument') {
         const instrument = this.engine.getInstrument(track.id);
         if (!instrument) continue;
@@ -178,7 +183,7 @@ export class Scheduler {
         // tiled across its window (looping a clip whose window outruns it) and
         // shifted to the placement's start on the arrangement.
         const events: NoteEvent[] = [];
-        for (const p of track.placements) {
+        for (const p of placements) {
           const clip = track.clips.find((c) => c.id === p.clipId);
           if (!clip) continue;
           const c = clip.store.getClip();
@@ -193,7 +198,7 @@ export class Scheduler {
       } else {
         // Each audio placement triggers the buffer at its start, re-triggering
         // every clip-length so a window dragged past the clip loops the sample.
-        for (const p of track.placements) {
+        for (const p of placements) {
           const clip = track.clips.find((c) => c.id === p.clipId);
           if (!clip) continue;
           const clipBeats = clip.durationSec > 0 ? (clip.durationSec * bpm) / 60 : Infinity;

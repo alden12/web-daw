@@ -3,10 +3,11 @@ import { test, expect, type Page } from '@playwright/test';
 /**
  * Editable arrangement timeline: the default project seeds one instrument track
  * with a single placement of its clip at the start, so one block is visible on
- * load. Exercises the mouse gestures - place (click empty lane), move (drag body),
- * split (double-click), delete (select + Delete) - and the arrangement ruler's
- * loop-region handle, then confirms a placed clip survives a reload (it lives in
- * the project snapshot). Each gesture records a single two-voice feed entry.
+ * load. Exercises the mouse gestures - create (drag empty lane), move (drag body),
+ * split (double-click), delete (select + Delete), mark (click empty lane) - and the
+ * arrangement ruler's loop-region handle, then confirms a placed clip survives a
+ * reload (it lives in the project snapshot). Each gesture records a single
+ * two-voice feed entry.
  */
 
 // A wide, tall viewport so the lanes have room to the right of the seed block and
@@ -34,9 +35,13 @@ test('place, move, split and delete clips in the arrangement', async ({ page }) 
   // The seed track shows exactly one placement on load.
   await expect(placements(page)).toHaveCount(1);
 
-  // Click the empty lane to the right of the seed block -> place the active clip.
+  // Drag across the empty lane to the right of the seed -> create + place a clip.
   const seed = (await placements(page).first().boundingBox())!;
-  await page.mouse.click(seed.x + seed.width + 80, seed.y + seed.height / 2);
+  const y = seed.y + seed.height / 2;
+  await page.mouse.move(seed.x + seed.width + 40, y);
+  await page.mouse.down();
+  await page.mouse.move(seed.x + seed.width + 160, y, { steps: 8 });
+  await page.mouse.up();
   await expect(placements(page)).toHaveCount(2);
   await expect(page.getByText('Placed clip')).toBeVisible();
 
@@ -162,13 +167,38 @@ test('the arrangement ruler sets the loop region', async ({ page }) => {
   await expect(page.getByText(/Set loop length/)).toBeVisible();
 });
 
+test('clicking sets a paste marker and paste lands there', async ({ page }) => {
+  await page.goto('/');
+  await dismissStart(page);
+  await zoomOut(page);
+
+  await expect(placements(page)).toHaveCount(1);
+  const seed = (await placements(page).first().boundingBox())!;
+  const y = seed.y + seed.height / 2;
+
+  // Copy the seed placement, drop a marker far to the right, paste -> lands there.
+  await placements(page).first().click();
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.mouse.click(seed.x + seed.width + 160, y);
+  await page.keyboard.press('ControlOrMeta+v');
+
+  await expect(placements(page)).toHaveCount(2);
+  const lefts = await placements(page).evaluateAll((els) => els.map((e) => (e as HTMLElement).getBoundingClientRect().left));
+  expect(Math.max(...lefts)).toBeGreaterThan(seed.x + seed.width); // pasted at the marker, right of the seed
+});
+
 test('a placed clip persists across reload', async ({ page }) => {
   await page.goto('/');
   await dismissStart(page);
   await zoomOut(page);
 
+  // Drag to create a clip, then confirm it survives a reload.
   const seed = (await placements(page).first().boundingBox())!;
-  await page.mouse.click(seed.x + seed.width + 80, seed.y + seed.height / 2);
+  const y = seed.y + seed.height / 2;
+  await page.mouse.move(seed.x + seed.width + 40, y);
+  await page.mouse.down();
+  await page.mouse.move(seed.x + seed.width + 160, y, { steps: 8 });
+  await page.mouse.up();
   await expect(placements(page)).toHaveCount(2);
 
   await page.waitForTimeout(400); // let the debounced autosave flush

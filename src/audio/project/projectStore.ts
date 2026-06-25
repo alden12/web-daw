@@ -30,6 +30,7 @@ import type {
   AudioClipData,
   Placement,
   ClipAuthor,
+  ClipContent,
   EffectData,
   InstrumentTrackData,
   AudioTrackData,
@@ -98,6 +99,8 @@ export interface InstrumentTrack extends BaseTrack {
   clips: NoteClip[];
   activeClipId: string;
   placements: Placement[];
+  /** A launched clip loops over the transport, overriding `placements`; null = play the arrangement. */
+  launchedClipId: string | null;
 }
 
 /** An audio track: a pool of audio clips (buffer refs) arranged as `placements`. */
@@ -106,6 +109,8 @@ export interface AudioTrack extends BaseTrack {
   clips: AudioClipData[];
   activeClipId: string;
   placements: Placement[];
+  /** A launched clip loops over the transport, overriding `placements`; null = play the arrangement. */
+  launchedClipId: string | null;
 }
 
 /** A track at runtime. Both kinds share the base fields + the effect chain. */
@@ -174,6 +179,7 @@ export class ProjectStore {
           clips: t.clips.map((c) => ({ ...c })),
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
+          launchedClipId: t.launchedClipId,
         }
       : {
           ...base,
@@ -182,6 +188,7 @@ export class ProjectStore {
           clips: t.clips.map((c) => ({ id: c.id, name: c.name, author: c.author, lengthBeats: c.store.getClip().lengthBeats })),
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
+          launchedClipId: t.launchedClipId,
         };
   }
 
@@ -381,6 +388,7 @@ export class ProjectStore {
       activeClipId: clipId,
       // One placement of the seed clip at the start, so a new track plays its clip.
       placements: [{ id: `p-${trackId}`, clipId, startBeat: 0, offset: 0, length: clip.getClip().lengthBeats }],
+      launchedClipId: null,
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -413,6 +421,7 @@ export class ProjectStore {
       placements: [
         { id: `p-${trackId}`, clipId, startBeat: clip.startBeat ?? 0, offset: 0, length: this.secondsToBeats(durationSec) },
       ],
+      launchedClipId: null,
     };
     this.tracks.push(track);
     this.selectedTrackId = trackId;
@@ -574,6 +583,30 @@ export class ProjectStore {
     return clip;
   }
 
+  /**
+   * Paste copied clip content into a track's pool as a new active clip. Refuses a
+   * cross-type paste (instrument <-> audio); audio reuses the source fileId (the
+   * OPFS file is shared, not duplicated). Enables clip copy/paste within and
+   * across same-kind tracks.
+   */
+  pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = 'you'): void {
+    const t = this.getTrack(trackId);
+    if (!t || t.kind !== content.kind) return;
+    const clipId = id && !t.clips.some((c) => c.id === id) ? id : this.nextClipId();
+    if (t.kind === 'instrument' && content.kind === 'instrument') {
+      t.clips.push({
+        id: clipId,
+        name: content.name,
+        author,
+        store: new ClipStore({ notes: content.notes.map((n) => ({ ...n })), lengthBeats: content.lengthBeats }),
+      });
+    } else if (t.kind === 'audio' && content.kind === 'audio') {
+      t.clips.push({ id: clipId, name: content.name, author, fileId: content.fileId, gain: content.gain, durationSec: content.durationSec });
+    }
+    t.activeClipId = clipId;
+    this.emit();
+  }
+
   /** Make a clip the active one (shown/edited in the piano roll). */
   selectClip(trackId: string, clipId: string): void {
     const t = this.getTrack(trackId);
@@ -675,6 +708,33 @@ export class ProjectStore {
     this.emit();
   }
 
+  // --- clip launching (mode-less Session) -----------------------------------
+  /**
+   * Launch a clip on a track: it loops over the transport, overriding the track's
+   * placements, until stopped (clipId null) or replaced. Persisted, so a launched
+   * clip is part of the composition (a looping track without dragging placements).
+   */
+  launchClip(trackId: string, clipId: string | null): void {
+    const t = this.getTrack(trackId);
+    if (!t) return;
+    const next = clipId && t.clips.some((c) => c.id === clipId) ? clipId : null;
+    if (t.launchedClipId === next) return;
+    t.launchedClipId = next;
+    this.emit();
+  }
+
+  /** Stop every launched clip - the whole project plays its arrangement again. */
+  stopAllClips(): void {
+    let changed = false;
+    for (const t of this.tracks) {
+      if (t.launchedClipId !== null) {
+        t.launchedClipId = null;
+        changed = true;
+      }
+    }
+    if (changed) this.emit();
+  }
+
   // --- effect chain (track OR group) ----------------------------------------
   /** Resolve an effect host (track or group) by id; ids are unique across both. */
   private getEffectHost(hostId: string): EffectHost | undefined {
@@ -763,6 +823,7 @@ export class ProjectStore {
         const arrangement = {
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
+          launchedClipId: t.launchedClipId,
         };
         if (t.kind === 'audio') {
           return {
@@ -890,7 +951,8 @@ export class ProjectStore {
       };
       if (t.kind === 'audio') {
         const pool = this.audioClipPool(t);
-        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), ...pool };
+        const launchedClipId = t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
+        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), ...pool, launchedClipId };
       }
       // Legacy tracks predate `kind`; treat them as instrument tracks. The sound
       // (params + effects) is track-level; the clip pool + placements come from
@@ -903,6 +965,7 @@ export class ProjectStore {
       const reused = reuse?.kind === 'instrument' && reuse.instrumentType === t.instrumentType ? reuse : undefined;
       const params = reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType));
       params.load(sound.params);
+      const launchedClipId = t.launchedClipId && clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
       const track: InstrumentTrack = {
         ...base,
         kind: 'instrument',
@@ -912,6 +975,7 @@ export class ProjectStore {
         clips,
         activeClipId,
         placements,
+        launchedClipId,
       };
       this.loadEffectsInPlace(track, sound.effects);
       return track;

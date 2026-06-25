@@ -106,6 +106,21 @@ export function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, [editLog]);
 
+  // Space anywhere toggles play/stop, unless typing in a field (scheduler.play
+  // is a no-op until audio is started).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      const el = e.target as HTMLElement | null;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+      e.preventDefault();
+      if (scheduler.isPlaying) scheduler.stop();
+      else scheduler.play();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [scheduler]);
+
   // Computer-keyboard plays the selected track's instrument (polyphonic).
   useEffect(() => {
     if (!started) return;

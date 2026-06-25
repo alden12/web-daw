@@ -126,6 +126,81 @@ describe('placements', () => {
   });
 });
 
+describe('clip launching', () => {
+  it('launchClip sets / replaces / clears, validating the clip exists', () => {
+    const { project, id, inst } = trackWithClip();
+    const b = project.addClip(id, { empty: true })!;
+    project.launchClip(id, b.id);
+    expect(inst().launchedClipId).toBe(b.id);
+    project.launchClip(id, 'nope'); // unknown clip -> cleared
+    expect(inst().launchedClipId).toBe(null);
+    project.launchClip(id, b.id);
+    project.launchClip(id, null); // explicit stop
+    expect(inst().launchedClipId).toBe(null);
+  });
+
+  it('stopAllClips clears every track', () => {
+    const { project, id, inst } = trackWithClip();
+    project.launchClip(id, inst().activeClipId);
+    expect(inst().launchedClipId).not.toBe(null);
+    project.stopAllClips();
+    expect(inst().launchedClipId).toBe(null);
+  });
+
+  it('persists the launched clip across snapshot/load and drops a dangling ref', () => {
+    const { project, id, inst } = trackWithClip();
+    const clipId = inst().activeClipId;
+    project.launchClip(id, clipId);
+
+    const p2 = new ProjectStore(false);
+    p2.load(project.snapshot());
+    expect(p2.getTrack(id)!.launchedClipId).toBe(clipId);
+
+    const snap = project.snapshot();
+    const broken = { ...snap, tracks: snap.tracks.map((t) => ({ ...t, launchedClipId: 'gone' })) };
+    const p3 = new ProjectStore(false);
+    p3.load(broken);
+    expect(p3.getTrack(id)!.launchedClipId).toBe(null);
+  });
+});
+
+describe('clip copy/paste', () => {
+  it('pasteClip adds instrument content as a new active clip', () => {
+    const { project, id, inst } = trackWithClip();
+    project.pasteClip(id, 'c-paste', {
+      kind: 'instrument',
+      name: 'Copy',
+      notes: [{ id: 'n1', pitch: 64, start: 0, length: 1, velocity: 0.8 }],
+      lengthBeats: 8,
+    });
+    const t = inst();
+    expect(t.clips).toHaveLength(2);
+    expect(t.activeClipId).toBe('c-paste');
+    const pasted = t.clips.find((c) => c.id === 'c-paste')!;
+    expect(pasted.name).toBe('Copy');
+    expect(pasted.store.getClip().notes).toHaveLength(1);
+    expect(pasted.store.getClip().lengthBeats).toBe(8);
+  });
+
+  it('pastes across same-kind tracks without touching the source', () => {
+    const project = new ProjectStore(false);
+    const a = project.addTrack('subtractive', { id: 't-a' }).id;
+    const b = project.addTrack('subtractive', { id: 't-b' }).id;
+    project.pasteClip(b, 'c-x', { kind: 'instrument', name: 'FromA', notes: [], lengthBeats: 4 });
+    expect(project.getTrack(b)!.clips.some((c) => c.id === 'c-x')).toBe(true);
+    expect(project.getTrack(b)!.activeClipId).toBe('c-x');
+    expect(project.getTrack(a)!.clips.some((c) => c.id === 'c-x')).toBe(false);
+  });
+
+  it('refuses a cross-type paste (instrument content into an audio track)', () => {
+    const project = new ProjectStore(false);
+    const aud = project.addAudioTrack({ fileId: 'f1', name: 'Aud', durationSec: 2 }).id;
+    const before = project.getTrack(aud)!.clips.length;
+    project.pasteClip(aud, 'c-x', { kind: 'instrument', name: 'X', notes: [], lengthBeats: 4 });
+    expect(project.getTrack(aud)!.clips.length).toBe(before);
+  });
+});
+
 describe('migration', () => {
   it('migrates a v6 variant track into a clip pool + one placement, sound from the active variant', () => {
     const v6 = {

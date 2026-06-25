@@ -873,6 +873,34 @@ export function createDawMcp(
     },
   );
 
+  server.registerTool(
+    'launch_clip',
+    {
+      title: 'Launch clip',
+      description:
+        'Launch a clip on a track: it loops over the transport, overriding the track\'s arrangement placements, until stopped. Pass clip_id to launch, or omit to stop this track\'s launched clip. Persisted as part of the composition.',
+      inputSchema: { ...trackArg, clip_id: z.string().optional().describe('clip to launch; omit to stop') },
+    },
+    async ({ track, clip_id }) => {
+      const r = resolveTrack(track);
+      if ('error' in r) return fail(r.error);
+      const clipId = clip_id ?? null;
+      if (!sendToTab({ type: 'launchClip', trackId: r.id, clipId })) return fail('No DAW tab connected.');
+      mirror.launchClip(r.id, clipId);
+      return ok(clipId ? `Launched clip ${clipId} on ${r.id} (looping, overrides the arrangement).` : `Stopped the launched clip on ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'stop_all_clips',
+    { title: 'Stop all clips', description: 'Stop every launched clip - the whole project plays its arrangement again.', inputSchema: {} },
+    async () => {
+      if (!sendToTab({ type: 'stopAllClips' })) return fail('No DAW tab connected.');
+      mirror.stopAllClips();
+      return ok('Stopped all launched clips; back to the timeline arrangement.');
+    },
+  );
+
   // --- Transport (project-level) -------------------------------------------
   server.registerTool(
     'set_tempo',
