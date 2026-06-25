@@ -416,6 +416,36 @@ export class ProjectStore {
     return track;
   }
 
+  /**
+   * Add an instrument track from a saved patch: the instrument plus its parameter
+   * values and effect chain. Effect ids are supplied by the caller (carried in the
+   * `createTrackFromPatch` edit), so this is a pure function of its argument and
+   * replays to the same track exactly. Values are loaded through the same coercing
+   * setters as any edit, so an out-of-range stored value is clamped, not trusted blindly.
+   */
+  addTrackFromPatch(spec: {
+    id: string;
+    name?: string;
+    groupId?: string;
+    instrumentType: string;
+    params: PatchValues;
+    effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+  }): Track {
+    if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
+    const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
+    if (track.kind === 'instrument') {
+      track.params.load(spec.params);
+      for (const fx of spec.effects) {
+        const effect = this.addEffect(track.id, fx.type, fx.id);
+        if (!effect) continue;
+        effect.params.load(fx.params);
+        if (fx.bypassed) this.setEffectBypass(track.id, fx.id, true);
+      }
+    }
+    this.emit();
+    return track;
+  }
+
   /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
   addAudioTrack(
     clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },

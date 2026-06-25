@@ -13,6 +13,12 @@ import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
+import {
+  type Patch,
+  listPatches,
+  removePatch,
+  subscribePatches,
+} from "../audio/patches/library";
 import { exportProjectFile, importProjectFile } from "./projectFile";
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
@@ -36,10 +42,13 @@ function audioDuration(file: Blob): Promise<number> {
 function Category({
   label,
   defaultOpen = true,
+  nested = false,
   children,
 }: {
   label: string;
   defaultOpen?: boolean;
+  /** A sub-section inside another category: indented and lighter than a top-level title. */
+  nested?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -49,7 +58,9 @@ function Category({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 w-full text-left px-4 py-1.5 text-xs font-semibold text-ink cursor-pointer"
+        className={`flex items-center gap-2 w-full text-left py-1.5 cursor-pointer ${
+          nested ? "pl-8 pr-4 text-[12px] font-medium text-muted" : "px-4 text-xs font-semibold text-ink"
+        }`}
       >
         <span className="w-2.5 text-2xl text-muted">{open ? "▾" : "▸"}</span>
         {label}
@@ -62,23 +73,71 @@ function Category({
 function Leaf({
   label,
   fx,
+  chip,
+  indent = "pl-8",
   onClick,
 }: {
   label: string;
   fx?: boolean;
+  chip?: string;
+  indent?: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2.5 w-full text-left pl-8 pr-4 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
+      className={`flex items-center gap-2.5 w-full text-left ${indent} pr-4 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10`}
     >
       <span
         className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`}
       />
-      {label}
+      <span className="truncate">{label}</span>
+      {chip && (
+        <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wide text-faint bg-line/40 rounded px-1 py-0.5">
+          {chip}
+        </span>
+      )}
     </button>
+  );
+}
+
+/** A saved-patch row: click the name to add a track, the × to delete the patch. */
+function PatchLeaf({
+  patch,
+  indent = "pl-8",
+  onAdd,
+  onDelete,
+}: {
+  patch: Patch;
+  indent?: string;
+  onAdd: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className={`group flex items-center w-full ${indent} pr-2 hover:bg-you/10`}>
+      <button
+        type="button"
+        onClick={onAdd}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
+      >
+        <span
+          aria-hidden="true"
+          title={`Saved by ${patch.author === "claude" ? "Claude" : "you"}`}
+          className={`w-1.75 h-1.75 rounded-sm shrink-0 ${patch.author === "claude" ? "bg-claude" : "bg-you"}`}
+        />
+        <span className="truncate">{patch.name}</span>
+      </button>
+      <button
+        type="button"
+        title="Delete patch"
+        aria-label={`Delete patch ${patch.name}`}
+        onClick={onDelete}
+        className="shrink-0 px-1.5 text-faint opacity-0 group-hover:opacity-100 hover:text-claude cursor-pointer"
+      >
+        ×
+      </button>
+    </div>
   );
 }
 
@@ -93,9 +152,34 @@ export function LibraryPanel({
 }) {
   const [importError, setImportError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [patches, setPatches] = useState<Patch[]>(() => listPatches());
   const menuRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+
+  // The patch library is global (cross-project); mirror it into React state.
+  useEffect(() => {
+    const sync = () => setPatches(listPatches());
+    sync();
+    return subscribePatches(sync);
+  }, []);
+
+  // Apply a saved patch as one authored edit. Effect ids are minted here and carried
+  // in the command, so undo/redo and history replay reproduce the same track exactly.
+  const addFromPatch = (patch: Patch) =>
+    dispatch({
+      type: "createTrackFromPatch",
+      id: newTrackId(),
+      name: patch.name,
+      instrumentType: patch.instrumentType,
+      params: patch.params,
+      effects: patch.effects.map((fx) => ({
+        id: newEffectId(),
+        type: fx.type,
+        bypassed: fx.bypassed,
+        params: fx.params,
+      })),
+    });
 
   // Close the project menu on an outside click.
   useEffect(() => {
@@ -237,14 +321,12 @@ export function LibraryPanel({
         <p className="text-claude text-[11px] px-4 pb-1">{importError}</p>
       )}
 
-      <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-faint px-4 pt-3 pb-1.5">
-        Instruments
-      </div>
-      <Category label="Synths">
+      <Category label="Instruments">
         {instrumentInfos().map((def) => (
           <Leaf
             key={def.type}
             label={def.label}
+            chip={def.family}
             onClick={() =>
               dispatch({
                 type: "createTrack",
@@ -254,12 +336,26 @@ export function LibraryPanel({
             }
           />
         ))}
+        <Category label="Patches" nested>
+          {patches.length === 0 ? (
+            <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">
+              Save an instrument as a patch to reuse it here.
+            </p>
+          ) : (
+            patches.map((patch) => (
+              <PatchLeaf
+                key={patch.id}
+                patch={patch}
+                indent="pl-12"
+                onAdd={() => addFromPatch(patch)}
+                onDelete={() => removePatch(patch.id)}
+              />
+            ))
+          )}
+        </Category>
       </Category>
 
-      <div className="font-mono text-[10px] tracking-[0.14em] uppercase text-faint px-4 pt-3 pb-1.5">
-        Effects
-      </div>
-      <Category label="All effects">
+      <Category label="Effects">
         {effectInfos().map((def) => (
           <Leaf
             key={def.type}

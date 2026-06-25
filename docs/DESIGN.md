@@ -483,6 +483,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 - **Group/track selection + group-FX editing in the workbench** (next, small). Select a
   group or track and edit its effect rack in the center workbench; generalize selection
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
+- **Patches (instrument presets) - DONE (slice 24).** Save an instrument track's
+  sound - its instrument type, parameter values, and effect chain - as a named **patch**
+  in the library tree, then add a new track from it like a built-in instrument. Patches are
+  **global** (cross-project), so they live in localStorage (`src/audio/patches/library.ts`),
+  not the project bundle. Applying one is a single authored `createTrackFromPatch` edit that
+  carries pre-minted effect ids, so it is undoable, two-voice, and replay-deterministic like
+  any other; `ProjectStore.addTrackFromPatch` loads the values through the same coercing
+  setters. The library tree restructured to a collapsible **Instruments** section that lists the
+  catalog (each leaf chipped with its `family` - Synths / Bass / Keys - iterated, not hardcoded)
+  with a nested **Patches** sub-section, and an **Effects** section beside it. **MCP patch tools**
+  let Claude drive the library too - `list_patches` / `save_patch` / `apply_patch` ride a
+  `patchRequest`/`patchReply` RPC (the same shape as the history RPC, since patches live in the
+  tab's localStorage): `save` captures a track's live sound authored `claude`, `apply` dispatches
+  a `createTrackFromPatch` edit (coral, undoable). Patch row dots are two-voice colored by author.
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
 - **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a
@@ -616,6 +630,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   to the edit log now, so a note posted with no following edit is still saved. The Versions tab
   shows a commit's notes on expand (a coral count glyph when collapsed). No format-version bump:
   an absent `notes.json` loads as `[]`, so older bundles are unaffected.
+- **Play an idea to the agent (notes as a prompt modality).** The DAW's native language is
+  notes, so let the user *perform* a short MIDI phrase and attach it to a message rather than
+  describe it in words: "add this idea to the organ track", "make a breakdown that goes like
+  this", "harmonize this", "continue this for 8 bars". The agent already speaks this vocabulary
+  (`addNotes`/`editNotes`, pitches + beats), so an attached phrase is structured input it can
+  transpose to key, quantize, harmonize, voice as chords, or place as a new clip/section, then
+  narrate the why in the feed. Capture paths: an **idea/scratch capture** in the agent panel
+  (arm, then play the on-screen keyboard or a Web MIDI device into a scratch buffer), or select
+  existing notes / a clip and **"send to agent"**. A lightweight version already works over MCP:
+  play into a scratch clip, then ask Claude to read it (`list_notes`) and act. This pairs with
+  the agent's **"ears"** as the mirror image: notes-in as the prompt, audio-analysis-out as the
+  feedback, so the loop becomes play-an-idea -> agent develops it -> you hear it and keep or
+  reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
+  reusing the exact shapes already flowing through `dispatch`/MCP.
 
 **Platform & form factor**
 

@@ -19,7 +19,7 @@ import { effectInfos, hasEffect, effectSchema } from '../src/audio/effects/catal
 import { validateParam } from '../src/audio/params/validate';
 import type { NoteEvent } from '../src/audio/sequencer/types';
 import { DEFAULT_WS_PORT } from '../src/audio/mcp/protocol';
-import type { BrowserToServer, HistoryMethod, ServerToBrowser } from '../src/audio/mcp/protocol';
+import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from '../src/audio/mcp/protocol';
 
 const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
@@ -62,13 +62,17 @@ export function createDawMcp(
     },
     clipSnapshot: (msg) => mirror.getClipStore(msg.trackId, msg.clipId)?.load(msg.clip),
     effectParamChanged: (msg) => mirror.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
-    historyReply: (msg) => {
-      const waiting = pending.get(msg.id);
-      if (!waiting) return;
-      clearTimeout(waiting.timer);
-      pending.delete(msg.id);
-      waiting.resolve({ ok: msg.ok, result: msg.result, error: msg.error });
-    },
+    historyReply: (msg) => resolvePending(msg),
+    patchReply: (msg) => resolvePending(msg),
+  };
+
+  // Both RPC paths (history, patches) correlate by a shared id and resolve here.
+  const resolvePending = (msg: { id: string; ok: boolean; result?: unknown; error?: string }) => {
+    const waiting = pending.get(msg.id);
+    if (!waiting) return;
+    clearTimeout(waiting.timer);
+    pending.delete(msg.id);
+    waiting.resolve({ ok: msg.ok, result: msg.result, error: msg.error });
   };
 
   let tab: WebSocket | null = null;
@@ -107,7 +111,7 @@ export function createDawMcp(
    * in the tab (OPFS), so these tools can't read the mirror - they ask the tab.
    * Rejects if no tab is connected or the reply doesn't arrive in time.
    */
-  const requestTab = (method: HistoryMethod, params?: Record<string, unknown>): Promise<Reply> =>
+  const awaitReply = (sendRequest: (id: string) => boolean): Promise<Reply> =>
     new Promise((resolve, reject) => {
       const id = `rq-${nextReqId++}`;
       const timer = setTimeout(() => {
@@ -115,12 +119,19 @@ export function createDawMcp(
         reject(new Error('The DAW tab did not respond in time.'));
       }, 5000);
       pending.set(id, { resolve, timer });
-      if (!sendToTab({ type: 'historyRequest', id, method, params })) {
+      if (!sendRequest(id)) {
         clearTimeout(timer);
         pending.delete(id);
         reject(new Error('No DAW tab connected.'));
       }
     });
+
+  const requestTab = (method: HistoryMethod, params?: Record<string, unknown>): Promise<Reply> =>
+    awaitReply((id) => sendToTab({ type: 'historyRequest', id, method, params }));
+
+  /** Round-trip a patch-library RPC to the tab (patches live in its localStorage). */
+  const requestPatch = (method: PatchMethod, params?: Record<string, unknown>): Promise<Reply> =>
+    awaitReply((id) => sendToTab({ type: 'patchRequest', id, method, params }));
 
   /** Resolve a track id (explicit, else selected). */
   function resolveTrack(track?: string): { id: string; track: Track } | { error: string } {
@@ -1068,6 +1079,71 @@ export function createDawMcp(
       if (!r.ok) return fail(r.error ?? 'Revert failed.');
       const summary = r.result as HistoryEntry | null;
       return summary ? ok(`Reverted: "${summary.message}" (id ${summary.id}).`) : fail(`Unknown commit "${commit}".`);
+    },
+  );
+
+  // --- Patches (saved instrument presets, in the tab's localStorage) --------
+  const runPatch = async (method: PatchMethod, params?: Record<string, unknown>): Promise<Reply | { tabError: string }> => {
+    try {
+      return await requestPatch(method, params);
+    } catch (err) {
+      return { tabError: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
+  server.registerTool(
+    'list_patches',
+    {
+      title: 'List patches',
+      description:
+        'List the saved instrument patches (presets) in the user library: id, name, author, instrument type, and effect types. Patches are global (shared across projects).',
+      inputSchema: {},
+    },
+    async () => {
+      const r = await runPatch('list');
+      if ('tabError' in r) return fail(r.tabError);
+      if (!r.ok) return fail(r.error ?? 'Could not read patches.');
+      return ok(JSON.stringify(r.result, null, 2));
+    },
+  );
+
+  server.registerTool(
+    'save_patch',
+    {
+      title: 'Save patch',
+      description:
+        "Save an instrument track's sound (its instrument + parameter values + effect chain) as a named, reusable patch in the user library. Defaults to the selected track.",
+      inputSchema: {
+        name: z.string().min(1).max(60).describe('name for the saved patch'),
+        track: z.string().optional().describe('instrument track id (default: the selected track)'),
+      },
+    },
+    async ({ name, track }) => {
+      const r = await runPatch('save', { name, trackId: track });
+      if ('tabError' in r) return fail(r.tabError);
+      if (!r.ok) return fail(r.error ?? 'Could not save the patch.');
+      const saved = r.result as { id: string; name: string };
+      return ok(`Saved patch "${saved.name}" (id ${saved.id}).`);
+    },
+  );
+
+  server.registerTool(
+    'apply_patch',
+    {
+      title: 'Apply patch',
+      description:
+        'Add a new instrument track from a saved patch (by name or id from list_patches). One undoable edit; the track files into the instrument family group.',
+      inputSchema: {
+        patch: z.string().min(1).describe('patch name or id (from list_patches)'),
+        name: z.string().optional().describe('name for the new track (default: the patch name)'),
+      },
+    },
+    async ({ patch, name }) => {
+      const r = await runPatch('apply', { patch, name });
+      if ('tabError' in r) return fail(r.tabError);
+      if (!r.ok) return fail(r.error ?? 'Could not apply the patch.');
+      const added = r.result as { trackId: string; name: string };
+      return ok(`Added "${added.name}" from the patch library (track ${added.trackId}).`);
     },
   );
 
