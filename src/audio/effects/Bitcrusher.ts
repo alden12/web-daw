@@ -6,9 +6,9 @@
  * as every native-node effect. The worklet module must already be registered on the
  * context (the engine awaits `loadWorklets` before constructing effects).
  */
-import type { ParamStore } from '../params/store';
-import { rampParam, type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { rampParam, type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 export class BitcrusherEffect extends BaseEffect {
   private node!: AudioWorkletNode;
@@ -19,7 +19,7 @@ export class BitcrusherEffect extends BaseEffect {
   }
 
   protected buildGraph(): void {
-    this.node = new AudioWorkletNode(this.ctx, 'bitcrusher-processor');
+    this.node = new AudioWorkletNode(this.ctx, "bitcrusher-processor");
     this.input.connect(this.node);
     this.node.connect(this.wet);
   }
@@ -27,8 +27,8 @@ export class BitcrusherEffect extends BaseEffect {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      bits: { apply: (v, ms) => rampParam(this.ctx, this.node.parameters.get('bits')!, v as number, ms) },
-      downsample: { apply: (v, ms) => rampParam(this.ctx, this.node.parameters.get('downsample')!, v as number, ms) },
+      bits: { apply: (v, ms) => rampParam(this.ctx, this.node.parameters.get("bits")!, v as number, ms) },
+      downsample: { apply: (v, ms) => rampParam(this.ctx, this.node.parameters.get("downsample")!, v as number, ms) },
     };
   }
 

@@ -1,20 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { encodeWav, encodeWavBuffer } from '../src/audio/recording/wav';
+import { describe, expect, it } from "vitest";
+import { encodeWav, encodeWavBuffer } from "../src/audio/recording/wav";
 
 const ascii = (view: DataView, offset: number, length: number) =>
-  Array.from({ length }, (_, i) => String.fromCharCode(view.getUint8(offset + i))).join('');
+  Array.from({ length }, (_, i) => String.fromCharCode(view.getUint8(offset + i))).join("");
 
-describe('encodeWavBuffer', () => {
-  it('writes a valid 16-bit mono PCM header sized to the samples', () => {
+describe("encodeWavBuffer", () => {
+  it("writes a valid 16-bit mono PCM header sized to the samples", () => {
     const samples = new Float32Array([0, 0.5, -0.5, 1]);
     const buf = encodeWavBuffer(samples, 48000);
     const view = new DataView(buf);
 
     expect(buf.byteLength).toBe(44 + samples.length * 2);
-    expect(ascii(view, 0, 4)).toBe('RIFF');
-    expect(ascii(view, 8, 4)).toBe('WAVE');
-    expect(ascii(view, 12, 4)).toBe('fmt ');
-    expect(ascii(view, 36, 4)).toBe('data');
+    expect(ascii(view, 0, 4)).toBe("RIFF");
+    expect(ascii(view, 8, 4)).toBe("WAVE");
+    expect(ascii(view, 12, 4)).toBe("fmt ");
+    expect(ascii(view, 36, 4)).toBe("data");
 
     expect(view.getUint16(20, true)).toBe(1); // PCM
     expect(view.getUint16(22, true)).toBe(1); // mono
@@ -24,7 +24,7 @@ describe('encodeWavBuffer', () => {
     expect(view.getUint32(4, true)).toBe(36 + samples.length * 2); // riff size
   });
 
-  it('converts float samples to clamped 16-bit ints', () => {
+  it("converts float samples to clamped 16-bit ints", () => {
     const buf = encodeWavBuffer(new Float32Array([0, 1, -1, 2, -2]), 44100);
     const view = new DataView(buf);
     expect(view.getInt16(44, true)).toBe(0);
@@ -34,15 +34,15 @@ describe('encodeWavBuffer', () => {
     expect(view.getInt16(52, true)).toBe(-32768); // clamped below -1
   });
 
-  it('handles an empty take (header only)', () => {
+  it("handles an empty take (header only)", () => {
     expect(encodeWavBuffer(new Float32Array(0), 48000).byteLength).toBe(44);
   });
 });
 
-describe('encodeWav', () => {
-  it('wraps the buffer in an audio/wav blob', () => {
+describe("encodeWav", () => {
+  it("wraps the buffer in an audio/wav blob", () => {
     const blob = encodeWav(new Float32Array([0.1, -0.1]), 48000);
-    expect(blob.type).toBe('audio/wav');
+    expect(blob.type).toBe("audio/wav");
     expect(blob.size).toBe(44 + 2 * 2);
   });
 });

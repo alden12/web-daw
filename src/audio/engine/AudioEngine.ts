@@ -15,16 +15,16 @@
  * silencing all its descendants. Audio playback is driven by the Scheduler, which
  * calls `scheduleAudioClip` the way it calls `instrument.playNote`.
  */
-import type { ProjectStore, EffectInstance } from '../project/projectStore';
-import type { AudioClipData } from '../project/types';
-import { createInstrument } from '../instruments/registry';
-import type { Instrument } from '../instruments/types';
-import { createEffect } from '../effects/registry';
-import type { Effect } from '../effects/types';
-import { getAudioBuffer } from '../audioStore';
-import { soloMutedTrackIds } from './mix';
-import { audioPlayWindow } from './audioWindow';
-import { loadWorklets } from '../worklets';
+import type { ProjectStore, EffectInstance } from "../project/projectStore";
+import type { AudioClipData } from "../project/types";
+import { createInstrument } from "../instruments/registry";
+import type { Instrument } from "../instruments/types";
+import { createEffect } from "../effects/registry";
+import type { Effect } from "../effects/types";
+import { getAudioBuffer } from "../audioStore";
+import { soloMutedTrackIds } from "./mix";
+import { audioPlayWindow } from "./audioWindow";
+import { loadWorklets } from "../worklets";
 
 interface TrackNode {
   instrument: Instrument;
@@ -137,7 +137,7 @@ export class AudioEngine {
         this.groupNodes.delete(id);
       }
     }
-    const instrumentIds = new Set(tracks.filter((t) => t.kind === 'instrument').map((t) => t.id));
+    const instrumentIds = new Set(tracks.filter((t) => t.kind === "instrument").map((t) => t.id));
     for (const [id, node] of this.nodes) {
       if (!instrumentIds.has(id)) {
         this.disposeEffects(node.effects);
@@ -146,7 +146,7 @@ export class AudioEngine {
         this.nodes.delete(id);
       }
     }
-    const audioIds = new Set(tracks.filter((t) => t.kind === 'audio').map((t) => t.id));
+    const audioIds = new Set(tracks.filter((t) => t.kind === "audio").map((t) => t.id));
     for (const [id, node] of this.audioNodes) {
       if (!audioIds.has(id)) {
         this.disposeAudioSources(node);
@@ -177,7 +177,7 @@ export class AudioEngine {
 
     // Track nodes, effect chains, and routing into their group.
     for (const track of tracks) {
-      if (track.kind === 'instrument') {
+      if (track.kind === "instrument") {
         let node = this.nodes.get(track.id);
         if (!node) {
           const gain = ctx.createGain();
@@ -299,7 +299,13 @@ export class AudioEngine {
     // Play only the slice of the buffer under the (grid-fixed) loop window; the
     // scheduler re-triggers it to tile/repeat across a placement. The clip's grid
     // slide moves the buffer under the window, so the played slice shifts with it.
-    const win = audioPlayWindow(clip.loopStartSec, clip.loopEndSec, clip.gridOffsetSec, buffer.duration, maxDurationSec);
+    const win = audioPlayWindow(
+      clip.loopStartSec,
+      clip.loopEndSec,
+      clip.gridOffsetSec,
+      buffer.duration,
+      maxDurationSec,
+    );
     if (!win) {
       try {
         source.disconnect();

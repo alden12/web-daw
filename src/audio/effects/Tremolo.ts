@@ -4,9 +4,9 @@
  * `tremolo.depth` how deep the level dips (depth=1 swings down to silence); the
  * gain rides between 1-depth and 1. `mix` blends, though tremolo is usually full.
  */
-import type { ParamStore } from '../params/store';
-import { rampParam, type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { rampParam, type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 export class TremoloEffect extends BaseEffect {
   private tremGain!: GainNode;
@@ -23,7 +23,7 @@ export class TremoloEffect extends BaseEffect {
     this.tremGain = this.ctx.createGain();
     this.tremGain.gain.value = 1 - this.depth / 2;
     this.lfo = this.ctx.createOscillator();
-    this.lfo.type = 'sine';
+    this.lfo.type = "sine";
     this.lfoGain = this.ctx.createGain();
     this.lfo.connect(this.lfoGain).connect(this.tremGain.gain);
     this.lfo.start();
@@ -33,8 +33,8 @@ export class TremoloEffect extends BaseEffect {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'tremolo.rate': { apply: (v, ms) => rampParam(this.ctx, this.lfo.frequency, v as number, ms) },
-      'tremolo.depth': {
+      "tremolo.rate": { apply: (v, ms) => rampParam(this.ctx, this.lfo.frequency, v as number, ms) },
+      "tremolo.depth": {
         apply: (v, ms) => {
           this.depth = v as number;
           rampParam(this.ctx, this.tremGain.gain, 1 - this.depth / 2, ms); // centre the swing

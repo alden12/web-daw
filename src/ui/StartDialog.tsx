@@ -14,7 +14,7 @@ export function StartDialog({ onStart }: { onStart: () => void }) {
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
         <span
           className="w-9 h-9 rounded-full"
-          style={{ background: 'conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))' }}
+          style={{ background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))" }}
         />
         <h2 id="start-title" className="text-lg font-semibold text-bright">
           Start the audio engine

@@ -14,7 +14,7 @@ export function quantizeSample(x: number, bits: number): number {
   if (bits <= 0) return x;
   // (levels - 1) steps across the full [-1, 1] range, rounded to the nearest.
   const steps = Math.pow(2, bits) - 1;
-  return Math.round(((x + 1) / 2) * steps) / steps * 2 - 1;
+  return (Math.round(((x + 1) / 2) * steps) / steps) * 2 - 1;
 }
 
 /** Per-channel sample-and-hold state for the downsampler (mutate in place). */

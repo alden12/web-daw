@@ -5,23 +5,19 @@
  * quanta. Authored in TS and bundled by Vite (its `bitcrush` import is inlined), so
  * the exact math here is the same module the unit tests exercise.
  */
-import { crushSample, makeHoldState, type HoldState } from '../dsp/bitcrush';
+import { crushSample, makeHoldState, type HoldState } from "../dsp/bitcrush";
 
 class BitcrusherProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors(): AudioParamDescriptor[] {
     return [
-      { name: 'bits', defaultValue: 8, minValue: 1, maxValue: 16, automationRate: 'k-rate' },
-      { name: 'downsample', defaultValue: 4, minValue: 1, maxValue: 50, automationRate: 'k-rate' },
+      { name: "bits", defaultValue: 8, minValue: 1, maxValue: 16, automationRate: "k-rate" },
+      { name: "downsample", defaultValue: 4, minValue: 1, maxValue: 50, automationRate: "k-rate" },
     ];
   }
 
   private holds: HoldState[] = [];
 
-  process(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>,
-  ): boolean {
+  process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const input = inputs[0];
     const output = outputs[0];
     if (!input || !output) return true;
@@ -46,4 +42,4 @@ class BitcrusherProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('bitcrusher-processor', BitcrusherProcessor);
+registerProcessor("bitcrusher-processor", BitcrusherProcessor);

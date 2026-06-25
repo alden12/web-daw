@@ -4,7 +4,7 @@
  * lazy (once, on mount) and clamped; writes are best-effort (storage can throw
  * in private mode, so failures are swallowed - the UI still works in-session).
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 
 function read(key: string): string | null {
   try {
@@ -44,7 +44,7 @@ export function usePersistentNumber(key: string, fallback: number, min: number, 
 export function usePersistentBoolean(key: string, fallback: boolean) {
   const [value, setValue] = useState(() => {
     const raw = read(key);
-    return raw === null ? fallback : raw === 'true';
+    return raw === null ? fallback : raw === "true";
   });
   const set = useCallback(
     (b: boolean) => {

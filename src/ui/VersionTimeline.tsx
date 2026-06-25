@@ -5,13 +5,13 @@
  * a new commit - history stays append-only). The list is async (commits live in
  * the bundle), so it refetches when the version store or edit log changes.
  */
-import { useEffect, useState } from 'react';
-import type { EditLog, FeedNote } from '../audio/commands/editLog';
-import type { CommitSummary, VersionStore } from '../audio/commands/history';
+import { useEffect, useState } from "react";
+import type { EditLog, FeedNote } from "../audio/commands/editLog";
+import type { CommitSummary, VersionStore } from "../audio/commands/history";
 
 function timeAgo(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 45) return 'just now';
+  if (s < 45) return "just now";
   const m = Math.round(s / 60);
   if (m < 60) return `${m}m ago`;
   const h = Math.round(m / 60);
@@ -22,7 +22,7 @@ function timeAgo(ms: number, now: number): string {
 export function VersionTimeline({ versionStore, editLog }: { versionStore: VersionStore; editLog: EditLog }) {
   const [commits, setCommits] = useState<CommitSummary[]>([]);
   const [hasUncommitted, setHasUncommitted] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [diff, setDiff] = useState<string[] | null>(null);
   const [notes, setNotes] = useState<FeedNote[] | null>(null);
@@ -53,8 +53,8 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
   }, [versionStore, editLog]);
 
   const save = () => {
-    void versionStore.commit(message.trim() || undefined, 'you', false);
-    setMessage('');
+    void versionStore.commit(message.trim() || undefined, "you", false);
+    setMessage("");
   };
 
   const toggle = (c: CommitSummary) => {
@@ -84,7 +84,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && hasUncommitted) save();
+            if (e.key === "Enter" && hasUncommitted) save();
           }}
           placeholder="Name this version…"
           className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-bright placeholder:text-faint"
@@ -93,7 +93,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
           type="button"
           onClick={save}
           disabled={!hasUncommitted}
-          title={hasUncommitted ? 'Save a named version' : 'No changes since the last version'}
+          title={hasUncommitted ? "Save a named version" : "No changes since the last version"}
           className="font-mono text-[11.5px] px-2.5 py-1.5 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed whitespace-nowrap"
         >
           Save
@@ -102,25 +102,34 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
 
       {commits.length === 0 ? (
         <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
-          {hasUncommitted ? 'Unsaved changes - save a version to start the history.' : 'Versions you and Claude save appear here.'}
+          {hasUncommitted
+            ? "Unsaved changes - save a version to start the history."
+            : "Versions you and Claude save appear here."}
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
           {commits.map((c) => {
             const open = openId === c.id;
             return (
-              <li key={c.id} className={`rounded-md bg-card/60 border-l-2 ${c.author === 'claude' ? 'border-claude' : 'border-you'}`}>
+              <li
+                key={c.id}
+                className={`rounded-md bg-card/60 border-l-2 ${c.author === "claude" ? "border-claude" : "border-you"}`}
+              >
                 <button
                   type="button"
                   onClick={() => toggle(c)}
                   className="flex items-center gap-2 w-full text-left px-2.5 py-1.5 cursor-pointer"
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.author === 'claude' ? 'bg-claude' : 'bg-you'}`} />
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.author === "claude" ? "bg-claude" : "bg-you"}`}
+                  />
                   <span className="font-mono text-[11.5px] truncate text-ink">{c.message}</span>
-                  {c.auto && <span className="font-mono text-[9px] uppercase tracking-wide text-faint shrink-0">auto</span>}
+                  {c.auto && (
+                    <span className="font-mono text-[9px] uppercase tracking-wide text-faint shrink-0">auto</span>
+                  )}
                   {c.noteCount > 0 && (
                     <span
-                      title={`${c.noteCount} intent ${c.noteCount === 1 ? 'note' : 'notes'}`}
+                      title={`${c.noteCount} intent ${c.noteCount === 1 ? "note" : "notes"}`}
                       className="font-mono text-[10px] text-claude shrink-0"
                     >
                       “{c.noteCount}
@@ -142,7 +151,9 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                     {diff === null ? (
                       <span className="font-mono text-[10.5px] text-faint">Diffing…</span>
                     ) : diff.length === 0 ? (
-                      <span className="font-mono text-[10.5px] text-faint">{c.parent ? 'No detected changes.' : 'Initial version.'}</span>
+                      <span className="font-mono text-[10.5px] text-faint">
+                        {c.parent ? "No detected changes." : "Initial version."}
+                      </span>
                     ) : (
                       <ul className="flex flex-col gap-0.5">
                         {diff.map((line, i) => (
@@ -155,7 +166,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                     <button
                       type="button"
                       title="Revert to this version (records a new version)"
-                      onClick={() => void versionStore.revertTo(c.id, 'you')}
+                      onClick={() => void versionStore.revertTo(c.id, "you")}
                       className="self-start font-mono text-[10.5px] px-2 py-1 rounded border border-line text-muted hover:text-ink hover:border-you cursor-pointer"
                     >
                       Revert to this version

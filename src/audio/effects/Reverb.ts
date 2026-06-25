@@ -3,9 +3,9 @@
  * impulse is exponentially-decaying noise regenerated when `reverb.decay` (s)
  * changes; `mix` blends the wet tail with the dry signal.
  */
-import type { ParamStore } from '../params/store';
-import { type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 export class ReverbEffect extends BaseEffect {
   private convolver!: ConvolverNode;
@@ -23,7 +23,7 @@ export class ReverbEffect extends BaseEffect {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'reverb.decay': { apply: (v) => void (this.convolver.buffer = this.makeImpulse(v as number)) },
+      "reverb.decay": { apply: (v) => void (this.convolver.buffer = this.makeImpulse(v as number)) },
     };
   }
 

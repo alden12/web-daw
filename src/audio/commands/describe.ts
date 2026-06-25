@@ -7,9 +7,9 @@
  * optional so the function stays pure for history auto-messages and tests; when
  * absent (or a name no longer resolves) the phrasing degrades to the type alone.
  */
-import type { EditCommand } from './types';
-import { catalogEntry, hasInstrument } from '../instruments/catalog';
-import { effectCatalogEntry, hasEffect } from '../effects/catalog';
+import type { EditCommand } from "./types";
+import { catalogEntry, hasInstrument } from "../instruments/catalog";
+import { effectCatalogEntry, hasEffect } from "../effects/catalog";
 
 /** Resolves a track/group/effect-host id to its current name (for richer labels). */
 export interface DescribeContext {
@@ -20,69 +20,69 @@ const instLabel = (type: string): string => (hasInstrument(type) ? catalogEntry(
 const fxLabel = (type: string): string => (hasEffect(type) ? effectCatalogEntry(type).label : type);
 
 /** ` <prep> Name` (or just ` Name` when prep is '') if the id resolves, else ''. */
-function on(ctx: DescribeContext | undefined, id: string | undefined, prep = 'on'): string {
+function on(ctx: DescribeContext | undefined, id: string | undefined, prep = "on"): string {
   const name = id ? ctx?.name(id) : undefined;
-  if (!name) return '';
+  if (!name) return "";
   return prep ? ` ${prep} ${name}` : ` ${name}`;
 }
 
-const plural = (n: number) => `${n} ${n === 1 ? 'note' : 'notes'}`;
+const plural = (n: number) => `${n} ${n === 1 ? "note" : "notes"}`;
 
 type DescribeMap = {
-  [K in EditCommand['type']]: (command: Extract<EditCommand, { type: K }>, ctx?: DescribeContext) => string;
+  [K in EditCommand["type"]]: (command: Extract<EditCommand, { type: K }>, ctx?: DescribeContext) => string;
 };
 
 const DESCRIBE: DescribeMap = {
-  createTrack: (c, ctx) => `Added ${instLabel(c.instrumentType)} track${on(ctx, c.id, '')}`,
-  createTrackFromPatch: (c) => `Added ${c.name ? `"${c.name}"` : 'a patch'} from the library`,
-  addAudioTrack: (c) => `Imported ${c.name ?? 'audio'}`,
-  removeTrack: () => 'Removed track',
+  createTrack: (c, ctx) => `Added ${instLabel(c.instrumentType)} track${on(ctx, c.id, "")}`,
+  createTrackFromPatch: (c) => `Added ${c.name ? `"${c.name}"` : "a patch"} from the library`,
+  addAudioTrack: (c) => `Imported ${c.name ?? "audio"}`,
+  removeTrack: () => "Removed track",
   setTrack: (c, ctx) => {
-    const name = on(ctx, c.trackId, '');
+    const name = on(ctx, c.trackId, "");
     if (c.name !== undefined) return `Renamed track to ${c.name}`;
-    if (c.muted !== undefined) return `${c.muted ? 'Muted' : 'Unmuted'} track${name}`;
-    if (c.solo !== undefined) return `${c.solo ? 'Soloed' : 'Unsoloed'} track${name}`;
+    if (c.muted !== undefined) return `${c.muted ? "Muted" : "Unmuted"} track${name}`;
+    if (c.solo !== undefined) return `${c.solo ? "Soloed" : "Unsoloed"} track${name}`;
     return `Set volume${name}`;
   },
-  setAudioClip: () => 'Edited audio clip',
-  addAudioClip: (c) => `Recorded ${c.name ? `"${c.name}"` : 'a take'}`,
-  addNoteClip: (c) => `Recorded ${c.name ? `"${c.name}"` : 'a take'} (${plural(c.notes.length)})`,
-  createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ''}`,
-  removeGroup: () => 'Removed group',
+  setAudioClip: () => "Edited audio clip",
+  addAudioClip: (c) => `Recorded ${c.name ? `"${c.name}"` : "a take"}`,
+  addNoteClip: (c) => `Recorded ${c.name ? `"${c.name}"` : "a take"} (${plural(c.notes.length)})`,
+  createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ""}`,
+  removeGroup: () => "Removed group",
   setGroup: (c, ctx) => {
-    const name = on(ctx, c.groupId, '');
+    const name = on(ctx, c.groupId, "");
     if (c.name !== undefined) return `Renamed group to ${c.name}`;
-    if (c.collapsed !== undefined) return `${c.collapsed ? 'Collapsed' : 'Expanded'} group${name}`;
-    if (c.muted !== undefined) return `${c.muted ? 'Muted' : 'Unmuted'} group${name}`;
-    if (c.solo !== undefined) return `${c.solo ? 'Soloed' : 'Unsoloed'} group${name}`;
+    if (c.collapsed !== undefined) return `${c.collapsed ? "Collapsed" : "Expanded"} group${name}`;
+    if (c.muted !== undefined) return `${c.muted ? "Muted" : "Unmuted"} group${name}`;
+    if (c.solo !== undefined) return `${c.solo ? "Soloed" : "Unsoloed"} group${name}`;
     return `Set group volume${name}`;
   },
-  moveTrack: () => 'Moved track to group',
-  moveGroup: () => 'Reparented group',
+  moveTrack: () => "Moved track to group",
+  moveGroup: () => "Reparented group",
   setParam: (c, ctx) => `Set ${c.id}${on(ctx, c.trackId)}`,
-  addEffect: (c, ctx) => `Added ${fxLabel(c.effectType)}${on(ctx, c.hostId, 'to')}`,
-  removeEffect: (c, ctx) => `Removed effect${on(ctx, c.hostId, 'from')}`,
-  moveEffect: () => 'Reordered effect',
-  bypassEffect: (c, ctx) => `${c.bypassed ? 'Bypassed' : 'Enabled'} effect${on(ctx, c.hostId)}`,
+  addEffect: (c, ctx) => `Added ${fxLabel(c.effectType)}${on(ctx, c.hostId, "to")}`,
+  removeEffect: (c, ctx) => `Removed effect${on(ctx, c.hostId, "from")}`,
+  moveEffect: () => "Reordered effect",
+  bypassEffect: (c, ctx) => `${c.bypassed ? "Bypassed" : "Enabled"} effect${on(ctx, c.hostId)}`,
   setEffectParam: (c, ctx) => `Set ${c.id}${on(ctx, c.hostId)}`,
-  addNote: (c, ctx) => `Added note${on(ctx, c.trackId, 'to')}`,
-  addNotes: (c, ctx) => `Added ${plural(c.notes.length)}${on(ctx, c.trackId, 'to')}`,
+  addNote: (c, ctx) => `Added note${on(ctx, c.trackId, "to")}`,
+  addNotes: (c, ctx) => `Added ${plural(c.notes.length)}${on(ctx, c.trackId, "to")}`,
   editNotes: (c, ctx) => `Edited ${plural(c.notes.length)}${on(ctx, c.trackId)}`,
-  removeNote: (c, ctx) => `Removed note${on(ctx, c.trackId, 'from')}`,
-  removeNotes: (c, ctx) => `Removed ${plural(c.ids.length)}${on(ctx, c.trackId, 'from')}`,
+  removeNote: (c, ctx) => `Removed note${on(ctx, c.trackId, "from")}`,
+  removeNotes: (c, ctx) => `Removed ${plural(c.ids.length)}${on(ctx, c.trackId, "from")}`,
   clearClip: (c, ctx) => `Cleared clip${on(ctx, c.trackId)}`,
   setClipLength: (c) => `Set clip length ${c.lengthBeats}`,
-  addClip: (c) => `New clip${c.name ? ` ${c.name}` : ''}`,
-  removeClip: () => 'Removed clip',
+  addClip: (c) => `New clip${c.name ? ` ${c.name}` : ""}`,
+  removeClip: () => "Removed clip",
   renameClip: (c) => `Renamed clip to ${c.name}`,
   pasteClip: (c) => `Pasted clip ${c.content.name}`,
-  addPlacement: () => 'Placed clip',
-  movePlacement: () => 'Moved clip',
-  resizePlacement: () => 'Resized clip',
-  removePlacement: () => 'Removed clip from arrangement',
-  splitPlacement: () => 'Split clip',
-  launchClip: (c) => (c.clipId ? 'Launched clip' : 'Stopped clip'),
-  stopAllClips: () => 'Back to timeline',
+  addPlacement: () => "Placed clip",
+  movePlacement: () => "Moved clip",
+  resizePlacement: () => "Resized clip",
+  removePlacement: () => "Removed clip from arrangement",
+  splitPlacement: () => "Split clip",
+  launchClip: (c) => (c.clipId ? "Launched clip" : "Stopped clip"),
+  stopAllClips: () => "Back to timeline",
   setTempo: (c) => `Set tempo ${c.bpm}`,
   setLength: (c) => `Set loop length ${c.lengthBeats}`,
   setLoopStart: (c) => `Set loop start ${c.beats}`,

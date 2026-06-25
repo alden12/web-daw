@@ -8,9 +8,9 @@
  * registry.ts) without touching any central catalog object - the worked example
  * of the extension point.
  */
-import type { ParamStore } from '../params/store';
-import { rampParam, type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { rampParam, type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 /** Centre delay time, and the max +/- swing the LFO adds at depth = 1. */
 const BASE_DELAY = 0.025;
@@ -30,7 +30,7 @@ export class ChorusEffect extends BaseEffect {
     this.delay = this.ctx.createDelay(BASE_DELAY + MAX_SWING + 0.05);
     this.delay.delayTime.value = BASE_DELAY;
     this.lfo = this.ctx.createOscillator();
-    this.lfo.type = 'sine';
+    this.lfo.type = "sine";
     this.lfoGain = this.ctx.createGain();
     this.lfo.connect(this.lfoGain).connect(this.delay.delayTime);
     this.lfo.start();
@@ -40,8 +40,8 @@ export class ChorusEffect extends BaseEffect {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'chorus.rate': { apply: (v, ms) => rampParam(this.ctx, this.lfo.frequency, v as number, ms) },
-      'chorus.depth': { apply: (v, ms) => rampParam(this.ctx, this.lfoGain.gain, (v as number) * MAX_SWING, ms) },
+      "chorus.rate": { apply: (v, ms) => rampParam(this.ctx, this.lfo.frequency, v as number, ms) },
+      "chorus.depth": { apply: (v, ms) => rampParam(this.ctx, this.lfoGain.gain, (v as number) * MAX_SWING, ms) },
     };
   }
 

@@ -13,26 +13,26 @@ interface BaseSpec {
 }
 
 export interface NumberSpec extends BaseSpec {
-  kind: 'number';
+  kind: "number";
   min: number;
   max: number;
   default: number;
   /** Display unit, e.g. "Hz", "dB", "ms", "cents". */
   unit?: string;
   /** How a UI control maps its position to a value. Defaults to "linear". */
-  taper?: 'linear' | 'exponential';
+  taper?: "linear" | "exponential";
   /** If set, value changes are smoothed/ramped over this many milliseconds. */
   smoothMs?: number;
 }
 
 export interface EnumSpec extends BaseSpec {
-  kind: 'enum';
+  kind: "enum";
   options: readonly string[];
   default: string;
 }
 
 export interface BooleanSpec extends BaseSpec {
-  kind: 'boolean';
+  kind: "boolean";
   default: boolean;
 }
 

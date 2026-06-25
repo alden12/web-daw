@@ -27,12 +27,7 @@ import type { Recorder } from "../audio/recording/recorder";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { GRID } from "../audio/sequencer/types";
-import {
-  newClipId,
-  newGroupId,
-  newPlacementId,
-  newTrackId,
-} from "../audio/commands/ids";
+import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
 import { useProject } from "../audio/project/useProject";
@@ -44,13 +39,7 @@ import { Fader, MuteSolo } from "./MixerControls";
 import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "./clipDnd";
 import { Ruler } from "./timeline/Ruler";
 import { Waveform } from "./Waveform";
-import {
-  beatToX,
-  floorBeat,
-  snapBeat,
-  xToBeat,
-  DEFAULT_BEATS_PER_BAR,
-} from "./timeline/timeGrid";
+import { beatToX, floorBeat, snapBeat, xToBeat, DEFAULT_BEATS_PER_BAR } from "./timeline/timeGrid";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 
 const ROW = "h-11.5 shrink-0";
@@ -76,14 +65,11 @@ const SNAP_OPTIONS = [
   { label: "1/2", value: 0.5 },
 ];
 
-const clamp = (v: number, lo: number, hi: number) =>
-  Math.min(hi, Math.max(lo, v));
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type Selection = { trackId: string; id: string } | null;
 
-type Row =
-  | { kind: "group"; group: GroupMeta; depth: number }
-  | { kind: "track"; track: TrackMeta; depth: number };
+type Row = { kind: "group"; group: GroupMeta; depth: number } | { kind: "track"; track: TrackMeta; depth: number };
 
 /** Depth-first, collapse-aware flatten: subgroups then tracks under each group. */
 function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
@@ -91,19 +77,15 @@ function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
   const walk = (group: GroupMeta, depth: number) => {
     rows.push({ kind: "group", group, depth });
     if (group.collapsed) return;
-    for (const sub of groups.filter((g) => g.parentId === group.id))
-      walk(sub, depth + 1);
+    for (const sub of groups.filter((g) => g.parentId === group.id)) walk(sub, depth + 1);
     // Tracks sit at their group's depth (not indented one further), so a group and
     // its tracks share the leading gutter and their mute/solo controls line up; the
     // group's distinct styling (uppercase, darker bg) carries the hierarchy.
-    for (const t of tracks.filter((t) => t.parentId === group.id))
-      rows.push({ kind: "track", track: t, depth });
+    for (const t of tracks.filter((t) => t.parentId === group.id)) rows.push({ kind: "track", track: t, depth });
   };
   for (const g of groups.filter((g) => g.parentId === null)) walk(g, 0);
   // Defensive: surface any orphaned tracks (model keeps every track in a group).
-  for (const t of tracks.filter(
-    (t) => !groups.some((g) => g.id === t.parentId),
-  ))
+  for (const t of tracks.filter((t) => !groups.some((g) => g.id === t.parentId)))
     rows.push({ kind: "track", track: t, depth: 0 });
   return rows;
 }
@@ -141,9 +123,7 @@ function Block({
     >
       <div className="absolute inset-0 bg-you/10" />
       {children}
-      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">
-        {name}
-      </span>
+      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{name}</span>
       {/* right-edge resize affordance */}
       <div className="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize" />
     </div>
@@ -155,15 +135,7 @@ function Block({
  * looped clip (a window longer than the clip) shows its repeats, with a faint
  * divider at each loop boundary. Mirrors the scheduler's `tileClipNotes` math.
  */
-function NoteMinis({
-  store,
-  placement,
-  pxPerBeat,
-}: {
-  store: ClipStore;
-  placement: Placement;
-  pxPerBeat: number;
-}) {
+function NoteMinis({ store, placement, pxPerBeat }: { store: ClipStore; placement: Placement; pxPerBeat: number }) {
   const clip = useClip(store);
   const clipLen = clip.lengthBeats;
   if (clipLen <= 0) return null;
@@ -178,14 +150,12 @@ function NoteMinis({
   for (const note of body) {
     let phase = (note.start - placement.offset) % clipLen;
     if (phase < 0) phase += clipLen;
-    for (let tau = phase; tau < placement.length; tau += clipLen)
-      tiles.push({ key: `${note.id}:${tau}`, tau, note });
+    for (let tau = phase; tau < placement.length; tau += clipLen) tiles.push({ key: `${note.id}:${tau}`, tau, note });
   }
   const dividers: number[] = [];
   let first = -placement.offset % clipLen;
   if (first < 0) first += clipLen;
-  for (let tau = first; tau < placement.length; tau += clipLen)
-    if (tau > 0.001) dividers.push(tau);
+  for (let tau = first; tau < placement.length; tau += clipLen) if (tau > 0.001) dividers.push(tau);
 
   return (
     <>
@@ -247,14 +217,8 @@ function Lane({
   dispatch: Dispatch;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<{ left: number; width: number } | null>(
-    null,
-  );
-  const beatAt = (clientX: number) =>
-    xToBeat(
-      clientX - (ref.current?.getBoundingClientRect().left ?? 0),
-      pxPerBeat,
-    );
+  const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
+  const beatAt = (clientX: number) => xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
 
@@ -262,8 +226,7 @@ function Lane({
   // accepts: dropping on the clip's own track places the existing clip; dropping on
   // another same-kind track copies the clip into that track's pool first, then
   // places it.
-  const accepts = (e: React.DragEvent) =>
-    e.dataTransfer.types.includes(clipDndKindType(track.kind));
+  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndKindType(track.kind));
   const onDragOver = (e: React.DragEvent) => {
     if (!accepts(e)) return;
     e.preventDefault();
@@ -324,10 +287,7 @@ function Lane({
     const onMove = (ev: PointerEvent) => {
       const delta = beatAt(ev.clientX) - downBeat;
       if (isEdge) {
-        const length = Math.max(
-          snapOn ? snapDiv : GRID,
-          snapB(origin.length + delta),
-        );
+        const length = Math.max(snapOn ? snapDiv : GRID, snapB(origin.length + delta));
         if (length !== p.length)
           dispatch({
             type: "resizePlacement",
@@ -422,10 +382,7 @@ function Lane({
       }
       // Drag: an empty clip sized to the drag.
       const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
-      const length = Math.max(
-        snapOn ? snapDiv : GRID,
-        snapB(Math.max(downBeat, beatAt(ev.clientX))) - start,
-      );
+      const length = Math.max(snapOn ? snapDiv : GRID, snapB(Math.max(downBeat, beatAt(ev.clientX))) - start);
       createClip(start, length);
     };
     window.addEventListener("pointermove", onMove);
@@ -449,8 +406,7 @@ function Lane({
     >
       {track.placements.map((p) => {
         const clip = track.clips.find((c) => c.id === p.clipId);
-        const selected =
-          selection?.trackId === track.id && selection.id === p.id;
+        const selected = selection?.trackId === track.id && selection.id === p.id;
         return (
           <Block
             key={p.id}
@@ -493,9 +449,7 @@ function Lane({
       {track.launchedClipId && (
         <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">
           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-you bg-ground/80 border border-you/50 rounded px-1.5 py-0.5">
-            ▶{" "}
-            {track.clips.find((c) => c.id === track.launchedClipId)?.name ??
-              "clip"}
+            ▶ {track.clips.find((c) => c.id === track.launchedClipId)?.name ?? "clip"}
           </span>
         </div>
       )}
@@ -525,9 +479,7 @@ function GroupHeader({
         type="button"
         aria-expanded={!group.collapsed}
         title={group.collapsed ? "Expand group" : "Collapse group"}
-        onClick={() =>
-          projectStore.setGroupCollapsed(group.id, !group.collapsed)
-        }
+        onClick={() => projectStore.setGroupCollapsed(group.id, !group.collapsed)}
         className={`${GUTTER} flex items-center justify-center text-2xl leading-none text-muted cursor-pointer`}
       >
         {group.collapsed ? "▸" : "▾"}
@@ -535,27 +487,19 @@ function GroupHeader({
       <MuteSolo
         muted={group.muted}
         solo={group.solo}
-        onMute={() =>
-          dispatch({ type: "setGroup", groupId: group.id, muted: !group.muted })
-        }
-        onSolo={() =>
-          dispatch({ type: "setGroup", groupId: group.id, solo: !group.solo })
-        }
+        onMute={() => dispatch({ type: "setGroup", groupId: group.id, muted: !group.muted })}
+        onSolo={() => dispatch({ type: "setGroup", groupId: group.id, solo: !group.solo })}
       />
       <InlineRename
         value={group.name}
-        onCommit={(name) =>
-          dispatch({ type: "setGroup", groupId: group.id, name })
-        }
+        onCommit={(name) => dispatch({ type: "setGroup", groupId: group.id, name })}
         className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
       />
       <Fader
         value={group.volume}
         title="Group volume"
         width={48}
-        onChange={(v) =>
-          dispatch({ type: "setGroup", groupId: group.id, volume: v })
-        }
+        onChange={(v) => dispatch({ type: "setGroup", groupId: group.id, volume: v })}
       />
       <Menu
         label="Group actions"
@@ -623,9 +567,7 @@ function TrackHeader({
               onArmToggle();
             }}
             className={`w-2.5 h-2.5 rounded-full border cursor-pointer ${
-              armed
-                ? "bg-claude border-claude"
-                : "border-muted hover:border-claude"
+              armed ? "bg-claude border-claude" : "border-muted hover:border-claude"
             }`}
           />
         )}
@@ -633,18 +575,12 @@ function TrackHeader({
       <MuteSolo
         muted={track.muted}
         solo={track.solo}
-        onMute={() =>
-          dispatch({ type: "setTrack", trackId: track.id, muted: !track.muted })
-        }
-        onSolo={() =>
-          dispatch({ type: "setTrack", trackId: track.id, solo: !track.solo })
-        }
+        onMute={() => dispatch({ type: "setTrack", trackId: track.id, muted: !track.muted })}
+        onSolo={() => dispatch({ type: "setTrack", trackId: track.id, solo: !track.solo })}
       />
       <InlineRename
         value={track.name}
-        onCommit={(name) =>
-          dispatch({ type: "setTrack", trackId: track.id, name })
-        }
+        onCommit={(name) => dispatch({ type: "setTrack", trackId: track.id, name })}
         className="font-mono text-[13px] text-bright flex-1 min-w-0"
       />
       <Fader
@@ -652,9 +588,7 @@ function TrackHeader({
         title="Volume"
         width={56}
         onPointerDownCapture={(e) => e.stopPropagation()}
-        onChange={(v) =>
-          dispatch({ type: "setTrack", trackId: track.id, volume: v })
-        }
+        onChange={(v) => dispatch({ type: "setTrack", trackId: track.id, volume: v })}
       />
       <Menu
         label="Track actions"
@@ -690,34 +624,14 @@ export function ArrangementTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber(
-    "web-daw:arr-zoom",
-    24,
-    ZOOM.min,
-    ZOOM.max,
-  );
-  const [headerW, setHeaderW] = usePersistentNumber(
-    "web-daw:arr-header-w",
-    DEFAULT_HEADER_W,
-    HEADER_MIN,
-    HEADER_MAX,
-  );
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
+  const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
-  const [snapDiv, setSnapDiv] = usePersistentNumber(
-    "web-daw:arr-snap-div",
-    1,
-    0.5,
-    4,
-  );
+  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
   // Recording settings live in the toolbar's settings menu (right). The count-in is
   // a persisted preference pushed to the recorder; the device list/selection are
   // recorder state. (The Record button itself stays in the transport.)
-  const [countInBars, setCountInBars] = usePersistentNumber(
-    "web-daw:count-in-bars",
-    1,
-    0,
-    2,
-  );
+  const [countInBars, setCountInBars] = usePersistentNumber("web-daw:count-in-bars", 1, 0, 2);
   useEffect(() => {
     recorder.setCountInBars(countInBars);
   }, [recorder, countInBars]);
@@ -748,17 +662,11 @@ export function ArrangementTimeline({
   // and never stops short of the visible panel, so the bar grid fills it at any zoom.
   const arrangedEnd = Math.max(
     lengthBeats,
-    ...project.tracks.flatMap((t) =>
-      t.placements.map((p) => p.startBeat + p.length),
-    ),
+    ...project.tracks.flatMap((t) => t.placements.map((p) => p.startBeat + p.length)),
     0,
   );
-  const minViewBeats =
-    pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
-  const viewBeats = Math.max(
-    arrangedEnd + TRAIL_BEATS,
-    Math.ceil(minViewBeats),
-  );
+  const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
+  const viewBeats = Math.max(arrangedEnd + TRAIL_BEATS, Math.ceil(minViewBeats));
   const laneWidth = beatToX(viewBeats, pxPerBeat);
   const contentH = RULER_H + rows.length * ROW_PX;
 
@@ -783,12 +691,7 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (
-        el &&
-        (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ||
-          el.closest("[data-clip-rail]"))
-      )
-        return;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
       if (e.key === "Escape") {
         setSelection(null);
         setMarker(null);
@@ -815,12 +718,7 @@ export function ArrangementTimeline({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (
-        el &&
-        (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ||
-          el.closest("[data-clip-rail]"))
-      )
-        return;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.closest("[data-clip-rail]"))) return;
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       if (key !== "c" && key !== "x" && key !== "v") return;
@@ -851,27 +749,14 @@ export function ArrangementTimeline({
       // paste: needs a clipboard and a target track that owns the clip. Prefer the
       // marker (track + beat); else after the selection; else the track's end.
       const cb = clipboard.current;
-      const targetId =
-        marker?.trackId ??
-        selection?.trackId ??
-        projectStore.selectedId ??
-        undefined;
+      const targetId = marker?.trackId ?? selection?.trackId ?? projectStore.selectedId ?? undefined;
       const t = targetId ? projectStore.getTrack(targetId) : undefined;
       if (!cb || !t || !t.clips.some((c) => c.id === cb.clipId)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const anchor = selection
-        ? t.placements.find((x) => x.id === selection.id)
-        : null;
-      const trackEnd = t.placements.reduce(
-        (m, p) => Math.max(m, p.startBeat + p.length),
-        0,
-      );
-      const startBeat = marker
-        ? marker.beat
-        : anchor
-          ? anchor.startBeat + anchor.length
-          : trackEnd;
+      const anchor = selection ? t.placements.find((x) => x.id === selection.id) : null;
+      const trackEnd = t.placements.reduce((m, p) => Math.max(m, p.startBeat + p.length), 0);
+      const startBeat = marker ? marker.beat : anchor ? anchor.startBeat + anchor.length : trackEnd;
       const id = newPlacementId();
       dispatch({
         type: "addPlacement",
@@ -951,8 +836,7 @@ export function ArrangementTimeline({
     const el = scrollRef.current;
     if (!el) return;
     const left = el.getBoundingClientRect().left;
-    const move = (ev: PointerEvent) =>
-      setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
+    const move = (ev: PointerEvent) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -982,8 +866,7 @@ export function ArrangementTimeline({
           items={[
             {
               label: "Add group",
-              onClick: () =>
-                dispatch({ type: "createGroup", id: newGroupId() }),
+              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
             },
             // Every track lives in a group, so adding one picks the destination group
             // (or a fresh group). Nested as a submenu so the menu stays short.
@@ -1069,11 +952,7 @@ export function ArrangementTimeline({
         )}
         <div className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
-            <input
-              type="checkbox"
-              checked={snapOn}
-              onChange={(e) => setSnapOn(e.target.checked)}
-            />
+            <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
             Snap
           </label>
           <select
@@ -1093,9 +972,7 @@ export function ArrangementTimeline({
             type="button"
             title="Zoom out"
             className={zoomBtn}
-            onClick={() =>
-              setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))
-            }
+            onClick={() => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))}
           >
             −
           </button>
@@ -1103,9 +980,7 @@ export function ArrangementTimeline({
             type="button"
             title="Zoom in"
             className={zoomBtn}
-            onClick={() =>
-              setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))
-            }
+            onClick={() => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))}
           >
             +
           </button>
@@ -1118,20 +993,10 @@ export function ArrangementTimeline({
         </div>
       ) : (
         <div className="relative flex-1 min-h-0">
-          <div
-            ref={scrollRef}
-            data-testid="arr-scroll"
-            className="absolute inset-0 overflow-auto"
-          >
-            <div
-              className="relative"
-              style={{ width: headerW + laneWidth, height: contentH }}
-            >
+          <div ref={scrollRef} data-testid="arr-scroll" className="absolute inset-0 overflow-auto">
+            <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
               {/* ruler row: sticky top; the corner cell is sticky on both axes */}
-              <div
-                className="sticky top-0 z-20 flex"
-                style={{ height: RULER_H }}
-              >
+              <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
                 <div
                   className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
                   style={{ width: headerW, height: RULER_H }}
@@ -1142,22 +1007,15 @@ export function ArrangementTimeline({
                   loopEnd={lengthBeats}
                   pxPerBeat={pxPerBeat}
                   beatsPerBar={beatsPerBar}
-                  onSetLoopStart={(beats) =>
-                    dispatch({ type: "setLoopStart", beats })
-                  }
-                  onSetLoopEnd={(beats) =>
-                    dispatch({ type: "setLength", lengthBeats: beats })
-                  }
+                  onSetLoopStart={(beats) => dispatch({ type: "setLoopStart", beats })}
+                  onSetLoopEnd={(beats) => dispatch({ type: "setLength", lengthBeats: beats })}
                 />
               </div>
 
               {rows.map((row) =>
                 row.kind === "group" ? (
                   <div key={row.group.id} className="flex">
-                    <div
-                      className="sticky left-0 z-10 shrink-0"
-                      style={{ width: headerW }}
-                    >
+                    <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
                       <GroupHeader
                         group={row.group}
                         depth={row.depth}
@@ -1165,10 +1023,7 @@ export function ArrangementTimeline({
                         dispatch={dispatch}
                       />
                     </div>
-                    <div
-                      className={`${ROW} border-b border-line bg-center/40`}
-                      style={{ width: laneWidth }}
-                    />
+                    <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
                   </div>
                 ) : (
                   <TrackRow
@@ -1177,11 +1032,7 @@ export function ArrangementTimeline({
                     depth={row.depth}
                     selectedTrack={row.track.id === project.selectedTrackId}
                     armed={rec.armedTrackId === row.track.id}
-                    onArmToggle={() =>
-                      recorder.setArmedTrack(
-                        rec.armedTrackId === row.track.id ? null : row.track.id,
-                      )
-                    }
+                    onArmToggle={() => recorder.setArmedTrack(rec.armedTrackId === row.track.id ? null : row.track.id)}
                     projectStore={projectStore}
                     dispatch={dispatch}
                     headerW={headerW}
@@ -1191,21 +1042,11 @@ export function ArrangementTimeline({
                     snapOn={snapOn}
                     snapDiv={snapDiv}
                     selection={selection}
-                    markerBeat={
-                      marker?.trackId === row.track.id ? marker.beat : null
-                    }
-                    dropBeat={
-                      dropTarget?.trackId === row.track.id
-                        ? dropTarget.beat
-                        : null
-                    }
+                    markerBeat={marker?.trackId === row.track.id ? marker.beat : null}
+                    dropBeat={dropTarget?.trackId === row.track.id ? dropTarget.beat : null}
                     onSelect={selectPlacement}
                     onMark={placeMarker}
-                    onHover={(beat) =>
-                      setDropTarget(
-                        beat === null ? null : { trackId: row.track.id, beat },
-                      )
-                    }
+                    onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
                   />
                 ),
               )}
@@ -1309,10 +1150,7 @@ function TrackRow({
           dispatch={dispatch}
         />
       ) : (
-        <div
-          className={`${ROW} border-b border-line-soft`}
-          style={{ width: laneWidth }}
-        />
+        <div className={`${ROW} border-b border-line-soft`} style={{ width: laneWidth }} />
       )}
     </div>
   );

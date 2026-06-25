@@ -16,9 +16,7 @@ async function dismissStart(page: Page) {
   }
 }
 
-test("add a track via the toolbar group picker and delete it via the row menu", async ({
-  page,
-}) => {
+test("add a track via the toolbar group picker and delete it via the row menu", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
@@ -37,9 +35,7 @@ test("add a track via the toolbar group picker and delete it via the row menu", 
   await expect(trackMenus).toHaveCount(before);
 });
 
-test("a group row menu adds an empty track into that group", async ({
-  page,
-}) => {
+test("a group row menu adds an empty track into that group", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 

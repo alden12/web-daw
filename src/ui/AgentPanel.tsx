@@ -64,9 +64,7 @@ export function AgentPanel({
         commit,
       })),
     ];
-    return merged
-      .sort((a, b) => b.seq - a.seq || rank(a) - rank(b))
-      .slice(0, 120);
+    return merged.sort((a, b) => b.seq - a.seq || rank(a) - rank(b)).slice(0, 120);
   }, [entries, notes, commits]);
   const histBtn =
     "flex items-center justify-center font-mono text-xl w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed";
@@ -169,30 +167,21 @@ export function AgentPanel({
                         <li
                           key={`n-${n.seq}`}
                           className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2 ${
-                            n.author === "claude"
-                              ? "border-claude"
-                              : "border-you"
+                            n.author === "claude" ? "border-claude" : "border-you"
                           }`}
                         >
-                          <span className="text-[11px] shrink-0 text-muted">
-                            “
-                          </span>
-                          <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">
-                            {n.text}
-                          </span>
+                          <span className="text-[11px] shrink-0 text-muted">“</span>
+                          <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
                         </li>
                       );
                     }
                     const entry = item.entry;
-                    const isUndoRedo =
-                      entry.kind === "undo" || entry.kind === "redo";
+                    const isUndoRedo = entry.kind === "undo" || entry.kind === "redo";
                     return (
                       <li
                         key={entry.seq}
                         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
-                          entry.author === "claude"
-                            ? "border-claude"
-                            : "border-you"
+                          entry.author === "claude" ? "border-claude" : "border-you"
                         }`}
                       >
                         <span
@@ -203,9 +192,7 @@ export function AgentPanel({
                         >
                           {editLog.describe(entry)}
                         </span>
-                        <span className="ml-auto font-mono text-[10px] text-faint shrink-0">
-                          {entry.author}
-                        </span>
+                        <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{entry.author}</span>
                       </li>
                     );
                   })}

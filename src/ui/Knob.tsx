@@ -3,12 +3,12 @@
  * control for the param's kind and reads/writes through the store. There is no
  * per-parameter UI code anywhere - panels are just this mapped over a schema.
  */
-import { useRef } from 'react';
-import type { ReactElement } from 'react';
-import type { EnumSpec, NumberSpec, ParamSpec, ParamValue } from '../audio/params/types';
-import type { ParamStore } from '../audio/params/store';
-import { useParam } from '../audio/params/useParam';
-import { fromNormalized, toNormalized } from '../audio/params/taper';
+import { useRef } from "react";
+import type { ReactElement } from "react";
+import type { EnumSpec, NumberSpec, ParamSpec, ParamValue } from "../audio/params/types";
+import type { ParamStore } from "../audio/params/store";
+import { useParam } from "../audio/params/useParam";
+import { fromNormalized, toNormalized } from "../audio/params/taper";
 
 const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
 
@@ -73,7 +73,7 @@ export function Knob({ spec, store, onChange }: { spec: ParamSpec; store: ParamS
 
   // One renderer per kind (map dispatch). useParam runs above unconditionally, so
   // hook order is stable regardless of which renderer is picked.
-  const renderers: Record<ParamSpec['kind'], () => ReactElement> = {
+  const renderers: Record<ParamSpec["kind"], () => ReactElement> = {
     number: () => <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />,
     enum: () => (
       <label className="flex flex-col items-center gap-1.5 w-14">

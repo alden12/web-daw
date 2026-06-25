@@ -5,9 +5,9 @@
  * amplitude envelope (attack/release + velocity), and time-aware
  * noteOn/noteOff/playNote/allNotesOff.
  */
-import type { ParamStore } from '../params/store';
-import type { Instrument, VoiceHandle } from './types';
-import { bindParams, rampParam, type ParamBinding } from './binding';
+import type { ParamStore } from "../params/store";
+import type { Instrument, VoiceHandle } from "./types";
+import { bindParams, rampParam, type ParamBinding } from "./binding";
 
 export abstract class BaseInstrument implements Instrument {
   protected readonly ctx: AudioContext;
@@ -49,9 +49,9 @@ export abstract class BaseInstrument implements Instrument {
   /** amp.level (output gain) + envelope times - shared by every instrument. */
   protected commonBindings(): Record<string, ParamBinding> {
     return {
-      'amp.level': { apply: (v, ms) => rampParam(this.ctx, this.output.gain, v as number, ms) },
-      'env.attack': { apply: (v) => void (this.env.attackMs = v as number) },
-      'env.release': { apply: (v) => void (this.env.releaseMs = v as number) },
+      "amp.level": { apply: (v, ms) => rampParam(this.ctx, this.output.gain, v as number, ms) },
+      "env.attack": { apply: (v) => void (this.env.attackMs = v as number) },
+      "env.release": { apply: (v) => void (this.env.releaseMs = v as number) },
     };
   }
 
@@ -80,7 +80,7 @@ export abstract class BaseInstrument implements Instrument {
     const at = Math.max(when, this.ctx.currentTime);
     const release = this.env.releaseMs / 1000;
     const g = voice.amp.gain;
-    if (typeof g.cancelAndHoldAtTime === 'function') {
+    if (typeof g.cancelAndHoldAtTime === "function") {
       g.cancelAndHoldAtTime(at);
     } else {
       g.cancelScheduledValues(at);

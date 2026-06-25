@@ -3,10 +3,10 @@
  * the generic Knob mapped over the instrument's schema. No per-instrument-type
  * UI - a new engine with its own schema gets a card for free.
  */
-import type { ParamStore } from '../audio/params/store';
-import { instrumentSchema, catalogEntry } from '../audio/instruments/catalog';
-import type { Dispatch } from '../audio/commands/types';
-import { Knob } from './Knob';
+import type { ParamStore } from "../audio/params/store";
+import { instrumentSchema, catalogEntry } from "../audio/instruments/catalog";
+import type { Dispatch } from "../audio/commands/types";
+import { Knob } from "./Knob";
 
 export function InstrumentPanel({
   params,
@@ -35,7 +35,7 @@ export function InstrumentPanel({
             key={spec.id}
             spec={spec}
             store={params}
-            onChange={(id, value) => dispatch({ type: 'setParam', trackId, id, value })}
+            onChange={(id, value) => dispatch({ type: "setParam", trackId, id, value })}
           />
         ))}
       </div>

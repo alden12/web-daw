@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
    center workbench reads brightest. Two-voice accents: you = teal, claude = coral. */
@@ -22,8 +22,8 @@
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
 
-  --font-sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
@@ -50,8 +50,8 @@
   grid-template-columns: 200px minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 244px;
   grid-template-areas:
-    'library center agent'
-    'timeline timeline timeline';
+    "library center agent"
+    "timeline timeline timeline";
   transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

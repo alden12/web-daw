@@ -13,11 +13,11 @@
  * In-memory for this slice; persisting the log is the next step (the entry type
  * is serializable by construction).
  */
-import { ProjectStore } from '../project/projectStore';
-import type { ProjectData } from '../project/types';
-import { applyEdit } from './applyEdit';
-import { describeCommand, type DescribeContext } from './describe';
-import type { Author, EditCommand, EditEntry } from './types';
+import { ProjectStore } from "../project/projectStore";
+import type { ProjectData } from "../project/types";
+import { applyEdit } from "./applyEdit";
+import { describeCommand, type DescribeContext } from "./describe";
+import type { Author, EditCommand, EditEntry } from "./types";
 
 /**
  * An undo/redo checkpoint: the project state to restore, plus the command that
@@ -58,50 +58,53 @@ const COALESCE_MS = 400;
 const MAX_DEPTH = 100;
 /** How many checkpoints to persist per stack (delta-encoded: one base snapshot + commands). */
 const PERSIST_UNDO_DEPTH = 30;
-const COALESCABLE = new Set<EditCommand['type']>([
-  'setParam',
-  'setEffectParam',
-  'setTrack',
-  'setGroup',
-  'setAudioClip',
-  'setTempo',
-  'setLength',
-  'setLoopStart',
-  'editNotes',
-  'setClipLength',
-  'movePlacement',
-  'resizePlacement',
+const COALESCABLE = new Set<EditCommand["type"]>([
+  "setParam",
+  "setEffectParam",
+  "setTrack",
+  "setGroup",
+  "setAudioClip",
+  "setTempo",
+  "setLength",
+  "setLoopStart",
+  "editNotes",
+  "setClipLength",
+  "movePlacement",
+  "resizePlacement",
 ]);
 
 /** Identity of a command's edit target, so successive edits to it can coalesce. */
 function coalesceKey(c: EditCommand): string {
   switch (c.type) {
-    case 'setParam':
+    case "setParam":
       return `setParam:${c.trackId}:${c.id}`;
-    case 'setEffectParam':
+    case "setEffectParam":
       return `setEffectParam:${c.hostId}:${c.effectId}:${c.id}`;
-    case 'setTrack':
+    case "setTrack":
       return `setTrack:${c.trackId}`;
-    case 'setGroup':
+    case "setGroup":
       return `setGroup:${c.groupId}`;
-    case 'setAudioClip':
+    case "setAudioClip":
       return `setAudioClip:${c.trackId}`;
-    case 'setTempo':
-      return 'setTempo';
-    case 'setLength':
-      return 'setLength';
-    case 'setLoopStart':
-      return 'setLoopStart';
-    case 'setClipLength':
-      return `setClipLength:${c.trackId}:${c.clipId ?? ''}`;
-    case 'movePlacement':
+    case "setTempo":
+      return "setTempo";
+    case "setLength":
+      return "setLength";
+    case "setLoopStart":
+      return "setLoopStart";
+    case "setClipLength":
+      return `setClipLength:${c.trackId}:${c.clipId ?? ""}`;
+    case "movePlacement":
       return `movePlacement:${c.trackId}:${c.placementId}`;
-    case 'resizePlacement':
+    case "resizePlacement":
       return `resizePlacement:${c.trackId}:${c.placementId}`;
     // Coalesce a continuous drag of a stable selection into one entry; a new
     // gesture (different note set) gets a fresh key, so it starts a new edit.
-    case 'editNotes':
-      return `editNotes:${c.trackId}:${c.clipId ?? ''}:${c.notes.map((n) => n.id).sort().join(',')}`;
+    case "editNotes":
+      return `editNotes:${c.trackId}:${c.clipId ?? ""}:${c.notes
+        .map((n) => n.id)
+        .sort()
+        .join(",")}`;
     default:
       return c.type;
   }
@@ -148,10 +151,11 @@ export class EditLog {
   }
 
   /** Apply + log an edit. UI edits are authored 'you'; MCP (Claude) edits 'claude'. */
-  dispatch = (command: EditCommand, author: Author = 'you'): void => {
+  dispatch = (command: EditCommand, author: Author = "you"): void => {
     const now = Date.now();
     const key = COALESCABLE.has(command.type) ? `${author}:${coalesceKey(command)}` : null;
-    const coalesce = key !== null && key === this.lastKey && now - this.lastTime < COALESCE_MS && this.entries.length > 0;
+    const coalesce =
+      key !== null && key === this.lastKey && now - this.lastTime < COALESCE_MS && this.entries.length > 0;
 
     if (coalesce) {
       // Same target as the last edit, within the window: fold into it (one undo
@@ -166,7 +170,7 @@ export class EditLog {
       if (this.undoStack.length > MAX_DEPTH) this.undoStack.shift();
       this.redoStack = [];
       applyEdit(this.project, command, author);
-      this.entries.push({ seq: this.seq++, command, author, time: now, kind: 'edit' });
+      this.entries.push({ seq: this.seq++, command, author, time: now, kind: "edit" });
     }
     this.lastKey = key;
     this.lastTime = now;
@@ -180,7 +184,14 @@ export class EditLog {
     this.project.load(cp.snap);
     // Record the undo in the activity feed (append-only; the feed is a reflog,
     // authored by whoever pressed undo - the local user).
-    this.entries.push({ seq: this.seq++, command: cp.command, author: 'you', time: Date.now(), kind: 'undo', label: `Undid: ${describeCommand(cp.command)}` });
+    this.entries.push({
+      seq: this.seq++,
+      command: cp.command,
+      author: "you",
+      time: Date.now(),
+      kind: "undo",
+      label: `Undid: ${describeCommand(cp.command)}`,
+    });
     this.lastKey = null;
     this.emit();
   };
@@ -190,7 +201,14 @@ export class EditLog {
     if (!cp) return;
     this.undoStack.push({ snap: this.project.snapshot(), command: cp.command, author: cp.author });
     this.project.load(cp.snap);
-    this.entries.push({ seq: this.seq++, command: cp.command, author: 'you', time: Date.now(), kind: 'redo', label: `Redid: ${describeCommand(cp.command)}` });
+    this.entries.push({
+      seq: this.seq++,
+      command: cp.command,
+      author: "you",
+      time: Date.now(),
+      kind: "redo",
+      label: `Redid: ${describeCommand(cp.command)}`,
+    });
     this.lastKey = null;
     this.emit();
   };
@@ -203,7 +221,7 @@ export class EditLog {
   };
 
   /** Post a feed-only annotation (intent narration). Not an edit; not undoable. */
-  note = (text: string, author: Author = 'claude'): void => {
+  note = (text: string, author: Author = "claude"): void => {
     this.feedNotes.push({ seq: this.seq++, text, author, time: Date.now() });
     this.emit();
   };

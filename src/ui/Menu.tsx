@@ -40,7 +40,8 @@ function Row({ item, side, onClose }: { item: MenuItem; side: "left" | "right"; 
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
   // A check column only when this item participates in a radio group, so plain
   // action menus aren't indented by an empty gutter.
-  const check = item.checked !== undefined ? <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span> : null;
+  const check =
+    item.checked !== undefined ? <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span> : null;
 
   if (item.submenu) {
     return (
@@ -122,7 +123,10 @@ export function Menu({
     closeActiveMenu?.(); // enforce a single open menu
     const r = triggerRef.current?.getBoundingClientRect();
     if (!r) return;
-    setCoords({ top: r.bottom + 4, ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }) });
+    setCoords({
+      top: r.bottom + 4,
+      ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
+    });
   };
 
   useEffect(() => {

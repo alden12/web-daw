@@ -11,18 +11,18 @@
  * Effects attach to a "host" - a track or a group - so a group's effect chain
  * reuses the same code path as a track's wholesale (the slice-5 routing).
  */
-import { ParamStore } from '../params/store';
-import { ClipStore } from '../sequencer/clipStore';
-import { GRID, type NoteEvent } from '../sequencer/types';
+import { ParamStore } from "../params/store";
+import { ClipStore } from "../sequencer/clipStore";
+import { GRID, type NoteEvent } from "../sequencer/types";
 import {
   hasInstrument,
   catalogEntry,
   instrumentSchema,
   instrumentFamily,
   DEFAULT_INSTRUMENT,
-} from '../instruments/catalog';
-import { hasEffect, effectSchema, DEFAULT_EFFECT } from '../effects/catalog';
-import type { PatchValues } from '../params/types';
+} from "../instruments/catalog";
+import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
+import type { PatchValues } from "../params/types";
 import type {
   ProjectData,
   TrackMeta,
@@ -34,7 +34,7 @@ import type {
   EffectData,
   InstrumentTrackData,
   AudioTrackData,
-} from './types';
+} from "./types";
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
@@ -44,7 +44,7 @@ const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
 const MAX_AUDIO_GAIN = 4; // ~+12 dB - lets a quiet recording be boosted
 const MIN_LOOP_SEC = 0.05; // seconds - smallest audio loop region
 /** Default group family imported/recorded audio is filed into (the librarian). */
-const AUDIO_FAMILY = 'Audio';
+const AUDIO_FAMILY = "Audio";
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** An effect at runtime: meta + its own ParamStore over the effect's schema. */
@@ -97,7 +97,7 @@ export interface NoteClip {
  * (to `params`/`effects`), never to clips.
  */
 export interface InstrumentTrack extends BaseTrack {
-  kind: 'instrument';
+  kind: "instrument";
   instrumentType: string;
   params: ParamStore;
   clips: NoteClip[];
@@ -109,7 +109,7 @@ export interface InstrumentTrack extends BaseTrack {
 
 /** An audio track: a pool of audio clips (buffer refs) arranged as `placements`. */
 export interface AudioTrack extends BaseTrack {
-  kind: 'audio';
+  kind: "audio";
   clips: AudioClipData[];
   activeClipId: string;
   placements: Placement[];
@@ -163,7 +163,7 @@ export class ProjectStore {
     return `p-${crypto.randomUUID().slice(0, 8)}`;
   }
 
-  private effectMetas(host: EffectHost): TrackMeta['effects'] {
+  private effectMetas(host: EffectHost): TrackMeta["effects"] {
     return host.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed }));
   }
 
@@ -177,10 +177,10 @@ export class ProjectStore {
       volume: t.volume,
       effects: this.effectMetas(t),
     };
-    return t.kind === 'audio'
+    return t.kind === "audio"
       ? {
           ...base,
-          kind: 'audio',
+          kind: "audio",
           clips: t.clips.map((c) => ({ ...c })),
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
@@ -188,9 +188,14 @@ export class ProjectStore {
         }
       : {
           ...base,
-          kind: 'instrument',
+          kind: "instrument",
           instrumentType: t.instrumentType,
-          clips: t.clips.map((c) => ({ id: c.id, name: c.name, author: c.author, lengthBeats: c.store.getClip().lengthBeats })),
+          clips: t.clips.map((c) => ({
+            id: c.id,
+            name: c.name,
+            author: c.author,
+            lengthBeats: c.store.getClip().lengthBeats,
+          })),
           activeClipId: t.activeClipId,
           placements: t.placements.map((p) => ({ ...p })),
           launchedClipId: t.launchedClipId,
@@ -284,7 +289,7 @@ export class ProjectStore {
   private ensureFamilyGroup(family: string): Group {
     return (
       this.groups.find((g) => g.parentId === null && g.name === family) ??
-      this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: family })
+      this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: family })
     );
   }
 
@@ -384,9 +389,7 @@ export class ProjectStore {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
     const parentId =
-      opts.groupId && this.getGroup(opts.groupId)
-        ? opts.groupId
-        : this.ensureFamilyGroup(instrumentFamily(type)).id;
+      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(instrumentFamily(type)).id;
     const trackId = opts.id ?? this.nextId();
     const params = new ParamStore(instrumentSchema(type));
     // Derive the seed clip/placement ids from the (agreed) track id so the browser
@@ -396,7 +399,7 @@ export class ProjectStore {
     const clipId = `c-${trackId}`;
     const clip = new ClipStore({ lengthBeats: this.lengthBeats });
     const track: InstrumentTrack = {
-      kind: 'instrument',
+      kind: "instrument",
       id: trackId,
       name: opts.name ?? `${catalogEntry(type).label} ${this.tracks.length + 1}`,
       instrumentType: type,
@@ -406,7 +409,7 @@ export class ProjectStore {
       volume: 0.8,
       params,
       effects: [],
-      clips: [{ id: clipId, name: 'A', author: 'you', store: clip }],
+      clips: [{ id: clipId, name: "A", author: "you", store: clip }],
       activeClipId: clipId,
       // One placement of the seed clip at the start, so a new track plays its clip.
       placements: [{ id: `p-${trackId}`, clipId, startBeat: 0, offset: 0, length: clip.getClip().lengthBeats }],
@@ -435,7 +438,7 @@ export class ProjectStore {
   }): Track {
     if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
     const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
-    if (track.kind === 'instrument') {
+    if (track.kind === "instrument") {
       track.params.load(spec.params);
       for (const fx of spec.effects) {
         const effect = this.addEffect(track.id, fx.type, fx.id);
@@ -461,7 +464,7 @@ export class ProjectStore {
     const clipId = `c-${trackId}`;
     const durationSec = clip.durationSec ?? 0;
     const track: AudioTrack = {
-      kind: 'audio',
+      kind: "audio",
       id: trackId,
       name,
       parentId,
@@ -469,10 +472,18 @@ export class ProjectStore {
       solo: false,
       volume: 0.8,
       effects: [],
-      clips: [{ id: clipId, name: clip.name ?? name, author: 'you', fileId: clip.fileId, gain: clip.gain ?? 1, durationSec }],
+      clips: [
+        { id: clipId, name: clip.name ?? name, author: "you", fileId: clip.fileId, gain: clip.gain ?? 1, durationSec },
+      ],
       activeClipId: clipId,
       placements: [
-        { id: `p-${trackId}`, clipId, startBeat: clip.startBeat ?? 0, offset: 0, length: this.secondsToBeats(durationSec) },
+        {
+          id: `p-${trackId}`,
+          clipId,
+          startBeat: clip.startBeat ?? 0,
+          offset: 0,
+          length: this.secondsToBeats(durationSec),
+        },
       ],
       launchedClipId: null,
     };
@@ -499,9 +510,16 @@ export class ProjectStore {
     startBeat?: number;
   }): void {
     const t = this.getTrack(spec.trackId);
-    if (!t || t.kind !== 'audio' || t.clips.some((c) => c.id === spec.id)) return;
+    if (!t || t.kind !== "audio" || t.clips.some((c) => c.id === spec.id)) return;
     const durationSec = spec.durationSec ?? 0;
-    t.clips.push({ id: spec.id, name: spec.name ?? 'Take', author: 'you', fileId: spec.fileId, gain: spec.gain ?? 1, durationSec });
+    t.clips.push({
+      id: spec.id,
+      name: spec.name ?? "Take",
+      author: "you",
+      fileId: spec.fileId,
+      gain: spec.gain ?? 1,
+      durationSec,
+    });
     t.activeClipId = spec.id;
     if (!t.placements.some((p) => p.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat ?? 0);
@@ -521,11 +539,19 @@ export class ProjectStore {
    * a non-instrument track.
    */
   addNoteClip(
-    spec: { trackId: string; id: string; placementId: string; name?: string; notes: NoteEvent[]; lengthBeats: number; startBeat: number },
-    author: ClipAuthor = 'you',
+    spec: {
+      trackId: string;
+      id: string;
+      placementId: string;
+      name?: string;
+      notes: NoteEvent[];
+      lengthBeats: number;
+      startBeat: number;
+    },
+    author: ClipAuthor = "you",
   ): void {
     const t = this.getTrack(spec.trackId);
-    if (!t || t.kind !== 'instrument' || t.clips.some((c) => c.id === spec.id)) return;
+    if (!t || t.kind !== "instrument" || t.clips.some((c) => c.id === spec.id)) return;
     const lengthBeats = Math.max(GRID, spec.lengthBeats);
     t.clips.push({
       id: spec.id,
@@ -557,7 +583,13 @@ export class ProjectStore {
       const keepLeft = p.startBeat < start; // some of p survives before the region
       const keepRight = pEnd > end; // some of p survives after the region
       if (keepLeft && keepRight) {
-        const right: Placement = { id: `${idPrefix}-r-${p.id}`, clipId: p.clipId, startBeat: end, offset: p.offset + (end - p.startBeat), length: pEnd - end };
+        const right: Placement = {
+          id: `${idPrefix}-r-${p.id}`,
+          clipId: p.clipId,
+          startBeat: end,
+          offset: p.offset + (end - p.startBeat),
+          length: pEnd - end,
+        };
         return [{ ...p, length: start - p.startBeat }, right];
       }
       if (keepLeft) return [{ ...p, length: start - p.startBeat }];
@@ -578,7 +610,7 @@ export class ProjectStore {
     patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number },
   ): void {
     const t = this.getTrack(trackId);
-    if (!t || t.kind !== 'audio') return;
+    if (!t || t.kind !== "audio") return;
     const clip = t.clips.find((c) => c.id === (clipId ?? t.activeClipId));
     if (!clip) return;
     if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, MAX_AUDIO_GAIN);
@@ -711,13 +743,13 @@ export class ProjectStore {
   /** The ClipStore for an instrument track's clip (the active one if `clipId` omitted). */
   getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
     const t = this.getTrack(trackId);
-    if (t?.kind !== 'instrument') return undefined;
+    if (t?.kind !== "instrument") return undefined;
     return t.clips.find((c) => c.id === (clipId ?? t.activeClipId))?.store;
   }
 
   /** Natural length (beats) of a clip in a track's pool: notes length, or audio duration. */
   private naturalLength(t: Track, clipId: string): number {
-    if (t.kind === 'instrument') return t.clips.find((c) => c.id === clipId)?.store.getClip().lengthBeats ?? 4;
+    if (t.kind === "instrument") return t.clips.find((c) => c.id === clipId)?.store.getClip().lengthBeats ?? 4;
     const c = t.clips.find((x) => x.id === clipId);
     return c ? this.secondsToBeats(c.durationSec) : 4;
   }
@@ -729,18 +761,30 @@ export class ProjectStore {
    */
   addClip(
     trackId: string,
-    opts: { id?: string; name?: string; fromClipId?: string; author?: ClipAuthor; empty?: boolean; lengthBeats?: number } = {},
+    opts: {
+      id?: string;
+      name?: string;
+      fromClipId?: string;
+      author?: ClipAuthor;
+      empty?: boolean;
+      lengthBeats?: number;
+    } = {},
   ): NoteClip | undefined {
     const t = this.getTrack(trackId);
-    if (!t || t.kind !== 'instrument') return undefined;
-    const source = opts.empty ? undefined : t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0];
+    if (!t || t.kind !== "instrument") return undefined;
+    const source = opts.empty
+      ? undefined
+      : (t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0]);
     const id = opts.id && !t.clips.some((c) => c.id === opts.id) ? opts.id : this.nextClipId();
     const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
     const clip: NoteClip = {
       id,
       name: opts.name ?? this.nextClipName(t),
-      author: opts.author ?? 'you',
-      store: new ClipStore({ notes: seed.notes.map((n) => ({ ...n })), lengthBeats: opts.lengthBeats ?? seed.lengthBeats }),
+      author: opts.author ?? "you",
+      store: new ClipStore({
+        notes: seed.notes.map((n) => ({ ...n })),
+        lengthBeats: opts.lengthBeats ?? seed.lengthBeats,
+      }),
     };
     t.clips.push(clip);
     t.activeClipId = id;
@@ -754,19 +798,26 @@ export class ProjectStore {
    * OPFS file is shared, not duplicated). Enables clip copy/paste within and
    * across same-kind tracks.
    */
-  pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = 'you'): void {
+  pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = "you"): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== content.kind) return;
     const clipId = id && !t.clips.some((c) => c.id === id) ? id : this.nextClipId();
-    if (t.kind === 'instrument' && content.kind === 'instrument') {
+    if (t.kind === "instrument" && content.kind === "instrument") {
       t.clips.push({
         id: clipId,
         name: content.name,
         author,
         store: new ClipStore({ notes: content.notes.map((n) => ({ ...n })), lengthBeats: content.lengthBeats }),
       });
-    } else if (t.kind === 'audio' && content.kind === 'audio') {
-      t.clips.push({ id: clipId, name: content.name, author, fileId: content.fileId, gain: content.gain, durationSec: content.durationSec });
+    } else if (t.kind === "audio" && content.kind === "audio") {
+      t.clips.push({
+        id: clipId,
+        name: content.name,
+        author,
+        fileId: content.fileId,
+        gain: content.gain,
+        durationSec: content.durationSec,
+      });
     }
     t.activeClipId = clipId;
     this.emit();
@@ -991,10 +1042,10 @@ export class ProjectStore {
           placements: t.placements.map((p) => ({ ...p })),
           launchedClipId: t.launchedClipId,
         };
-        if (t.kind === 'audio') {
+        if (t.kind === "audio") {
           return {
             ...base,
-            kind: 'audio' as const,
+            kind: "audio" as const,
             effects: this.snapshotEffects(t),
             clips: t.clips.map((c) => ({ ...c })),
             ...arrangement,
@@ -1002,13 +1053,19 @@ export class ProjectStore {
         }
         return {
           ...base,
-          kind: 'instrument' as const,
+          kind: "instrument" as const,
           instrumentType: t.instrumentType,
           params: t.params.snapshot(),
           effects: this.snapshotEffects(t),
           clips: t.clips.map((c) => {
             const data = c.store.snapshot();
-            return { id: c.id, name: c.name, author: c.author, notes: data.notes.map((n) => ({ ...n })), lengthBeats: data.lengthBeats };
+            return {
+              id: c.id,
+              name: c.name,
+              author: c.author,
+              notes: data.notes.map((n) => ({ ...n })),
+              lengthBeats: data.lengthBeats,
+            };
           }),
           ...arrangement,
         };
@@ -1020,7 +1077,7 @@ export class ProjectStore {
     };
   }
 
-  private loadEffects(effects: ProjectData['tracks'][number]['effects'] = []): EffectInstance[] {
+  private loadEffects(effects: ProjectData["tracks"][number]["effects"] = []): EffectInstance[] {
     return effects.map((fx) => {
       const store = new ParamStore(effectSchema(fx.type));
       if (fx.params) store.load(fx.params);
@@ -1029,7 +1086,7 @@ export class ProjectStore {
   }
 
   private static author(a: unknown): ClipAuthor {
-    return a === 'claude' ? 'claude' : 'you';
+    return a === "claude" ? "claude" : "you";
   }
 
   /**
@@ -1041,7 +1098,12 @@ export class ProjectStore {
     t: InstrumentTrackData,
     projLen: number,
   ): { clips: NoteClip[]; activeClipId: string; placements: Placement[] } {
-    const mk = (id: string, name: string, author: ClipAuthor, clip: { notes?: unknown; lengthBeats?: number }): NoteClip => ({
+    const mk = (
+      id: string,
+      name: string,
+      author: ClipAuthor,
+      clip: { notes?: unknown; lengthBeats?: number },
+    ): NoteClip => ({
       id,
       name,
       author,
@@ -1050,12 +1112,21 @@ export class ProjectStore {
 
     const clips: NoteClip[] = t.clips?.length
       ? t.clips.map((clip) => mk(clip.id, clip.name, ProjectStore.author(clip.author), clip))
-      : [mk(this.nextClipId(), 'A', 'you', {})];
+      : [mk(this.nextClipId(), "A", "you", {})];
 
-    const activeClipId = t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : clips[0].id;
+    const activeClipId =
+      t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : clips[0].id;
     const placements: Placement[] = t.placements?.length
       ? t.placements.map((placement) => ({ ...placement }))
-      : [{ id: this.nextPlacementId(), clipId: activeClipId, startBeat: 0, offset: 0, length: clips.find((clip) => clip.id === activeClipId)!.store.getClip().lengthBeats }];
+      : [
+          {
+            id: this.nextPlacementId(),
+            clipId: activeClipId,
+            startBeat: 0,
+            offset: 0,
+            length: clips.find((clip) => clip.id === activeClipId)!.store.getClip().lengthBeats,
+          },
+        ];
     return { clips, activeClipId, placements };
   }
 
@@ -1067,7 +1138,8 @@ export class ProjectStore {
   /** The audio-clip pool + active id + placements for an audio track. */
   private audioClipPool(t: AudioTrackData): { clips: AudioClipData[]; activeClipId: string; placements: Placement[] } {
     const clips = (t.clips ?? []).map((clip) => ({ ...clip }));
-    const activeClipId = t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : (clips[0]?.id ?? '');
+    const activeClipId =
+      t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : (clips[0]?.id ?? "");
     return { clips, activeClipId, placements: (t.placements ?? []).map((placement) => ({ ...placement })) };
   }
 
@@ -1096,10 +1168,11 @@ export class ProjectStore {
         solo: t.solo ?? false,
         volume: t.volume ?? 0.8,
       };
-      if (t.kind === 'audio') {
+      if (t.kind === "audio") {
         const pool = this.audioClipPool(t);
-        const launchedClipId = t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
-        return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), ...pool, launchedClipId };
+        const launchedClipId =
+          t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
+        return { ...base, kind: "audio", effects: this.loadEffects(t.effects), ...pool, launchedClipId };
       }
       // Instrument track: the sound (params + effects) is track-level; the clip
       // pool + placements come from the stored clips/placements.
@@ -1108,13 +1181,13 @@ export class ProjectStore {
       // Reuse the prior track's ParamStore + effect instances by id so the engine's
       // per-track bindings stay live across the load (clips are not engine-bound).
       const reuse = prev.get(t.id);
-      const reused = reuse?.kind === 'instrument' && reuse.instrumentType === t.instrumentType ? reuse : undefined;
+      const reused = reuse?.kind === "instrument" && reuse.instrumentType === t.instrumentType ? reuse : undefined;
       const params = reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType));
       params.load(sound.params);
       const launchedClipId = t.launchedClipId && clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
       const track: InstrumentTrack = {
         ...base,
-        kind: 'instrument',
+        kind: "instrument",
         instrumentType: t.instrumentType,
         params,
         effects: reused?.effects ?? [],
@@ -1130,7 +1203,7 @@ export class ProjectStore {
     // instrument's family group.
     for (const t of this.tracks) {
       if (!t.parentId || !this.getGroup(t.parentId)) {
-        const family = t.kind === 'audio' ? AUDIO_FAMILY : instrumentFamily(t.instrumentType);
+        const family = t.kind === "audio" ? AUDIO_FAMILY : instrumentFamily(t.instrumentType);
         t.parentId = this.ensureFamilyGroup(family).id;
       }
     }
@@ -1138,9 +1211,7 @@ export class ProjectStore {
     this.lengthBeats = data.lengthBeats ?? 16;
     this.loopStartBeats = clamp(data.loopStart ?? 0, 0, this.lengthBeats - MIN_LOOP);
     this.selectedTrackId =
-      data.selectedTrackId && this.getTrack(data.selectedTrackId)
-        ? data.selectedTrackId
-        : (this.tracks[0]?.id ?? null);
+      data.selectedTrackId && this.getTrack(data.selectedTrackId) ? data.selectedTrackId : (this.tracks[0]?.id ?? null);
     this.emit();
   }
 }

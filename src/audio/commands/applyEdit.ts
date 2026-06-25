@@ -7,11 +7,11 @@
  * command becomes a mutation. Behaviour is identical to the direct store calls it
  * replaces - only the entry point changes.
  */
-import type { ProjectStore } from '../project/projectStore';
-import type { Author, EditCommand } from './types';
+import type { ProjectStore } from "../project/projectStore";
+import type { Author, EditCommand } from "./types";
 
 type ApplyMap = {
-  [K in EditCommand['type']]: (
+  [K in EditCommand["type"]]: (
     project: ProjectStore,
     command: Extract<EditCommand, { type: K }>,
     author: Author,
@@ -51,7 +51,7 @@ const APPLY: ApplyMap = {
   moveGroup: (p, c) => p.moveGroup(c.groupId, c.parentId),
   setParam: (p, c) => {
     const t = p.getTrack(c.trackId);
-    if (t?.kind === 'instrument') t.params.set(c.id, c.value);
+    if (t?.kind === "instrument") t.params.set(c.id, c.value);
   },
   addEffect: (p, c) => void p.addEffect(c.hostId, c.effectType, c.id),
   removeEffect: (p, c) => p.removeEffect(c.hostId, c.effectId),
@@ -79,13 +79,26 @@ const APPLY: ApplyMap = {
   setClipLength: (p, c) => p.setClipLength(c.trackId, c.clipId, c.lengthBeats),
   // Clip pool. The new clip is tagged with the dispatching author (two-voice).
   addClip: (p, c, author) =>
-    void p.addClip(c.trackId, { id: c.id, name: c.name, fromClipId: c.fromClipId, empty: c.empty, lengthBeats: c.lengthBeats, author }),
+    void p.addClip(c.trackId, {
+      id: c.id,
+      name: c.name,
+      fromClipId: c.fromClipId,
+      empty: c.empty,
+      lengthBeats: c.lengthBeats,
+      author,
+    }),
   pasteClip: (p, c, author) => p.pasteClip(c.trackId, c.id, c.content, author),
   removeClip: (p, c) => p.removeClip(c.trackId, c.clipId),
   renameClip: (p, c) => p.renameClip(c.trackId, c.clipId, c.name),
   // Arrangement placements.
   addPlacement: (p, c) =>
-    void p.addPlacement(c.trackId, { id: c.id, clipId: c.clipId, startBeat: c.startBeat, offset: c.offset, length: c.length }),
+    void p.addPlacement(c.trackId, {
+      id: c.id,
+      clipId: c.clipId,
+      startBeat: c.startBeat,
+      offset: c.offset,
+      length: c.length,
+    }),
   movePlacement: (p, c) => p.movePlacement(c.trackId, c.placementId, c.startBeat),
   resizePlacement: (p, c) => p.resizePlacement(c.trackId, c.placementId, { offset: c.offset, length: c.length }),
   removePlacement: (p, c) => p.removePlacement(c.trackId, c.placementId),

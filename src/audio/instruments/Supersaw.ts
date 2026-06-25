@@ -7,10 +7,10 @@
  * Added through the registration API (schema in catalog.ts, factory in
  * registry.ts) - a second worked example, this time on the instrument path.
  */
-import type { ParamStore } from '../params/store';
-import { BaseInstrument } from './BaseInstrument';
-import type { VoiceHandle } from './types';
-import { midiToFreq, type ParamBinding } from './binding';
+import type { ParamStore } from "../params/store";
+import { BaseInstrument } from "./BaseInstrument";
+import type { VoiceHandle } from "./types";
+import { midiToFreq, type ParamBinding } from "./binding";
 
 export class SupersawInstrument extends BaseInstrument {
   private count = 7;
@@ -28,8 +28,8 @@ export class SupersawInstrument extends BaseInstrument {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'super.voices': { apply: (v) => void (this.count = v as number) },
-      'super.detune': { apply: (v) => void (this.spread = v as number) },
+      "super.voices": { apply: (v) => void (this.count = v as number) },
+      "super.detune": { apply: (v) => void (this.spread = v as number) },
     };
   }
 
@@ -46,7 +46,7 @@ export class SupersawInstrument extends BaseInstrument {
     const oscillators: OscillatorNode[] = [];
     for (let i = 0; i < n; i++) {
       const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth';
+      osc.type = "sawtooth";
       osc.frequency.setValueAtTime(freq, when);
       const detune = n === 1 ? 0 : -this.spread + (2 * this.spread * i) / (n - 1);
       osc.detune.setValueAtTime(detune, when);

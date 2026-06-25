@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { ParamStore } from '../src/audio/params/store';
-import { effectInfos, effectSchema } from '../src/audio/effects/catalog';
-import { createEffect } from '../src/audio/effects/registry';
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { ParamStore } from "../src/audio/params/store";
+import { effectInfos, effectSchema } from "../src/audio/effects/catalog";
+import { createEffect } from "../src/audio/effects/registry";
 
 /**
  * Fake Web Audio context. `connect(undefined)` throws like the real API, so an
@@ -23,7 +23,7 @@ function fakeParam() {
 function fakeNode(extra: Record<string, unknown> = {}) {
   return {
     connect(dest: unknown) {
-      if (!dest) throw new TypeError('connect() to undefined destination');
+      if (!dest) throw new TypeError("connect() to undefined destination");
       return dest;
     },
     disconnect() {},
@@ -36,10 +36,10 @@ function fakeCtx() {
     sampleRate: 44100,
     createGain: () => fakeNode({ gain: fakeParam() }),
     createOscillator: () =>
-      fakeNode({ type: 'sine', frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
-    createBiquadFilter: () => fakeNode({ type: 'lowpass', frequency: fakeParam(), Q: fakeParam() }),
+      fakeNode({ type: "sine", frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
+    createBiquadFilter: () => fakeNode({ type: "lowpass", frequency: fakeParam(), Q: fakeParam() }),
     createDelay: () => fakeNode({ delayTime: fakeParam() }),
-    createWaveShaper: () => fakeNode({ curve: null, oversample: 'none' }),
+    createWaveShaper: () => fakeNode({ curve: null, oversample: "none" }),
     createConvolver: () => fakeNode({ buffer: null }),
     createBuffer: (channels: number, length: number) => ({
       numberOfChannels: channels,
@@ -57,11 +57,11 @@ function fakeCtx() {
 beforeAll(() => {
   class FakeAudioWorkletNode {
     parameters = new Map([
-      ['bits', fakeParam()],
-      ['downsample', fakeParam()],
+      ["bits", fakeParam()],
+      ["downsample", fakeParam()],
     ]);
     connect(dest: unknown) {
-      if (!dest) throw new TypeError('connect() to undefined destination');
+      if (!dest) throw new TypeError("connect() to undefined destination");
       return dest;
     }
     disconnect() {}
@@ -70,7 +70,7 @@ beforeAll(() => {
 });
 afterAll(() => delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode);
 
-describe('effects', () => {
+describe("effects", () => {
   for (const { type } of effectInfos()) {
     it(`${type}: constructs with input/output and applies bindings without wiring to undefined`, () => {
       const store = new ParamStore(effectSchema(type));
@@ -83,7 +83,7 @@ describe('effects', () => {
       // Drive each param through a real change (different from default) so the
       // binding's apply runs again on a value, not just at construction.
       for (const spec of effectSchema(type)) {
-        if (spec.kind !== 'number') continue;
+        if (spec.kind !== "number") continue;
         const next = spec.default === spec.min ? spec.max : spec.min;
         expect(() => store.set(spec.id, next)).not.toThrow();
       }
@@ -91,9 +91,9 @@ describe('effects', () => {
     });
   }
 
-  it('every effect schema includes a mix param', () => {
+  it("every effect schema includes a mix param", () => {
     for (const def of effectInfos()) {
-      expect(def.schema.some((s) => s.id === 'mix')).toBe(true);
+      expect(def.schema.some((s) => s.id === "mix")).toBe(true);
     }
   });
 });

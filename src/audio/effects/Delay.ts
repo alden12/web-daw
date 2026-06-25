@@ -2,9 +2,9 @@
  * Feedback delay: input -> delay -> wet, with delay -> feedback -> delay for the
  * repeats. `delay.time` (s), `delay.feedback` (0..0.95), `mix`.
  */
-import type { ParamStore } from '../params/store';
-import { rampParam, type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { rampParam, type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 export class DelayEffect extends BaseEffect {
   private delay!: DelayNode;
@@ -26,8 +26,8 @@ export class DelayEffect extends BaseEffect {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'delay.time': { apply: (v, ms) => rampParam(this.ctx, this.delay.delayTime, v as number, ms) },
-      'delay.feedback': { apply: (v, ms) => rampParam(this.ctx, this.feedback.gain, v as number, ms) },
+      "delay.time": { apply: (v, ms) => rampParam(this.ctx, this.delay.delayTime, v as number, ms) },
+      "delay.feedback": { apply: (v, ms) => rampParam(this.ctx, this.feedback.gain, v as number, ms) },
     };
   }
 

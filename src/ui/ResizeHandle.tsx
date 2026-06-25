@@ -7,38 +7,38 @@
  * Events, so mouse, trackpad, and touch all work - which also lines it up with
  * the mobile/touch roadmap.
  */
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 
 export function ResizeHandle({
   ariaLabel,
-  orientation = 'vertical',
+  orientation = "vertical",
   onResize,
   onDragChange,
   style,
 }: {
   ariaLabel: string;
   /** 'vertical' divides columns (drag x); 'horizontal' divides rows (drag y). */
-  orientation?: 'vertical' | 'horizontal';
+  orientation?: "vertical" | "horizontal";
   onResize: (clientPos: number) => void;
   onDragChange?: (active: boolean) => void;
   style?: CSSProperties;
 }) {
-  const cursor = orientation === 'vertical' ? 'col-resize' : 'row-resize';
+  const cursor = orientation === "vertical" ? "col-resize" : "row-resize";
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     onDragChange?.(true);
     document.body.style.cursor = cursor;
-    document.body.style.userSelect = 'none';
-    const move = (ev: PointerEvent) => onResize(orientation === 'vertical' ? ev.clientX : ev.clientY);
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => onResize(orientation === "vertical" ? ev.clientX : ev.clientY);
     const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       onDragChange?.(false);
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
   return (
@@ -48,7 +48,7 @@ export function ResizeHandle({
       aria-label={ariaLabel}
       onPointerDown={onPointerDown}
       className={`absolute z-10 bg-transparent hover:bg-you/40 transition-colors ${
-        orientation === 'vertical' ? 'w-1.5 cursor-col-resize' : 'h-1.5 cursor-row-resize'
+        orientation === "vertical" ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize"
       }`}
       style={style}
     />

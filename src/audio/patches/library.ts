@@ -11,8 +11,8 @@
  * be dropped onto many tracks. Applying a patch is one authored edit, so it is
  * undoable, two-voice, and replayable like any other.
  */
-import type { Author } from '../commands/types';
-import type { PatchValues } from '../params/types';
+import type { Author } from "../commands/types";
+import type { PatchValues } from "../params/types";
 
 /** One effect in a saved patch: its type, bypass state, and parameter values. */
 export interface PatchEffect {
@@ -32,12 +32,12 @@ export interface Patch {
   createdAt: number;
 }
 
-const STORAGE_KEY = 'web-daw:patches:v1';
+const STORAGE_KEY = "web-daw:patches:v1";
 const listeners = new Set<() => void>();
 
 function store(): Storage | null {
   try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
+    return typeof localStorage !== "undefined" ? localStorage : null;
   } catch {
     return null; // localStorage can throw (privacy mode); degrade to an empty library
   }

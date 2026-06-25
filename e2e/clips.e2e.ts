@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Clip pool rail: the default project seeds one instrument track (selected), so its
@@ -7,7 +7,7 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 async function dismissStart(page: Page) {
-  const start = page.getByRole('button', { name: /start audio/i });
+  const start = page.getByRole("button", { name: /start audio/i });
   if (await start.count()) {
     await start.click();
     await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
@@ -15,21 +15,21 @@ async function dismissStart(page: Page) {
 }
 
 /** The clip rail = the container holding the "+ Clip" button. */
-const rail = (page: Page) => page.getByRole('button', { name: '+ Clip' }).locator('..');
+const rail = (page: Page) => page.getByRole("button", { name: "+ Clip" }).locator("..");
 
-test('adding a clip adds a chip and persists across reload', async ({ page }) => {
-  await page.goto('/');
+test("adding a clip adds a chip and persists across reload", async ({ page }) => {
+  await page.goto("/");
   await dismissStart(page);
 
-  const addClip = page.getByRole('button', { name: '+ Clip' });
+  const addClip = page.getByRole("button", { name: "+ Clip" });
   await expect(addClip).toBeVisible();
-  await expect(rail(page).getByText('A', { exact: true })).toBeVisible();
+  await expect(rail(page).getByText("A", { exact: true })).toBeVisible();
 
   await addClip.click();
-  await expect(rail(page).getByText('B', { exact: true })).toBeVisible();
+  await expect(rail(page).getByText("B", { exact: true })).toBeVisible();
 
   await page.waitForTimeout(400); // let the debounced project autosave flush
   await page.reload();
   await dismissStart(page);
-  await expect(rail(page).getByText('B', { exact: true })).toBeVisible();
+  await expect(rail(page).getByText("B", { exact: true })).toBeVisible();
 });

@@ -8,16 +8,16 @@
  * smoothing path - so a worklet instrument needs no per-param code, just a processor
  * name and a matching set of `parameterDescriptors`.
  */
-import type { ParamStore } from '../params/store';
-import type { Instrument } from './types';
-import { bindParams, rampParam, type ParamBinding } from './binding';
+import type { ParamStore } from "../params/store";
+import type { Instrument } from "./types";
+import { bindParams, rampParam, type ParamBinding } from "./binding";
 
 /** A note command sent to a worklet processor (all times are AudioContext seconds). */
 export type NoteMessage =
-  | { kind: 'on'; midi: number; velocity: number; when: number }
-  | { kind: 'off'; midi: number; when: number }
-  | { kind: 'play'; midi: number; velocity: number; durationSec: number; when: number }
-  | { kind: 'allOff'; when: number };
+  | { kind: "on"; midi: number; velocity: number; when: number }
+  | { kind: "off"; midi: number; when: number }
+  | { kind: "play"; midi: number; velocity: number; durationSec: number; when: number }
+  | { kind: "allOff"; when: number };
 
 export class WorkletInstrument implements Instrument {
   readonly output: AudioWorkletNode;
@@ -37,7 +37,7 @@ export class WorkletInstrument implements Instrument {
     // Bind each number param to the processor's same-named AudioParam.
     const bindings: Record<string, ParamBinding> = {};
     for (const spec of store.allSpecs()) {
-      if (spec.kind !== 'number') continue;
+      if (spec.kind !== "number") continue;
       const param = this.node.parameters.get(spec.id);
       if (!param) continue;
       bindings[spec.id] = { apply: (v, ms) => rampParam(ctx, param, v as number, ms) };
@@ -50,19 +50,19 @@ export class WorkletInstrument implements Instrument {
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {
-    this.post({ kind: 'on', midi, velocity, when: when ?? this.ctx.currentTime });
+    this.post({ kind: "on", midi, velocity, when: when ?? this.ctx.currentTime });
   }
 
   noteOff(midi: number, when?: number): void {
-    this.post({ kind: 'off', midi, when: when ?? this.ctx.currentTime });
+    this.post({ kind: "off", midi, when: when ?? this.ctx.currentTime });
   }
 
   playNote(midi: number, durationSec: number, velocity = 1, when?: number): void {
-    this.post({ kind: 'play', midi, velocity, durationSec, when: when ?? this.ctx.currentTime });
+    this.post({ kind: "play", midi, velocity, durationSec, when: when ?? this.ctx.currentTime });
   }
 
   allNotesOff(): void {
-    this.post({ kind: 'allOff', when: this.ctx.currentTime });
+    this.post({ kind: "allOff", when: this.ctx.currentTime });
   }
 
   dispose(): void {

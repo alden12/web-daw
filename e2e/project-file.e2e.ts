@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Portable .daw.zip export/import (from the library's project menu): export
@@ -10,34 +10,34 @@ import { test, expect, type Page } from '@playwright/test';
 test.use({ viewport: { width: 1320, height: 900 } });
 
 async function dismissStart(page: Page) {
-  const start = page.getByRole('button', { name: /start audio/i });
+  const start = page.getByRole("button", { name: /start audio/i });
   if (await start.count()) {
     await start.click();
     await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
   }
 }
 
-const placements = (page: Page) => page.getByTestId('placement');
+const placements = (page: Page) => page.getByTestId("placement");
 
 async function zoomOut(page: Page) {
-  const btn = page.getByTitle('Zoom out', { exact: true });
+  const btn = page.getByTitle("Zoom out", { exact: true });
   for (let i = 0; i < 3; i++) await btn.click();
 }
 
-test('export then import a .daw file restores the project', async ({ page }) => {
-  await page.goto('/');
+test("export then import a .daw file restores the project", async ({ page }) => {
+  await page.goto("/");
   await dismissStart(page);
   await zoomOut(page);
 
   await expect(placements(page)).toHaveCount(1); // the seed placement
 
   // Export the seed project (one placement) from the project menu, capture the file.
-  await page.getByTitle('Project menu').click();
+  await page.getByTitle("Project menu").click();
   const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('menuitem', { name: 'Export project…' }).click(),
+    page.waitForEvent("download"),
+    page.getByRole("menuitem", { name: "Export project…" }).click(),
   ]);
-  expect(download.suggestedFilename()).toBe('project.daw.zip');
+  expect(download.suggestedFilename()).toBe("project.daw.zip");
   const file = await download.path();
 
   // Change the live project: drag the empty lane to create + place a 2nd clip.

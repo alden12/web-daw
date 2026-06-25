@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Edit-log persistence: an authored edit shows in the agent-pane activity feed,
@@ -7,19 +7,19 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 async function dismissStart(page: Page) {
-  const start = page.getByRole('button', { name: /start audio/i });
+  const start = page.getByRole("button", { name: /start audio/i });
   if (await start.count()) {
     await start.click();
     await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
   }
 }
 
-test('the activity feed records an edit and survives a reload', async ({ page }) => {
-  await page.goto('/');
+test("the activity feed records an edit and survives a reload", async ({ page }) => {
+  await page.goto("/");
   await dismissStart(page);
 
   // Add a clip -> one authored "New clip" entry in the feed.
-  await page.getByRole('button', { name: '+ Clip' }).click();
+  await page.getByRole("button", { name: "+ Clip" }).click();
   await expect(page.getByText(/New clip/)).toBeVisible();
 
   await page.waitForTimeout(400); // let the debounced autosave (project + log) flush

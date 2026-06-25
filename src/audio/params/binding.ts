@@ -6,20 +6,15 @@
  * transport-agnostic: a worklet-backed param would only change its binding, not
  * the store/UI/MCP above it.
  */
-import type { ParamStore } from './store';
-import type { ParamValue } from './types';
+import type { ParamStore } from "./store";
+import type { ParamValue } from "./types";
 
 export interface ParamBinding {
   apply(value: ParamValue, smoothMs?: number): void;
 }
 
 /** Ramp a native AudioParam toward a value, smoothing if requested. */
-export function rampParam(
-  ctx: BaseAudioContext,
-  param: AudioParam,
-  value: number,
-  smoothMs?: number,
-): void {
+export function rampParam(ctx: BaseAudioContext, param: AudioParam, value: number, smoothMs?: number): void {
   const now = ctx.currentTime;
   if (smoothMs && smoothMs > 0) {
     param.setTargetAtTime(value, now, smoothMs / 1000);
@@ -38,7 +33,7 @@ export function bindParams(store: ParamStore, bindings: Record<string, ParamBind
     const binding = bindings[id];
     if (!binding) return;
     const spec = store.spec(id);
-    const smoothMs = spec.kind === 'number' ? spec.smoothMs : undefined;
+    const smoothMs = spec.kind === "number" ? spec.smoothMs : undefined;
     binding.apply(store.get(id), smoothMs);
   };
   for (const id of Object.keys(bindings)) apply(id);

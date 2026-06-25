@@ -16,10 +16,10 @@
  * that hash, so the same file imported twice is stored once and a clip's `fileId`
  * doubles as an integrity check.
  */
-import type { ProjectData } from './project/types';
-import type { Author, EditEntry } from './commands/types';
-import type { FeedNote, UndoState } from './commands/editLog';
-import { type BundleStore, createBundleStore } from './bundleStore';
+import type { ProjectData } from "./project/types";
+import type { Author, EditEntry } from "./commands/types";
+import type { FeedNote, UndoState } from "./commands/editLog";
+import { type BundleStore, createBundleStore } from "./bundleStore";
 
 const FORMAT_VERSION = 1;
 /** Schema version of `project.json`. We do not support older shapes (single-user app). */
@@ -88,15 +88,15 @@ export class ProjectRepository {
 
   /** Load the working snapshot + log; null if no bundle has been written yet. */
   async load(): Promise<StoredProject | null> {
-    const manifestRaw = await this.store.readText('manifest.json');
+    const manifestRaw = await this.store.readText("manifest.json");
     if (!manifestRaw) return null;
     const manifest = JSON.parse(manifestRaw) as Manifest;
     this.projectId = manifest.projectId;
-    const projectRaw = await this.store.readText('project.json');
+    const projectRaw = await this.store.readText("project.json");
     if (!projectRaw) return null;
     const project = JSON.parse(projectRaw) as ProjectData;
-    const logRaw = await this.store.readText('log.json');
-    const notesRaw = await this.store.readText('notes.json');
+    const logRaw = await this.store.readText("log.json");
+    const notesRaw = await this.store.readText("notes.json");
     return {
       project,
       log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
@@ -113,12 +113,16 @@ export class ProjectRepository {
 
   private async writeAll(project: ProjectData, log: EditEntry[], notes: FeedNote[]): Promise<void> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
-    const manifest: Manifest = { formatVersion: FORMAT_VERSION, projectId: this.projectId, projectSchema: PROJECT_SCHEMA };
-    await this.store.writeText('manifest.json', JSON.stringify(manifest));
-    await this.store.writeText('project.json', JSON.stringify(project));
-    await this.store.writeText('log.json', JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
-    await this.store.writeText('notes.json', JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
-    await this.store.writeText('meta.json', JSON.stringify({ name: 'Untitled', modifiedAt: new Date().toISOString() }));
+    const manifest: Manifest = {
+      formatVersion: FORMAT_VERSION,
+      projectId: this.projectId,
+      projectSchema: PROJECT_SCHEMA,
+    };
+    await this.store.writeText("manifest.json", JSON.stringify(manifest));
+    await this.store.writeText("project.json", JSON.stringify(project));
+    await this.store.writeText("log.json", JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
+    await this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
+    await this.store.writeText("meta.json", JSON.stringify({ name: "Untitled", modifiedAt: new Date().toISOString() }));
   }
 
   /** Store an audio sample, returning its content hash (its `fileId`). Dedups. */
@@ -149,13 +153,17 @@ export class ProjectRepository {
    */
   async exportBundle(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<BundleFiles> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
-    const manifest: Manifest = { formatVersion: FORMAT_VERSION, projectId: this.projectId, projectSchema: PROJECT_SCHEMA };
+    const manifest: Manifest = {
+      formatVersion: FORMAT_VERSION,
+      projectId: this.projectId,
+      projectSchema: PROJECT_SCHEMA,
+    };
     const files: BundleFiles = {
-      'manifest.json': json(manifest),
-      'project.json': json(project),
-      'log.json': json(log),
-      'notes.json': json(notes),
-      'meta.json': json({ name: 'Untitled', modifiedAt: new Date().toISOString() }),
+      "manifest.json": json(manifest),
+      "project.json": json(project),
+      "log.json": json(log),
+      "notes.json": json(notes),
+      "meta.json": json({ name: "Untitled", modifiedAt: new Date().toISOString() }),
     };
     for (const id of referencedSampleIds(project)) {
       const buf = await this.store.readBlob(`samples/${id}`);
@@ -166,17 +174,18 @@ export class ProjectRepository {
 
   /** Load a bundle file map (from an unzipped `.daw.zip`), replacing the project. */
   async importBundle(files: BundleFiles): Promise<StoredProject> {
-    const project = JSON.parse(text(files['project.json'])) as ProjectData;
-    if (!project?.tracks) throw new Error('bundle: missing project.json');
-    const log = files['log.json'] ? (JSON.parse(text(files['log.json'])) as EditEntry[]) : [];
-    const notes = files['notes.json'] ? (JSON.parse(text(files['notes.json'])) as FeedNote[]) : [];
+    const project = JSON.parse(text(files["project.json"])) as ProjectData;
+    if (!project?.tracks) throw new Error("bundle: missing project.json");
+    const log = files["log.json"] ? (JSON.parse(text(files["log.json"])) as EditEntry[]) : [];
+    const notes = files["notes.json"] ? (JSON.parse(text(files["notes.json"])) as FeedNote[]) : [];
     for (const [path, bytes] of Object.entries(files)) {
-      if (!path.startsWith('samples/')) continue;
-      const id = path.slice('samples/'.length).replace(/\.[^.]*$/, ''); // strip dir + extension -> content hash
-      if (id && !(await this.store.exists(`samples/${id}`))) await this.store.writeBlob(`samples/${id}`, new Blob([bytes as BlobPart]));
+      if (!path.startsWith("samples/")) continue;
+      const id = path.slice("samples/".length).replace(/\.[^.]*$/, ""); // strip dir + extension -> content hash
+      if (id && !(await this.store.exists(`samples/${id}`)))
+        await this.store.writeBlob(`samples/${id}`, new Blob([bytes as BlobPart]));
     }
     try {
-      this.projectId = (JSON.parse(text(files['manifest.json'])) as Manifest).projectId;
+      this.projectId = (JSON.parse(text(files["manifest.json"])) as Manifest).projectId;
     } catch {
       this.projectId = null;
     }
@@ -187,11 +196,11 @@ export class ProjectRepository {
   // ---- undo/redo (session checkpoints, persisted so undo survives a reload) ----
 
   writeUndo(state: UndoState): Promise<void> {
-    return this.store.writeText('undo.json', JSON.stringify(state));
+    return this.store.writeText("undo.json", JSON.stringify(state));
   }
 
   async readUndo(): Promise<UndoState | null> {
-    const raw = await this.store.readText('undo.json');
+    const raw = await this.store.readText("undo.json");
     return raw ? (JSON.parse(raw) as UndoState) : null;
   }
 
@@ -209,12 +218,12 @@ export class ProjectRepository {
   }
 
   async readRefs(): Promise<Refs | null> {
-    const raw = await this.store.readText('history/refs.json');
+    const raw = await this.store.readText("history/refs.json");
     return raw ? (JSON.parse(raw) as Refs) : null;
   }
 
   writeRefs(refs: Refs): Promise<void> {
-    return this.store.writeText('history/refs.json', JSON.stringify(refs, null, 2));
+    return this.store.writeText("history/refs.json", JSON.stringify(refs, null, 2));
   }
 }
 
@@ -222,7 +231,7 @@ export class ProjectRepository {
 function referencedSampleIds(project: ProjectData): string[] {
   const ids = new Set<string>();
   for (const t of project.tracks) {
-    if (t.kind !== 'audio') continue;
+    if (t.kind !== "audio") continue;
     for (const c of t.clips ?? []) if (c.fileId) ids.add(c.fileId);
   }
   return [...ids];
@@ -234,12 +243,12 @@ function json(value: unknown): Uint8Array {
 }
 
 function text(bytes: Uint8Array | undefined): string {
-  return bytes ? new TextDecoder().decode(bytes) : '';
+  return bytes ? new TextDecoder().decode(bytes) : "";
 }
 
 async function sha256hex(buf: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', buf);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 let singleton: ProjectRepository | null = null;

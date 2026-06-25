@@ -7,19 +7,17 @@
  * we must exit when the stdio connection closes (or on a signal). Otherwise the
  * process lingers holding the WS port and the next spawn fails with EADDRINUSE.
  */
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createDawMcp } from './mcpServer';
-import { DEFAULT_WS_PORT } from '../src/audio/mcp/protocol';
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createDawMcp } from "./mcpServer";
+import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 
 const port = process.env.WEBDAW_WS_PORT ? Number(process.env.WEBDAW_WS_PORT) : DEFAULT_WS_PORT;
 
 const { server, close } = createDawMcp({
   port,
   onError: (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(
-        `[web-daw] Port ${port} is already in use - another server instance is running. Exiting.`,
-      );
+    if (err.code === "EADDRINUSE") {
+      console.error(`[web-daw] Port ${port} is already in use - another server instance is running. Exiting.`);
       process.exit(1);
     }
   },
@@ -41,10 +39,10 @@ const shutdown = () => {
 // watches stdin 'data'/'error', not EOF, so we watch stdin end/close ourselves
 // (the WebSocket server would otherwise keep the event loop alive forever).
 server.server.onclose = shutdown;
-process.stdin.on('end', shutdown);
-process.stdin.on('close', shutdown);
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.stdin.on("end", shutdown);
+process.stdin.on("close", shutdown);
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 await server.connect(new StdioServerTransport());
 console.error(`[web-daw] MCP server ready; DAW WebSocket on ws://localhost:${port}`);

@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Scheduler } from '../src/audio/sequencer/scheduler';
-import { ProjectStore } from '../src/audio/project/projectStore';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Scheduler } from "../src/audio/sequencer/scheduler";
+import { ProjectStore } from "../src/audio/project/projectStore";
 
-describe('Scheduler integration (mocked clock)', () => {
+describe("Scheduler integration (mocked clock)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('schedules every track\'s notes at distinct times, not all at once', () => {
+  it("schedules every track's notes at distinct times, not all at once", () => {
     let clock = 0;
     const calls: { trackId: string; midi: number; when: number }[] = [];
     const instByTrack = new Map<string, { id: string }>();
@@ -21,8 +21,7 @@ describe('Scheduler integration (mocked clock)', () => {
       getInstrument(id: string) {
         if (!instByTrack.has(id)) instByTrack.set(id, { id });
         return {
-          playNote: (midi: number, _dur: number, _vel: number, when: number) =>
-            calls.push({ trackId: id, midi, when }),
+          playNote: (midi: number, _dur: number, _vel: number, when: number) => calls.push({ trackId: id, midi, when }),
           allNotesOff: () => {},
         };
       },
@@ -32,10 +31,10 @@ describe('Scheduler integration (mocked clock)', () => {
 
     const project = new ProjectStore(false);
     project.setTempo(120); // bps = 2
-    const a = project.addTrack('subtractive', { name: 'A' });
+    const a = project.addTrack("subtractive", { name: "A" });
     project.getClipStore(a.id)!.addNote({ pitch: 60, start: 0 });
     project.getClipStore(a.id)!.addNote({ pitch: 62, start: 4 });
-    const b = project.addTrack('fm', { name: 'B' });
+    const b = project.addTrack("fm", { name: "B" });
     project.getClipStore(b.id)!.addNote({ pitch: 36, start: 2 });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

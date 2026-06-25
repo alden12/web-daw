@@ -8,23 +8,23 @@
  * so the two systems can't drift, minus the non-edits (navigation, live notes,
  * transport), plus the browser-only audio edits that have no wire message yet.
  */
-import type { ServerToBrowser } from '../mcp/protocol';
-import type { PatchValues } from '../params/types';
-import type { NoteEvent } from '../sequencer/types';
+import type { ServerToBrowser } from "../mcp/protocol";
+import type { PatchValues } from "../params/types";
+import type { NoteEvent } from "../sequencer/types";
 
-export type Author = 'you' | 'claude';
+export type Author = "you" | "claude";
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */
 type NonEditType =
-  | 'selectTrack'
-  | 'selectClip'
-  | 'noteOn'
-  | 'noteOff'
-  | 'allNotesOff'
-  | 'transport'
-  | 'historyRequest'
-  | 'patchRequest'
-  | 'note';
+  | "selectTrack"
+  | "selectClip"
+  | "noteOn"
+  | "noteOff"
+  | "allNotesOff"
+  | "transport"
+  | "historyRequest"
+  | "patchRequest"
+  | "note";
 
 /** The durable-edit subset of the MCP protocol (shapes shared, never duplicated). */
 export type ProtocolEdit = Exclude<ServerToBrowser, { type: NonEditType }>;
@@ -32,7 +32,7 @@ export type ProtocolEdit = Exclude<ServerToBrowser, { type: NonEditType }>;
 /** Browser-originated edits with no wire message yet (audio is local-only so far). */
 export type LocalEdit =
   | {
-      type: 'addAudioTrack';
+      type: "addAudioTrack";
       id: string;
       fileId: string;
       name?: string;
@@ -42,7 +42,7 @@ export type LocalEdit =
       groupId?: string;
     }
   | {
-      type: 'setAudioClip';
+      type: "setAudioClip";
       trackId: string;
       clipId?: string;
       patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number };
@@ -51,7 +51,7 @@ export type LocalEdit =
       // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool
       // and place it. Clip + placement ids are pre-minted by the caller and carried
       // here, so replaying the command reproduces the same ids exactly.
-      type: 'addAudioClip';
+      type: "addAudioClip";
       trackId: string;
       id: string;
       placementId: string;
@@ -66,7 +66,7 @@ export type LocalEdit =
       // pool and place it, punching in over whatever it overlaps. Clip + placement
       // ids and every note id are pre-minted by the caller and carried here, so
       // replaying the command reproduces the same ids and notes exactly.
-      type: 'addNoteClip';
+      type: "addNoteClip";
       trackId: string;
       id: string;
       placementId: string;
@@ -79,7 +79,7 @@ export type LocalEdit =
       // Add an instrument track from a saved patch (instrument + params + effect
       // chain). Effect ids are pre-minted by the caller and carried here, so
       // replaying the command reproduces the same track/effect ids exactly.
-      type: 'createTrackFromPatch';
+      type: "createTrackFromPatch";
       id: string;
       name?: string;
       groupId?: string;
@@ -98,7 +98,7 @@ export interface EditEntry {
   author: Author;
   time: number;
   /** What this entry records. Absent = a normal edit (back-compat). */
-  kind?: 'edit' | 'undo' | 'redo';
+  kind?: "edit" | "undo" | "redo";
   /** Display override for non-edit entries (e.g. "Undid: Added note"). */
   label?: string;
 }

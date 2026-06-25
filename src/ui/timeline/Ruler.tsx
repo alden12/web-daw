@@ -6,8 +6,8 @@
  * continuously while dragging, so the caller's edit-log coalescing folds a drag
  * into one undo step.
  */
-import { useRef } from 'react';
-import { beatTicks, beatToX, DEFAULT_BEATS_PER_BAR } from './timeGrid';
+import { useRef } from "react";
+import { beatTicks, beatToX, DEFAULT_BEATS_PER_BAR } from "./timeGrid";
 
 const RULER_H = 22; // px
 
@@ -44,15 +44,19 @@ export function Ruler({
     const toBeats = (clientX: number) => Math.max(0, Math.round((clientX - left) / pxPerBeat));
     const onMove = (ev: PointerEvent) => commit(toBeats(ev.clientX));
     const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   return (
-    <div ref={ref} className="sticky top-0 z-10 bg-rail border-b border-line select-none" style={{ width, height: RULER_H }}>
+    <div
+      ref={ref}
+      className="sticky top-0 z-10 bg-rail border-b border-line select-none"
+      style={{ width, height: RULER_H }}
+    >
       {/* dim the area outside the loop region */}
       {loopStart > 0 && (
         <div className="absolute top-0 bottom-0 left-0 bg-black/30" style={{ width: beatToX(loopStart, pxPerBeat) }} />
@@ -65,7 +69,7 @@ export function Ruler({
       {ticks.map((t) => (
         <div
           key={t.beat}
-          className={`absolute top-0 bottom-0 ${t.isBar ? 'bg-line' : 'bg-line-soft'}`}
+          className={`absolute top-0 bottom-0 ${t.isBar ? "bg-line" : "bg-line-soft"}`}
           style={{ left: beatToX(t.beat, pxPerBeat), width: 1 }}
         >
           {t.isBar && <span className="absolute left-1 top-0.5 font-mono text-[9px] text-faint">{t.bar}</span>}
