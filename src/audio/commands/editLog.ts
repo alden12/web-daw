@@ -16,7 +16,19 @@
 import type { ProjectStore } from '../project/projectStore';
 import type { ProjectData } from '../project/types';
 import { applyEdit } from './applyEdit';
+import { describeCommand } from './describe';
 import type { Author, EditCommand, EditEntry } from './types';
+
+/**
+ * An undo/redo checkpoint: the project state to restore, plus the command that
+ * the checkpoint brackets - so undo/redo can describe what they reverted/reapplied
+ * in the activity feed.
+ */
+interface Checkpoint {
+  snap: ProjectData;
+  command: EditCommand;
+  author: Author;
+}
 
 const COALESCE_MS = 400;
 const MAX_DEPTH = 100;
@@ -27,6 +39,9 @@ const COALESCABLE = new Set<EditCommand['type']>([
   'setGroup',
   'setAudioClip',
   'setTempo',
+  'setLength',
+  'setLoopStart',
+  'editNotes',
 ]);
 
 /** Identity of a command's edit target, so successive edits to it can coalesce. */
@@ -44,6 +59,14 @@ function coalesceKey(c: EditCommand): string {
       return `setAudioClip:${c.trackId}`;
     case 'setTempo':
       return 'setTempo';
+    case 'setLength':
+      return 'setLength';
+    case 'setLoopStart':
+      return 'setLoopStart';
+    // Coalesce a continuous drag of a stable selection into one entry; a new
+    // gesture (different note set) gets a fresh key, so it starts a new edit.
+    case 'editNotes':
+      return `editNotes:${c.trackId}:${c.notes.map((n) => n.id).sort().join(',')}`;
     default:
       return c.type;
   }
@@ -58,8 +81,8 @@ export interface EditLogState {
 export class EditLog {
   private readonly project: ProjectStore;
   private entries: EditEntry[] = [];
-  private undoStack: ProjectData[] = [];
-  private redoStack: ProjectData[] = [];
+  private undoStack: Checkpoint[] = [];
+  private redoStack: Checkpoint[] = [];
   private seq = 0;
   private lastKey: string | null = null;
   private lastTime = 0;
@@ -83,12 +106,14 @@ export class EditLog {
       applyEdit(this.project, command, author);
       const last = this.entries[this.entries.length - 1];
       this.entries[this.entries.length - 1] = { ...last, command, time: now };
+      const top = this.undoStack[this.undoStack.length - 1];
+      if (top) top.command = command; // describe the gesture by its latest state
     } else {
-      this.undoStack.push(this.project.snapshot());
+      this.undoStack.push({ snap: this.project.snapshot(), command, author });
       if (this.undoStack.length > MAX_DEPTH) this.undoStack.shift();
       this.redoStack = [];
       applyEdit(this.project, command, author);
-      this.entries.push({ seq: this.seq++, command, author, time: now });
+      this.entries.push({ seq: this.seq++, command, author, time: now, kind: 'edit' });
     }
     this.lastKey = key;
     this.lastTime = now;
@@ -96,25 +121,49 @@ export class EditLog {
   };
 
   undo = (): void => {
-    const prev = this.undoStack.pop();
-    if (!prev) return;
-    this.redoStack.push(this.project.snapshot());
-    this.project.load(prev);
+    const cp = this.undoStack.pop();
+    if (!cp) return;
+    this.redoStack.push({ snap: this.project.snapshot(), command: cp.command, author: cp.author });
+    this.project.load(cp.snap);
+    // Record the undo in the activity feed (append-only; the feed is a reflog,
+    // authored by whoever pressed undo - the local user).
+    this.entries.push({ seq: this.seq++, command: cp.command, author: 'you', time: Date.now(), kind: 'undo', label: `Undid: ${describeCommand(cp.command)}` });
     this.lastKey = null;
     this.emit();
   };
 
   redo = (): void => {
-    const next = this.redoStack.pop();
-    if (!next) return;
-    this.undoStack.push(this.project.snapshot());
-    this.project.load(next);
+    const cp = this.redoStack.pop();
+    if (!cp) return;
+    this.undoStack.push({ snap: this.project.snapshot(), command: cp.command, author: cp.author });
+    this.project.load(cp.snap);
+    this.entries.push({ seq: this.seq++, command: cp.command, author: 'you', time: Date.now(), kind: 'redo', label: `Redid: ${describeCommand(cp.command)}` });
     this.lastKey = null;
     this.emit();
   };
 
   getState(): EditLogState {
     return this.cached;
+  }
+
+  /** The raw append-only entries (for persistence). */
+  getEntries(): EditEntry[] {
+    return this.entries;
+  }
+
+  /**
+   * Replace the log with persisted entries (on reload). Continues `seq` from the
+   * highest restored entry so new edits stay monotonic (correct even if older
+   * entries were trimmed). Undo/redo do not span a reload, so the checkpoint
+   * stacks start empty.
+   */
+  restore(entries: EditEntry[]): void {
+    this.entries = entries.slice();
+    this.seq = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.undoStack = [];
+    this.redoStack = [];
+    this.lastKey = null;
+    this.emit();
   }
 
   subscribe(listener: () => void): () => void {

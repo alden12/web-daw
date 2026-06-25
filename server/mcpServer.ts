@@ -624,13 +624,28 @@ export function createDawMcp(
     async ({ track, notes }) => {
       const r = resolveInstrumentTrack(track);
       if ('error' in r) return fail(r.error);
-      if (!connected()) return fail('No DAW tab connected.');
-      for (const input of notes) {
-        const note = makeNote(input);
-        sendToTab({ type: 'addNote', trackId: r.id, note });
-        r.track.clip.putNote(note);
-      }
-      return ok(`Added ${notes.length} notes to ${r.id}.`);
+      // One addNotes message = one feed entry + one undo step (not one per note).
+      const made = notes.map(makeNote);
+      if (!sendToTab({ type: 'addNotes', trackId: r.id, notes: made })) return fail('No DAW tab connected.');
+      for (const note of made) r.track.clip.putNote(note);
+      return ok(`Added ${made.length} notes to ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'edit_notes',
+    {
+      title: 'Edit notes',
+      description: 'Move / resize / re-velocity existing notes in place, by id, in one atomic edit. Times in beats.',
+      inputSchema: { ...trackArg, notes: z.array(z.object({ id: z.string(), ...noteShape })).min(1).max(512) },
+    },
+    async ({ track, notes }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      const edited: NoteEvent[] = notes.map((n) => ({ ...makeNote(n), id: n.id }));
+      if (!sendToTab({ type: 'editNotes', trackId: r.id, notes: edited })) return fail('No DAW tab connected.');
+      for (const note of edited) r.track.clip.putNote(note);
+      return ok(`Edited ${edited.length} notes on ${r.id}.`);
     },
   );
 
@@ -643,6 +658,22 @@ export function createDawMcp(
       if (!sendToTab({ type: 'removeNote', trackId: r.id, id })) return fail('No DAW tab connected.');
       r.track.clip.removeNote(id);
       return ok(`Removed note ${id} from ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    'remove_notes',
+    {
+      title: 'Remove notes',
+      description: 'Remove many notes from a track\'s clip by id, in one atomic edit.',
+      inputSchema: { ...trackArg, ids: z.array(z.string()).min(1).max(512) },
+    },
+    async ({ track, ids }) => {
+      const r = resolveInstrumentTrack(track);
+      if ('error' in r) return fail(r.error);
+      if (!sendToTab({ type: 'removeNotes', trackId: r.id, ids })) return fail('No DAW tab connected.');
+      for (const id of ids) r.track.clip.removeNote(id);
+      return ok(`Removed ${ids.length} notes from ${r.id}.`);
     },
   );
 
@@ -767,6 +798,34 @@ export function createDawMcp(
       if (!sendToTab({ type: 'setTempo', bpm })) return fail('No DAW tab connected.');
       mirror.setTempo(bpm);
       return ok(`Tempo set to ${bpm} BPM.`);
+    },
+  );
+
+  server.registerTool(
+    'set_length',
+    {
+      title: 'Set loop length',
+      description: 'Set the project loop length in beats (4 beats = 1 bar; 1-256). Clamps notes past the new end.',
+      inputSchema: { lengthBeats: z.number().min(1).max(256) },
+    },
+    async ({ lengthBeats }) => {
+      if (!sendToTab({ type: 'setLength', lengthBeats })) return fail('No DAW tab connected.');
+      mirror.setLength(lengthBeats);
+      return ok(`Loop length set to ${lengthBeats} beats.`);
+    },
+  );
+
+  server.registerTool(
+    'set_loop_start',
+    {
+      title: 'Set loop start',
+      description: 'Set the loop start in beats; playback loops the region [start, loop length]. 0 loops from the top.',
+      inputSchema: { beats: z.number().min(0).max(256) },
+    },
+    async ({ beats }) => {
+      if (!sendToTab({ type: 'setLoopStart', beats })) return fail('No DAW tab connected.');
+      mirror.setLoopStart(beats);
+      return ok(`Loop start set to ${beats} beats.`);
     },
   );
 

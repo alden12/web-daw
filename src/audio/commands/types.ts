@@ -35,12 +35,16 @@ export type LocalEdit =
 /** Every durable, authored edit. Serializable by construction. */
 export type EditCommand = ProtocolEdit | LocalEdit;
 
-/** One entry in the append-only log: an authored, timestamped command. */
+/** One entry in the append-only activity log: an authored, timestamped command. */
 export interface EditEntry {
   seq: number;
   command: EditCommand;
   author: Author;
   time: number;
+  /** What this entry records. Absent = a normal edit (back-compat). */
+  kind?: 'edit' | 'undo' | 'redo';
+  /** Display override for non-edit entries (e.g. "Undid: Added note"). */
+  label?: string;
 }
 
 /** The single mutation entry point handed to the UI and the MCP bridge. */

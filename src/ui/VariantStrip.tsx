@@ -17,10 +17,13 @@ export function VariantStrip({
   projectStore,
   trackId,
   dispatch,
+  orientation = 'horizontal',
 }: {
   projectStore: ProjectStore;
   trackId: string;
   dispatch: Dispatch;
+  /** 'horizontal' chip row; 'vertical' left rail (stacked, beside the roll). */
+  orientation?: 'horizontal' | 'vertical';
 }) {
   const project = useProject(projectStore);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,6 +31,7 @@ export function VariantStrip({
   if (track?.kind !== 'instrument') return null;
 
   const { variants, activeVariantId } = track;
+  const vertical = orientation === 'vertical';
 
   const commitRename = (variantId: string, name: string) => {
     setEditingId(null);
@@ -35,9 +39,14 @@ export function VariantStrip({
     if (trimmed) dispatch({ type: 'renameVariant', trackId, variantId, name: trimmed });
   };
 
+  const containerClass = vertical
+    ? 'flex flex-col gap-1.5 p-2 w-24 shrink-0 border-r border-line overflow-y-auto'
+    : 'flex items-center gap-1.5 px-4 h-9 border-b border-line overflow-x-auto shrink-0';
+  const chipClass = vertical ? 'w-full justify-between' : 'shrink-0';
+
   return (
-    <div className="flex items-center gap-1.5 px-4 h-9 border-b border-line overflow-x-auto shrink-0">
-      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint mr-1 shrink-0">Variants</span>
+    <div className={containerClass}>
+      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1">Variants</span>
       {variants.map((v) => {
         const active = v.id === activeVariantId;
         const voice = v.author === 'claude' ? 'bg-claude' : 'bg-you';
@@ -52,14 +61,14 @@ export function VariantStrip({
                 if (e.key === 'Enter') commitRename(v.id, e.currentTarget.value);
                 if (e.key === 'Escape') setEditingId(null);
               }}
-              className="w-16 font-mono text-[11px] px-1.5 py-1 rounded-md border border-you bg-ground text-bright"
+              className={`font-mono text-[11px] px-1.5 py-1 rounded-md border border-you bg-ground text-bright ${vertical ? 'w-full' : 'w-16'}`}
             />
           );
         }
         return (
           <div
             key={v.id}
-            className={`group shrink-0 inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-pointer ${
+            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-pointer ${
               active ? 'border-you/60 bg-you/15 text-bright' : 'border-line bg-card text-muted hover:bg-ground'
             }`}
             onClick={() => dispatch({ type: 'selectVariant', trackId, variantId: v.id })}
@@ -88,7 +97,7 @@ export function VariantStrip({
         type="button"
         title="Fork the active variant (non-destructive)"
         onClick={() => dispatch({ type: 'addVariant', trackId, id: newVariantId() })}
-        className="shrink-0 font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap"
+        className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
       >
         + Try
       </button>

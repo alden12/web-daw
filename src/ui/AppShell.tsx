@@ -79,9 +79,9 @@ export function AppShell() {
   // Restore the saved project, then autosave on any change (runs before the
   // bridge connects, so the first snapshot reflects the restored project).
   useEffect(() => {
-    restoreProject(projectStore);
-    return attachAutosave(projectStore);
-  }, [projectStore]);
+    restoreProject(projectStore, editLog);
+    return attachAutosave(projectStore, editLog);
+  }, [projectStore, editLog]);
 
   useEffect(() => () => {
     scheduler.dispose();
@@ -143,9 +143,6 @@ export function AppShell() {
         dispatch={dispatch}
         isPlaying={isPlaying}
         started={started}
-        mcpStatus={mcpStatus}
-        agentCollapsed={agentCollapsed}
-        onToggleAgent={() => setAgentCollapsed(!agentCollapsed)}
       />
       <div
         ref={bodyRef}

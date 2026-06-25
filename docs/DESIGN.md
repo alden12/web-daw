@@ -207,9 +207,20 @@ interchangeable:
 - **Claude Code over MCP** (today's setup) - keep it. Perfect for the developer/tinkerer
   audience driving the same tools from a terminal or scripts.
 
-So: own in-app agent **and** the MCP server, sharing one tool/store layer. The thin server
-proxies the Claude API key for the in-app agent. We do not build a bespoke agent from
-scratch; we reuse the tools and let the Claude API reason, on the latest models.
+So: own in-app agent **and** the MCP server, sharing one tool/store layer. We do not build a
+bespoke agent from scratch; we reuse the tools and let the model reason, on the latest models.
+Concretely: the agent **loop runs client-side** - tool calls execute in the browser through
+the same `dispatch` seam (authored `claude`, coral in the feed) - and **one shared tool
+catalog** (zod -> JSON Schema) feeds both the MCP server and the panel. The thin server is
+only a **key-proxy**: keep it **provider-agnostic** (an OpenAI-compatible base URL + model, so
+a free tier or a local model can drive tests; default Claude Sonnet), and keep the key
+**server-side only** - spend-capped, never `VITE_`-inlined into the client, with auth +
+rate-limiting before any non-localhost deploy. The agent reasons on symbolic data and cannot
+hear its output; **audio-analysis tools** give it "ears" (see the roadmap).
+
+Note: Claude Code / Claude Desktop over MCP already gives a capable agent on your existing
+subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
+general "just open the app" user.
 
 ## 10. Proposed on-disk project format (the concrete next step)
 
@@ -259,10 +270,26 @@ MCP protocol's command vocabulary - powering undo/redo and the two-voice activit
 10 (clip variants: an instrument track owns a stack of variants, each bundling clip notes +
 instrument params + effect chain; the active variant is materialized into the live stores in
 place so the engine bindings survive; "Try"/fork is non-destructive, switching morphs the
-devices, and Claude's generated takes are tagged coral - see section 6).
+devices, and Claude's generated takes are tagged coral - see section 6),
+11 (edit-log persistence: the authored command log is persisted alongside the project
+snapshot in localStorage and restored on load, so the activity feed and authored history
+survive a reload; undo/redo stays session-scoped),
+12 (piano-roll editing: full mouse manipulation - drag-move, edge-resize, marquee
+multi-select + multi-delete, velocity lane, copy/cut/paste - plus zoom, a bar/beat ruler, and
+a draggable loop-length handle; new plural clip commands (`addNotes`/`editNotes`/`removeNotes`)
+make each gesture one feed entry and one undo step - and fix the `add_notes` history spam - and
+a project-level `setLength`; the shared `beats<->px` ruler/zoom primitive
+(`src/ui/timeline/`) is built here for the arrangement timeline to reuse - first of three
+"real DAW" pieces. A second commit adds polish: a real **loop region** [loopStart, loopEnd]
+that the scheduler loops (project `loopStart` + `setLoopStart`, two ruler handles, grid drawn
+past the end to scroll/expand into), fit-notes-to-window on track load, pinch / Cmd-scroll /
+Shift-scroll zoom, narrower velocity bars + a resizable velocity lane, deselect on Escape /
+click-outside, and a workbench relayout - variants moved to a left rail beside the roll, with a
+resizable device|roll divider and a wrapping instrument/effects rack).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
-**authored edit log** (slice 9) and **clip variants** (slice 10) are in place; the remaining
+**authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
+(slice 11) are in place; the remaining
 early model evolution is generalizing variants into **a track that owns a set of clip slots**
 and building the **Session/clip-launch grid** on top (the same variants seen as launchable
 slots - one model, two views), plus copy-paste and linear arrangement editing. The raw backlog
@@ -275,22 +302,39 @@ below is grouped into themed slices; within a theme, order is rough.
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
-- **Piano-roll editing:** note drag / resize / multi-select, and copy-paste of notes.
+- **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
+  manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
+  marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
+  zoom, a bar/beat ruler, and a draggable loop-length handle (project-level `setLength`). Plural
+  clip commands (`addNotes`/`editNotes`/`removeNotes`) make each gesture one feed entry + one
+  undo step (and fixed the per-note `add_notes` history spam); they extend the MCP vocabulary
+  too (`edit_notes`/`remove_notes`/`set_length`/`set_loop_start`). The shared **beats<->px +
+  zoom + ruler** primitive (`src/ui/timeline/`) is in place for the arrangement timeline to
+  reuse. A polish pass added a real **loop region** [loopStart, loopEnd] the scheduler loops
+  (two ruler handles; grid drawn past the end), fit-to-window on load, pinch / modifier-scroll
+  zoom, a resizable velocity lane, deselect on Escape / click-out, and a workbench relayout
+  (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
+  follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it.
-- **Timeline & arrangement UX** (likely two slices): zoom / pan / skip-to-time / loop a
-  section, track reorder by drag, track-height resize, track colors, a visual summary of
-  grouped tracks, resizable + persisted panel sizes, and library drag-and-drop for
-  instruments/effects.
+- **Timeline & arrangement interactions (the third "real DAW" piece - depends on the
+  arrangement clip model below).** Scroll / zoom / pan the timeline (reusing the piano-roll's
+  beats<->px+ruler primitive), drag clips between bars, split at the playhead, resize, and
+  snap-to-grid. Only meaningful once clips are first-class positioned objects, so it follows
+  the model evolution. Also in this theme (model-independent, can ride along): track reorder
+  by drag, track-height resize, track colors, a visual summary of grouped tracks, and library
+  drag-and-drop for instruments/effects.
 
 **Model evolutions - sequence early, they unlock the rest**
 
-- **Authored edit log - DONE (slice 9).** Every durable edit flows through one
-  `dispatch(command, author)` seam into an append-only, authored command log (in-memory),
-  powering undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed.
-  *Remaining:* **persist the log** across reloads (the entry type is serializable already),
-  then **version history** with semantic diff/merge & branches (section 7) - both build
-  directly on the log.
+- **Authored edit log + persistence - DONE (slices 9, 11).** Every durable edit flows through
+  one `dispatch(command, author)` seam into an append-only, authored command log, powering
+  undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed; the log is
+  persisted alongside the project snapshot (localStorage) and restored on load, so the feed and
+  authored history survive a reload (undo/redo stays session-scoped). *Remaining:* **version
+  history** with replay/scrub/rollback and semantic diff/merge & branches (section 7) - which
+  needs undo to append compensating entries so the log becomes a faithful event source - and
+  graduating storage from localStorage to the on-disk file format (section 10) / IndexedDB.
 - **On-disk file format** (section 10): human-readable project files; pairs with the persisted
   edit log and local-first storage.
 - **Clip variants - DONE (slice 10).** An instrument track owns a stack of variants; each
@@ -302,9 +346,18 @@ below is grouped into themed slices; within a theme, order is rough.
   **clip slots** and build the Ableton-style **Session/Grid view** on top - each track a column
   of launchable clips with its variants stacked vertically, scenes launching a row across
   tracks (the same variants seen as launchable slots - one model, two views).
-- **Arrangement editing (linear timeline)** - the other view onto the same clip model:
-  placing / splitting / moving clips along time, setting a clip's start-end, copy-paste of
-  clips, and MIDI import as clips.
+- **Arrangement clip model (the fundamental / second "real DAW" piece - sequence before the
+  timeline interactions above).** Today a track owns exactly one clip (the active variant's),
+  under a single global `lengthBeats` loop, so the timeline is a read-only preview. The
+  keystone change is making clips **first-class positioned instances**: a track holds a list
+  of clip placements (clip ref + start beat + length + content offset) along time, replacing
+  the one-global-loop assumption. This ripples through the scheduler (play clips at their
+  positions, not one looping clip), MCP tools, and persistence (migration + version bump).
+  Open design question to settle in this slice: how **variants** interact with multiple
+  arranged clips (today a variant snapshots the whole sound including the single clip). Once
+  this lands, placing / splitting / moving clips, clip start-end, copy-paste of clips, and
+  MIDI import as clips all become tractable - and the Session/Grid view is the same model seen
+  as launchable slots.
 - **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
   per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
   up/down without changing pitch) and other sample-accurate audio work become tractable.
@@ -322,6 +375,29 @@ below is grouped into themed slices; within a theme, order is rough.
   instrument catalog and the slice-8 audio-clip storage.
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
+- **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
+  **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
+  automation, and persistence come for free (the catalog/registry are already the extension
+  point, game-engine style) - plus generative **scripts** over the `dispatch` API, alongside
+  the in-app file viewer (section 8). Pairs with the shareable/community device format; running
+  user code needs **sandboxing + a trust model** (resource limits, Worker/iframe isolation,
+  capability-limited APIs) before any sharing, and the agent can author components too. Builds
+  on the "custom-DSP-via-worklet" note in section 10; the fullest workflow wants the Tauri
+  shell + local-first files (sections 8, 10).
+
+**Agent**
+
+- **In-app agent panel** (section 9): an embedded chat driving the model via the client-side
+  tool loop + thin, provider-agnostic key-proxy described in section 9. Reuses the one shared
+  tool catalog (zod -> JSON Schema); edits land authored `claude` (coral) through the existing
+  `dispatch` seam. Claude Code / Desktop over MCP already covers this for the tinkerer at no
+  per-token cost; the panel adds the embedded UX and the general "just open the app" user.
+- **Agent "ears" (audio analysis).** The agent reasons on symbolic data and cannot hear the
+  output. Render offline (`OfflineAudioContext`) and expose **analysis tools** that mirror the
+  `list_*` reads: objective DSP first (loudness / LUFS, spectral balance / masking, clipping -
+  e.g. Meyda), then MIR (key / BPM / onset via essentia.js), then perceptual/semantic (CLAP or
+  an audio-tagging model, or a multimodal model as a `describe_sound` tool). Closes the
+  perception loop for mixing/arrangement; human auditioning still decides taste.
 
 **Platform & form factor**
 
@@ -335,8 +411,8 @@ below is grouped into themed slices; within a theme, order is rough.
   pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
   (Converse/Produce) maps naturally onto how much screen the agent takes.
 
-**Longer horizon:** automation lanes (section 5); in-app agent (section 9); sharing /
-collaboration; Tauri desktop shell (also the home for native low-latency monitoring).
+**Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
+shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
