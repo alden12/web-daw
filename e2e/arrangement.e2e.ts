@@ -104,9 +104,9 @@ test('a track can be renamed inline', async ({ page }) => {
   await page.goto('/');
   await dismissStart(page);
 
-  const name = page.getByTitle('Double-click to rename').first();
+  const name = page.getByTestId('arr-scroll').getByText('Subtractive 1', { exact: true });
   await name.dblclick();
-  const input = page.getByRole('textbox');
+  const input = page.getByTestId('arr-scroll').getByRole('textbox');
   await input.fill('My Bass');
   await input.press('Enter');
   await expect(page.getByTestId('arr-scroll').getByText('My Bass')).toBeVisible();
@@ -149,7 +149,7 @@ test('a group can be renamed inline', async ({ page }) => {
   // The seed subtractive track is filed into the "Synths" group.
   const group = page.getByTestId('arr-scroll').getByText('Synths', { exact: true });
   await group.dblclick();
-  const input = page.getByRole('textbox');
+  const input = page.getByTestId('arr-scroll').getByRole('textbox');
   await input.fill('Leads');
   await input.press('Enter');
   await expect(page.getByTestId('arr-scroll').getByText('Leads', { exact: true })).toBeVisible();

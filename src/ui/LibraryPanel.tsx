@@ -143,6 +143,7 @@ export function LibraryPanel({
 }) {
   const [importError, setImportError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
   const menuRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -215,8 +216,17 @@ export function LibraryPanel({
     }
   };
 
+  // Basic library search: filter each catalog by name (the box's "ask" use is future).
+  const query = searchQuery.trim().toLowerCase();
+  const matches = (label: string) => !query || label.toLowerCase().includes(query);
+  const instruments = instrumentInfos().filter((def) => matches(def.label));
+  const effects = effectInfos().filter((def) => matches(def.label));
+  const matchedPatches = patches.filter((patch) => matches(patch.name));
+  const noMatches = query !== "" && !instruments.length && !effects.length && !matchedPatches.length;
+
   return (
-    <div className="[grid-area:library] bg-rail border-r border-line overflow-y-auto py-3">
+    <div className="[grid-area:library] bg-rail border-r border-line flex flex-col min-h-0">
+      <div className="shrink-0 pt-3">
       <div className="flex items-center gap-1.5 px-3 pb-4 font-semibold text-sm text-bright">
         <div className="relative" ref={menuRef}>
           <button
@@ -305,65 +315,83 @@ export function LibraryPanel({
         }}
       />
 
-      <div className="mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-faint text-xs">
-        Search or ask…
-      </div>
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search…"
+        aria-label="Search the library"
+        className="block w-[calc(100%-1.75rem)] mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
+      />
       {importError && (
         <p className="text-claude text-[11px] px-4 pb-1">{importError}</p>
       )}
+      </div>
 
-      <Category label="Instruments">
-        {instrumentInfos().map((def) => (
-          <Leaf
-            key={def.type}
-            label={def.label}
-            onClick={() =>
-              dispatch({
-                type: "createTrack",
-                instrumentType: def.type,
-                id: newTrackId(),
-              })
-            }
-          />
-        ))}
-        <Category label="Patches" nested>
-          {patches.length === 0 ? (
-            <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">
-              Save an instrument as a patch to reuse it here.
-            </p>
-          ) : (
-            patches.map((patch) => (
-              <PatchLeaf
-                key={patch.id}
-                patch={patch}
-                indent="pl-12"
-                onAdd={() => addFromPatch(patch)}
-                onDelete={() => removePatch(patch.id)}
+      <div className="flex-1 min-h-0 overflow-y-auto pb-3">
+        {(instruments.length > 0 || matchedPatches.length > 0) && (
+          <Category label="Instruments">
+            {instruments.map((def) => (
+              <Leaf
+                key={def.type}
+                label={def.label}
+                onClick={() =>
+                  dispatch({
+                    type: "createTrack",
+                    instrumentType: def.type,
+                    id: newTrackId(),
+                  })
+                }
               />
-            ))
-          )}
-        </Category>
-      </Category>
+            ))}
+            {(query === "" || matchedPatches.length > 0) && (
+              <Category label="Patches" nested>
+                {matchedPatches.length === 0 ? (
+                  <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">
+                    Save an instrument as a patch to reuse it here.
+                  </p>
+                ) : (
+                  matchedPatches.map((patch) => (
+                    <PatchLeaf
+                      key={patch.id}
+                      patch={patch}
+                      indent="pl-12"
+                      onAdd={() => addFromPatch(patch)}
+                      onDelete={() => removePatch(patch.id)}
+                    />
+                  ))
+                )}
+              </Category>
+            )}
+          </Category>
+        )}
 
-      <Category label="Effects">
-        {effectInfos().map((def) => (
-          <Leaf
-            key={def.type}
-            label={def.label}
-            fx
-            onClick={() => {
-              const hostId = projectStore.selectedId;
-              if (hostId)
-                dispatch({
-                  type: "addEffect",
-                  hostId,
-                  effectType: def.type,
-                  id: newEffectId(),
-                });
-            }}
-          />
-        ))}
-      </Category>
+        {effects.length > 0 && (
+          <Category label="Effects">
+            {effects.map((def) => (
+              <Leaf
+                key={def.type}
+                label={def.label}
+                fx
+                onClick={() => {
+                  const hostId = projectStore.selectedId;
+                  if (hostId)
+                    dispatch({
+                      type: "addEffect",
+                      hostId,
+                      effectType: def.type,
+                      id: newEffectId(),
+                    });
+                }}
+              />
+            ))}
+          </Category>
+        )}
+
+        {noMatches && (
+          <p className="px-4 py-2 text-[11.5px] text-faint">No matches for “{searchQuery.trim()}”.</p>
+        )}
+      </div>
     </div>
   );
 }

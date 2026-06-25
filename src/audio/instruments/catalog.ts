@@ -51,6 +51,16 @@ export const organSchema: ParamSchema = [
   { id: 'env.release', label: 'Release', kind: 'number', min: 1, max: 4000, default: 120, unit: 'ms', taper: 'exponential' },
 ] as const;
 
+// Morphing wavetable synth (AudioWorklet). Param ids match the processor's AudioParam
+// names so WorkletInstrument binds them generically; smoothMs keeps the morph zipper-free.
+export const wavetableSchema: ParamSchema = [
+  { id: 'wt.position', label: 'Position', kind: 'number', min: 0, max: 1, default: 0, taper: 'linear', smoothMs: 20 },
+  { id: 'wt.tone', label: 'Tone', kind: 'number', min: 0, max: 1, default: 0.6, taper: 'linear', smoothMs: 20 },
+  { id: 'amp.level', label: 'Level', kind: 'number', min: 0, max: 1, default: 0.7, taper: 'linear', smoothMs: 10 },
+  { id: 'env.attack', label: 'Attack', kind: 'number', min: 1, max: 2000, default: 8, unit: 'ms', taper: 'exponential' },
+  { id: 'env.release', label: 'Release', kind: 'number', min: 1, max: 4000, default: 300, unit: 'ms', taper: 'exponential' },
+] as const;
+
 export interface InstrumentInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -104,3 +114,4 @@ registerInstrument({ type: 'subtractive', label: 'Subtractive', schema: subtract
 registerInstrument({ type: 'fm', label: 'FM', schema: fmSchema, family: 'Bass' });
 registerInstrument({ type: 'supersaw', label: 'Supersaw', schema: supersawSchema, family: 'Synths' });
 registerInstrument({ type: 'organ', label: 'Organ', schema: organSchema, family: 'Keys' });
+registerInstrument({ type: 'wavetable', label: 'Wavetable', schema: wavetableSchema, family: 'Synths' });

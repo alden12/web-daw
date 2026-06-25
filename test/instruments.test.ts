@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { ParamStore } from '../src/audio/params/store';
 import { instrumentSchema, instrumentInfos } from '../src/audio/instruments/catalog';
 import { createInstrument } from '../src/audio/instruments/registry';
@@ -38,6 +38,26 @@ function fakeCtx() {
     createBiquadFilter: () => fakeNode({ type: 'lowpass', frequency: fakeParam(), Q: fakeParam() }),
   };
 }
+
+/**
+ * Worklet-based instruments construct a global `AudioWorkletNode` (not a ctx method),
+ * so stub it for the catalog-iterating construction test - the processor's DSP is
+ * covered separately in wavetable.test.ts. `parameters.get` returns a fakeParam so the
+ * generic binding's rampParam calls run; `port.postMessage` swallows note commands.
+ */
+beforeAll(() => {
+  class FakeAudioWorkletNode {
+    parameters = { get: () => fakeParam() };
+    port = { postMessage() {} };
+    connect(dest: unknown) {
+      if (!dest) throw new TypeError('connect() to undefined destination');
+      return dest;
+    }
+    disconnect() {}
+  }
+  (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
+});
+afterAll(() => delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode);
 
 describe('instruments', () => {
   for (const { type } of instrumentInfos()) {

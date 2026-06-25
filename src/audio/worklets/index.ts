@@ -9,8 +9,9 @@
  */
 import bitcrusherUrl from './bitcrusher.worklet.ts?worker&url';
 import captureUrl from './capture.worklet.ts?worker&url';
+import wavetableUrl from '../instruments/wavetable.worklet.ts?worker&url';
 
-const MODULE_URLS: string[] = [bitcrusherUrl, captureUrl];
+const MODULE_URLS: string[] = [bitcrusherUrl, captureUrl, wavetableUrl];
 
 const loaded = new WeakMap<BaseAudioContext, Promise<void>>();
 

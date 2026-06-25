@@ -158,7 +158,7 @@ export function ClipRail({
                 e.stopPropagation();
                 toggleLaunch(c.id);
               }}
-              className={`font-mono text-[9px] leading-none w-4 h-4 rounded-full border cursor-pointer shrink-0 ${
+              className={`font-mono text-[9px] pl-px pb-px leading-none w-4 h-4 rounded-full border cursor-pointer shrink-0 ${
                 launchedClipId === c.id ? 'border-you bg-you text-ground' : 'border-line text-muted hover:text-you hover:border-you'
               }`}
             >

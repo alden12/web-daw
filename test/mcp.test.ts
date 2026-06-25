@@ -69,7 +69,7 @@ describe('MCP server (tracks)', () => {
     const data = parse(await call('list_tracks'));
     expect(data.connected).toBe(false);
     expect(data.tracks).toEqual([]);
-    expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual(['fm', 'organ', 'subtractive', 'supersaw']);
+    expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual(['fm', 'organ', 'subtractive', 'supersaw', 'wavetable']);
   });
 
   it('errors a track-addressed tool when no track exists/selected', async () => {

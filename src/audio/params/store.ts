@@ -42,6 +42,11 @@ export class ParamStore {
     return spec;
   }
 
+  /** Every param spec, in schema order (for generic, schema-driven binding). */
+  allSpecs(): ParamSpec[] {
+    return [...this.specs.values()];
+  }
+
   get(id: string): ParamValue {
     if (!this.specs.has(id)) throw new Error(`Unknown parameter: ${id}`);
     return this.values.get(id)!;
