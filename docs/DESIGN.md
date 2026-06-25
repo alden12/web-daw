@@ -411,6 +411,36 @@ The follow-on slices (not in this push): **15C** branches + revert + cherry-pick
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
 via the File System Access API (+ optional git export), **15E** remote sync / collaboration.
 
+**Extension SDK - third-party instruments & effects (ecosystem + ownership)**
+
+The project is licensed **AGPL-3.0** (strong copyleft so a modified core can't be closed and
+hosted as a rival), with the option for the copyright holder to dual-license commercially. The
+intended growth model is **extension, not modification**: people add instruments and effects
+without touching the core, so ownership of each piece is clear - the core stays a single-owner,
+dual-licensable unit; each extension is owned by its author under the license they choose. That
+shape is already latent in the design: the catalogs + registries are *the* single extension
+points (`audio/instruments/catalog.ts`, `audio/effects/catalog.ts`, `registry.ts`), and because
+the parameter schema is the keystone, a registered instrument shows up in the UI, the MCP
+palette, automation, and persistence for free.
+
+To make that extension point *external* (a future slice):
+
+- **Promote the static catalogs to a registration API** - `registerInstrument({ type, label,
+  family, schema, createNode })` / `registerEffect(...)`, with the registry merging built-ins
+  and registered entries. No core edit needed to add one.
+- **Carve out a small permissive SDK package** (e.g. `web-daw-sdk`, MIT/Apache) holding only the
+  stable contract a plugin imports: the param-spec types, the `specToZod` derivation
+  (`params/zod.ts`), the instrument/effect definition interfaces, and the pure-`Float32Array`
+  worklet/DSP contract. Plugins depend on the SDK, not the AGPL core, so they are **not** forced
+  to be AGPL - that is what keeps the ecosystem open (incl. closed or differently-licensed
+  extensions) while the core stays protected. (Alternative: keep one repo and add a GPL linking
+  exception scoped to the plugin interface; the SDK split is cleaner and forces a good boundary.)
+- **Loading model:** for self-hosters, extensions are npm packages imported at build; a runtime
+  plugin loader / marketplace is a later step (and a natural commercial surface).
+
+The SDK surface becomes the thing we promise not to break; everything behind it stays free to
+refactor. Shipping the AGPL license now is independent of this - the SDK carve-out is additive.
+
 **Near-term - UI on top of the current model**
 
 - **Group/track selection + group-FX editing in the workbench** (next, small). Select a

@@ -2,6 +2,7 @@
   "name": "web-daw",
   "private": true,
   "version": "0.0.0",
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "packageManager": "yarn@1.22.22",
   "scripts": {
