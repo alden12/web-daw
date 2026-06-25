@@ -1,79 +1,386 @@
 /**
  * The arrangement timeline (bottom): the project's bus tree on the left, one
- * lane per track on a shared bar grid on the right, with a playhead that tracks
- * the scheduler. The left column is a collapsible group tree (groups are
- * track-of-tracks buses): each group header carries collapse / mute / volume /
+ * lane per track on a shared bar grid on the right, with a ruler + playhead that
+ * track the scheduler. The left column is a collapsible group tree (groups are
+ * track-of-tracks buses); each group header carries collapse / mute / volume /
  * remove, and its tracks and subgroups nest beneath it.
  *
- * Both columns iterate the SAME flattened, visible row list so headers and lanes
- * stay row-aligned. Current model is one loop per track, so each lane shows a
- * single clip region with a mini note preview.
+ * The lanes are an editable, zoomable, scrollable arrangement of clip placements:
+ * - click an empty lane    -> place the track's active clip there.
+ * - click a block          -> select it (selects its track + makes its clip
+ *                             active, so the piano roll edits that clip).
+ * - drag a block body       -> move it; drag its right edge -> resize the window.
+ * - double-click a block    -> split it in two at the cursor.
+ * - Delete removes the selected placement; Escape deselects.
+ * - the ruler owns the project loop region (drag its two handles); wheel with a
+ *   modifier zooms the time axis (cursor-anchored), plain wheel scrolls.
+ *
+ * Every drag commits through ONE coalescing command (move/resize), so a gesture
+ * is one undo step and one feed entry. Geometry is shared with the piano roll via
+ * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useEffect, useRef } from 'react';
-import type { ProjectStore } from '../audio/project/projectStore';
-import type { ClipStore } from '../audio/sequencer/clipStore';
-import type { Scheduler } from '../audio/sequencer/scheduler';
-import type { AudioClip, GroupMeta, TrackMeta } from '../audio/project/types';
-import type { Dispatch } from '../audio/commands/types';
-import { newGroupId } from '../audio/commands/ids';
-import { useProject } from '../audio/project/useProject';
-import { useClip } from '../audio/sequencer/useClip';
+import { useEffect, useRef, useState } from "react";
+import type { ProjectStore, Track } from "../audio/project/projectStore";
+import type { ClipStore } from "../audio/sequencer/clipStore";
+import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
+import type { Dispatch } from "../audio/commands/types";
+import { GRID } from "../audio/sequencer/types";
+import { newClipId, newGroupId, newPlacementId } from "../audio/commands/ids";
+import { useProject } from "../audio/project/useProject";
+import { useClip } from "../audio/sequencer/useClip";
+import { TransportBar } from "./TransportBar";
+import { InlineRename } from "./InlineRename";
+import { CLIP_DND_TYPE, clipDndTrackType } from "./clipDnd";
+import { Ruler } from "./timeline/Ruler";
+import {
+  beatToX,
+  floorBeat,
+  snapBeat,
+  xToBeat,
+  DEFAULT_BEATS_PER_BAR,
+} from "./timeline/timeGrid";
+import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 
-const ROW = 'h-11.5 shrink-0';
+const ROW = "h-11.5 shrink-0";
+const ROW_PX = 46; // must match ROW (h-11.5)
+const HEADER_W = 220; // px - the fixed left header column
+const RULER_H = 22; // px - must match Ruler's internal height
 const INDENT = 14; // px per tree depth
+const RESIZE_PX = 7; // grab zone on a block's right edge
+const DRAG_THRESH = 4; // px before an empty-lane press counts as a drag (no add)
+const TRAIL_BEATS = 16; // empty grid drawn past the content end (room to arrange into)
+
+const ZOOM = { min: 6, max: 96 };
+const SNAP_OPTIONS = [
+  { label: "Bar", value: 4 },
+  { label: "Beat", value: 1 },
+  { label: "1/2", value: 0.5 },
+];
+
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, v));
+
+type Selection = { trackId: string; id: string } | null;
 
 type Row =
-  | { kind: 'group'; group: GroupMeta; depth: number }
-  | { kind: 'track'; track: TrackMeta; depth: number };
+  | { kind: "group"; group: GroupMeta; depth: number }
+  | { kind: "track"; track: TrackMeta; depth: number };
 
 /** Depth-first, collapse-aware flatten: subgroups then tracks under each group. */
 function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
   const rows: Row[] = [];
   const walk = (group: GroupMeta, depth: number) => {
-    rows.push({ kind: 'group', group, depth });
+    rows.push({ kind: "group", group, depth });
     if (group.collapsed) return;
-    for (const sub of groups.filter((g) => g.parentId === group.id)) walk(sub, depth + 1);
-    for (const t of tracks.filter((t) => t.parentId === group.id)) rows.push({ kind: 'track', track: t, depth: depth + 1 });
+    for (const sub of groups.filter((g) => g.parentId === group.id))
+      walk(sub, depth + 1);
+    for (const t of tracks.filter((t) => t.parentId === group.id))
+      rows.push({ kind: "track", track: t, depth: depth + 1 });
   };
   for (const g of groups.filter((g) => g.parentId === null)) walk(g, 0);
   // Defensive: surface any orphaned tracks (model keeps every track in a group).
-  for (const t of tracks.filter((t) => !groups.some((g) => g.id === t.parentId))) rows.push({ kind: 'track', track: t, depth: 0 });
+  for (const t of tracks.filter(
+    (t) => !groups.some((g) => g.id === t.parentId),
+  ))
+    rows.push({ kind: "track", track: t, depth: 0 });
   return rows;
 }
 
-function TrackPreview({ clipStore }: { clipStore: ClipStore }) {
-  const clip = useClip(clipStore);
-  const pitches = clip.notes.map((n) => n.pitch);
-  const lo = pitches.length ? Math.min(...pitches) : 48;
-  const hi = pitches.length ? Math.max(...pitches) : 72;
-  const span = Math.max(1, hi - lo);
+/** A placement block: pixel-positioned region with a label, shared by both kinds. */
+function Block({
+  name,
+  left,
+  width,
+  selected,
+  onPointerDown,
+  onDoubleClick,
+  children,
+}: {
+  name?: string;
+  left: number;
+  width: number;
+  selected: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
+  children?: React.ReactNode;
+}) {
   return (
-    <div className="absolute top-2 bottom-2 left-[0.4%] right-[0.4%] rounded bg-card border border-line border-t-2 border-t-you overflow-hidden">
-      {clip.notes.map((n) => (
-        <div
-          key={n.id}
-          className="absolute h-0.5 rounded-[1px] bg-you/85"
-          style={{
-            left: `${(n.start / clip.lengthBeats) * 100}%`,
-            width: `${Math.max(1.5, (n.length / clip.lengthBeats) * 100)}%`,
-            bottom: `${((n.pitch - lo) / span) * 70 + 14}%`,
-          }}
-        />
-      ))}
+    <div
+      data-testid="placement"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${
+        selected
+          ? "border-you bg-you/25 ring-1 ring-you"
+          : "border-line border-t-2 border-t-you bg-card hover:bg-card/70"
+      }`}
+      style={{ left, width: Math.max(3, width) }}
+      title={name}
+    >
+      <div className="absolute inset-0 bg-you/10" />
+      {children}
+      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">
+        {name}
+      </span>
+      {/* right-edge resize affordance */}
+      <div className="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize" />
     </div>
   );
 }
 
-function AudioLanePreview({ clip, lengthBeats, tempoBpm }: { clip: AudioClip; lengthBeats: number; tempoBpm: number }) {
-  const durationBeats = clip.durationSec * (tempoBpm / 60);
-  const width = Math.max(2, Math.min(100, (durationBeats / lengthBeats) * 100));
+/**
+ * Mini note summary of an instrument clip, tiled across the placement window so a
+ * looped clip (a window longer than the clip) shows its repeats, with a faint
+ * divider at each loop boundary. Mirrors the scheduler's `tileClipNotes` math.
+ */
+function NoteMinis({
+  store,
+  placement,
+  pxPerBeat,
+}: {
+  store: ClipStore;
+  placement: Placement;
+  pxPerBeat: number;
+}) {
+  const clip = useClip(store);
+  const clipLen = clip.lengthBeats;
+  if (clipLen <= 0) return null;
+  const body = clip.notes.filter((n) => n.start >= 0 && n.start < clipLen);
+  const pitches = body.map((n) => n.pitch);
+  const lo = pitches.length ? Math.min(...pitches) : 48;
+  const hi = pitches.length ? Math.max(...pitches) : 72;
+  const span = Math.max(1, hi - lo);
+
+  // Tiled note onsets (arrangement-relative beats), and loop-boundary dividers.
+  const tiles: { key: string; tau: number; note: (typeof body)[number] }[] = [];
+  for (const note of body) {
+    let phase = (note.start - placement.offset) % clipLen;
+    if (phase < 0) phase += clipLen;
+    for (let tau = phase; tau < placement.length; tau += clipLen)
+      tiles.push({ key: `${note.id}:${tau}`, tau, note });
+  }
+  const dividers: number[] = [];
+  let first = (-placement.offset) % clipLen;
+  if (first < 0) first += clipLen;
+  for (let tau = first; tau < placement.length; tau += clipLen)
+    if (tau > 0.001) dividers.push(tau);
+
+  return (
+    <>
+      {dividers.map((tau) => (
+        <div
+          key={`d${tau}`}
+          className="absolute top-0 bottom-0 w-px bg-you/25 pointer-events-none"
+          style={{ left: beatToX(tau, pxPerBeat) }}
+        />
+      ))}
+      {tiles.map(({ key, tau, note }) => (
+        <div
+          key={key}
+          className="absolute h-0.5 rounded-[1px] bg-you/85 pointer-events-none"
+          style={{
+            left: beatToX(tau, pxPerBeat),
+            width: Math.max(2, beatToX(note.length, pxPerBeat)),
+            bottom: `${((note.pitch - lo) / span) * 60 + 18}%`,
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * One track's lane: an editable strip of placement blocks over the beat grid.
+ * Owns the pointer gestures (place / select / move / resize / split) and reports
+ * edits through the dispatch; selection is lifted to the parent so the roll and
+ * the lanes agree on what's active.
+ */
+function Lane({
+  track,
+  width,
+  pxPerBeat,
+  beatsPerBar,
+  snapOn,
+  snapDiv,
+  selection,
+  onSelect,
+  dispatch,
+}: {
+  track: Track;
+  width: number;
+  pxPerBeat: number;
+  beatsPerBar: number;
+  snapOn: boolean;
+  snapDiv: number;
+  selection: Selection;
+  onSelect: (trackId: string, p: Placement) => void;
+  dispatch: Dispatch;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
+  const [dropBeat, setDropBeat] = useState<number | null>(null);
+  const beatAt = (clientX: number) =>
+    xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
+  const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
+  const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
+
+  // Drop a clip dragged from this track's clip rail at the cursor (a placement of
+  // the existing clip). The per-track marker type lets only this track's lane accept.
+  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(clipDndTrackType(track.id));
+  const onDragOver = (e: React.DragEvent) => {
+    if (!accepts(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropBeat(Math.max(0, floorB(beatAt(e.clientX))));
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!accepts(e)) return;
+    e.preventDefault();
+    const clipId = e.dataTransfer.getData(CLIP_DND_TYPE);
+    setDropBeat(null);
+    if (!clipId || !track.clips.some((c) => c.id === clipId)) return;
+    const startBeat = Math.max(0, floorB(beatAt(e.clientX)));
+    const id = newPlacementId();
+    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat });
+    onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
+  };
+  // Clear the drop indicator when the drag ends anywhere (avoids dragleave flicker).
+  useEffect(() => {
+    const clear = () => setDropBeat(null);
+    window.addEventListener("dragend", clear);
+    return () => window.removeEventListener("dragend", clear);
+  }, []);
+
+  // Drag a block: body -> move, right edge -> resize. Both snap and coalesce.
+  const onBlockDown = (p: Placement, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    onSelect(track.id, p);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const isEdge = rect.right - e.clientX <= RESIZE_PX;
+    const downBeat = beatAt(e.clientX);
+    const origin = { startBeat: p.startBeat, length: p.length };
+
+    const onMove = (ev: PointerEvent) => {
+      const delta = beatAt(ev.clientX) - downBeat;
+      if (isEdge) {
+        const length = Math.max(snapOn ? snapDiv : GRID, snapB(origin.length + delta));
+        if (length !== p.length)
+          dispatch({ type: "resizePlacement", trackId: track.id, placementId: p.id, length });
+      } else {
+        const startBeat = Math.max(0, snapB(origin.startBeat + delta));
+        if (startBeat !== p.startBeat)
+          dispatch({ type: "movePlacement", trackId: track.id, placementId: p.id, startBeat });
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Double-click a block to split it at the cursor.
+  const onBlockDouble = (p: Placement, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const at = snapB(beatAt(e.clientX));
+    if (at > p.startBeat && at < p.startBeat + p.length)
+      dispatch({ type: "splitPlacement", trackId: track.id, placementId: p.id, atBeat: at, newId: newPlacementId() });
+  };
+
+  // Create a new empty clip sized to [start, start+length) and place it; the new
+  // clip becomes active so the roll follows it. (Place an existing clip via the
+  // clip rail, or copy/paste / drag-loop to repeat one.)
+  const createClip = (start: number, length: number) => {
+    if (track.kind !== "instrument") return;
+    const clipId = newClipId();
+    const id = newPlacementId();
+    dispatch({ type: "addClip", trackId: track.id, id: clipId, empty: true, lengthBeats: length });
+    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat: start, length });
+    onSelect(track.id, { id, clipId, startBeat: start, offset: 0, length });
+  };
+
+  // Press on empty lane: a clean click drops a one-bar empty clip; a drag sketches
+  // a new empty clip sized to the drag. Both make a fresh clip (never a duplicate).
+  const onLaneDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const downBeat = beatAt(e.clientX);
+    const downX = e.clientX;
+    let moved = false;
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - downX) <= DRAG_THRESH) return;
+      moved = true;
+      const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
+      const end = snapB(Math.max(downBeat, beatAt(ev.clientX)));
+      const length = Math.max(snapOn ? snapDiv : GRID, end - start);
+      setDraft({ left: beatToX(start, pxPerBeat), width: beatToX(length, pxPerBeat) });
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDraft(null);
+      if (!moved) {
+        // Click: a default one-bar empty clip at the clicked beat.
+        createClip(Math.max(0, floorB(downBeat)), beatsPerBar);
+        return;
+      }
+      // Drag: an empty clip sized to the drag.
+      const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
+      const length = Math.max(snapOn ? snapDiv : GRID, snapB(Math.max(downBeat, beatAt(ev.clientX))) - start);
+      createClip(start, length);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const laneBg = [
+    `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${pxPerBeat * beatsPerBar}px)`,
+    `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${pxPerBeat}px)`,
+  ].join(", ");
+
   return (
     <div
-      className="absolute top-2 bottom-2 rounded bg-card border border-line border-t-2 border-t-you overflow-hidden"
-      style={{ left: `${(clip.startBeat / lengthBeats) * 100}%`, width: `${width}%` }}
+      ref={ref}
+      data-testid="lane"
+      onPointerDown={onLaneDown}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`${ROW} relative border-b border-line-soft cursor-copy`}
+      style={{ width, background: laneBg }}
     >
-      <div className="absolute inset-0 bg-you/15" />
-      <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{clip.name}</span>
+      {track.placements.map((p) => {
+        const clip = track.clips.find((c) => c.id === p.clipId);
+        const selected = selection?.trackId === track.id && selection.id === p.id;
+        return (
+          <Block
+            key={p.id}
+            name={clip?.name}
+            left={beatToX(p.startBeat, pxPerBeat)}
+            width={beatToX(p.length, pxPerBeat)}
+            selected={selected}
+            onPointerDown={(e) => onBlockDown(p, e)}
+            onDoubleClick={(e) => onBlockDouble(p, e)}
+          >
+            {clip && "store" in clip && (
+              <NoteMinis store={clip.store} placement={p} pxPerBeat={pxPerBeat} />
+            )}
+          </Block>
+        );
+      })}
+      {draft && (
+        <div
+          className="absolute top-1.5 bottom-1.5 rounded border border-dashed border-you bg-you/15 pointer-events-none"
+          style={{ left: draft.left, width: Math.max(2, draft.width) }}
+        />
+      )}
+      {dropBeat !== null && (
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-you pointer-events-none"
+          style={{ left: beatToX(dropBeat, pxPerBeat) }}
+        />
+      )}
     </div>
   );
 }
@@ -91,25 +398,35 @@ function GroupHeader({
 }) {
   return (
     <div
-      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-line bg-center`}
+      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line bg-center`}
       style={{ paddingLeft: 10 + depth * INDENT }}
     >
       <button
         type="button"
         aria-expanded={!group.collapsed}
-        title={group.collapsed ? 'Expand group' : 'Collapse group'}
-        onClick={() => projectStore.setGroupCollapsed(group.id, !group.collapsed)}
+        title={group.collapsed ? "Expand group" : "Collapse group"}
+        onClick={() =>
+          projectStore.setGroupCollapsed(group.id, !group.collapsed)
+        }
         className="w-3.5 text-[9px] text-muted cursor-pointer shrink-0"
       >
-        {group.collapsed ? '▸' : '▾'}
+        {group.collapsed ? "▸" : "▾"}
       </button>
-      <span className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0 truncate">{group.name}</span>
+      <InlineRename
+        value={group.name}
+        onCommit={(name) => dispatch({ type: "setGroup", groupId: group.id, name })}
+        className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
+      />
       <button
         type="button"
-        title={group.muted ? 'Unmute group' : 'Mute group'}
-        onClick={() => dispatch({ type: 'setGroup', groupId: group.id, muted: !group.muted })}
+        title={group.muted ? "Unmute group" : "Mute group"}
+        onClick={() =>
+          dispatch({ type: "setGroup", groupId: group.id, muted: !group.muted })
+        }
         className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
-          group.muted ? 'border-claude text-claude' : 'border-line bg-card text-ink'
+          group.muted
+            ? "border-claude text-claude"
+            : "border-line bg-card text-ink"
         }`}
       >
         M
@@ -121,13 +438,19 @@ function GroupHeader({
         step={0.01}
         value={group.volume}
         title="Group volume"
-        onChange={(e) => dispatch({ type: 'setGroup', groupId: group.id, volume: Number(e.target.value) })}
+        onChange={(e) =>
+          dispatch({
+            type: "setGroup",
+            groupId: group.id,
+            volume: Number(e.target.value),
+          })
+        }
         className="w-12 shrink-0"
       />
       <button
         type="button"
         title="Remove group and its contents"
-        onClick={() => dispatch({ type: 'removeGroup', groupId: group.id })}
+        onClick={() => dispatch({ type: "removeGroup", groupId: group.id })}
         className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
       >
         ×
@@ -152,25 +475,37 @@ function TrackHeader({
   return (
     <div
       onClick={() => projectStore.selectTrack(track.id)}
-      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-line-soft cursor-pointer ${
-        selected ? 'bg-you/10 shadow-[inset_3px_0_0_var(--color-you)]' : 'bg-panel'
+      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
+        selected
+          ? "bg-you/10 shadow-[inset_3px_0_0_var(--color-you)]"
+          : "bg-panel"
       }`}
       style={{ paddingLeft: 10 + depth * INDENT }}
     >
       <button
         type="button"
-        title={track.muted ? 'Unmute' : 'Mute'}
+        title={track.muted ? "Unmute" : "Mute"}
         onClick={(e) => {
           e.stopPropagation();
-          dispatch({ type: 'setTrack', trackId: track.id, muted: !track.muted });
+          dispatch({
+            type: "setTrack",
+            trackId: track.id,
+            muted: !track.muted,
+          });
         }}
         className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
-          track.muted ? 'border-claude text-claude' : 'border-line bg-card text-ink'
+          track.muted
+            ? "border-claude text-claude"
+            : "border-line bg-card text-ink"
         }`}
       >
         M
       </button>
-      <span className="font-mono text-[13px] text-bright flex-1 min-w-0 truncate">{track.name}</span>
+      <InlineRename
+        value={track.name}
+        onCommit={(name) => dispatch({ type: "setTrack", trackId: track.id, name })}
+        className="font-mono text-[13px] text-bright flex-1 min-w-0"
+      />
       <input
         type="range"
         min={0}
@@ -179,7 +514,13 @@ function TrackHeader({
         value={track.volume}
         title="Volume"
         onClick={(e) => e.stopPropagation()}
-        onChange={(e) => dispatch({ type: 'setTrack', trackId: track.id, volume: Number(e.target.value) })}
+        onChange={(e) =>
+          dispatch({
+            type: "setTrack",
+            trackId: track.id,
+            volume: Number(e.target.value),
+          })
+        }
         className="w-14 shrink-0"
       />
       <button
@@ -187,7 +528,7 @@ function TrackHeader({
         title="Remove track"
         onClick={(e) => {
           e.stopPropagation();
-          dispatch({ type: 'removeTrack', trackId: track.id });
+          dispatch({ type: "removeTrack", trackId: track.id });
         }}
         className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
       >
@@ -201,43 +542,210 @@ export function ArrangementTimeline({
   projectStore,
   scheduler,
   dispatch,
+  isPlaying,
+  started,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
   dispatch: Dispatch;
+  isPlaying: boolean;
+  started: boolean;
 }) {
   const project = useProject(projectStore);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
+  const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
+  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [viewportW, setViewportW] = useState(0);
+  const clipboard = useRef<{ clipId: string; offset: number; length: number } | null>(null);
+
+  const beatsPerBar = DEFAULT_BEATS_PER_BAR;
   const lengthBeats = project.lengthBeats;
   const rows = flattenRows(project.groups, project.tracks);
 
+  // The grid runs past the loop and the furthest placement (room to arrange into),
+  // and never stops short of the visible panel, so the bar grid fills it at any zoom.
+  const arrangedEnd = Math.max(
+    lengthBeats,
+    ...project.tracks.flatMap((t) => t.placements.map((p) => p.startBeat + p.length)),
+    0,
+  );
+  const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - HEADER_W) / pxPerBeat : 0;
+  const viewBeats = Math.max(arrangedEnd + TRAIL_BEATS, Math.ceil(minViewBeats));
+  const laneWidth = beatToX(viewBeats, pxPerBeat);
+  const contentH = RULER_H + rows.length * ROW_PX;
+
+  // Selecting a placement makes its track + clip active, so the roll follows it.
+  const selectPlacement = (trackId: string, p: Placement) => {
+    setSelection({ trackId, id: p.id });
+    projectStore.selectTrack(trackId);
+    projectStore.selectClip(trackId, p.clipId);
+  };
+
+  // Delete removes the selected placement; Escape deselects (unless typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (!selection) return;
+      if (e.key === "Escape") {
+        setSelection(null);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        dispatch({ type: "removePlacement", trackId: selection.trackId, placementId: selection.id });
+        setSelection(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, dispatch]);
+
+  // Copy / cut / paste the selected placement. Capture phase + stopImmediate so
+  // the piano roll's own C/X/V handler doesn't also fire (a placement, not a
+  // note, is selected here). Paste lands after the selection, so it chains.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key !== "c" && key !== "x" && key !== "v") return;
+
+      if (key === "c" || key === "x") {
+        if (!selection) return;
+        const t = projectStore.getTrack(selection.trackId);
+        const p = t?.placements.find((x) => x.id === selection.id);
+        if (!p) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        clipboard.current = { clipId: p.clipId, offset: p.offset, length: p.length };
+        if (key === "x") {
+          dispatch({ type: "removePlacement", trackId: selection.trackId, placementId: selection.id });
+          setSelection(null);
+        }
+        return;
+      }
+
+      // paste: needs a clipboard and a target track that owns the clip.
+      const cb = clipboard.current;
+      const targetId = selection?.trackId ?? projectStore.selectedId ?? undefined;
+      const t = targetId ? projectStore.getTrack(targetId) : undefined;
+      if (!cb || !t || !t.clips.some((c) => c.id === cb.clipId)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const anchor = selection ? t.placements.find((x) => x.id === selection.id) : null;
+      const trackEnd = t.placements.reduce((m, p) => Math.max(m, p.startBeat + p.length), 0);
+      const startBeat = anchor ? anchor.startBeat + anchor.length : trackEnd;
+      const id = newPlacementId();
+      dispatch({ type: "addPlacement", trackId: t.id, id, clipId: cb.clipId, startBeat, offset: cb.offset, length: cb.length });
+      setSelection({ trackId: t.id, id });
+      projectStore.selectTrack(t.id);
+      projectStore.selectClip(t.id, cb.clipId);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selection, dispatch, projectStore]);
+
+  // Keep the grid filling the panel: track the scroll viewport's width.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportW(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rows.length]);
+
+  // Cursor-anchored wheel zoom on the time axis (modifier held); plain wheel scrolls.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const rect = el.getBoundingClientRect();
+      const contentX = e.clientX - rect.left + el.scrollLeft - HEADER_W;
+      const beatAtCursor = contentX / pxPerBeat;
+      const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
+      setPxPerBeat(next);
+      requestAnimationFrame(() => {
+        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left) + HEADER_W;
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [pxPerBeat, setPxPerBeat]);
+
+  // Drive the playhead off the audio clock (0 when stopped).
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       const el = playheadRef.current;
       if (el) {
-        el.style.left = `${((scheduler.getPositionBeats() % lengthBeats) / lengthBeats) * 100}%`;
-        el.style.opacity = scheduler.isPlaying ? '1' : '0';
+        el.style.transform = `translateX(${HEADER_W + beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
+        el.style.opacity = scheduler.isPlaying ? "1" : "0";
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [scheduler, lengthBeats]);
+  }, [scheduler, pxPerBeat]);
+
+  const zoomBtn =
+    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
       <div className="flex items-center gap-3 px-3.5 py-1.5 border-b border-line bg-rail">
-        <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Arrangement</span>
+        <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">
+          Arrangement
+        </span>
         <button
           type="button"
-          onClick={() => dispatch({ type: 'createGroup', id: newGroupId() })}
+          onClick={() => dispatch({ type: "createGroup", id: newGroupId() })}
           title="Add a top-level group"
           className="font-mono text-[10px] tracking-wide text-muted border border-line rounded px-1.5 py-0.5 cursor-pointer hover:text-ink"
         >
           + Group
         </button>
-        <span className="ml-auto font-mono text-[10px] text-faint tracking-[0.4em]">1&nbsp;&nbsp;2&nbsp;&nbsp;3&nbsp;&nbsp;4</span>
+        <span className="w-px h-5 bg-line shrink-0" />
+        <TransportBar
+          projectStore={projectStore}
+          scheduler={scheduler}
+          dispatch={dispatch}
+          isPlaying={isPlaying}
+          started={started}
+        />
+        <div className="ml-auto flex items-center gap-2 text-muted">
+          <label className="flex items-center gap-1.5 font-mono text-[11px]">
+            <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
+            Snap
+          </label>
+          <select
+            value={snapDiv}
+            onChange={(e) => setSnapDiv(Number(e.target.value))}
+            title="Snap division"
+            className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
+          >
+            {SNAP_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <span className="font-mono text-[10px] text-faint">zoom</span>
+          <button type="button" title="Zoom out" className={zoomBtn} onClick={() => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))}>
+            −
+          </button>
+          <button type="button" title="Zoom in" className={zoomBtn} onClick={() => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))}>
+            +
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -245,44 +753,122 @@ export function ArrangementTimeline({
           No tracks yet. Add an instrument from the library.
         </div>
       ) : (
-        <div className="grid grid-cols-[220px_1fr] flex-1 min-h-0 overflow-y-auto">
-          <div className="flex flex-col border-r border-line">
+        <div ref={scrollRef} data-testid="arr-scroll" className="flex-1 min-h-0 overflow-auto">
+          <div className="relative" style={{ width: HEADER_W + laneWidth, height: contentH }}>
+            {/* ruler row: sticky top; the corner cell is sticky on both axes */}
+            <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
+              <div
+                className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
+                style={{ width: HEADER_W, height: RULER_H }}
+              />
+              <Ruler
+                viewBeats={viewBeats}
+                loopStart={project.loopStart}
+                loopEnd={lengthBeats}
+                pxPerBeat={pxPerBeat}
+                beatsPerBar={beatsPerBar}
+                onSetLoopStart={(beats) => dispatch({ type: "setLoopStart", beats })}
+                onSetLoopEnd={(beats) => dispatch({ type: "setLength", lengthBeats: beats })}
+              />
+            </div>
+
             {rows.map((row) =>
-              row.kind === 'group' ? (
-                <GroupHeader key={row.group.id} group={row.group} depth={row.depth} projectStore={projectStore} dispatch={dispatch} />
+              row.kind === "group" ? (
+                <div key={row.group.id} className="flex">
+                  <div className="sticky left-0 z-10 shrink-0" style={{ width: HEADER_W }}>
+                    <GroupHeader
+                      group={row.group}
+                      depth={row.depth}
+                      projectStore={projectStore}
+                      dispatch={dispatch}
+                    />
+                  </div>
+                  <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
+                </div>
               ) : (
-                <TrackHeader
+                <TrackRow
                   key={row.track.id}
-                  track={row.track}
+                  meta={row.track}
                   depth={row.depth}
-                  selected={row.track.id === project.selectedTrackId}
+                  selectedTrack={row.track.id === project.selectedTrackId}
                   projectStore={projectStore}
                   dispatch={dispatch}
+                  laneWidth={laneWidth}
+                  pxPerBeat={pxPerBeat}
+                  beatsPerBar={beatsPerBar}
+                  snapOn={snapOn}
+                  snapDiv={snapDiv}
+                  selection={selection}
+                  onSelect={selectPlacement}
                 />
               ),
             )}
-          </div>
 
-          <div className="relative flex flex-col">
-            {rows.map((row) => {
-              if (row.kind === 'group') {
-                return <div key={row.group.id} className={`${ROW} border-b border-line bg-center/40`} />;
-              }
-              const meta = row.track;
-              const track = projectStore.getTrack(meta.id);
-              return (
-                <div key={meta.id} className={`${ROW} relative border-b border-line-soft lane-grid`}>
-                  {meta.kind === 'audio' ? (
-                    <AudioLanePreview clip={meta.audioClip} lengthBeats={lengthBeats} tempoBpm={project.tempoBpm} />
-                  ) : (
-                    track?.kind === 'instrument' && <TrackPreview clipStore={track.clip} />
-                  )}
-                </div>
-              );
-            })}
-            <div ref={playheadRef} className="absolute top-0 bottom-0 w-px bg-you pointer-events-none opacity-0 z-5" />
+            <div
+              ref={playheadRef}
+              className="absolute top-0 bottom-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
+            />
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A track row: the sticky header cell + its editable lane, kept in one flex row. */
+function TrackRow({
+  meta,
+  depth,
+  selectedTrack,
+  projectStore,
+  dispatch,
+  laneWidth,
+  pxPerBeat,
+  beatsPerBar,
+  snapOn,
+  snapDiv,
+  selection,
+  onSelect,
+}: {
+  meta: TrackMeta;
+  depth: number;
+  selectedTrack: boolean;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
+  laneWidth: number;
+  pxPerBeat: number;
+  beatsPerBar: number;
+  snapOn: boolean;
+  snapDiv: number;
+  selection: Selection;
+  onSelect: (trackId: string, p: Placement) => void;
+}) {
+  const track = projectStore.getTrack(meta.id);
+  return (
+    <div className="flex">
+      <div className="sticky left-0 z-10 shrink-0" style={{ width: HEADER_W }}>
+        <TrackHeader
+          track={meta}
+          depth={depth}
+          selected={selectedTrack}
+          projectStore={projectStore}
+          dispatch={dispatch}
+        />
+      </div>
+      {track ? (
+        <Lane
+          track={track}
+          width={laneWidth}
+          pxPerBeat={pxPerBeat}
+          beatsPerBar={beatsPerBar}
+          snapOn={snapOn}
+          snapDiv={snapDiv}
+          selection={selection}
+          onSelect={onSelect}
+          dispatch={dispatch}
+        />
+      ) : (
+        <div className={`${ROW} border-b border-line-soft`} style={{ width: laneWidth }} />
       )}
     </div>
   );

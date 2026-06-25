@@ -143,6 +143,27 @@ describe('MCP server (tracks)', () => {
     expect(bNotes).toHaveLength(0);
   });
 
+  it('add_clip + add_placement build the clip pool and arrangement (mirror updates)', async () => {
+    await connectTab();
+    await makeTrack('subtractive');
+
+    // Pool seeds one clip + one placement.
+    expect(parse(await call('list_clips')).clips).toHaveLength(1);
+    expect(parse(await call('list_placements')).placements).toHaveLength(1);
+
+    // Add a clip -> two; the new one is active.
+    await call('add_clip', {});
+    const clips = parse(await call('list_clips'));
+    expect(clips.clips).toHaveLength(2);
+    expect(clips.activeClipId).toBe(clips.clips[1].id);
+
+    // Place the active clip at beat 8 -> two placements.
+    await call('add_placement', { start_beat: 8 });
+    const placements = parse(await call('list_placements')).placements;
+    expect(placements).toHaveLength(2);
+    expect(placements.some((p: { startBeat: number }) => p.startBeat === 8)).toBe(true);
+  });
+
   it('set_tempo (project-level) forwards and updates the mirror', async () => {
     const messages = await connectTab();
     await makeTrack();

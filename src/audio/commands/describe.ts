@@ -47,15 +47,24 @@ const DESCRIBE: DescribeMap = {
   removeNote: () => 'Removed note',
   removeNotes: (c) => `Removed ${c.ids.length} ${c.ids.length === 1 ? 'note' : 'notes'}`,
   clearClip: () => 'Cleared clip',
-  addVariant: (c) => `New variant${c.name ? ` ${c.name}` : ''}`,
-  selectVariant: () => 'Switched variant',
-  removeVariant: () => 'Removed variant',
-  renameVariant: (c) => `Renamed variant to ${c.name}`,
+  setClipLength: (c) => `Set clip length ${c.lengthBeats}`,
+  addClip: (c) => `New clip${c.name ? ` ${c.name}` : ''}`,
+  removeClip: () => 'Removed clip',
+  renameClip: (c) => `Renamed clip to ${c.name}`,
+  addPlacement: () => 'Placed clip',
+  movePlacement: () => 'Moved clip',
+  resizePlacement: () => 'Resized clip',
+  removePlacement: () => 'Removed clip from arrangement',
+  splitPlacement: () => 'Split clip',
   setTempo: (c) => `Set tempo ${c.bpm}`,
   setLength: (c) => `Set loop length ${c.lengthBeats}`,
   setLoopStart: (c) => `Set loop start ${c.beats}`,
 };
 
 export function describeCommand(command: EditCommand): string {
-  return (DESCRIBE[command.type] as (c: EditCommand) => string)(command);
+  // A persisted/restored log can contain command types from an older app version
+  // (e.g. pre-rename `addVariant`); describe them by their raw type rather than
+  // crashing the feed.
+  const fn = DESCRIBE[command.type] as ((c: EditCommand) => string) | undefined;
+  return fn ? fn(command) : command.type;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beatsToSeconds, notesStartingInBeatRange, onsetsInBeatRange } from '../src/audio/sequencer/scheduler';
+import { beatsToSeconds, notesStartingInBeatRange, onsetsInBeatRange, tileClipNotes } from '../src/audio/sequencer/scheduler';
 import type { NoteEvent } from '../src/audio/sequencer/types';
 
 describe('onsetsInBeatRange (audio clip onsets)', () => {
@@ -22,6 +22,37 @@ const note = (id: string, pitch: number, start: number): NoteEvent => ({
   start,
   length: 1,
   velocity: 0.8,
+});
+
+describe('tileClipNotes (placement windowing + looping)', () => {
+  // A 4-beat clip with a note on beat 0 and beat 2.
+  const clip = [note('a', 60, 0), note('b', 64, 2)];
+  const CLIP = 4;
+
+  it('plays a within-clip window once (a trim), no wrap', () => {
+    // window [0,2): only the beat-0 note; the beat-2 note is outside.
+    expect(tileClipNotes(clip, CLIP, 0, 2).map((n) => `${n.id}@${n.start}`)).toEqual(['a@0']);
+  });
+
+  it('honours offset as a phase into the clip', () => {
+    // offset 2, length 2: starts at the beat-2 note, plays it at arrangement 0.
+    expect(tileClipNotes(clip, CLIP, 2, 2).map((n) => `${n.id}@${n.start}`)).toEqual(['b@0']);
+  });
+
+  it('loops the clip when the window outruns it', () => {
+    // length 8 = two clip lengths: each note fires twice, a clip-length apart.
+    expect(tileClipNotes(clip, CLIP, 0, 8).map((n) => `${n.id}@${n.start}`)).toEqual([
+      'a@0',
+      'a@4',
+      'b@2',
+      'b@6',
+    ]);
+  });
+
+  it('ignores notes outside the clip body and a non-positive clip length', () => {
+    expect(tileClipNotes([note('x', 60, 5)], CLIP, 0, 4)).toEqual([]);
+    expect(tileClipNotes(clip, 0, 0, 4)).toEqual([]);
+  });
 });
 
 describe('beatsToSeconds', () => {

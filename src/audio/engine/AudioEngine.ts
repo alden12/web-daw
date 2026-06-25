@@ -16,6 +16,7 @@
  * calls `scheduleAudioClip` the way it calls `instrument.playNote`.
  */
 import type { ProjectStore, EffectInstance } from '../project/projectStore';
+import type { AudioClipData } from '../project/types';
 import { createInstrument } from '../instruments/registry';
 import type { Instrument } from '../instruments/types';
 import { createEffect } from '../effects/registry';
@@ -174,7 +175,7 @@ export class AudioEngine {
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
         node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
-        this.ensureDecoded(track.audioClip.fileId);
+        for (const clip of track.clips) this.ensureDecoded(clip.fileId);
       }
     }
   }
@@ -246,20 +247,19 @@ export class AudioEngine {
       .finally(() => this.decoding.delete(fileId));
   }
 
-  /** Schedule an audio track's clip to play at `when` (audio-clock seconds). */
-  scheduleAudioClip(trackId: string, when: number): void {
+  /** Schedule one of an audio track's clips to play at `when` (audio-clock seconds). */
+  scheduleAudioClip(trackId: string, clip: AudioClipData, when: number): void {
     const ctx = this.ctx;
     const node = this.audioNodes.get(trackId);
-    const track = this.project?.getTrack(trackId);
-    if (!ctx || !node || track?.kind !== 'audio') return;
-    const buffer = this.audioBuffers.get(track.audioClip.fileId);
+    if (!ctx || !node) return;
+    const buffer = this.audioBuffers.get(clip.fileId);
     if (!buffer) return; // not decoded yet - silently skip this pass
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    if (track.audioClip.gain !== 1) {
+    if (clip.gain !== 1) {
       const clipGain = ctx.createGain();
-      clipGain.gain.value = track.audioClip.gain;
+      clipGain.gain.value = clip.gain;
       source.connect(clipGain);
       clipGain.connect(node.input);
     } else {

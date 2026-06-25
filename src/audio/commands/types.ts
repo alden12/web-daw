@@ -13,7 +13,7 @@ import type { ServerToBrowser } from '../mcp/protocol';
 export type Author = 'you' | 'claude';
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport). */
-type NonEditType = 'selectTrack' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
+type NonEditType = 'selectTrack' | 'selectClip' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
 
 /** The durable-edit subset of the MCP protocol (shapes shared, never duplicated). */
 export type ProtocolEdit = Exclude<ServerToBrowser, { type: NonEditType }>;
@@ -30,7 +30,7 @@ export type LocalEdit =
       gain?: number;
       groupId?: string;
     }
-  | { type: 'setAudioClip'; trackId: string; patch: { startBeat?: number; gain?: number; name?: string } };
+  | { type: 'setAudioClip'; trackId: string; clipId?: string; patch: { gain?: number; name?: string } };
 
 /** Every durable, authored edit. Serializable by construction. */
 export type EditCommand = ProtocolEdit | LocalEdit;

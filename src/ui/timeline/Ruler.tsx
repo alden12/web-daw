@@ -26,7 +26,8 @@ export function Ruler({
   loopStart: number;
   loopEnd: number;
   pxPerBeat: number;
-  onSetLoopStart: (beats: number) => void;
+  /** Omit to hide the loop-start handle (e.g. the piano roll, where clips start at 0). */
+  onSetLoopStart?: (beats: number) => void;
   onSetLoopEnd: (beats: number) => void;
   beatsPerBar?: number;
   minLoop?: number;
@@ -71,16 +72,18 @@ export function Ruler({
         </div>
       ))}
 
-      {/* loop start handle */}
-      <div
-        role="slider"
-        aria-label="Loop start"
-        aria-valuenow={loopStart}
-        title={`Loop start: beat ${loopStart} - drag to move`}
-        onPointerDown={(e) => drag(e, (b) => onSetLoopStart(Math.min(b, loopEnd - minLoop)))}
-        className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you"
-        style={{ left: beatToX(loopStart, pxPerBeat) }}
-      />
+      {/* loop start handle (only when the caller supports moving it) */}
+      {onSetLoopStart && (
+        <div
+          role="slider"
+          aria-label="Loop start"
+          aria-valuenow={loopStart}
+          title={`Loop start: beat ${loopStart} - drag to move`}
+          onPointerDown={(e) => drag(e, (b) => onSetLoopStart(Math.min(b, loopEnd - minLoop)))}
+          className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you"
+          style={{ left: beatToX(loopStart, pxPerBeat) }}
+        />
+      )}
       {/* loop end handle */}
       <div
         role="slider"

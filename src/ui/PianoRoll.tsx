@@ -15,16 +15,15 @@
  *
  * Every multi-note gesture commits through ONE plural command (`editNotes` /
  * `addNotes` / `removeNotes`), so a drag is one undo step and one feed entry. The
- * loop region [loopStart, loopEnd] is project-level (the scheduler loops it); the
- * grid is drawn past the loop end so you can scroll there and drag the end out.
+ * roll edits the track's active clip; its loop handle sets the CLIP length (the
+ * arrangement loop region lives in the timeline). The grid is drawn past the clip
+ * end so you can scroll there and drag the end out.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ClipStore } from '../audio/sequencer/clipStore';
-import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
 import { GRID, type NoteEvent } from '../audio/sequencer/types';
 import { useClip } from '../audio/sequencer/useClip';
-import { useProject } from '../audio/project/useProject';
 import type { Dispatch } from '../audio/commands/types';
 import { newNoteId } from '../audio/commands/ids';
 import { usePersistentBoolean, usePersistentNumber } from './usePersistent';
@@ -61,23 +60,19 @@ type Drag =
 
 export function PianoRoll({
   clipStore,
-  projectStore,
   scheduler,
   trackId,
   dispatch,
 }: {
   clipStore: ClipStore;
-  projectStore: ProjectStore;
   scheduler: Scheduler;
   trackId: string;
   dispatch: Dispatch;
 }) {
   const clip = useClip(clipStore);
-  const project = useProject(projectStore);
-  const loopStart = project.loopStart;
-  const loopEnd = project.lengthBeats; // loop end; the clip is kept in sync with it
-  const len = loopEnd; // notes live within [0, loopEnd]
-  const viewBeats = loopEnd + TRAIL_BEATS;
+  // The roll edits one clip [0, clip length]; the arrangement loop lives in the timeline.
+  const len = clip.lengthBeats;
+  const viewBeats = len + TRAIL_BEATS;
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber('web-daw:roll-zoom-x', 64, ZOOM_X.min, ZOOM_X.max);
   const [rowH, setRowH] = usePersistentNumber('web-daw:roll-zoom-y', 12, ZOOM_Y.min, ZOOM_Y.max);
@@ -316,7 +311,7 @@ export function PianoRoll({
       if (d.moved || d.additive) return; // dragged (marquee), or shift-click: keep selection
       const pitch = MAX_PITCH - Math.floor(downY / rowH);
       const beat = xToBeat(downX, pxPerBeat);
-      if (pitch < MIN_PITCH || pitch > MAX_PITCH || beat >= loopEnd) {
+      if (pitch < MIN_PITCH || pitch > MAX_PITCH || beat >= len) {
         setSelection(new Set()); // outside the note range / past the loop end: just deselect
         return;
       }
@@ -419,21 +414,17 @@ export function PianoRoll({
       <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
         <Ruler
           viewBeats={viewBeats}
-          loopStart={loopStart}
-          loopEnd={loopEnd}
+          loopStart={0}
+          loopEnd={len}
           pxPerBeat={pxPerBeat}
-          onSetLoopStart={(beats) => dispatch({ type: 'setLoopStart', beats })}
-          onSetLoopEnd={(beats) => dispatch({ type: 'setLength', lengthBeats: beats })}
+          onSetLoopEnd={(beats) => dispatch({ type: 'setClipLength', trackId, lengthBeats: beats })}
         />
 
         <div ref={gridRef} data-testid="piano-grid" className="relative cursor-copy" style={{ width, height, background: gridBg }} onPointerDown={onGridDown}>
-          {/* dim grid outside the loop region */}
-          {loopStart > 0 && (
-            <div className="absolute top-0 bottom-0 left-0 bg-black/25 pointer-events-none" style={{ width: beatToX(loopStart, pxPerBeat) }} />
-          )}
+          {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
           <div
             className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
-            style={{ left: beatToX(loopEnd, pxPerBeat), width: beatToX(viewBeats - loopEnd, pxPerBeat) }}
+            style={{ left: beatToX(len, pxPerBeat), width: beatToX(viewBeats - len, pxPerBeat) }}
           />
 
           {Array.from({ length: ROWS }, (_, row) => {

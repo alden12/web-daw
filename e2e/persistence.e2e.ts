@@ -15,14 +15,14 @@ test('the activity feed records an edit and survives a reload', async ({ page })
   await page.goto('/');
   await dismissStart(page);
 
-  // Fork a variant -> one authored "New variant" entry in the feed.
-  await page.getByRole('button', { name: '+ Try' }).click();
-  await expect(page.getByText(/New variant/)).toBeVisible();
+  // Add a clip -> one authored "New clip" entry in the feed.
+  await page.getByRole('button', { name: '+ Clip' }).click();
+  await expect(page.getByText(/New clip/)).toBeVisible();
 
   await page.waitForTimeout(400); // let the debounced autosave (project + log) flush
   await page.reload();
   await dismissStart(page);
 
   // The feed repopulated from the persisted log.
-  await expect(page.getByText(/New variant/)).toBeVisible();
+  await expect(page.getByText(/New clip/)).toBeVisible();
 });

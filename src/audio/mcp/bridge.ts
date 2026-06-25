@@ -50,16 +50,17 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // log authored 'claude' (so they are logged, undoable, two-voice) via the same
   // applyEdit path the UI uses. Navigation / live notes / transport are not edits
   // and are applied directly. The mapped type keeps the live set exhaustive.
-  type LiveType = 'selectTrack' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
+  type LiveType = 'selectTrack' | 'selectClip' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport';
   type LiveHandlers = { [K in LiveType]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
   const live: LiveHandlers = {
     selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
+    selectClip: (msg) => projectStore.selectClip(msg.trackId, msg.clipId),
     noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
     noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
     allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
     transport: (msg) => (msg.action === 'play' ? scheduler.play() : scheduler.stop()),
   };
-  const liveTypes = new Set<string>(['selectTrack', 'noteOn', 'noteOff', 'allNotesOff', 'transport']);
+  const liveTypes = new Set<string>(['selectTrack', 'selectClip', 'noteOn', 'noteOff', 'allNotesOff', 'transport']);
 
   const handle = (msg: ServerToBrowser) => {
     if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
@@ -75,7 +76,10 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
         ...(t.kind === 'instrument'
           ? [
               t.params.subscribe((id, value) => send({ type: 'paramChanged', trackId: t.id, id, value })),
-              t.clip.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clip: t.clip.snapshot() })),
+              // One subscription per clip in the pool; the snapshot carries the clip id.
+              ...t.clips.map((c) =>
+                c.store.subscribe(() => send({ type: 'clipSnapshot', trackId: t.id, clipId: c.id, clip: c.store.snapshot() })),
+              ),
             ]
           : []),
         ...t.effects.map((fx) =>
