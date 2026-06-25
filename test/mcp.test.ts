@@ -69,7 +69,7 @@ describe('MCP server (tracks)', () => {
     const data = parse(await call('list_tracks'));
     expect(data.connected).toBe(false);
     expect(data.tracks).toEqual([]);
-    expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual(['fm', 'subtractive']);
+    expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual(['fm', 'organ', 'subtractive', 'supersaw']);
   });
 
   it('errors a track-addressed tool when no track exists/selected', async () => {
@@ -211,7 +211,7 @@ describe('MCP server (tracks)', () => {
     const list = parse(await call('list_effects'));
     expect(list.effects).toHaveLength(1);
     expect(list.effects[0].type).toBe('reverb');
-    expect(list.available.map((e: { id: string }) => e.id).sort()).toEqual(['chorus', 'delay', 'distortion', 'filter', 'reverb']);
+    expect(list.available.map((e: { id: string }) => e.id).sort()).toEqual(['chorus', 'delay', 'distortion', 'filter', 'reverb', 'tremolo']);
   });
 
   it('rejects an unknown effect type', async () => {
