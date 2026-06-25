@@ -174,6 +174,17 @@ protocol message into the store (the activity feed is a live window onto it).
 Keep edit-time (vertical, history) visually distinct from play-time (horizontal). History
 is its own mode/overlay, not crammed onto the song ruler.
 
+**Decided (v1, slice 15):** versioning is **hybrid** - working edits autosave continuously
+(never lose work), the system **auto-checkpoints** on a cadence, and you or Claude can stamp a
+**named version**. The **semantic edit DAG is the source of truth**; the materialized
+`project.json` snapshot is a fast-load cache, always rebuildable by replaying commits. We keep
+our **own** content-addressed commit DAG rather than binding to real git: git's text-merge buys
+nothing for music, and our edits are already semantic, so we get readable diffs for free.
+Exporting to / backing onto git stays an option for a later slice (the "PR your arrangement"
+story), not a v1 dependency. Undo/redo graduates from session-only to **time-travel over
+commits** (survives reload). Branches, revert, cherry-pick, and remote sync are the slices
+after (see slice 15C+ in the roadmap).
+
 ## 8. Data & deployment: local-first
 
 Recommendation: **local-first, project = a git-friendly folder of human-readable files**
@@ -261,6 +272,27 @@ Notes:
   drop in their own instrument code - the ultimate tinker story, far off.
 - Keep ids stable and human-meaningful where possible so diffs read well.
 
+**Decided (v1) bundle layout.** The tree above is the eventual *tinker/IDE* shape - one file
+per track/clip so they diff and open in an editor. v1 keeps it simpler but **history-bearing**,
+and identical across storage backends (OPFS now, a real disk folder later):
+
+```
+MyProject.daw/
+  manifest.json        # formatVersion, project id, HEAD (current branch + uncommitted working edits)
+  project.json         # materialized working snapshot (a fast-load cache of replay)
+  history/
+    commits/<id>.json  # { parents[], author, message, edits[], snapshotHash, time }
+    refs.json          # branch -> headCommitId, tags
+  samples/<sha256>.wav # content-addressed binary (dedup + integrity; replaces au-xxxx file ids)
+  meta.json            # name, created/modified, tempo preview, authors
+```
+
+A `ProjectRepository` interface abstracts the backend (OPFS first; the File System Access API
+for a real disk folder; remote later), so the same bundle logic serves local and remote, and
+sync becomes git-like push/pull of missing content-addressed objects. The per-track file
+explosion above (`tracks/*.json`, `clips/*.mid`) is a later refinement on top of this, once the
+in-app file viewer / IDE-editing story (section 8) is built.
+
 ## 11. Roadmap / slicing
 
 Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback +
@@ -329,6 +361,32 @@ multi-track **Session grid view** + scenes on top of the same launched-clip mode
 two views); it is now a view, not a model change. The raw backlog below is grouped into themed
 slices; within a theme, order is rough.
 
+**Next up - persistence & version control (slice 15, planned).** Graduate from the single
+localStorage blob to a **project bundle** and build **semantic version history** on the edit
+log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote follow:
+
+- **15A - bundle format + repository (storage refactor, no UI change).** A `ProjectRepository`
+  interface with an **OPFS bundle** backend (`manifest.json` + `project.json` + `history/` +
+  content-addressed `samples/`). Move samples off ad-hoc `au-xxxx` OPFS files to **sha256
+  content-addressing** (dedup + integrity). **Migrate** the existing v7 localStorage blob +
+  OPFS samples into a bundle on first load (localStorage becomes a read-only fallback).
+  Persistence gets its own `formatVersion`. Pure plumbing, verified headless - de-risks by
+  separating storage from VCS semantics.
+- **15B - commits & durable history.** Add the **commit DAG** to the bundle: working edits keep
+  autosaving, the system **auto-checkpoints** on a cadence, and you/Claude **stamp named
+  versions** (the hybrid model). Undo/redo becomes **time-travel over commits** (survives
+  reload). A **semantic diff** between commits ("Lead cutoff 400->800, +4 notes") renders in
+  two-voice color; the activity feed becomes a commit timeline. MCP gains `commit` /
+  `list_history` / `diff`. The semantic DAG is the source of truth; `project.json` is a replay
+  cache. Also ships **export / import of a portable `.daw` bundle** (download the whole bundle as
+  a single file, re-import to load) - a shareable, commit-able artifact that works *before* the
+  disk-folder slice (15D), since today's bundle lives in OPFS (invisible to the user's
+  filesystem and not directly gittable).
+
+The follow-on slices (not in this push): **15C** branches + revert + cherry-pick (the "Claude
+tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
+via the File System Access API (+ optional git export), **15E** remote sync / collaboration.
+
 **Near-term - UI on top of the current model**
 
 - **Group/track selection + group-FX editing in the workbench** (next, small). Select a
@@ -373,12 +431,13 @@ slices; within a theme, order is rough.
   one `dispatch(command, author)` seam into an append-only, authored command log, powering
   undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed; the log is
   persisted alongside the project snapshot (localStorage) and restored on load, so the feed and
-  authored history survive a reload (undo/redo stays session-scoped). *Remaining:* **version
-  history** with replay/scrub/rollback and semantic diff/merge & branches (section 7) - which
-  needs undo to append compensating entries so the log becomes a faithful event source - and
-  graduating storage from localStorage to the on-disk file format (section 10) / IndexedDB.
+  authored history survive a reload (undo/redo stays session-scoped). *Remaining -> now slice
+  15:* **version history** with replay/scrub/rollback and semantic diff/merge & branches
+  (section 7), and graduating storage from localStorage to the on-disk bundle format
+  (section 10). See the slice 15 spec above.
 - **On-disk file format** (section 10): human-readable project files; pairs with the persisted
-  edit log and local-first storage.
+  edit log and local-first storage. The v1 bundle lands in slice 15A; the per-track-file
+  *tinker/IDE* shape is a later refinement (section 8).
 - **Clip variants - DONE (slice 10).** An instrument track owns a stack of variants; each
   **variant bundles clip notes + instrument params + effect chain** (section 6), so switching
   morphs the devices too. "Try"/fork is non-destructive (the original is parked); Claude

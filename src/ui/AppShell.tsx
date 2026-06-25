@@ -75,11 +75,19 @@ export function AppShell() {
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
 
-  // Restore the saved project, then autosave on any change (runs before the
-  // bridge connects, so the first snapshot reflects the restored project).
+  // Restore the saved project from the bundle, then autosave on any change.
+  // Restore is async (OPFS); attaching autosave only after it lands avoids a
+  // redundant immediate re-save of what we just loaded.
   useEffect(() => {
-    restoreProject(projectStore, editLog);
-    return attachAutosave(projectStore, editLog);
+    let active = true;
+    let dispose = () => {};
+    void restoreProject(projectStore, editLog).then(() => {
+      if (active) dispose = attachAutosave(projectStore, editLog);
+    });
+    return () => {
+      active = false;
+      dispose();
+    };
   }, [projectStore, editLog]);
 
   useEffect(() => () => {
