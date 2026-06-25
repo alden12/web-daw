@@ -8,7 +8,10 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function dismissStart(page: Page) {
   const start = page.getByRole('button', { name: /start audio/i });
-  if (await start.count()) await start.click();
+  if (await start.count()) {
+    await start.click();
+    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
+  }
 }
 
 /** The clip rail = the container holding the "+ Clip" button. */

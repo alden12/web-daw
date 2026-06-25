@@ -100,11 +100,16 @@ function AudioClipPanel({
   track,
   scheduler,
   tempoBpm,
+  loopStart,
+  loopLength,
   dispatch,
 }: {
   track: AudioTrack;
   scheduler: Scheduler;
   tempoBpm: number;
+  /** Arrangement loop region (beats), for the launch-mode playhead window. */
+  loopStart: number;
+  loopLength: number;
   dispatch: Dispatch;
 }) {
   const clip =
@@ -141,6 +146,10 @@ function AudioClipPanel({
   // and map its phase into the region (so it loops with the audio).
   const clipId = clip?.id;
   const placements = track.placements;
+  // A launched clip overrides the arrangement and loops over the transport region,
+  // so its playback window is the loop region (mirrors the scheduler's synthetic
+  // placement), not a `track.placements` entry.
+  const launched = clipId !== undefined && track.launchedClipId === clipId;
   useEffect(() => {
     let raf = 0;
     const regionBeats = Math.max(0.001, (loopEndSec - loopStartSec) * bps);
@@ -153,12 +162,14 @@ function AudioClipPanel({
         let x: number | null = null;
         if (clipId && scheduler.isPlaying && pxPerBeat > 0) {
           const pos = scheduler.getPositionBeats();
-          const active = placements.find(
-            (p) =>
-              p.clipId === clipId &&
-              pos >= p.startBeat &&
-              pos < p.startBeat + p.length,
-          );
+          const active = launched
+            ? { startBeat: loopStart, length: loopLength }
+            : placements.find(
+                (p) =>
+                  p.clipId === clipId &&
+                  pos >= p.startBeat &&
+                  pos < p.startBeat + p.length,
+              );
           if (active) {
             let phase = (pos - active.startBeat) % regionBeats;
             if (phase < 0) phase += regionBeats;
@@ -172,7 +183,7 @@ function AudioClipPanel({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [scheduler, clipId, placements, pxPerBeat, loopStartSec, loopEndSec, bps]);
+  }, [scheduler, clipId, placements, pxPerBeat, loopStartSec, loopEndSec, bps, launched, loopStart, loopLength]);
 
   if (!clip)
     return (
@@ -492,6 +503,8 @@ export function CenterWorkbench({
             track={selectedTrack}
             scheduler={scheduler}
             tempoBpm={project.tempoBpm}
+            loopStart={project.loopStart}
+            loopLength={project.lengthBeats - project.loopStart}
             dispatch={dispatch}
           />
         )}

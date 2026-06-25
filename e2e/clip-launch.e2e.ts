@@ -12,7 +12,10 @@ test.use({ viewport: { width: 1320, height: 900 } });
 
 async function dismissStart(page: Page) {
   const start = page.getByRole('button', { name: /start audio/i });
-  if (await start.count()) await start.click();
+  if (await start.count()) {
+    await start.click();
+    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
+  }
 }
 
 const launchBtn = (page: Page) => page.getByTitle(/Launch clip/).first();

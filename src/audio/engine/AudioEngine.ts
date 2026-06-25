@@ -273,8 +273,13 @@ export class AudioEngine {
       .finally(() => this.decoding.delete(fileId));
   }
 
-  /** Schedule one of an audio track's clips to play at `when` (audio-clock seconds). */
-  scheduleAudioClip(trackId: string, clip: AudioClipData, when: number): void {
+  /**
+   * Schedule one of an audio track's clips to play at `when` (audio-clock seconds).
+   * `maxDurationSec` caps how long it plays from `when` (the scheduler passes the time
+   * to the loop boundary, so a region overrunning the loop is cut instead of overlapping
+   * the loop's restart).
+   */
+  scheduleAudioClip(trackId: string, clip: AudioClipData, when: number, maxDurationSec?: number): void {
     const ctx = this.ctx;
     const node = this.audioNodes.get(trackId);
     if (!ctx || !node) return;
@@ -294,7 +299,7 @@ export class AudioEngine {
     // Play only the slice of the buffer under the (grid-fixed) loop window; the
     // scheduler re-triggers it to tile/repeat across a placement. The clip's grid
     // slide moves the buffer under the window, so the played slice shifts with it.
-    const win = audioPlayWindow(clip.loopStartSec, clip.loopEndSec, clip.gridOffsetSec, buffer.duration);
+    const win = audioPlayWindow(clip.loopStartSec, clip.loopEndSec, clip.gridOffsetSec, buffer.duration, maxDurationSec);
     if (!win) {
       try {
         source.disconnect();

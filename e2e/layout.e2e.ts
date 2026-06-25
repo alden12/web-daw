@@ -14,7 +14,10 @@ const region = (page: Page, area: 'library' | 'center' | 'agent' | 'timeline') =
 /** Dismiss the audio-start modal so panels are interactive. */
 async function dismissStart(page: Page) {
   const start = page.getByRole('button', { name: /start audio/i });
-  if (await start.count()) await start.click();
+  if (await start.count()) {
+    await start.click();
+    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
+  }
 }
 
 async function box(page: Page, area: 'library' | 'center' | 'agent' | 'timeline') {

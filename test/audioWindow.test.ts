@@ -35,4 +35,22 @@ describe('audioPlayWindow (slide audio under the grid)', () => {
     // slide the whole buffer far to the right: the window sees only silence.
     expect(audioPlayWindow(0, 2, 10, DUR)).toBeNull();
   });
+
+  it('maxDurationSec truncates a region that overruns the loop boundary', () => {
+    // region is 4s but only 1.5s remain before the loop boundary -> cut to 1.5s.
+    expect(audioPlayWindow(0, 4, 0, DUR, 1.5)).toEqual({ offset: 0, span: 1.5, delaySec: 0 });
+  });
+
+  it('maxDurationSec longer than the region leaves it unchanged', () => {
+    expect(audioPlayWindow(1, 3, 0, DUR, 10)).toEqual({ offset: 1, span: 2, delaySec: 0 });
+  });
+
+  it('the silent head counts against the cap', () => {
+    // +0.5s slide -> 0.5s silent head; a 1.0s cap leaves 0.5s of audible audio.
+    expect(audioPlayWindow(0, 2, 0.5, DUR, 1.0)).toEqual({ offset: 0, span: 0.5, delaySec: 0.5 });
+  });
+
+  it('returns null when the cap is used up by the silent head', () => {
+    expect(audioPlayWindow(0, 2, 0.5, DUR, 0.4)).toBeNull();
+  });
 });
