@@ -397,9 +397,15 @@ log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote foll
   edit-burst (~50-100x smaller than a full snapshot), so auto-checkpointing freely is cheap.
   `materialize(commitId)` does the reconstruction (used by `revertTo`/`diff`); `project.json`
   stays the O(1) working-state cache, so replay is only ever on the cold path. Audio was already
-  content-addressed (shared across commits), so the bundle stays lean. *Still pending: sample GC
-  (drop `samples/*` unreferenced by any commit or the working project) and including the
-  `history/` DAG in the `.daw.zip` export.*
+  content-addressed (shared across commits), so the bundle stays lean. The **persisted undo/redo
+  stacks** (`undo.json`) use the same trick: instead of one full snapshot per checkpoint, each
+  stack stores a single base snapshot + the command of each checkpoint, rebuilt on reload by
+  replaying through `applyEdit` (the in-memory stacks stay full snapshots for instant undo) -
+  ~24x smaller in practice. This required making `apply` a *pure function of the command*: the
+  one hole was `createTrack` auto-creating a family group with a random id, now derived
+  deterministically from the family name. *Still pending: sample GC (drop `samples/*`
+  unreferenced by any commit or the working project) and including the `history/` DAG in the
+  `.daw.zip` export.*
 
 The follow-on slices (not in this push): **15C** branches + revert + cherry-pick (the "Claude
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder

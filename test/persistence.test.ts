@@ -106,6 +106,68 @@ describe('project + edit-log persistence', () => {
     expect(project2.tempo).toBe(120); // back to before the tempo edit
   });
 
+  it('delta-encoded undo/redo reproduces exact states through a reload', () => {
+    const build = () => {
+      const project = new ProjectStore(false);
+      const log = new EditLog(project);
+      log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+      log.dispatch({ type: 'setTempo', bpm: 100 });
+      log.dispatch({ type: 'createTrack', instrumentType: 'fm', id: 't-2' });
+      log.dispatch({ type: 'setTempo', bpm: 140 });
+      return { project, log };
+    };
+
+    // Reference timeline (never persisted) vs one round-tripped through pack/unpack.
+    const ref = build();
+    ref.log.undo();
+    ref.log.undo(); // populates a redo stack too
+
+    const src = build();
+    src.log.undo();
+    src.log.undo();
+    const packed = src.log.getCheckpoints();
+    // The base snapshot is the bottom of the undo chain, not one-per-checkpoint.
+    expect(packed.undo.base).toBeTruthy();
+    expect(packed.undo.steps.length).toBeGreaterThan(1);
+
+    const project2 = new ProjectStore(false);
+    project2.load(src.project.snapshot()); // working state, as project.json would carry it
+    const log2 = new EditLog(project2);
+    log2.restoreCheckpoints(packed);
+
+    expect(project2.snapshot()).toEqual(ref.project.snapshot());
+
+    // Under the same presses, the reloaded timeline must track the reference exactly.
+    const press = (op: 'undo' | 'redo') => {
+      ref.log[op]();
+      log2[op]();
+      expect(project2.snapshot()).toEqual(ref.project.snapshot());
+    };
+    press('redo');
+    press('redo');
+    press('undo');
+    press('undo');
+    press('undo');
+    press('undo');
+  });
+
+  it('still loads a legacy (full-snapshot) undo state', () => {
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    log.dispatch({ type: 'setTempo', bpm: 137 });
+    const snap = project.snapshot();
+
+    // Pre-delta persisted form: arrays of full checkpoints.
+    const legacy = { undo: [{ snap, command: { type: 'setTempo', bpm: 120 }, author: 'you' }], redo: [] };
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    log2.restoreCheckpoints(legacy as unknown as Parameters<EditLog['restoreCheckpoints']>[0]);
+
+    expect(log2.getState().canUndo).toBe(true);
+    log2.undo();
+    expect(project2.snapshot()).toEqual(snap); // the legacy snapshot loaded verbatim
+  });
+
   it('trims the persisted log to the last MAX_PERSISTED_ENTRIES', async () => {
     vi.useFakeTimers();
     const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });

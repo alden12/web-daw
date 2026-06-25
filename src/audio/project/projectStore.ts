@@ -274,9 +274,16 @@ export class ProjectStore {
   }
 
   /** Find the top-level group named for a family, or create it (no emit). The
-   *  "librarian": new tracks are filed into their instrument's family group. */
+   *  "librarian": new tracks are filed into their instrument's family group. The
+   *  created id is derived from the family name (not random) so that replaying a
+   *  createTrack which auto-files into a family group reconstructs the SAME id -
+   *  delta replay (undo, commit materialize) needs apply to be a pure function of
+   *  the command. Existing groups still match by name, so old projects are unaffected. */
   private ensureFamilyGroup(family: string): Group {
-    return this.groups.find((g) => g.parentId === null && g.name === family) ?? this.createGroup({ name: family });
+    return (
+      this.groups.find((g) => g.parentId === null && g.name === family) ??
+      this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: family })
+    );
   }
 
   addGroup(opts: { id?: string; name?: string; parentId?: string | null } = {}): Group {
