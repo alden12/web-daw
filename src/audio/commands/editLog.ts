@@ -16,7 +16,7 @@
 import { ProjectStore } from '../project/projectStore';
 import type { ProjectData } from '../project/types';
 import { applyEdit } from './applyEdit';
-import { describeCommand } from './describe';
+import { describeCommand, type DescribeContext } from './describe';
 import type { Author, EditCommand, EditEntry } from './types';
 
 /**
@@ -107,8 +107,25 @@ function coalesceKey(c: EditCommand): string {
   }
 }
 
+/**
+ * A feed-only annotation - a line of intent narration (e.g. Claude saying what it
+ * is doing), shown in the activity feed but NOT an edit: it changes no project
+ * state, so it stays out of the *replayable* edit stream (materialize/applyEdit
+ * never touch it). Shares the edit `seq` counter so it interleaves with edits in
+ * feed order. Persisted as a parallel stream (notes.json) and swept into each
+ * commit, so the narration survives a reload and the version timeline reads as a
+ * narrated changelog (DESIGN.md section 7).
+ */
+export interface FeedNote {
+  seq: number;
+  text: string;
+  author: Author;
+  time: number;
+}
+
 export interface EditLogState {
   entries: EditEntry[];
+  notes: FeedNote[];
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -116,6 +133,7 @@ export interface EditLogState {
 export class EditLog {
   private readonly project: ProjectStore;
   private entries: EditEntry[] = [];
+  private feedNotes: FeedNote[] = [];
   private undoStack: Checkpoint[] = [];
   private redoStack: Checkpoint[] = [];
   private seq = 0;
@@ -184,8 +202,29 @@ export class EditLog {
     this.lastKey = null;
   };
 
+  /** Post a feed-only annotation (intent narration). Not an edit; not undoable. */
+  note = (text: string, author: Author = 'claude'): void => {
+    this.feedNotes.push({ seq: this.seq++, text, author, time: Date.now() });
+    this.emit();
+  };
+
+  /** Human-readable label for an entry, resolving ids to current names via the project. */
+  describe(entry: EditEntry): string {
+    return entry.label ?? describeCommand(entry.command, this.describeContext);
+  }
+
+  /** Resolve a track/group id to its current display name (for the feed labels). */
+  private readonly describeContext: DescribeContext = {
+    name: (id) => this.project.getTrack(id)?.name ?? this.project.getGroup(id)?.name,
+  };
+
   getState(): EditLogState {
     return this.cached;
+  }
+
+  /** Feed-only annotations, oldest first. */
+  getNotes(): FeedNote[] {
+    return this.feedNotes;
   }
 
   /** The raw append-only entries (for persistence). */
@@ -209,14 +248,17 @@ export class EditLog {
   }
 
   /**
-   * Replace the log with persisted entries (on reload). Continues `seq` from the
-   * highest restored entry so new edits stay monotonic (correct even if older
-   * entries were trimmed). Clears the checkpoint stacks; persisted undo/redo is
-   * layered back on afterwards via restoreCheckpoints().
+   * Replace the log + feed notes with their persisted forms (on reload). Continues
+   * `seq` from the highest restored seq across *both* streams, so new edits and
+   * notes stay monotonic (correct even if older items were trimmed). Clears the
+   * checkpoint stacks; persisted undo/redo is layered back on afterwards via
+   * restoreCheckpoints().
    */
-  restore(entries: EditEntry[]): void {
+  restore(entries: EditEntry[], notes: FeedNote[] = []): void {
     this.entries = entries.slice();
-    this.seq = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.feedNotes = notes.slice();
+    const maxEntry = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
+    this.seq = notes.reduce((m, n) => Math.max(m, n.seq + 1), maxEntry);
     this.undoStack = [];
     this.redoStack = [];
     this.lastKey = null;
@@ -231,6 +273,7 @@ export class EditLog {
   private rebuild(): void {
     this.cached = {
       entries: this.entries.slice(),
+      notes: this.feedNotes.slice(),
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
     };

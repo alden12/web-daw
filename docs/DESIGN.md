@@ -382,7 +382,7 @@ log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote foll
   `historyRequest`, the bridge answers from the `VersionStore` with a `historyReply` (everything
   else is fire-and-forget). The semantic DAG is the source of truth; `project.json` is a replay
   cache. Also ships **export / import of a portable `.daw.zip`** - a plain zip of the *readable*
-  bundle (pretty-printed `project.json` + `log.json` + real `samples/*.wav`), so you can unzip
+  bundle (pretty-printed `project.json` + `log.json` + `notes.json` + real `samples/*.wav`), so you can unzip
   and inspect a project. This is the **same folder the disk-folder backend (15D) writes
   uncompressed**, so export and on-disk are one format. It is the shareable, commit-able artifact
   that works *before* 15D, since today's bundle lives in OPFS (invisible to the filesystem). The
@@ -595,6 +595,27 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   e.g. Meyda), then MIR (key / BPM / onset via essentia.js), then perceptual/semantic (CLAP or
   an audio-tagging model, or a multimodal model as a `describe_sound` tool). Closes the
   perception loop for mixing/arrangement; human auditioning still decides taste.
+- **Two surfaces, one differentiator - the activity panel.** Whether the chat lives in Claude
+  Desktop / Code over MCP (today) or the embedded panel (later), the genuinely novel surface is
+  the activity feed itself: a shared, two-voice timeline of the *edits* and the agent's *stated
+  intent*, not a chat log. Treat Desktop/Code-over-MCP as a first-class *supported* workflow, not
+  just a dev convenience - it is the best demo, costs nothing per token, and self-selects
+  technical early adopters for the richest feedback. Its limits are exactly why the embedded panel
+  still matters: two windows breaks creative flow, and MCP setup is a non-starter for a general
+  user. So MCP-in-a-second-window is the prototype + power workflow; the embedded panel is the
+  consumer shape; both ride the same `dispatch` seam and the same feed.
+- **Persist agent intent into history - DONE.** The agent's intent notes (the `note` feed
+  annotations) used to be session-only and vanished on reload. They now persist two ways, both
+  mirroring how edit `entries` already work: (1) the **working stream** rides along in the bundle
+  as a parallel `notes.json` (and in the `.daw.zip` export), restored on load so the feed comes
+  back; (2) on commit, the **uncommitted notes are swept into the commit** (`Commit.notes`, by
+  seq range), so the version timeline reads as a narrated changelog and an exported project is
+  self-contained. A note alone never creates a commit (it is not an edit); it rides into the next
+  real commit. Crucially they stay **out of the replayable edit stream** - `materialize`/
+  `applyEdit` never touch notes, so replay is still edits-only and exact. Autosave also subscribes
+  to the edit log now, so a note posted with no following edit is still saved. The Versions tab
+  shows a commit's notes on expand (a coral count glyph when collapsed). No format-version bump:
+  an absent `notes.json` loads as `[]`, so older bundles are unaffected.
 
 **Platform & form factor**
 
@@ -622,6 +643,9 @@ of snapshots, and the human-readable file format.
   structural, sections on the timeline).
 - How prominent the conversation is by default (status strip -> dock -> co-equal panel).
 - In-app agent hosting: client-side with a server key-proxy vs more server-side reasoning.
+- Whether agent edits ever gate behind a propose / preview / accept step, or always land-then-
+  undo (current model). The activity panel is already halfway to a propose/accept loop; land-
+  then-undo keeps creative flow, but a gate may build trust for large or destructive batches.
 
 ## 13. Reference
 

@@ -12,8 +12,16 @@ import type { ServerToBrowser } from '../mcp/protocol';
 
 export type Author = 'you' | 'claude';
 
-/** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC). */
-type NonEditType = 'selectTrack' | 'selectClip' | 'noteOn' | 'noteOff' | 'allNotesOff' | 'transport' | 'historyRequest';
+/** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */
+type NonEditType =
+  | 'selectTrack'
+  | 'selectClip'
+  | 'noteOn'
+  | 'noteOff'
+  | 'allNotesOff'
+  | 'transport'
+  | 'historyRequest'
+  | 'note';
 
 /** The durable-edit subset of the MCP protocol (shapes shared, never duplicated). */
 export type ProtocolEdit = Exclude<ServerToBrowser, { type: NonEditType }>;

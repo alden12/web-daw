@@ -23,17 +23,19 @@ export async function restoreProject(
   const saved = await repo.load();
   if (!saved || !saved.project.tracks?.length) return;
   project.load(saved.project);
-  editLog.restore(saved.log);
+  editLog.restore(saved.log, saved.notes);
   // Layer persisted undo/redo back on, so undo works after a reload.
   const undo = await repo.readUndo();
   if (undo) editLog.restoreCheckpoints(undo);
 }
 
 /**
- * Debounced autosave on any structural OR per-track (param/clip) change. The log
- * rides along in the same write (every edit mutates the project, so reading the
- * log at save time captures it - there are no log-only changes). Returns a
- * disposer. Re-subscribes to track stores whenever the track set changes.
+ * Debounced autosave on any structural OR per-track (param/clip) change, plus any
+ * edit-log change. The log + feed notes ride along in the same write. Most edits
+ * mutate the project (caught by the structural/track subscriptions), but a feed
+ * note changes no project state, so we also subscribe to the edit log - otherwise a
+ * note posted with no following edit would never be saved. Returns a disposer.
+ * Re-subscribes to track stores whenever the track set changes.
  */
 export function attachAutosave(
   project: ProjectStore,
@@ -44,7 +46,7 @@ export function attachAutosave(
   const schedule = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      void repo.save(project.snapshot(), editLog.getEntries());
+      void repo.save(project.snapshot(), editLog.getEntries(), editLog.getNotes());
       void repo.writeUndo(editLog.getCheckpoints()); // persist undo/redo so it survives a reload
     }, SAVE_DEBOUNCE_MS);
   };
@@ -69,10 +71,13 @@ export function attachAutosave(
     schedule();
   });
   resubscribeTracks();
+  // Catch log-only changes (a feed note mutates no project state).
+  const unsubLog = editLog.subscribe(schedule);
 
   return () => {
     if (timer) clearTimeout(timer);
     for (const u of trackUnsubs) u();
     unsubStructure();
+    unsubLog();
   };
 }

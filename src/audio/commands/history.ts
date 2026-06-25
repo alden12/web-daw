@@ -16,7 +16,7 @@ import { applyEdit } from './applyEdit';
 import { describeCommand } from './describe';
 import { diffProjects } from './diff';
 import type { Author, EditEntry } from './types';
-import type { EditLog } from './editLog';
+import type { EditLog, FeedNote } from './editLog';
 import { getRepository, type Commit, type ProjectRepository, type Refs } from '../projectRepository';
 
 /** A burst of edits within this window collapses into one auto-checkpoint. */
@@ -38,6 +38,10 @@ export interface CommitSummary {
   time: number;
   auto: boolean;
   entryCount: number;
+  /** How many feed notes (intent narration) this commit swept in. */
+  noteCount: number;
+  /** Highest edit seq this commit included - positions it in the activity feed. */
+  lastSeq: number;
 }
 
 export interface VersionState {
@@ -101,7 +105,11 @@ export class VersionStore {
   async commit(message?: string, author?: Author, auto = false): Promise<CommitSummary | null> {
     const entries = this.uncommitted();
     if (entries.length === 0) return null;
-    const lastSeq = entries.reduce((m, e) => Math.max(m, e.seq), this.lastCommittedSeq);
+    // Sweep in any feed notes posted since the last commit, so the narration is
+    // anchored to the version it describes. Notes are not edits (materialize never
+    // replays them); they ride alongside the entries purely as history.
+    const notes = this.uncommittedNotes();
+    const lastSeq = [...entries, ...notes].reduce((m, x) => Math.max(m, x.seq), this.lastCommittedSeq);
     // Keyframe when there is nothing to replay from (the root), on cadence, or when
     // the commit holds undo/redo entries - those restore a snapshot rather than
     // applying forward, so they can't be replayed; storing the snapshot makes this
@@ -120,6 +128,7 @@ export class VersionStore {
       entryCount: entries.length,
       ...(keyframe ? { snapshot: this.project.snapshot() } : {}),
       entries,
+      ...(notes.length ? { notes } : {}),
       lastSeq,
     };
     await this.repo.writeCommit(commit);
@@ -143,7 +152,8 @@ export class VersionStore {
     const snapshot = await this.materialize(commitId); // reconstruct (target may be a delta)
     if (!snapshot) return null;
     this.project.load(snapshot); // live state jumps to the old snapshot
-    const lastSeq = this.maxSeq(); // the jump consumes any pending edits
+    const notes = this.uncommittedNotes(); // attach any pending narration to the revert
+    const lastSeq = Math.max(this.maxSeq(), notes.reduce((m, n) => Math.max(m, n.seq), -1)); // the jump consumes pending edits + notes
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
       parent: this.headId(),
@@ -154,6 +164,7 @@ export class VersionStore {
       entryCount: 0,
       snapshot, // a revert is a discontinuity, so it anchors a fresh keyframe
       entries: [],
+      ...(notes.length ? { notes } : {}),
       lastSeq,
     };
     await this.repo.writeCommit(commit);
@@ -248,6 +259,9 @@ export class VersionStore {
   private uncommitted(): EditEntry[] {
     return this.editLog.getEntries().filter((e) => e.seq > this.lastCommittedSeq);
   }
+  private uncommittedNotes(): FeedNote[] {
+    return this.editLog.getNotes().filter((n) => n.seq > this.lastCommittedSeq);
+  }
   private maxSeq(): number {
     return this.editLog.getEntries().reduce((m, e) => Math.max(m, e.seq), -1);
   }
@@ -262,5 +276,15 @@ function autoMessage(entries: EditEntry[]): string {
 }
 
 function toSummary(c: Commit): CommitSummary {
-  return { id: c.id, parent: c.parent, author: c.author, message: c.message, time: c.time, auto: c.auto, entryCount: c.entryCount };
+  return {
+    id: c.id,
+    parent: c.parent,
+    author: c.author,
+    message: c.message,
+    time: c.time,
+    auto: c.auto,
+    entryCount: c.entryCount,
+    noteCount: c.notes?.length ?? 0,
+    lastSeq: c.lastSeq,
+  };
 }

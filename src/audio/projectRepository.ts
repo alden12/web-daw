@@ -7,6 +7,7 @@
  *     manifest.json     formatVersion, project id, project-schema version
  *     project.json      the materialized ProjectData snapshot (working state)
  *     log.json          the persisted authored edit log (drives the activity feed)
+ *     notes.json        the persisted feed notes (intent narration; parallel to log)
  *     meta.json         human-facing name + modified time
  *     samples/<sha256>  audio sample bytes, content-addressed (dedup + integrity)
  *     history/          the commit DAG: refs.json + commits/<id>.json (keyframe + delta)
@@ -19,7 +20,7 @@
  */
 import type { ProjectData, TrackData } from './project/types';
 import type { Author, EditEntry } from './commands/types';
-import type { UndoState } from './commands/editLog';
+import type { FeedNote, UndoState } from './commands/editLog';
 import { type BundleStore, createBundleStore } from './bundleStore';
 
 const FORMAT_VERSION = 1;
@@ -39,6 +40,8 @@ const LEGACY_KEYS = [
 export interface StoredProject {
   project: ProjectData;
   log: EditEntry[];
+  /** Feed notes (intent narration); empty for bundles written before notes were persisted. */
+  notes: FeedNote[];
 }
 
 /** A bundle as a flat path -> bytes map (what gets zipped into a `.daw.zip`). */
@@ -66,6 +69,8 @@ export interface Commit {
   /** Present only on keyframes; delta commits omit it and replay forward (materialize). */
   snapshot?: ProjectData;
   entries: EditEntry[];
+  /** Feed notes swept into this commit (intent narration). Omitted when none. */
+  notes?: FeedNote[];
   /** Highest edit seq this commit includes (so reload knows where history ends). */
   lastSeq: number;
 }
@@ -112,30 +117,36 @@ export class ProjectRepository {
       if (!projectRaw) return null;
       const project = JSON.parse(projectRaw) as ProjectData;
       const logRaw = await this.store.readText('log.json');
-      return { project, log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [] };
+      const notesRaw = await this.store.readText('notes.json');
+      return {
+        project,
+        log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
+        notes: notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [],
+      };
     }
 
     // No bundle yet: migrate a pre-bundle localStorage blob, if any exists.
     const legacy = this.loadLegacy();
     if (!legacy) return null;
     const project = await this.migrateSamples(legacy.project);
-    await this.save(project, legacy.log);
-    return { project, log: legacy.log };
+    await this.save(project, legacy.log, legacy.notes);
+    return { project, log: legacy.log, notes: legacy.notes };
   }
 
-  /** Persist the working snapshot + log. Writes are serialized so they never overlap. */
-  save(project: ProjectData, log: EditEntry[]): Promise<void> {
-    const run = () => this.writeAll(project, log);
+  /** Persist the working snapshot + log + feed notes. Writes are serialized so they never overlap. */
+  save(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
+    const run = () => this.writeAll(project, log, notes);
     this.saveChain = this.saveChain.then(run, run);
     return this.saveChain;
   }
 
-  private async writeAll(project: ProjectData, log: EditEntry[]): Promise<void> {
+  private async writeAll(project: ProjectData, log: EditEntry[], notes: FeedNote[]): Promise<void> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
     const manifest: Manifest = { formatVersion: FORMAT_VERSION, projectId: this.projectId, projectSchema: PROJECT_SCHEMA };
     await this.store.writeText('manifest.json', JSON.stringify(manifest));
     await this.store.writeText('project.json', JSON.stringify(project));
     await this.store.writeText('log.json', JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
+    await this.store.writeText('notes.json', JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
     await this.store.writeText('meta.json', JSON.stringify({ name: 'Untitled', modifiedAt: new Date().toISOString() }));
   }
 
@@ -160,18 +171,19 @@ export class ProjectRepository {
 
   /**
    * The current project as a readable bundle (path -> bytes): pretty-printed
-   * manifest / project / log / meta JSON plus the referenced samples as real
-   * `.wav` bytes. The UI zips this into a portable `.daw.zip`. This is the same
+   * manifest / project / log / notes / meta JSON plus the referenced samples as
+   * real `.wav` bytes. The UI zips this into a portable `.daw.zip`. This is the same
    * shape the disk-folder backend (15D) will write uncompressed, so export and
-   * on-disk are one format. Pass the live snapshot + log so it is always current.
+   * on-disk are one format. Pass the live snapshot + log + notes so it is always current.
    */
-  async exportBundle(project: ProjectData, log: EditEntry[]): Promise<BundleFiles> {
+  async exportBundle(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<BundleFiles> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
     const manifest: Manifest = { formatVersion: FORMAT_VERSION, projectId: this.projectId, projectSchema: PROJECT_SCHEMA };
     const files: BundleFiles = {
       'manifest.json': json(manifest),
       'project.json': json(project),
       'log.json': json(log),
+      'notes.json': json(notes),
       'meta.json': json({ name: 'Untitled', modifiedAt: new Date().toISOString() }),
     };
     for (const id of referencedSampleIds(project)) {
@@ -186,6 +198,7 @@ export class ProjectRepository {
     const project = JSON.parse(text(files['project.json'])) as ProjectData;
     if (!project?.tracks) throw new Error('bundle: missing project.json');
     const log = files['log.json'] ? (JSON.parse(text(files['log.json'])) as EditEntry[]) : [];
+    const notes = files['notes.json'] ? (JSON.parse(text(files['notes.json'])) as FeedNote[]) : [];
     for (const [path, bytes] of Object.entries(files)) {
       if (!path.startsWith('samples/')) continue;
       const id = path.slice('samples/'.length).replace(/\.[^.]*$/, ''); // strip dir + extension -> content hash
@@ -196,8 +209,8 @@ export class ProjectRepository {
     } catch {
       this.projectId = null;
     }
-    await this.save(project, log);
-    return { project, log };
+    await this.save(project, log, notes);
+    return { project, log, notes };
   }
 
   // ---- undo/redo (session checkpoints, persisted so undo survives a reload) ----
@@ -298,8 +311,8 @@ function defaultLoadLegacy(): StoredProject | null {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const data = JSON.parse(raw) as { project?: ProjectData; log?: EditEntry[] };
-      if (data.project?.tracks) return { project: data.project, log: data.log ?? [] };
+      const data = JSON.parse(raw) as { project?: ProjectData; log?: EditEntry[]; notes?: FeedNote[] };
+      if (data.project?.tracks) return { project: data.project, log: data.log ?? [], notes: data.notes ?? [] };
     } catch {
       // try the next key
     }

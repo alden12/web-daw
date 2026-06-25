@@ -45,3 +45,17 @@ test('save versions, view a diff, and revert', async ({ page }) => {
   await page.getByRole('button', { name: /Revert to this version/ }).click();
   await expect(page.getByText('Revert to "second"')).toBeVisible();
 });
+
+test('a saved version shows as a marker in the activity feed', async ({ page }) => {
+  await page.goto('/');
+  await dismissStart(page);
+
+  await renameTrack(page, 'Verse');
+  await page.getByRole('combobox', { name: 'Panel view' }).selectOption('versions');
+  await page.getByPlaceholder('Name this version…').fill('verse idea');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  // Back in the activity feed, the save appears inline among the edits.
+  await page.getByRole('combobox', { name: 'Panel view' }).selectOption('activity');
+  await expect(page.getByText(/saved · verse idea/)).toBeVisible();
+});

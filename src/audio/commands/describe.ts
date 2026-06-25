@@ -1,60 +1,73 @@
 /**
  * Human-readable phrase for a command, for the activity feed. One entry per
  * command type (map dispatch); the mapped type keeps it exhaustive.
+ *
+ * An optional `DescribeContext` resolves an id to its current display name so the
+ * feed can say "Added Tremolo to Demo Organ" rather than "Added effect". It is
+ * optional so the function stays pure for history auto-messages and tests; when
+ * absent (or a name no longer resolves) the phrasing degrades to the type alone.
  */
 import type { EditCommand } from './types';
+import { catalogEntry, hasInstrument } from '../instruments/catalog';
+import { effectCatalogEntry, hasEffect } from '../effects/catalog';
 
-type DescribeMap = { [K in EditCommand['type']]: (command: Extract<EditCommand, { type: K }>) => string };
+/** Resolves a track/group/effect-host id to its current name (for richer labels). */
+export interface DescribeContext {
+  name(id: string): string | undefined;
+}
+
+const instLabel = (type: string): string => (hasInstrument(type) ? catalogEntry(type).label : type);
+const fxLabel = (type: string): string => (hasEffect(type) ? effectCatalogEntry(type).label : type);
+
+/** ` <prep> Name` (or just ` Name` when prep is '') if the id resolves, else ''. */
+function on(ctx: DescribeContext | undefined, id: string | undefined, prep = 'on'): string {
+  const name = id ? ctx?.name(id) : undefined;
+  if (!name) return '';
+  return prep ? ` ${prep} ${name}` : ` ${name}`;
+}
+
+const plural = (n: number) => `${n} ${n === 1 ? 'note' : 'notes'}`;
+
+type DescribeMap = {
+  [K in EditCommand['type']]: (command: Extract<EditCommand, { type: K }>, ctx?: DescribeContext) => string;
+};
 
 const DESCRIBE: DescribeMap = {
-  createTrack: (c) => `Added ${c.instrumentType} track`,
+  createTrack: (c, ctx) => `Added ${instLabel(c.instrumentType)} track${on(ctx, c.id, '')}`,
   addAudioTrack: (c) => `Imported ${c.name ?? 'audio'}`,
   removeTrack: () => 'Removed track',
-  setTrack: (c) =>
-    c.name !== undefined
-      ? 'Renamed track'
-      : c.muted !== undefined
-        ? c.muted
-          ? 'Muted track'
-          : 'Unmuted track'
-        : c.solo !== undefined
-          ? c.solo
-            ? 'Soloed track'
-            : 'Unsoloed track'
-          : 'Set track volume',
+  setTrack: (c, ctx) => {
+    const name = on(ctx, c.trackId, '');
+    if (c.name !== undefined) return `Renamed track to ${c.name}`;
+    if (c.muted !== undefined) return `${c.muted ? 'Muted' : 'Unmuted'} track${name}`;
+    if (c.solo !== undefined) return `${c.solo ? 'Soloed' : 'Unsoloed'} track${name}`;
+    return `Set volume${name}`;
+  },
   setAudioClip: () => 'Edited audio clip',
   createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ''}`,
   removeGroup: () => 'Removed group',
-  setGroup: (c) =>
-    c.name !== undefined
-      ? 'Renamed group'
-      : c.collapsed !== undefined
-        ? c.collapsed
-          ? 'Collapsed group'
-          : 'Expanded group'
-        : c.muted !== undefined
-          ? c.muted
-            ? 'Muted group'
-            : 'Unmuted group'
-          : c.solo !== undefined
-            ? c.solo
-              ? 'Soloed group'
-              : 'Unsoloed group'
-            : 'Set group volume',
+  setGroup: (c, ctx) => {
+    const name = on(ctx, c.groupId, '');
+    if (c.name !== undefined) return `Renamed group to ${c.name}`;
+    if (c.collapsed !== undefined) return `${c.collapsed ? 'Collapsed' : 'Expanded'} group${name}`;
+    if (c.muted !== undefined) return `${c.muted ? 'Muted' : 'Unmuted'} group${name}`;
+    if (c.solo !== undefined) return `${c.solo ? 'Soloed' : 'Unsoloed'} group${name}`;
+    return `Set group volume${name}`;
+  },
   moveTrack: () => 'Moved track to group',
   moveGroup: () => 'Reparented group',
-  setParam: (c) => `Set ${c.id}`,
-  addEffect: (c) => `Added ${c.effectType}`,
-  removeEffect: () => 'Removed effect',
+  setParam: (c, ctx) => `Set ${c.id}${on(ctx, c.trackId)}`,
+  addEffect: (c, ctx) => `Added ${fxLabel(c.effectType)}${on(ctx, c.hostId, 'to')}`,
+  removeEffect: (c, ctx) => `Removed effect${on(ctx, c.hostId, 'from')}`,
   moveEffect: () => 'Reordered effect',
-  bypassEffect: (c) => (c.bypassed ? 'Bypassed effect' : 'Enabled effect'),
-  setEffectParam: (c) => `Set ${c.id}`,
-  addNote: () => 'Added note',
-  addNotes: (c) => `Added ${c.notes.length} ${c.notes.length === 1 ? 'note' : 'notes'}`,
-  editNotes: (c) => `Edited ${c.notes.length} ${c.notes.length === 1 ? 'note' : 'notes'}`,
-  removeNote: () => 'Removed note',
-  removeNotes: (c) => `Removed ${c.ids.length} ${c.ids.length === 1 ? 'note' : 'notes'}`,
-  clearClip: () => 'Cleared clip',
+  bypassEffect: (c, ctx) => `${c.bypassed ? 'Bypassed' : 'Enabled'} effect${on(ctx, c.hostId)}`,
+  setEffectParam: (c, ctx) => `Set ${c.id}${on(ctx, c.hostId)}`,
+  addNote: (c, ctx) => `Added note${on(ctx, c.trackId, 'to')}`,
+  addNotes: (c, ctx) => `Added ${plural(c.notes.length)}${on(ctx, c.trackId, 'to')}`,
+  editNotes: (c, ctx) => `Edited ${plural(c.notes.length)}${on(ctx, c.trackId)}`,
+  removeNote: (c, ctx) => `Removed note${on(ctx, c.trackId, 'from')}`,
+  removeNotes: (c, ctx) => `Removed ${plural(c.ids.length)}${on(ctx, c.trackId, 'from')}`,
+  clearClip: (c, ctx) => `Cleared clip${on(ctx, c.trackId)}`,
   setClipLength: (c) => `Set clip length ${c.lengthBeats}`,
   addClip: (c) => `New clip${c.name ? ` ${c.name}` : ''}`,
   removeClip: () => 'Removed clip',
@@ -72,10 +85,10 @@ const DESCRIBE: DescribeMap = {
   setLoopStart: (c) => `Set loop start ${c.beats}`,
 };
 
-export function describeCommand(command: EditCommand): string {
+export function describeCommand(command: EditCommand, ctx?: DescribeContext): string {
   // A persisted/restored log can contain command types from an older app version
   // (e.g. pre-rename `addVariant`); describe them by their raw type rather than
   // crashing the feed.
-  const fn = DESCRIBE[command.type] as ((c: EditCommand) => string) | undefined;
-  return fn ? fn(command) : command.type;
+  const fn = DESCRIBE[command.type] as ((c: EditCommand, ctx?: DescribeContext) => string) | undefined;
+  return fn ? fn(command, ctx) : command.type;
 }

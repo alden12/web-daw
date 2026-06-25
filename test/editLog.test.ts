@@ -23,6 +23,30 @@ describe('EditLog', () => {
     expect(entries.map((e) => e.seq)).toEqual([0, 1]);
   });
 
+  it('note() posts a feed annotation that is not an edit (stays out of the replay stream)', () => {
+    const { log } = setup();
+    log.dispatch({ type: 'setTempo', bpm: 100 });
+    log.note('building the demo', 'claude');
+
+    // The note shows in the feed but never in the replayable edit entries.
+    expect(log.getNotes().map((n) => n.text)).toEqual(['building the demo']);
+    expect(log.getState().notes).toHaveLength(1);
+    expect(log.getEntries().map((e) => e.command.type)).toEqual(['setTempo']); // no note in here
+    expect(log.getState().canUndo).toBe(true); // a note does not add an undo step
+    // It interleaves by seq (after the tempo edit at seq 0).
+    expect(log.getNotes()[0].seq).toBe(1);
+  });
+
+  it('describe() resolves a track id to its name', () => {
+    const { log } = setup();
+    log.dispatch({ type: 'createTrack', instrumentType: 'organ', id: 't-1' });
+    log.dispatch({ type: 'setParam', trackId: 't-1', id: 'amp.level', value: 0.5 });
+    const entries = log.getEntries();
+    // organ's default-named track, resolved by describe (not just "Set amp.level").
+    expect(log.describe(entries[1])).toContain('amp.level');
+    expect(log.describe(entries[1])).toContain('Organ'); // name resolved via the project
+  });
+
   it('undo/redo round-trips a structural edit', () => {
     const { project, log } = setup();
     log.dispatch({ type: 'createTrack', instrumentType: 'fm', id: 't-1' });

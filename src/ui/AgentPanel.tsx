@@ -4,12 +4,11 @@
  * its current role; it may grow to host a real in-app agent later. Collapses to a
  * thin rail - drag the edge to resize, or use the chevron to collapse and expand.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { McpStatus } from "../audio/mcp/bridge";
 import type { EditLog } from "../audio/commands/editLog";
-import type { VersionStore } from "../audio/commands/history";
+import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
-import { describeCommand } from "../audio/commands/describe";
 import { VersionTimeline } from "./VersionTimeline";
 
 const DOT: Record<McpStatus, string> = {
@@ -31,10 +30,34 @@ export function AgentPanel({
   collapsed: boolean;
   onToggle: () => void;
 }) {
-  const { entries, canUndo, canRedo } = useEditLog(editLog);
+  const { entries, notes, canUndo, canRedo } = useEditLog(editLog);
   const [tab, setTab] = useState<"activity" | "versions">("activity");
-  // Newest first (like a git log), so the latest edit is at the top, no scrolling.
-  const recent = entries.slice(-100).reverse();
+
+  // Commits, loaded from the version store and refreshed when it changes, so the
+  // feed can show "saved" markers inline among the edits.
+  const [commits, setCommits] = useState<CommitSummary[]>([]);
+  useEffect(() => {
+    const load = () => void versionStore.history(200).then(setCommits);
+    load();
+    return versionStore.subscribe(load);
+  }, [versionStore]);
+
+  // Merge edits, feed notes, and commit markers into one stream, newest first.
+  // All three share the edit `seq` counter; a commit sits at its last included
+  // edit's seq, ranked above that edit so it reads as "saved, just after".
+  type FeedItem =
+    | { kind: "edit"; seq: number; entry: (typeof entries)[number] }
+    | { kind: "note"; seq: number; note: (typeof notes)[number] }
+    | { kind: "commit"; seq: number; commit: CommitSummary };
+  const items = useMemo<FeedItem[]>(() => {
+    const rank = (i: FeedItem) => (i.kind === "commit" ? 0 : 1);
+    const merged: FeedItem[] = [
+      ...entries.map((entry) => ({ kind: "edit" as const, seq: entry.seq, entry })),
+      ...notes.map((note) => ({ kind: "note" as const, seq: note.seq, note })),
+      ...commits.map((commit) => ({ kind: "commit" as const, seq: commit.lastSeq, commit })),
+    ];
+    return merged.sort((a, b) => b.seq - a.seq || rank(a) - rank(b)).slice(0, 120);
+  }, [entries, notes, commits]);
   const histBtn =
     "font-mono text-[12px] w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed";
 
@@ -107,22 +130,50 @@ export function AgentPanel({
             <VersionTimeline versionStore={versionStore} editLog={editLog} />
           ) : (
             <div>
-              {recent.length === 0 ? (
+              {items.length === 0 ? (
                 <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
                   Edits you and Claude make appear here.
                 </div>
               ) : (
                 <ul className="flex flex-col gap-1">
-                  {recent.map((entry) => {
-                    const isUndoRedo =
-                      entry.kind === "undo" || entry.kind === "redo";
+                  {items.map((item) => {
+                    if (item.kind === "commit") {
+                      const c = item.commit;
+                      return (
+                        <li
+                          key={`c-${c.id}`}
+                          className="flex items-center gap-2 px-2.5 py-1 my-0.5 text-faint"
+                          title={`${c.auto ? "Autosaved" : "Saved"} · ${c.message} (by ${c.author})`}
+                        >
+                          <span className="h-px w-3 shrink-0 bg-line" />
+                          <span className="font-mono text-[10px] min-w-0 truncate">
+                            {c.auto ? "autosaved" : "saved"} · {c.message}
+                          </span>
+                          <span className="h-px flex-1 bg-line" />
+                        </li>
+                      );
+                    }
+                    if (item.kind === "note") {
+                      const n = item.note;
+                      return (
+                        <li
+                          key={`n-${n.seq}`}
+                          className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2 ${
+                            n.author === "claude" ? "border-claude" : "border-you"
+                          }`}
+                        >
+                          <span className="text-[11px] shrink-0 text-muted">“</span>
+                          <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
+                        </li>
+                      );
+                    }
+                    const entry = item.entry;
+                    const isUndoRedo = entry.kind === "undo" || entry.kind === "redo";
                     return (
                       <li
                         key={entry.seq}
                         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
-                          entry.author === "claude"
-                            ? "border-claude"
-                            : "border-you"
+                          entry.author === "claude" ? "border-claude" : "border-you"
                         }`}
                       >
                         <span
@@ -131,7 +182,7 @@ export function AgentPanel({
                         <span
                           className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}
                         >
-                          {entry.label ?? describeCommand(entry.command)}
+                          {editLog.describe(entry)}
                         </span>
                         <span className="ml-auto font-mono text-[10px] text-faint shrink-0">
                           {entry.author}
