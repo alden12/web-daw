@@ -26,14 +26,16 @@ describe('Scheduler integration (mocked clock)', () => {
           allNotesOff: () => {},
         };
       },
+      scheduleAudioClip: () => {},
+      stopAllAudio: () => {},
     };
 
     const project = new ProjectStore(false);
     project.setTempo(120); // bps = 2
-    const a = project.addTrack('subtractive', 'A');
+    const a = project.addTrack('subtractive', { name: 'A' });
     a.clip.addNote({ pitch: 60, start: 0 });
     a.clip.addNote({ pitch: 62, start: 4 });
-    const b = project.addTrack('fm', 'B');
+    const b = project.addTrack('fm', { name: 'B' });
     b.clip.addNote({ pitch: 36, start: 2 });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

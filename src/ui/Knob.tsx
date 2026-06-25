@@ -5,12 +5,16 @@
  */
 import { useRef } from 'react';
 import type { ReactElement } from 'react';
-import type { EnumSpec, NumberSpec, ParamSpec } from '../audio/params/types';
+import type { EnumSpec, NumberSpec, ParamSpec, ParamValue } from '../audio/params/types';
 import type { ParamStore } from '../audio/params/store';
 import { useParam } from '../audio/params/useParam';
 import { fromNormalized, toNormalized } from '../audio/params/taper';
 
 const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
+
+/** Writes go through an injected callback so every edit becomes a logged command;
+ *  reads stay live via useParam (the value updates after the command applies). */
+type OnChange = (id: string, value: ParamValue) => void;
 
 function formatValue(spec: NumberSpec, value: number): string {
   const decimals = Math.abs(value) < 10 && !Number.isInteger(value) ? 2 : 0;
@@ -18,8 +22,8 @@ function formatValue(spec: NumberSpec, value: number): string {
   return spec.unit ? `${text} ${spec.unit}` : text;
 }
 
-function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
-  const [value, setValue] = useParam(store, spec.id);
+function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+  const [value] = useParam(store, spec.id);
   const drag = useRef<{ startY: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
   const angle = -135 + norm * 270;
@@ -32,7 +36,7 @@ function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
     if (!drag.current) return;
     const dy = e.clientY - drag.current.startY;
     const nextNorm = Math.min(1, Math.max(0, drag.current.startNorm - dy * DRAG_SENSITIVITY));
-    setValue(fromNormalized(spec, nextNorm));
+    onChange(spec.id, fromNormalized(spec, nextNorm));
   };
   const onPointerUp = (e: React.PointerEvent) => {
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -64,19 +68,19 @@ function NumberKnob({ spec, store }: { spec: NumberSpec; store: ParamStore }) {
   );
 }
 
-export function Knob({ spec, store }: { spec: ParamSpec; store: ParamStore }) {
-  const [value, setValue] = useParam(store, spec.id);
+export function Knob({ spec, store, onChange }: { spec: ParamSpec; store: ParamStore; onChange: OnChange }) {
+  const [value] = useParam(store, spec.id);
 
   // One renderer per kind (map dispatch). useParam runs above unconditionally, so
   // hook order is stable regardless of which renderer is picked.
   const renderers: Record<ParamSpec['kind'], () => ReactElement> = {
-    number: () => <NumberKnob spec={spec as NumberSpec} store={store} />,
+    number: () => <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />,
     enum: () => (
       <label className="flex flex-col items-center gap-1.5 w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
         <select
           value={value as string}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onChange(spec.id, e.target.value)}
           className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
         >
           {(spec as EnumSpec).options.map((opt) => (
@@ -90,7 +94,7 @@ export function Knob({ spec, store }: { spec: ParamSpec; store: ParamStore }) {
     boolean: () => (
       <label className="flex flex-col items-center gap-1.5 w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
-        <input type="checkbox" checked={value as boolean} onChange={(e) => setValue(e.target.checked)} />
+        <input type="checkbox" checked={value as boolean} onChange={(e) => onChange(spec.id, e.target.checked)} />
       </label>
     ),
   };

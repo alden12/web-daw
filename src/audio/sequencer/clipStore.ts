@@ -91,6 +91,22 @@ export class ClipStore {
     this.emit();
   }
 
+  /**
+   * Set the loop length (beats) and re-clamp every note to fit, so shortening
+   * the loop can't leave notes hanging past the end. `normalize` does the clamp.
+   */
+  setLength(beats: number): void {
+    const next = Math.max(GRID, snap(beats));
+    if (next === this.lengthBeats) return;
+    this.lengthBeats = next;
+    for (const [id, n] of this.notes) this.notes.set(id, this.normalize(n, id));
+    this.emit();
+  }
+
+  getLength(): number {
+    return this.lengthBeats;
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

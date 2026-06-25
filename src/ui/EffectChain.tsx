@@ -9,12 +9,14 @@ import { Fragment } from 'react';
 import type { ProjectStore } from '../audio/project/projectStore';
 import { useProject } from '../audio/project/useProject';
 import { EFFECT_CATALOG, effectCatalogEntry, effectSchema } from '../audio/effects/catalog';
+import type { Dispatch } from '../audio/commands/types';
+import { newEffectId } from '../audio/commands/ids';
 import { Knob } from './Knob';
 
 const ARROW = <div className="self-center text-faint text-sm px-0.5">→</div>;
 const iconBtn = 'font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer';
 
-export function EffectChain({ projectStore, trackId }: { projectStore: ProjectStore; trackId: string }) {
+export function EffectChain({ projectStore, trackId, dispatch }: { projectStore: ProjectStore; trackId: string; dispatch: Dispatch }) {
   const project = useProject(projectStore);
   const track = project.tracks.find((t) => t.id === trackId);
   if (!track) return null;
@@ -36,7 +38,7 @@ export function EffectChain({ projectStore, trackId }: { projectStore: ProjectSt
                 <button
                   type="button"
                   title={fx.bypassed ? 'Enable' : 'Bypass'}
-                  onClick={() => projectStore.setEffectBypass(trackId, fx.id, !fx.bypassed)}
+                  onClick={() => dispatch({ type: 'bypassEffect', hostId: trackId, effectId: fx.id, bypassed: !fx.bypassed })}
                   className={`font-mono text-[10px] h-5 px-1.5 rounded border cursor-pointer ${
                     fx.bypassed ? 'border-line text-muted' : 'border-you/45 text-you'
                   }`}
@@ -47,7 +49,7 @@ export function EffectChain({ projectStore, trackId }: { projectStore: ProjectSt
                   type="button"
                   title="Move earlier"
                   disabled={i === 0}
-                  onClick={() => projectStore.moveEffect(trackId, fx.id, i - 1)}
+                  onClick={() => dispatch({ type: 'moveEffect', hostId: trackId, effectId: fx.id, toIndex: i - 1 })}
                   className={`${iconBtn} disabled:opacity-30`}
                 >
                   ↑
@@ -56,18 +58,23 @@ export function EffectChain({ projectStore, trackId }: { projectStore: ProjectSt
                   type="button"
                   title="Move later"
                   disabled={i === effects.length - 1}
-                  onClick={() => projectStore.moveEffect(trackId, fx.id, i + 1)}
+                  onClick={() => dispatch({ type: 'moveEffect', hostId: trackId, effectId: fx.id, toIndex: i + 1 })}
                   className={`${iconBtn} disabled:opacity-30`}
                 >
                   ↓
                 </button>
-                <button type="button" title="Remove effect" onClick={() => projectStore.removeEffect(trackId, fx.id)} className={iconBtn}>
+                <button type="button" title="Remove effect" onClick={() => dispatch({ type: 'removeEffect', hostId: trackId, effectId: fx.id })} className={iconBtn}>
                   ×
                 </button>
               </div>
               <div className="flex gap-3 px-3 py-3">
                 {effectSchema(fx.type).map((spec) => (
-                  <Knob key={spec.id} spec={spec} store={store} />
+                  <Knob
+                    key={spec.id}
+                    spec={spec}
+                    store={store}
+                    onChange={(id, value) => dispatch({ type: 'setEffectParam', hostId: trackId, effectId: fx.id, id, value })}
+                  />
                 ))}
               </div>
             </div>
@@ -80,7 +87,7 @@ export function EffectChain({ projectStore, trackId }: { projectStore: ProjectSt
           <button
             key={type}
             type="button"
-            onClick={() => projectStore.addEffect(trackId, type)}
+            onClick={() => dispatch({ type: 'addEffect', hostId: trackId, effectType: type, id: newEffectId() })}
             className="font-mono text-[11px] px-2.5 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap text-left"
           >
             + {def.label}

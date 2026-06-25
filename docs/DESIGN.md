@@ -207,9 +207,20 @@ interchangeable:
 - **Claude Code over MCP** (today's setup) - keep it. Perfect for the developer/tinkerer
   audience driving the same tools from a terminal or scripts.
 
-So: own in-app agent **and** the MCP server, sharing one tool/store layer. The thin server
-proxies the Claude API key for the in-app agent. We do not build a bespoke agent from
-scratch; we reuse the tools and let the Claude API reason, on the latest models.
+So: own in-app agent **and** the MCP server, sharing one tool/store layer. We do not build a
+bespoke agent from scratch; we reuse the tools and let the model reason, on the latest models.
+Concretely: the agent **loop runs client-side** - tool calls execute in the browser through
+the same `dispatch` seam (authored `claude`, coral in the feed) - and **one shared tool
+catalog** (zod -> JSON Schema) feeds both the MCP server and the panel. The thin server is
+only a **key-proxy**: keep it **provider-agnostic** (an OpenAI-compatible base URL + model, so
+a free tier or a local model can drive tests; default Claude Sonnet), and keep the key
+**server-side only** - spend-capped, never `VITE_`-inlined into the client, with auth +
+rate-limiting before any non-localhost deploy. The agent reasons on symbolic data and cannot
+hear its output; **audio-analysis tools** give it "ears" (see the roadmap).
+
+Note: Claude Code / Claude Desktop over MCP already gives a capable agent on your existing
+subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
+general "just open the app" user.
 
 ## 10. Proposed on-disk project format (the concrete next step)
 
@@ -235,30 +246,173 @@ my-track/
 ```
 
 Notes:
+
 - Project structure, patches, automation, variants -> stable, sorted JSON (diffable).
 - MIDI -> standard `.mid` for interoperability; audio -> `.wav`/`.flac` referenced by path.
-- An instrument *preset* is just its `PatchValues` (a param snapshot); an instrument
-  *definition* (the DSP) is app code today. Custom-DSP-via-worklet later could let users
+- An instrument _preset_ is just its `PatchValues` (a param snapshot); an instrument
+  _definition_ (the DSP) is app code today. Custom-DSP-via-worklet later could let users
   drop in their own instrument code - the ultimate tinker story, far off.
 - Keep ids stable and human-meaningful where possible so diffs read well.
 
 ## 11. Roadmap / slicing
 
-Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback
-+ persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
-`bindParams` seam + master limiter).
+Done: slice 1 (param schema + subtractive synth), 2 (MCP server), 3 (piano roll + playback +
+persistence), 4 (multi-track + instrument abstraction + FM), 5 (effect chains + shared
+`bindParams` seam + master limiter), 6 (app-shell relayout in Tailwind: video-editor spine,
+agent pane, library tree; conventions pass - zod validation, map dispatch, catalog-driven),
+7 (data-model spine: project as a tree of buses / grouping - see section 4 - with group
+effect chains, the librarian filing tracks into family groups, group-addressed MCP tools,
+and host-addressed effects), 8 (audio tracks + audio clips: Track is a discriminated union of
+instrument|audio, OPFS-backed clip storage, file import + AudioBufferSourceNode playback
+through the bus tree - see section 14), 9 (authored edit log: every durable edit flows through
+one `dispatch(command, author)` seam into an append-only, authored command log, sharing the
+MCP protocol's command vocabulary - powering undo/redo and the two-voice activity feed),
+10 (clip variants: an instrument track owns a stack of variants, each bundling clip notes +
+instrument params + effect chain; the active variant is materialized into the live stores in
+place so the engine bindings survive; "Try"/fork is non-destructive, switching morphs the
+devices, and Claude's generated takes are tagged coral - see section 6),
+11 (edit-log persistence: the authored command log is persisted alongside the project
+snapshot in localStorage and restored on load, so the activity feed and authored history
+survive a reload; undo/redo stays session-scoped),
+12 (piano-roll editing: full mouse manipulation - drag-move, edge-resize, marquee
+multi-select + multi-delete, velocity lane, copy/cut/paste - plus zoom, a bar/beat ruler, and
+a draggable loop-length handle; new plural clip commands (`addNotes`/`editNotes`/`removeNotes`)
+make each gesture one feed entry and one undo step - and fix the `add_notes` history spam - and
+a project-level `setLength`; the shared `beats<->px` ruler/zoom primitive
+(`src/ui/timeline/`) is built here for the arrangement timeline to reuse - first of three
+"real DAW" pieces. A second commit adds polish: a real **loop region** [loopStart, loopEnd]
+that the scheduler loops (project `loopStart` + `setLoopStart`, two ruler handles, grid drawn
+past the end to scroll/expand into), fit-notes-to-window on track load, pinch / Cmd-scroll /
+Shift-scroll zoom, narrower velocity bars + a resizable velocity lane, deselect on Escape /
+click-outside, and a workbench relayout - variants moved to a left rail beside the roll, with a
+resizable device|roll divider and a wrapping instrument/effects rack).
 
-Next, in rough order:
-- **Slice 6 - UI refinement** toward the layout in sections 3-6 (video-editor spine, agent
-  pane, two-voice color, library tree, grouping, clip variants). Lock the on-disk format
-  (section 10) here, since persistence is adjacent and everything tinker-related depends on
-  it.
-- **Slice 7 - full DSP** via AudioWorklet. The `bindParams` seam already isolates native ->
-  worklet, so no schema/UI/MCP churn. Also the moment to make the subtractive filter
-  per-voice (it is paraphonic today) and decide worklet param messaging.
-- **Longer horizon:** grouping as a real bus tree; automation lanes; version history + git
-  backing with semantic diff/merge; local-first files + in-app file viewer; in-app agent;
-  Tauri desktop shell; sharing/collab.
+Sequencing follows the thesis (section 1: structured, authored events in one store). The
+**authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
+(slice 11) are in place; the remaining
+early model evolution is generalizing variants into **a track that owns a set of clip slots**
+and building the **Session/clip-launch grid** on top (the same variants seen as launchable
+slots - one model, two views), plus copy-paste and linear arrangement editing. The raw backlog
+below is grouped into themed slices; within a theme, order is rough.
+
+**Near-term - UI on top of the current model**
+
+- **Group/track selection + group-FX editing in the workbench** (next, small). Select a
+  group or track and edit its effect rack in the center workbench; generalize selection
+  beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
+- **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
+  everything rhythmic; small and transport-level.
+- **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
+  manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
+  marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
+  zoom, a bar/beat ruler, and a draggable loop-length handle (project-level `setLength`). Plural
+  clip commands (`addNotes`/`editNotes`/`removeNotes`) make each gesture one feed entry + one
+  undo step (and fixed the per-note `add_notes` history spam); they extend the MCP vocabulary
+  too (`edit_notes`/`remove_notes`/`set_length`/`set_loop_start`). The shared **beats<->px +
+  zoom + ruler** primitive (`src/ui/timeline/`) is in place for the arrangement timeline to
+  reuse. A polish pass added a real **loop region** [loopStart, loopEnd] the scheduler loops
+  (two ruler handles; grid drawn past the end), fit-to-window on load, pinch / modifier-scroll
+  zoom, a resizable velocity lane, deselect on Escape / click-out, and a workbench relayout
+  (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
+  follow-ups below (quantize/groove, project key) still pending.*
+- **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
+  project key with the roll showing note intervals/scale relative to it.
+- **Timeline & arrangement interactions (the third "real DAW" piece - depends on the
+  arrangement clip model below).** Scroll / zoom / pan the timeline (reusing the piano-roll's
+  beats<->px+ruler primitive), drag clips between bars, split at the playhead, resize, and
+  snap-to-grid. Only meaningful once clips are first-class positioned objects, so it follows
+  the model evolution. Also in this theme (model-independent, can ride along): track reorder
+  by drag, track-height resize, track colors, a visual summary of grouped tracks, and library
+  drag-and-drop for instruments/effects.
+
+**Model evolutions - sequence early, they unlock the rest**
+
+- **Authored edit log + persistence - DONE (slices 9, 11).** Every durable edit flows through
+  one `dispatch(command, author)` seam into an append-only, authored command log, powering
+  undo/redo (snapshot checkpoints with coalescing) and the two-voice activity feed; the log is
+  persisted alongside the project snapshot (localStorage) and restored on load, so the feed and
+  authored history survive a reload (undo/redo stays session-scoped). *Remaining:* **version
+  history** with replay/scrub/rollback and semantic diff/merge & branches (section 7) - which
+  needs undo to append compensating entries so the log becomes a faithful event source - and
+  graduating storage from localStorage to the on-disk file format (section 10) / IndexedDB.
+- **On-disk file format** (section 10): human-readable project files; pairs with the persisted
+  edit log and local-first storage.
+- **Clip variants - DONE (slice 10).** An instrument track owns a stack of variants; each
+  **variant bundles clip notes + instrument params + effect chain** (section 6), so switching
+  morphs the devices too. "Try"/fork is non-destructive (the original is parked); Claude
+  generates takes tagged coral; switching/forking loads a variant into the live stores in
+  place so the engine bindings survive. Edits flow through the same `dispatch`/MCP seam, so
+  undo/redo and the activity feed cover them. *Remaining:* generalize variants into a set of
+  **clip slots** and build the Ableton-style **Session/Grid view** on top - each track a column
+  of launchable clips with its variants stacked vertically, scenes launching a row across
+  tracks (the same variants seen as launchable slots - one model, two views).
+- **Arrangement clip model (the fundamental / second "real DAW" piece - sequence before the
+  timeline interactions above).** Today a track owns exactly one clip (the active variant's),
+  under a single global `lengthBeats` loop, so the timeline is a read-only preview. The
+  keystone change is making clips **first-class positioned instances**: a track holds a list
+  of clip placements (clip ref + start beat + length + content offset) along time, replacing
+  the one-global-loop assumption. This ripples through the scheduler (play clips at their
+  positions, not one looping clip), MCP tools, and persistence (migration + version bump).
+  Open design question to settle in this slice: how **variants** interact with multiple
+  arranged clips (today a variant snapshots the whole sound including the single clip). Once
+  this lands, placing / splitting / moving clips, clip start-end, copy-paste of clips, and
+  MIDI import as clips all become tractable - and the Session/Grid view is the same model seen
+  as launchable slots.
+- **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
+  per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
+  up/down without changing pitch) and other sample-accurate audio work become tractable.
+
+**Recording & input**
+
+- **Live audio capture** (section 14): getUserMedia + worklet/MediaRecorder, recording
+  latency compensation, calibration.
+- **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
+  reuses the same arm / record / quantize machinery as audio.
+
+**Instruments, content & ecosystem**
+
+- **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
+  instrument catalog and the slice-8 audio-clip storage.
+- **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
+  community device format (open question).
+- **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
+  **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
+  automation, and persistence come for free (the catalog/registry are already the extension
+  point, game-engine style) - plus generative **scripts** over the `dispatch` API, alongside
+  the in-app file viewer (section 8). Pairs with the shareable/community device format; running
+  user code needs **sandboxing + a trust model** (resource limits, Worker/iframe isolation,
+  capability-limited APIs) before any sharing, and the agent can author components too. Builds
+  on the "custom-DSP-via-worklet" note in section 10; the fullest workflow wants the Tauri
+  shell + local-first files (sections 8, 10).
+
+**Agent**
+
+- **In-app agent panel** (section 9): an embedded chat driving the model via the client-side
+  tool loop + thin, provider-agnostic key-proxy described in section 9. Reuses the one shared
+  tool catalog (zod -> JSON Schema); edits land authored `claude` (coral) through the existing
+  `dispatch` seam. Claude Code / Desktop over MCP already covers this for the tinkerer at no
+  per-token cost; the panel adds the embedded UX and the general "just open the app" user.
+- **Agent "ears" (audio analysis).** The agent reasons on symbolic data and cannot hear the
+  output. Render offline (`OfflineAudioContext`) and expose **analysis tools** that mirror the
+  `list_*` reads: objective DSP first (loudness / LUFS, spectral balance / masking, clipping -
+  e.g. Meyda), then MIR (key / BPM / onset via essentia.js), then perceptual/semantic (CLAP or
+  an audio-tagging model, or a multimodal model as a `describe_sound` tool). Closes the
+  perception loop for mixing/arrangement; human auditioning still decides taste.
+
+**Platform & form factor**
+
+- **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
+  + timeline) assumes a wide screen; small screens need a different shape - collapse to a
+  single focused region with a bottom tab/drawer bar to switch between library, the selected
+  track's workbench, the timeline, and the agent. Touch interactions are the real work: the
+  knob's vertical-drag gesture, note drawing, and group/clip drag all need touch handlers and
+  larger hit targets. The agent pane leans toward a slide-over sheet on phones. Being web-first
+  is the advantage here - it should run on a tablet/phone, which also makes the AI-co-author
+  pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
+  (Converse/Produce) maps naturally onto how much screen the agent takes.
+
+**Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
+shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
@@ -278,3 +432,61 @@ of snapshots, and the human-readable file format.
   two-voice color, grouping, clip variants, library tree, open timeline, panel hierarchy.
   (Private artifact link from the design session.)
 - Memory pointer: `web-daw-ui-direction` (concise recall) points here for the full version.
+
+## 14. Live audio recording & input (design thinking)
+
+The honest constraint first: the browser cannot reach ASIO-class round-trip latency. On
+Windows the browser drives audio through WASAPI (usually shared mode), never ASIO, and
+there is no web API to reach an ASIO driver. macOS/CoreAudio is decent; Windows is mediocre.
+So the strategy is not "beat the latency" - it is "don't depend on it for tracking, and null
+it out for timing accuracy." That is also how pros track in any DAW once buffers get large.
+
+The capture path (web-first):
+
+- **Input** via `getUserMedia({ audio: { deviceId, echoCancellation:false, noiseSuppression:
+false, autoGainControl:false, channelCount, sampleRate } })`. Disabling the voice-DSP is
+  mandatory or Chrome mangles the signal. Enumerate/select interfaces with
+  `enumerateDevices()` (labels need permission; HTTPS/secure-context required).
+- **Into the graph** via `MediaStreamAudioSourceNode`, then a capture **AudioWorklet** (the
+  ScriptProcessor replacement) that runs on the render thread at 128-frame quanta and copies
+  PCM into a **SharedArrayBuffer ring buffer** (needs cross-origin isolation: COOP/COEP
+  headers). A Web Worker drains the ring and streams float32 to **OPFS / File System Access
+  API** (and/or encodes WAV/FLAC via WebCodecs), so we never hold gigabytes in RAM.
+- **Sample-rate alignment:** run the `AudioContext` at the interface's native rate (request
+  48k, read back `sampleRate`); resampling a getUserMedia stream adds latency and artifacts.
+
+Monitoring (what the performer hears while recording):
+
+- **Hardware/direct monitoring is the default recommendation** - the interface mixes input
+  to output internally, zero added latency, the computer only captures. This sidesteps the
+  whole latency problem for tracking and is what ASIO users do anyway when buffers are big.
+- **Software monitoring** (through our graph) is offered only where the round-trip is low
+  enough (macOS + good interface); we read `context.outputLatency`/`baseLatency` and warn.
+
+Timing accuracy = **recording latency compensation** (the real answer):
+
+- We don't need low latency to record _accurately_; we need to know the offset and shift the
+  recorded region back by it so it lands where the performer actually played. Captured frames
+  are timestamped against `context.currentTime`; the round-trip offset = input + output +
+  worklet buffering.
+- A one-time **loopback calibration** (play a click, record it back through a physical/virtual
+  loop, measure the sample offset) gives an exact per-device compensation value - Logic/Ableton
+  call this driver-error compensation. Store the offset on the recorded region; everything
+  downstream stays sample-accurate.
+
+Fit with the model:
+
+- A **recorded clip is just another clip type** alongside MIDI/note clips: a reference to an
+  audio buffer (OPFS file) + the compensation offset, sitting on an **audio track** whose
+  "instrument" is a buffer player. It flows through the same ProjectStore/persistence/MCP
+  keystone; playback schedules `AudioBufferSourceNode.start(when)` via the existing lookahead
+  scheduler (playback latency is bounded by `outputLatency` and is fine for non-interactive
+  playback).
+- MCP stays a control-plane: it can arm/disarm tracks, start/stop capture, set the
+  compensation, and place/trim recorded regions - never the realtime sample path.
+
+The escape hatch for true low-latency monitored tracking: the **Tauri desktop backend**
+(already an open decision). A Rust audio backend (CPAL, or WASAPI-exclusive / CoreAudio, even
+ASIO) could own capture/monitoring natively while the same web UI/model rides on top. Staged
+plan: web-first with hardware monitoring + latency compensation (covers most recording), then
+the native backend for users who need monitored low-latency input.

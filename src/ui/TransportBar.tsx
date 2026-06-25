@@ -4,16 +4,19 @@
  */
 import type { ProjectStore } from '../audio/project/projectStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
+import type { Dispatch } from '../audio/commands/types';
 import { useProject } from '../audio/project/useProject';
 
 export function TransportBar({
   projectStore,
   scheduler,
+  dispatch,
   isPlaying,
   started,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
+  dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
 }) {
@@ -36,7 +39,7 @@ export function TransportBar({
           min={20}
           max={300}
           value={project.tempoBpm}
-          onChange={(e) => projectStore.setTempo(Number(e.target.value))}
+          onChange={(e) => dispatch({ type: 'setTempo', bpm: Number(e.target.value) })}
           className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
         BPM

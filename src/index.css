@@ -41,31 +41,18 @@
   }
 }
 
-/* Region grid: data-mode resizes the agent column. Kept in CSS so the column
-   change can transition (utilities can't animate grid-template-columns). */
+/* Region grid. The library and agent column widths are driven by inline
+   grid-template-columns (drag-resized + persisted in AppShell); the transition
+   here animates the agent collapse to/from the rail. Utilities can't animate
+   grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
 .app-body {
   display: grid;
-  grid-template-columns: 200px 1fr 320px;
+  grid-template-columns: 200px minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 244px;
   grid-template-areas:
     'library center agent'
     'timeline timeline timeline';
   transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
-}
-[data-mode='converse'] .app-body {
-  grid-template-columns: 200px 1.1fr 0.9fr;
-}
-[data-mode='produce'] .app-body {
-  grid-template-columns: 200px 1fr 52px;
-}
-.agent-rail {
-  display: none;
-}
-[data-mode='produce'] .agent-full {
-  display: none;
-}
-[data-mode='produce'] .agent-rail {
-  display: flex;
 }
 
 /* Bar grid behind timeline clips (dynamic repeat utilities are unwieldy). */

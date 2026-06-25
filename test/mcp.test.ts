@@ -180,11 +180,11 @@ describe('MCP server (tracks)', () => {
     expect(res.isError).toBeFalsy();
     await waitFor(() => typesOf(messages).includes('addEffect'));
     const added = messages.find((m) => (m as { type: string }).type === 'addEffect') as {
-      trackId: string;
+      hostId: string;
       effectType: string;
       id: string;
     };
-    expect(added.trackId).toBe(trackId);
+    expect(added.hostId).toBe(trackId);
     expect(added.effectType).toBe('reverb');
 
     const list = parse(await call('list_effects'));
@@ -208,7 +208,7 @@ describe('MCP server (tracks)', () => {
     const okRes = await call('set_effect_parameter', { effect_id: effectId, id: 'mix', value: 0.5 });
     expect(okRes.isError).toBeFalsy();
     await waitFor(() => typesOf(messages).includes('setEffectParam'));
-    expect(messages).toContainEqual({ type: 'setEffectParam', trackId, effectId, id: 'mix', value: 0.5 });
+    expect(messages).toContainEqual({ type: 'setEffectParam', hostId: trackId, effectId, id: 'mix', value: 0.5 });
 
     expect((await call('set_effect_parameter', { effect_id: effectId, id: 'mix', value: 9 })).isError).toBe(true);
     expect((await call('set_effect_parameter', { effect_id: effectId, id: 'nope', value: 1 })).isError).toBe(true);
@@ -232,5 +232,60 @@ describe('MCP server (tracks)', () => {
     expect(list.effects).toHaveLength(1);
     expect(list.effects[0].id).toBe(delayId);
     expect(list.effects[0].bypassed).toBe(true);
+  });
+
+  it('create_track files a track into its instrument family group (librarian)', async () => {
+    const messages = await connectTab();
+    await call('create_track', { instrument: 'subtractive' });
+    await waitFor(() => typesOf(messages).includes('createTrack'));
+    // the family group was created and forwarded before the track
+    expect(typesOf(messages)).toContain('createGroup');
+    const groups = parse(await call('list_groups')).groups;
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe('Synths');
+    expect(groups[0].parent).toBeNull();
+    const track = parse(await call('list_tracks')).tracks[0];
+    expect(track.group).toBe(groups[0].id);
+    expect(groups[0].tracks).toEqual([track.id]);
+  });
+
+  it('create_group + move_track forward and update the mirror', async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack('subtractive'); // creates a "Synths" group
+    const res = await call('create_group', { name: 'Drums' });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).filter((t) => t === 'createGroup').length >= 2);
+    const drums = parse(await call('list_groups')).groups.find((g: { name: string }) => g.name === 'Drums');
+    expect(drums).toBeTruthy();
+
+    await call('move_track', { track: trackId, group: drums.id });
+    await waitFor(() => typesOf(messages).includes('moveTrack'));
+    expect(parse(await call('list_tracks')).tracks[0].group).toBe(drums.id);
+  });
+
+  it('add_effect targets a group bus when `group` is given', async () => {
+    const messages = await connectTab();
+    await makeTrack('subtractive');
+    const groupId = parse(await call('list_groups')).groups[0].id as string;
+
+    const res = await call('add_effect', { group: groupId, effect: 'reverb' });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes('addEffect'));
+    const added = messages.find((m) => (m as { type: string }).type === 'addEffect') as { hostId: string };
+    expect(added.hostId).toBe(groupId);
+    const list = parse(await call('list_effects', { group: groupId }));
+    expect(list.host).toBe(groupId);
+    expect(list.effects[0].type).toBe('reverb');
+  });
+
+  it('remove_group cascades and removes its tracks', async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack('subtractive');
+    const groupId = parse(await call('list_tracks')).tracks[0].group as string;
+
+    await call('remove_group', { group: groupId });
+    await waitFor(() => typesOf(messages).includes('removeGroup'));
+    expect(parse(await call('list_groups')).groups).toHaveLength(0);
+    expect(parse(await call('list_tracks')).tracks.find((t: { id: string }) => t.id === trackId)).toBeUndefined();
   });
 });

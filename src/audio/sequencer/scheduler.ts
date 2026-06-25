@@ -22,13 +22,17 @@ export function beatsToSeconds(beats: number, bpm: number): number {
 
 /**
  * Pure: note occurrences whose onset lands in [fromBeat, toBeat), accounting for
- * the clip looping every loopLen beats. Returns the continuous beat of each.
+ * the clip looping the region [loopStart, loopStart+loopLen) every loopLen beats.
+ * Continuous playback beat 0 maps to loopStart, so a note at absolute beat S fires
+ * at iter*loopLen + (S - loopStart). Notes outside the loop region don't play.
+ * `loopStart` defaults to 0 (loop the whole clip from the top).
  */
 export function notesStartingInBeatRange(
   notes: NoteEvent[],
   fromBeat: number,
   toBeat: number,
   loopLen: number,
+  loopStart = 0,
 ): { note: NoteEvent; atBeat: number }[] {
   const result: { note: NoteEvent; atBeat: number }[] = [];
   if (loopLen <= 0 || toBeat <= fromBeat) return result;
@@ -37,9 +41,35 @@ export function notesStartingInBeatRange(
   for (let iter = startIter; iter <= endIter; iter++) {
     const base = iter * loopLen;
     for (const note of notes) {
-      const at = base + note.start;
+      if (note.start < loopStart || note.start >= loopStart + loopLen) continue;
+      const at = base + (note.start - loopStart);
       if (at >= fromBeat && at < toBeat) result.push({ note, atBeat: at });
     }
+  }
+  return result;
+}
+
+/**
+ * Pure: continuous beats at which a single onset (e.g. an audio clip's start)
+ * lands in [fromBeat, toBeat), accounting for the loop region [loopStart,
+ * loopStart+loopLen). Onsets outside the region don't play. `loopStart` defaults
+ * to 0.
+ */
+export function onsetsInBeatRange(
+  startBeat: number,
+  fromBeat: number,
+  toBeat: number,
+  loopLen: number,
+  loopStart = 0,
+): number[] {
+  const result: number[] = [];
+  if (loopLen <= 0 || toBeat <= fromBeat) return result;
+  if (startBeat < loopStart || startBeat >= loopStart + loopLen) return result;
+  const startIter = Math.floor(fromBeat / loopLen);
+  const endIter = Math.ceil(toBeat / loopLen);
+  for (let iter = startIter; iter <= endIter; iter++) {
+    const at = iter * loopLen + (startBeat - loopStart);
+    if (at >= fromBeat && at < toBeat) result.push(at);
   }
   return result;
 }
@@ -86,15 +116,17 @@ export class Scheduler {
     this.unsubscribe?.();
     this.unsubscribe = null;
     for (const track of this.project.getTracks()) this.engine.getInstrument(track.id)?.allNotesOff();
+    this.engine.stopAllAudio();
     this.onStateChange?.(false);
   }
 
-  /** Looped position in beats for the playhead; 0 when stopped. */
+  /** Looped position in beats for the playhead (sweeps the loop region); 0 when stopped. */
   getPositionBeats(): number {
     if (this.timer === null) return 0;
-    const len = this.project.length;
-    const pos = this.anchorBeat + (this.engine.currentTime - this.anchorTime) * this.lastBps;
-    return len > 0 ? pos % len : 0;
+    const loopStart = this.project.loopStart;
+    const loopLen = this.project.length - loopStart;
+    const cont = this.anchorBeat + (this.engine.currentTime - this.anchorTime) * this.lastBps;
+    return loopLen > 0 ? loopStart + (cont % loopLen) : 0;
   }
 
   private reanchor(): void {
@@ -107,7 +139,8 @@ export class Scheduler {
   private tick(): void {
     const bpm = this.project.tempo;
     const bps = bpm / 60;
-    const loopLen = this.project.length;
+    const loopStart = this.project.loopStart;
+    const loopLen = this.project.length - loopStart;
     const now = this.engine.currentTime;
     const horizonBeats = this.anchorBeat + (now + SCHEDULE_AHEAD_SEC - this.anchorTime) * bps;
     const fromBeats = this.scheduledUntilBeats;
@@ -115,12 +148,19 @@ export class Scheduler {
 
     for (const track of this.project.getTracks()) {
       if (track.muted) continue;
-      const instrument = this.engine.getInstrument(track.id);
-      if (!instrument) continue;
-      const occurrences = notesStartingInBeatRange(track.clip.getClip().notes, fromBeats, horizonBeats, loopLen);
-      for (const { note, atBeat } of occurrences) {
-        const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-        instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
+      if (track.kind === 'instrument') {
+        const instrument = this.engine.getInstrument(track.id);
+        if (!instrument) continue;
+        const occurrences = notesStartingInBeatRange(track.clip.getClip().notes, fromBeats, horizonBeats, loopLen, loopStart);
+        for (const { note, atBeat } of occurrences) {
+          const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
+        }
+      } else {
+        for (const atBeat of onsetsInBeatRange(track.audioClip.startBeat, fromBeats, horizonBeats, loopLen, loopStart)) {
+          const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+          this.engine.scheduleAudioClip(track.id, when);
+        }
       }
     }
     this.scheduledUntilBeats = horizonBeats;
