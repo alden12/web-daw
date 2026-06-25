@@ -641,9 +641,21 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   moved off the transport into the existing toolbar menu (now "Timeline options"), alongside the
   per-group "New track in" - all three are **nested submenus** so the menu stays short. `Menu`
   gained submenu flyouts, radio (`checked`) items, and separators to support this.
-- **Recording follow-ups (slice C / later):** MCP arm/record tools, input level meter, remembered
-  device + eager enumeration, software-monitoring option, loopback **latency calibration**
-  (store the offset on the region), punch-in at the playhead, multi-track arm, stereo.
+- **Workbench signal-flow layout - DONE (slice 31).** The center workbench reads top to bottom as
+  the signal path: notes (piano roll) / audio clip on top, the instrument + effect rack below, then
+  the arrangement output (bottom panel) - notes -> (midi fx ->) instrument -> effects -> output. The
+  thing you primarily edit is at the top with its sound controls right beneath it (rather than the
+  rack crammed at the bottom). MIDI effects (section 15) will slot between the roll and the rack.
+- **Audio waveform overview (NEXT recording slice).** Draw the amplitude trace (peak overview)
+  on audio clips - in the arrangement placement block and the center audio-clip panel (which has
+  a placeholder waiting for it). Approach: decode the OPFS bytes once via an `OfflineAudioContext`,
+  compute a cached min/max **peaks** array per `fileId`, render to a small **canvas** scaled to the
+  block width and tiled to the placement window (mirroring `NoteMinis`). Pure peak-bucketing is the
+  testable core; falls back to today's filled block while decoding / on failure. Mono mix + capped
+  resolution for v1. (Amplitude waveform, not a spectrogram - the latter is a separate, larger job.)
+- **Recording follow-ups (later):** MCP arm/record tools, input level meter, remembered device +
+  eager enumeration, software-monitoring option, loopback **latency calibration** (store the offset
+  on the region), punch-in at the playhead, multi-track arm, stereo.
 - **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
   reuses the same arm / record / quantize machinery as audio.
 
