@@ -20,6 +20,7 @@ import {
   subscribePatches,
 } from "../audio/patches/library";
 import { exportProjectFile, importProjectFile } from "./projectFile";
+import { Menu } from "./Menu";
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -122,15 +123,11 @@ function PatchLeaf({
         />
         <span className="truncate">{patch.name}</span>
       </button>
-      <button
-        type="button"
-        title="Delete patch"
-        aria-label={`Delete patch ${patch.name}`}
-        onClick={onDelete}
-        className="shrink-0 px-1.5 text-faint opacity-0 group-hover:opacity-100 hover:text-claude cursor-pointer"
-      >
-        ×
-      </button>
+      <Menu
+        label={`Patch actions: ${patch.name}`}
+        triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+        items={[{ label: "Delete patch", danger: true, onClick: onDelete }]}
+      />
     </div>
   );
 }

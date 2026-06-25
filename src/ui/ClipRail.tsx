@@ -103,7 +103,7 @@ export function ClipRail({
   };
 
   const containerClass = vertical
-    ? 'flex flex-col gap-1.5 p-2 w-24 shrink-0 border-r border-line overflow-y-auto'
+    ? 'flex flex-col gap-1.5 p-2 w-full min-h-0 border-r border-line overflow-y-auto'
     : 'flex items-center gap-1.5 px-4 h-9 border-b border-line overflow-x-auto shrink-0';
   const chipClass = vertical ? 'w-full justify-between' : 'shrink-0';
 

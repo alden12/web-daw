@@ -178,6 +178,14 @@ export function CenterWorkbench({
     620,
   );
   const deviceRef = useRef<HTMLDivElement>(null);
+  // The clip rail beside the piano roll is drag-resizable too (its own width).
+  const [clipRailW, setClipRailW] = usePersistentNumber(
+    "web-daw:clip-rail-width",
+    96,
+    72,
+    260,
+  );
+  const clipRailRef = useRef<HTMLDivElement>(null);
 
   if (!selectedTrack) {
     return (
@@ -267,13 +275,28 @@ export function CenterWorkbench({
 
       {selectedTrack.kind === "instrument" ? (
         <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:roll`}>
-          <ClipRail
-            projectStore={projectStore}
-            scheduler={scheduler}
-            trackId={selectedTrack.id}
-            dispatch={dispatch}
-            orientation="vertical"
-          />
+          <div
+            ref={clipRailRef}
+            className="relative shrink-0 flex"
+            style={{ width: clipRailW }}
+          >
+            <ClipRail
+              projectStore={projectStore}
+              scheduler={scheduler}
+              trackId={selectedTrack.id}
+              dispatch={dispatch}
+              orientation="vertical"
+            />
+            <ResizeHandle
+              ariaLabel="Resize clips"
+              onResize={(x) =>
+                setClipRailW(
+                  x - (clipRailRef.current?.getBoundingClientRect().left ?? 0),
+                )
+              }
+              style={{ right: 0, top: 0, bottom: 0 }}
+            />
+          </div>
           <div className="flex-1 min-w-0 min-h-0 p-3">
             {(() => {
               const active =

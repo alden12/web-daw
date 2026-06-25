@@ -214,7 +214,9 @@ export function AppShell() {
             const rect = bodyRect();
             if (rect) setTimelineH(Math.min(rect.height - MIN_CENTER, rect.bottom - y));
           }}
-          style={{ left: 0, right: 0, bottom: effTimelineH - 3 }}
+          // Sit fully above the timeline's top edge, not straddling it, so it never
+          // covers the ruler's loop-region markers (which would steal their drags).
+          style={{ left: 0, right: 0, bottom: effTimelineH }}
         />
       </div>
       {!started && <StartDialog onStart={handleStart} />}

@@ -26,7 +26,9 @@ import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { GRID } from "../audio/sequencer/types";
-import { newClipId, newGroupId, newPlacementId } from "../audio/commands/ids";
+import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
+import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
+import { Menu } from "./Menu";
 import { useProject } from "../audio/project/useProject";
 import { useClip } from "../audio/sequencer/useClip";
 import { TransportBar } from "./TransportBar";
@@ -539,14 +541,21 @@ function GroupHeader({
           dispatch({ type: "setGroup", groupId: group.id, volume: v })
         }
       />
-      <button
-        type="button"
-        title="Remove group and its contents"
-        onClick={() => dispatch({ type: "removeGroup", groupId: group.id })}
-        className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
-      >
-        ×
-      </button>
+      <Menu
+        label="Group actions"
+        items={[
+          {
+            label: "Add empty track",
+            onClick: () =>
+              dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: group.id }),
+          },
+          {
+            label: "Delete group and its contents",
+            danger: true,
+            onClick: () => dispatch({ type: "removeGroup", groupId: group.id }),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -600,17 +609,16 @@ function TrackHeader({
           dispatch({ type: "setTrack", trackId: track.id, volume: v })
         }
       />
-      <button
-        type="button"
-        title="Remove track"
-        onClick={(e) => {
-          e.stopPropagation();
-          dispatch({ type: "removeTrack", trackId: track.id });
-        }}
-        className="font-mono w-6 h-6 rounded-md border border-line bg-card text-ink cursor-pointer shrink-0"
-      >
-        ×
-      </button>
+      <Menu
+        label="Track actions"
+        items={[
+          {
+            label: "Delete track",
+            danger: true,
+            onClick: () => dispatch({ type: "removeTrack", trackId: track.id }),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -905,14 +913,31 @@ export function ArrangementTimeline({
           started={started}
         />
         <span className="w-px h-5 bg-line shrink-0" />
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "createGroup", id: newGroupId() })}
-          title="Add a top-level group"
-          className="font-mono text-[10px] tracking-wide text-muted border border-line rounded px-1.5 py-0.5 cursor-pointer hover:text-ink"
-        >
-          + Group
-        </button>
+        <Menu
+          label="Add a track or group"
+          align="left"
+          items={[
+            {
+              label: "Add group",
+              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
+            },
+            // "Create empty track in ...": every track lives in a group, so pick the
+            // destination group (or spin up a new one) rather than auto-filing it.
+            ...project.groups.map((g) => ({
+              label: `New track in ${g.name}`,
+              onClick: () =>
+                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId: g.id }),
+            })),
+            {
+              label: "New track in a new group",
+              onClick: () => {
+                const groupId = newGroupId();
+                dispatch({ type: "createGroup", id: groupId });
+                dispatch({ type: "createTrack", instrumentType: DEFAULT_INSTRUMENT, id: newTrackId(), groupId });
+              },
+            },
+          ]}
+        />
         {clipMode && (
           <button
             type="button"
@@ -1071,8 +1096,12 @@ export function ArrangementTimeline({
             aria-orientation="vertical"
             title="Drag to resize the header column"
             onPointerDown={onHeaderResize}
-            className="group absolute top-0 bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
-            style={{ left: headerW }}
+            // Start below the ruler row: the divider overlaps the loop-start handle
+            // (both land at x = headerW when the loop starts at beat 0), and at z-30
+            // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
+            // px free keeps the marker row draggable.
+            className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+            style={{ left: headerW, top: RULER_H }}
           >
             <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
           </div>
