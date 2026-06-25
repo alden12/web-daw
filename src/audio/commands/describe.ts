@@ -17,7 +17,11 @@ const DESCRIBE: DescribeMap = {
         ? c.muted
           ? 'Muted track'
           : 'Unmuted track'
-        : 'Set track volume',
+        : c.solo !== undefined
+          ? c.solo
+            ? 'Soloed track'
+            : 'Unsoloed track'
+          : 'Set track volume',
   setAudioClip: () => 'Edited audio clip',
   createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ''}`,
   removeGroup: () => 'Removed group',
@@ -32,7 +36,11 @@ const DESCRIBE: DescribeMap = {
           ? c.muted
             ? 'Muted group'
             : 'Unmuted group'
-          : 'Set group volume',
+          : c.solo !== undefined
+            ? c.solo
+              ? 'Soloed group'
+              : 'Unsoloed group'
+            : 'Set group volume',
   moveTrack: () => 'Moved track to group',
   moveGroup: () => 'Reparented group',
   setParam: (c) => `Set ${c.id}`,

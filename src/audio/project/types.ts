@@ -33,6 +33,8 @@ export interface GroupMeta {
   parentId: string | null;
   collapsed: boolean;
   muted: boolean;
+  /** Solo: if anything is soloed, only solo-active buses sound. */
+  solo: boolean;
   /** 0..1 group bus output gain. */
   volume: number;
   /** Insert effects on the group bus, between its children's sum and its gain. */
@@ -123,6 +125,8 @@ interface BaseTrackMeta {
   /** Id of the group this track lives in (always set). */
   parentId: string;
   muted: boolean;
+  /** Solo: if anything is soloed, only solo-active tracks sound. */
+  solo: boolean;
   /** 0..1 track output gain. */
   volume: number;
   /** Ordered insert effects between the source and the track gain. */

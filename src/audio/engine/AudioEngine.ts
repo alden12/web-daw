@@ -22,6 +22,7 @@ import type { Instrument } from '../instruments/types';
 import { createEffect } from '../effects/registry';
 import type { Effect } from '../effects/types';
 import { getAudioBuffer } from '../audioStore';
+import { soloMutedTrackIds } from './mix';
 
 interface TrackNode {
   instrument: Instrument;
@@ -101,6 +102,10 @@ export class AudioEngine {
     const groups = project.getGroups();
     const tracks = project.getTracks();
 
+    // Solo + mute: enforced at the track gain; group buses stay open so a soloed
+    // track inside an un-soloed group still routes through (see mix.ts).
+    const mutedTracks = soloMutedTrackIds(groups, tracks);
+
     // Dispose nodes for removed groups/tracks (by kind - ids live in one map).
     const liveGroupIds = new Set(groups.map((g) => g.id));
     for (const [id, node] of this.groupNodes) {
@@ -163,7 +168,7 @@ export class AudioEngine {
         this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
-        node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
+        node.gain.gain.setTargetAtTime(mutedTracks.has(track.id) ? 0 : track.volume, ctx.currentTime, 0.01);
       } else {
         let node = this.audioNodes.get(track.id);
         if (!node) {
@@ -174,7 +179,7 @@ export class AudioEngine {
         this.rewireChain(node.input, node.effects, track.effects, node.gain);
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
-        node.gain.gain.setTargetAtTime(track.muted ? 0 : track.volume, ctx.currentTime, 0.01);
+        node.gain.gain.setTargetAtTime(mutedTracks.has(track.id) ? 0 : track.volume, ctx.currentTime, 0.01);
         for (const clip of track.clips) this.ensureDecoded(clip.fileId);
       }
     }

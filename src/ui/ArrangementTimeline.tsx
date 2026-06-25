@@ -31,6 +31,7 @@ import { useProject } from "../audio/project/useProject";
 import { useClip } from "../audio/sequencer/useClip";
 import { TransportBar } from "./TransportBar";
 import { InlineRename } from "./InlineRename";
+import { Fader, MuteSolo } from "./MixerControls";
 import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "./clipDnd";
 import { Ruler } from "./timeline/Ruler";
 import {
@@ -44,7 +45,9 @@ import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 
 const ROW = "h-11.5 shrink-0";
 const ROW_PX = 46; // must match ROW (h-11.5)
-const HEADER_W = 220; // px - the fixed left header column
+const DEFAULT_HEADER_W = 220; // px - the left header column (drag-resizable)
+const HEADER_MIN = 150;
+const HEADER_MAX = 460;
 const RULER_H = 22; // px - must match Ruler's internal height
 const INDENT = 14; // px per tree depth
 const RESIZE_PX = 7; // grab zone on a block's right edge
@@ -498,7 +501,7 @@ function GroupHeader({
   return (
     <div
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line bg-center`}
-      style={{ paddingLeft: 10 + depth * INDENT }}
+      style={{ paddingLeft: 8 + depth * INDENT }}
     >
       <button
         type="button"
@@ -507,10 +510,20 @@ function GroupHeader({
         onClick={() =>
           projectStore.setGroupCollapsed(group.id, !group.collapsed)
         }
-        className="w-3.5 text-lg text-muted cursor-pointer shrink-0"
+        className="w-3.5 text-2xl -m-0.75 text-muted cursor-pointer shrink-0"
       >
         {group.collapsed ? "▸" : "▾"}
       </button>
+      <MuteSolo
+        muted={group.muted}
+        solo={group.solo}
+        onMute={() =>
+          dispatch({ type: "setGroup", groupId: group.id, muted: !group.muted })
+        }
+        onSolo={() =>
+          dispatch({ type: "setGroup", groupId: group.id, solo: !group.solo })
+        }
+      />
       <InlineRename
         value={group.name}
         onCommit={(name) =>
@@ -518,35 +531,13 @@ function GroupHeader({
         }
         className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
       />
-      <button
-        type="button"
-        title={group.muted ? "Unmute group" : "Mute group"}
-        onClick={() =>
-          dispatch({ type: "setGroup", groupId: group.id, muted: !group.muted })
-        }
-        className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
-          group.muted
-            ? "border-claude text-claude"
-            : "border-line bg-card text-ink"
-        }`}
-      >
-        M
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
+      <Fader
         value={group.volume}
         title="Group volume"
-        onChange={(e) =>
-          dispatch({
-            type: "setGroup",
-            groupId: group.id,
-            volume: Number(e.target.value),
-          })
+        width={48}
+        onChange={(v) =>
+          dispatch({ type: "setGroup", groupId: group.id, volume: v })
         }
-        className="w-12 shrink-0"
       />
       <button
         type="button"
@@ -583,25 +574,16 @@ function TrackHeader({
       }`}
       style={{ paddingLeft: 10 + depth * INDENT }}
     >
-      <button
-        type="button"
-        title={track.muted ? "Unmute" : "Mute"}
-        onClick={(e) => {
-          e.stopPropagation();
-          dispatch({
-            type: "setTrack",
-            trackId: track.id,
-            muted: !track.muted,
-          });
-        }}
-        className={`font-mono w-6 h-6 rounded-md border text-xs cursor-pointer shrink-0 ${
-          track.muted
-            ? "border-claude text-claude"
-            : "border-line bg-card text-ink"
-        }`}
-      >
-        M
-      </button>
+      <MuteSolo
+        muted={track.muted}
+        solo={track.solo}
+        onMute={() =>
+          dispatch({ type: "setTrack", trackId: track.id, muted: !track.muted })
+        }
+        onSolo={() =>
+          dispatch({ type: "setTrack", trackId: track.id, solo: !track.solo })
+        }
+      />
       <InlineRename
         value={track.name}
         onCommit={(name) =>
@@ -609,22 +591,14 @@ function TrackHeader({
         }
         className="font-mono text-[13px] text-bright flex-1 min-w-0"
       />
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
+      <Fader
         value={track.volume}
         title="Volume"
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) =>
-          dispatch({
-            type: "setTrack",
-            trackId: track.id,
-            volume: Number(e.target.value),
-          })
+        width={56}
+        onPointerDownCapture={(e) => e.stopPropagation()}
+        onChange={(v) =>
+          dispatch({ type: "setTrack", trackId: track.id, volume: v })
         }
-        className="w-14 shrink-0"
       />
       <button
         type="button"
@@ -663,6 +637,12 @@ export function ArrangementTimeline({
     24,
     ZOOM.min,
     ZOOM.max,
+  );
+  const [headerW, setHeaderW] = usePersistentNumber(
+    "web-daw:arr-header-w",
+    DEFAULT_HEADER_W,
+    HEADER_MIN,
+    HEADER_MAX,
   );
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
   const [snapDiv, setSnapDiv] = usePersistentNumber(
@@ -704,7 +684,7 @@ export function ArrangementTimeline({
     0,
   );
   const minViewBeats =
-    pxPerBeat > 0 ? Math.max(0, viewportW - HEADER_W) / pxPerBeat : 0;
+    pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
   const viewBeats = Math.max(
     arrangedEnd + TRAIL_BEATS,
     Math.ceil(minViewBeats),
@@ -868,18 +848,18 @@ export function ArrangementTimeline({
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.0015);
       const rect = el.getBoundingClientRect();
-      const contentX = e.clientX - rect.left + el.scrollLeft - HEADER_W;
+      const contentX = e.clientX - rect.left + el.scrollLeft - headerW;
       const beatAtCursor = contentX / pxPerBeat;
       const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
       setPxPerBeat(next);
       requestAnimationFrame(() => {
         el.scrollLeft =
-          beatAtCursor * next - (e.clientX - rect.left) + HEADER_W;
+          beatAtCursor * next - (e.clientX - rect.left) + headerW;
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, setPxPerBeat]);
+  }, [pxPerBeat, setPxPerBeat, headerW]);
 
   // Drive the playhead off the audio clock (0 when stopped).
   useEffect(() => {
@@ -887,24 +867,44 @@ export function ArrangementTimeline({
     const tick = () => {
       const el = playheadRef.current;
       if (el) {
-        el.style.transform = `translateX(${HEADER_W + beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
+        el.style.transform = `translateX(${headerW + beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
         el.style.opacity = scheduler.isPlaying ? "1" : "0";
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [scheduler, pxPerBeat]);
+  }, [scheduler, pxPerBeat, headerW]);
+
+  // Drag the header/lane divider to resize the left header column.
+  const onHeaderResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const el = scrollRef.current;
+    if (!el) return;
+    const left = el.getBoundingClientRect().left;
+    const move = (ev: PointerEvent) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
-      <div className="flex items-center gap-3 px-3.5 py-1.5 border-b border-line bg-rail">
-        <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">
-          Arrangement
-        </span>
+      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
+        <TransportBar
+          projectStore={projectStore}
+          scheduler={scheduler}
+          dispatch={dispatch}
+          isPlaying={isPlaying}
+          started={started}
+        />
+        <span className="w-px h-5 bg-line shrink-0" />
         <button
           type="button"
           onClick={() => dispatch({ type: "createGroup", id: newGroupId() })}
@@ -913,14 +913,6 @@ export function ArrangementTimeline({
         >
           + Group
         </button>
-        <span className="w-px h-5 bg-line shrink-0" />
-        <TransportBar
-          projectStore={projectStore}
-          scheduler={scheduler}
-          dispatch={dispatch}
-          isPlaying={isPlaying}
-          started={started}
-        />
         {clipMode && (
           <button
             type="button"
@@ -984,20 +976,21 @@ export function ArrangementTimeline({
           No tracks yet. Add an instrument from the library.
         </div>
       ) : (
+        <div className="relative flex-1 min-h-0">
         <div
           ref={scrollRef}
           data-testid="arr-scroll"
-          className="flex-1 min-h-0 overflow-auto"
+          className="absolute inset-0 overflow-auto"
         >
           <div
             className="relative"
-            style={{ width: HEADER_W + laneWidth, height: contentH }}
+            style={{ width: headerW + laneWidth, height: contentH }}
           >
             {/* ruler row: sticky top; the corner cell is sticky on both axes */}
             <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
               <div
                 className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
-                style={{ width: HEADER_W, height: RULER_H }}
+                style={{ width: headerW, height: RULER_H }}
               />
               <Ruler
                 viewBeats={viewBeats}
@@ -1019,7 +1012,7 @@ export function ArrangementTimeline({
                 <div key={row.group.id} className="flex">
                   <div
                     className="sticky left-0 z-10 shrink-0"
-                    style={{ width: HEADER_W }}
+                    style={{ width: headerW }}
                   >
                     <GroupHeader
                       group={row.group}
@@ -1041,6 +1034,7 @@ export function ArrangementTimeline({
                   selectedTrack={row.track.id === project.selectedTrackId}
                   projectStore={projectStore}
                   dispatch={dispatch}
+                  headerW={headerW}
                   laneWidth={laneWidth}
                   pxPerBeat={pxPerBeat}
                   beatsPerBar={beatsPerBar}
@@ -1072,6 +1066,17 @@ export function ArrangementTimeline({
             />
           </div>
         </div>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize the header column"
+            onPointerDown={onHeaderResize}
+            className="group absolute top-0 bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+            style={{ left: headerW }}
+          >
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1084,6 +1089,7 @@ function TrackRow({
   selectedTrack,
   projectStore,
   dispatch,
+  headerW,
   laneWidth,
   pxPerBeat,
   beatsPerBar,
@@ -1101,6 +1107,7 @@ function TrackRow({
   selectedTrack: boolean;
   projectStore: ProjectStore;
   dispatch: Dispatch;
+  headerW: number;
   laneWidth: number;
   pxPerBeat: number;
   beatsPerBar: number;
@@ -1116,7 +1123,7 @@ function TrackRow({
   const track = projectStore.getTrack(meta.id);
   return (
     <div className="flex">
-      <div className="sticky left-0 z-10 shrink-0" style={{ width: HEADER_W }}>
+      <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
         <TrackHeader
           track={meta}
           depth={depth}
