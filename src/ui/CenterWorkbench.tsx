@@ -21,6 +21,7 @@ import { InstrumentPanel } from "./InstrumentPanel";
 import { EffectChain } from "./EffectChain";
 import { PianoRoll } from "./PianoRoll";
 import { ClipRail } from "./ClipRail";
+import { Waveform } from "./Waveform";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber } from "./usePersistent";
@@ -123,17 +124,16 @@ function AudioClipPanel({
           )}
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
-          {/* Region preview (waveform peaks are a follow-up; show a filled block). */}
+          {/* Region preview: the amplitude waveform over a faint fill (or just the
+              fill while it decodes / if decoding fails). */}
           <div className="relative h-20 rounded bg-ground border border-line border-t-2 border-t-you overflow-hidden">
             <div className="absolute inset-y-0 left-0 right-0 bg-you/15" />
+            <Waveform fileId={clip.fileId} className="absolute inset-0 w-full h-full" />
             <span className="absolute left-2 top-1.5 font-mono text-[10px] text-muted">
               {clip.name}
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="font-mono text-[10.5px] text-faint">
-              Place it on the timeline below; drag to position.
-            </span>
             <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
               <input
@@ -177,10 +177,14 @@ function AudioRecordButton({
       onClick={() => recorder.recordInto(trackId)}
       title={recording ? "Stop recording" : "Record a new take into this track"}
       className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-md border cursor-pointer ${
-        recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/85 border-claude/40 hover:bg-claude/10"
+        recording
+          ? "text-claude bg-claude/15 border-claude/55"
+          : "text-claude/85 border-claude/40 hover:bg-claude/10"
       }`}
     >
-      <span className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`} />
+      <span
+        className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`}
+      />
       {recording ? "Stop" : "Rec"}
     </button>
   );
@@ -287,7 +291,11 @@ export function CenterWorkbench({
             orientation="vertical"
             footer={
               selectedTrack.kind === "audio" ? (
-                <AudioRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />
+                <AudioRecordButton
+                  trackId={selectedTrack.id}
+                  recorder={recorder}
+                  recording={recording}
+                />
               ) : undefined
             }
           />
