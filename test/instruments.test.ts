@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ParamStore } from '../src/audio/params/store';
-import { instrumentSchema, INSTRUMENT_CATALOG } from '../src/audio/instruments/catalog';
+import { instrumentSchema, instrumentInfos } from '../src/audio/instruments/catalog';
 import { createInstrument } from '../src/audio/instruments/registry';
 
 /**
@@ -40,7 +40,7 @@ function fakeCtx() {
 }
 
 describe('instruments', () => {
-  for (const type of Object.keys(INSTRUMENT_CATALOG)) {
+  for (const { type } of instrumentInfos()) {
     it(`${type}: constructs and plays voices without wiring to an undefined node`, () => {
       const store = new ParamStore(instrumentSchema(type));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

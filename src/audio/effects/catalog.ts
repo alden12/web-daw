@@ -3,6 +3,10 @@
  * Mirrors instruments/catalog.ts so the ProjectStore and the Node MCP server can
  * consume effect schemas without Web Audio types. Audio factories live in
  * registry.ts (DOM). Every effect schema includes a uniform `mix` (wet/dry).
+ *
+ * Effects are registered, not hardcoded: built-ins self-register below and
+ * `registerEffect` is the extension point for add-ons. The audio factory half is
+ * registered in registry.ts.
  */
 import type { ParamSchema } from '../params/types';
 
@@ -31,33 +35,51 @@ export const filterSchema: ParamSchema = [
   { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 1, taper: 'linear', smoothMs: 20 },
 ] as const;
 
-export interface EffectCatalogEntry {
+export const chorusSchema: ParamSchema = [
+  { id: 'chorus.rate', label: 'Rate', kind: 'number', min: 0.05, max: 8, default: 1.2, unit: 'Hz', taper: 'exponential', smoothMs: 20 },
+  { id: 'chorus.depth', label: 'Depth', kind: 'number', min: 0, max: 1, default: 0.5, taper: 'linear', smoothMs: 20 },
+  { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 0.5, taper: 'linear', smoothMs: 20 },
+] as const;
+
+export interface EffectInfo {
+  /** Stable id used on the wire, in persistence, and to address the factory. */
+  type: string;
   label: string;
   schema: ParamSchema;
 }
 
-export const EFFECT_CATALOG = {
-  delay: { label: 'Delay', schema: delaySchema },
-  distortion: { label: 'Distortion', schema: distortionSchema },
-  reverb: { label: 'Reverb', schema: reverbSchema },
-  filter: { label: 'Filter', schema: filterSchema },
-} satisfies Record<string, EffectCatalogEntry>;
+/** The effect data registry (insertion order = palette / add-button order). */
+const REGISTRY = new Map<string, EffectInfo>();
 
-/** Cataloged effect ids. The registry is typed off this, so every type has a factory. */
-export type EffectType = keyof typeof EFFECT_CATALOG;
+/** Register an effect's data (label + schema). The audio factory is registered
+ *  separately in registry.ts, so this stays DOM-free for the server. */
+export function registerEffect(info: EffectInfo): void {
+  REGISTRY.set(info.type, info);
+}
 
-/** Display/insertion order for add buttons and the MCP palette (derived, never drifts). */
-export const EFFECT_TYPES = Object.keys(EFFECT_CATALOG) as EffectType[];
+/** Every registered effect, in registration order (iterate this, never hardcode). */
+export function effectInfos(): EffectInfo[] {
+  return [...REGISTRY.values()];
+}
 
-export const DEFAULT_EFFECT: EffectType = 'delay';
+/** Whether an effect type is registered. */
+export function hasEffect(type: string): boolean {
+  return REGISTRY.has(type);
+}
 
-// Lenient string-keyed view for callers holding an untyped id (persistence, MCP).
-const byType: Record<string, EffectCatalogEntry> = EFFECT_CATALOG;
+export const DEFAULT_EFFECT = 'delay';
 
-export function effectCatalogEntry(type: string): EffectCatalogEntry {
-  return byType[type] ?? byType[DEFAULT_EFFECT];
+export function effectCatalogEntry(type: string): EffectInfo {
+  return REGISTRY.get(type) ?? REGISTRY.get(DEFAULT_EFFECT)!;
 }
 
 export function effectSchema(type: string): ParamSchema {
   return effectCatalogEntry(type).schema;
 }
+
+// --- built-in effects (self-registered) -----------------------------------
+registerEffect({ type: 'delay', label: 'Delay', schema: delaySchema });
+registerEffect({ type: 'distortion', label: 'Distortion', schema: distortionSchema });
+registerEffect({ type: 'reverb', label: 'Reverb', schema: reverbSchema });
+registerEffect({ type: 'filter', label: 'Filter', schema: filterSchema });
+registerEffect({ type: 'chorus', label: 'Chorus', schema: chorusSchema });

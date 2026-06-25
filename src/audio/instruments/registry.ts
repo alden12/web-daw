@@ -2,24 +2,34 @@
  * Instrument factories (the audio side; uses Web Audio). The AudioEngine calls
  * createInstrument to realize a track. Pure catalog data (labels/schemas) lives
  * in catalog.ts so non-audio consumers (ProjectStore, MCP server) stay DOM-free.
+ *
+ * Factories are registered, mirroring the data registry in catalog.ts: a built-in
+ * registers its schema (catalog.ts) and its factory (here); an external add-on
+ * does the same two calls. `registerInstrumentFactory` is the audio half of the
+ * extension point.
  */
 import type { ParamStore } from '../params/store';
 import type { Instrument } from './types';
 import { SubtractiveInstrument } from './Subtractive';
 import { FmInstrument } from './Fm';
-import { DEFAULT_INSTRUMENT, type InstrumentType } from './catalog';
+import { DEFAULT_INSTRUMENT } from './catalog';
 
 type InstrumentFactory = (ctx: AudioContext, store: ParamStore) => Instrument;
 
-// Typed off the catalog keys: a cataloged instrument without a factory won't compile.
-const FACTORIES: Record<InstrumentType, InstrumentFactory> = {
-  subtractive: (ctx, store) => new SubtractiveInstrument(ctx, store),
-  fm: (ctx, store) => new FmInstrument(ctx, store),
-};
+const FACTORIES = new Map<string, InstrumentFactory>();
+
+/** Register the audio factory for an instrument type (pair with registerInstrument). */
+export function registerInstrumentFactory(type: string, factory: InstrumentFactory): void {
+  FACTORIES.set(type, factory);
+}
 
 export function createInstrument(type: string, ctx: AudioContext, store: ParamStore): Instrument {
-  const make = FACTORIES[type as InstrumentType] ?? FACTORIES[DEFAULT_INSTRUMENT];
+  const make = FACTORIES.get(type) ?? FACTORIES.get(DEFAULT_INSTRUMENT)!;
   return make(ctx, store);
 }
 
-export { INSTRUMENT_CATALOG, instrumentSchema, catalogEntry, DEFAULT_INSTRUMENT } from './catalog';
+// --- built-in factories (self-registered) ---------------------------------
+registerInstrumentFactory('subtractive', (ctx, store) => new SubtractiveInstrument(ctx, store));
+registerInstrumentFactory('fm', (ctx, store) => new FmInstrument(ctx, store));
+
+export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from './catalog';

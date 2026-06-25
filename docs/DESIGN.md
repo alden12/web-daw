@@ -423,11 +423,18 @@ points (`audio/instruments/catalog.ts`, `audio/effects/catalog.ts`, `registry.ts
 the parameter schema is the keystone, a registered instrument shows up in the UI, the MCP
 palette, automation, and persistence for free.
 
-To make that extension point *external* (a future slice):
+To make that extension point *external*:
 
-- **Promote the static catalogs to a registration API** - `registerInstrument({ type, label,
-  family, schema, createNode })` / `registerEffect(...)`, with the registry merging built-ins
-  and registered entries. No core edit needed to add one.
+- **Promote the static catalogs to a registration API - DONE.** The catalogs and factory tables
+  are now Map-backed registries: `registerInstrument({ type, label, family, schema })` +
+  `registerInstrumentFactory(type, factory)` (and the effect equivalents), with built-ins
+  self-registering at module load. Adding one needs no edit to any central object or switch -
+  proven by the **Chorus** effect, added purely through the API. The split is preserved so the
+  Node MCP server stays DOM-free: the *data* half registers in `catalog.ts` (schema, label,
+  family - what the server imports), the *audio factory* half in `registry.ts` (Web Audio).
+  Consumers iterate `instrumentInfos()` / `effectInfos()` and test membership with
+  `hasInstrument()` / `hasEffect()`. (Runtime registration trades the old compile-time "every
+  cataloged type has a factory" check for external extensibility.)
 - **Carve out a small permissive SDK package** (e.g. `web-daw-sdk`, MIT/Apache) holding only the
   stable contract a plugin imports: the param-spec types, the `specToZod` derivation
   (`params/zod.ts`), the instrument/effect definition interfaces, and the pure-`Float32Array`
@@ -435,11 +442,41 @@ To make that extension point *external* (a future slice):
   to be AGPL - that is what keeps the ecosystem open (incl. closed or differently-licensed
   extensions) while the core stays protected. (Alternative: keep one repo and add a GPL linking
   exception scoped to the plugin interface; the SDK split is cleaner and forces a good boundary.)
-- **Loading model:** for self-hosters, extensions are npm packages imported at build; a runtime
-  plugin loader / marketplace is a later step (and a natural commercial surface).
+- **Loading model:** for self-hosters, extensions are npm packages imported at build (the data
+  half imported by the server too, so it can validate the plugin's params); a runtime plugin
+  loader / marketplace - which also needs the plugin's schema synced to the server process - is a
+  later step (and a natural commercial surface).
 
 The SDK surface becomes the thing we promise not to break; everything behind it stays free to
 refactor. Shipping the AGPL license now is independent of this - the SDK carve-out is additive.
+
+*Distribution models (how a user installs an extension).* The registration API is deliberately
+**loader-agnostic** - it only cares that something calls `registerInstrument`/`registerEffect` +
+the factory, not how the code arrived - so these are loading + trust layers on the same seam, not
+separate architectures. The shaping fact: an extension here is **executable JS** (+ optional
+AudioWorklet / Wasm), not a native binary, so for the dynamic tiers the hard part is *trust*
+(running third-party code in the page origin), not the mechanics. Tiers, easiest to hardest:
+
+- **In-code (build-time) - available now.** The extension is an npm package whose import makes
+  the register calls; the bundler includes it. For self-hosters who build. No dynamic loading,
+  no trust problem.
+- **By-name remote, version-pinned (like a GH Actions `uses:`).** A resolver maps a name+version
+  to an artifact (npm/CDN/own registry); the app `import()`s the ES module and calls
+  `audioWorklet.addModule(url)` for DSP. Reuses the sha256 content-addressing already used for
+  samples to pin/verify a version. Needs CORS/CSP config + the dynamic-load path.
+- **Store UI.** The above plus discovery and **curation** - and curation doubles as the trust
+  model (reviewed extensions). The natural commercial surface.
+- **Drop-in folder (game-mod style).** Cleanest in the **desktop/Tauri build** (a real
+  `plugins/` folder the shell loads), which fits the local-first 15D direction. Possible in a
+  pure browser tab via the File System Access API + dynamic import, but with the same
+  origin-trust caveat.
+
+Two properties of the current design help the dynamic tiers: the **data/code split** lets the
+server receive a plugin's *schema* (plain JSON) for param validation without running its code;
+and the **schema-as-keystone** model means the more behaviour lives in the declarative schema
+(and DSP in sandboxable Wasm), the harder the factory can be sandboxed. Trust options for the
+dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability surface), or
+"power users accept the risk."
 
 **Near-term - UI on top of the current model**
 

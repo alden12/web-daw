@@ -211,7 +211,7 @@ describe('MCP server (tracks)', () => {
     const list = parse(await call('list_effects'));
     expect(list.effects).toHaveLength(1);
     expect(list.effects[0].type).toBe('reverb');
-    expect(list.available.map((e: { id: string }) => e.id).sort()).toEqual(['delay', 'distortion', 'filter', 'reverb']);
+    expect(list.available.map((e: { id: string }) => e.id).sort()).toEqual(['chorus', 'delay', 'distortion', 'filter', 'reverb']);
   });
 
   it('rejects an unknown effect type', async () => {
