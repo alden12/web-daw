@@ -58,3 +58,30 @@ describe('notesStartingInBeatRange', () => {
     expect(notesStartingInBeatRange(notes, 3, 1, LOOP)).toEqual([]);
   });
 });
+
+describe('loop region (loopStart)', () => {
+  // Region [2, 6): loopLen 4. Only notes with start in [2,6) play; their onset is
+  // relative to loopStart, so continuous beat 0 corresponds to beat 2.
+  const notes = [note('a', 60, 0), note('b', 64, 2), note('c', 67, 4)];
+  const LOOP_LEN = 4;
+  const LOOP_START = 2;
+
+  it('plays only notes inside the region, offset by loopStart', () => {
+    const hits = notesStartingInBeatRange(notes, 0, 4, LOOP_LEN, LOOP_START);
+    // a@0 is before the region (dropped); b@2 -> cont 0; c@4 -> cont 2.
+    expect(hits.map((h) => h.note.id)).toEqual(['b', 'c']);
+    expect(hits.map((h) => h.atBeat)).toEqual([0, 2]);
+  });
+
+  it('wraps within the region every loopLen beats', () => {
+    // continuous [3.5, 4.5): next cycle's b@2 lands at cont 4.
+    const hits = notesStartingInBeatRange(notes, 3.5, 4.5, LOOP_LEN, LOOP_START);
+    expect(hits.map((h) => h.note.id)).toEqual(['b']);
+    expect(hits.map((h) => h.atBeat)).toEqual([4]);
+  });
+
+  it('onsetsInBeatRange honours the region too', () => {
+    expect(onsetsInBeatRange(1, 0, 4, LOOP_LEN, LOOP_START)).toEqual([]); // before region
+    expect(onsetsInBeatRange(3, 0, 4, LOOP_LEN, LOOP_START)).toEqual([1]); // 3 -> cont 1
+  });
+});

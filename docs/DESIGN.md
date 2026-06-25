@@ -273,7 +273,19 @@ place so the engine bindings survive; "Try"/fork is non-destructive, switching m
 devices, and Claude's generated takes are tagged coral - see section 6),
 11 (edit-log persistence: the authored command log is persisted alongside the project
 snapshot in localStorage and restored on load, so the activity feed and authored history
-survive a reload; undo/redo stays session-scoped).
+survive a reload; undo/redo stays session-scoped),
+12 (piano-roll editing: full mouse manipulation - drag-move, edge-resize, marquee
+multi-select + multi-delete, velocity lane, copy/cut/paste - plus zoom, a bar/beat ruler, and
+a draggable loop-length handle; new plural clip commands (`addNotes`/`editNotes`/`removeNotes`)
+make each gesture one feed entry and one undo step - and fix the `add_notes` history spam - and
+a project-level `setLength`; the shared `beats<->px` ruler/zoom primitive
+(`src/ui/timeline/`) is built here for the arrangement timeline to reuse - first of three
+"real DAW" pieces. A second commit adds polish: a real **loop region** [loopStart, loopEnd]
+that the scheduler loops (project `loopStart` + `setLoopStart`, two ruler handles, grid drawn
+past the end to scroll/expand into), fit-notes-to-window on track load, pinch / Cmd-scroll /
+Shift-scroll zoom, narrower velocity bars + a resizable velocity lane, deselect on Escape /
+click-outside, and a workbench relayout - variants moved to a left rail beside the roll, with a
+resizable device|roll divider and a wrapping instrument/effects rack).
 
 Sequencing follows the thesis (section 1: structured, authored events in one store). The
 **authored edit log** (slice 9), **clip variants** (slice 10), and **log persistence**
@@ -290,13 +302,28 @@ below is grouped into themed slices; within a theme, order is rough.
   beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
 - **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
   everything rhythmic; small and transport-level.
-- **Piano-roll editing:** note drag / resize / multi-select, and copy-paste of notes.
+- **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
+  manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
+  marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
+  zoom, a bar/beat ruler, and a draggable loop-length handle (project-level `setLength`). Plural
+  clip commands (`addNotes`/`editNotes`/`removeNotes`) make each gesture one feed entry + one
+  undo step (and fixed the per-note `add_notes` history spam); they extend the MCP vocabulary
+  too (`edit_notes`/`remove_notes`/`set_length`/`set_loop_start`). The shared **beats<->px +
+  zoom + ruler** primitive (`src/ui/timeline/`) is in place for the arrangement timeline to
+  reuse. A polish pass added a real **loop region** [loopStart, loopEnd] the scheduler loops
+  (two ruler handles; grid drawn past the end), fit-to-window on load, pinch / modifier-scroll
+  zoom, a resizable velocity lane, deselect on Escape / click-out, and a workbench relayout
+  (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
+  follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it.
-- **Timeline & arrangement UX** (likely two slices): zoom / pan / skip-to-time / loop a
-  section, track reorder by drag, track-height resize, track colors, a visual summary of
-  grouped tracks, resizable + persisted panel sizes, and library drag-and-drop for
-  instruments/effects.
+- **Timeline & arrangement interactions (the third "real DAW" piece - depends on the
+  arrangement clip model below).** Scroll / zoom / pan the timeline (reusing the piano-roll's
+  beats<->px+ruler primitive), drag clips between bars, split at the playhead, resize, and
+  snap-to-grid. Only meaningful once clips are first-class positioned objects, so it follows
+  the model evolution. Also in this theme (model-independent, can ride along): track reorder
+  by drag, track-height resize, track colors, a visual summary of grouped tracks, and library
+  drag-and-drop for instruments/effects.
 
 **Model evolutions - sequence early, they unlock the rest**
 
@@ -319,9 +346,18 @@ below is grouped into themed slices; within a theme, order is rough.
   **clip slots** and build the Ableton-style **Session/Grid view** on top - each track a column
   of launchable clips with its variants stacked vertically, scenes launching a row across
   tracks (the same variants seen as launchable slots - one model, two views).
-- **Arrangement editing (linear timeline)** - the other view onto the same clip model:
-  placing / splitting / moving clips along time, setting a clip's start-end, copy-paste of
-  clips, and MIDI import as clips.
+- **Arrangement clip model (the fundamental / second "real DAW" piece - sequence before the
+  timeline interactions above).** Today a track owns exactly one clip (the active variant's),
+  under a single global `lengthBeats` loop, so the timeline is a read-only preview. The
+  keystone change is making clips **first-class positioned instances**: a track holds a list
+  of clip placements (clip ref + start beat + length + content offset) along time, replacing
+  the one-global-loop assumption. This ripples through the scheduler (play clips at their
+  positions, not one looping clip), MCP tools, and persistence (migration + version bump).
+  Open design question to settle in this slice: how **variants** interact with multiple
+  arranged clips (today a variant snapshots the whole sound including the single clip). Once
+  this lands, placing / splitting / moving clips, clip start-end, copy-paste of clips, and
+  MIDI import as clips all become tractable - and the Session/Grid view is the same model seen
+  as launchable slots.
 - **Full DSP** via AudioWorklet (the `bindParams` seam already isolates native -> worklet:
   per-voice filter, worklet param messaging). Once it lands, **audio time-stretch** (speed
   up/down without changing pitch) and other sample-accurate audio work become tractable.

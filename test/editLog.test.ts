@@ -96,6 +96,24 @@ describe('EditLog', () => {
     expect(log.getState().entries.filter((e) => e.command.type === 'setParam')).toHaveLength(2);
   });
 
+  it('records undo and redo as activity entries (reflog style)', () => {
+    const { log } = setup();
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+
+    log.undo();
+    let entries = log.getState().entries;
+    expect(entries.at(-1)?.kind).toBe('undo');
+    expect(entries.at(-1)?.label).toMatch(/^Undid:/);
+    expect(entries.at(-1)?.author).toBe('you');
+
+    log.redo();
+    entries = log.getState().entries;
+    expect(entries.at(-1)?.kind).toBe('redo');
+    expect(entries.at(-1)?.label).toMatch(/^Redid:/);
+    // edit + undo + redo = three feed entries; the edit is the original one.
+    expect(entries.map((e) => e.kind)).toEqual(['edit', 'undo', 'redo']);
+  });
+
   it('clears the redo stack after a new edit', () => {
     const { log } = setup();
     log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });

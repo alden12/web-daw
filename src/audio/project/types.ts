@@ -140,5 +140,7 @@ export interface ProjectData {
   tracks: TrackData[];
   tempoBpm: number;
   lengthBeats: number;
+  /** Loop start in beats (loop region is [loopStart, lengthBeats]). Optional: older snapshots default to 0. */
+  loopStart?: number;
   selectedTrackId: string | null;
 }

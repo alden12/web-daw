@@ -42,13 +42,18 @@ const DESCRIBE: DescribeMap = {
   bypassEffect: (c) => (c.bypassed ? 'Bypassed effect' : 'Enabled effect'),
   setEffectParam: (c) => `Set ${c.id}`,
   addNote: () => 'Added note',
+  addNotes: (c) => `Added ${c.notes.length} ${c.notes.length === 1 ? 'note' : 'notes'}`,
+  editNotes: (c) => `Edited ${c.notes.length} ${c.notes.length === 1 ? 'note' : 'notes'}`,
   removeNote: () => 'Removed note',
+  removeNotes: (c) => `Removed ${c.ids.length} ${c.ids.length === 1 ? 'note' : 'notes'}`,
   clearClip: () => 'Cleared clip',
   addVariant: (c) => `New variant${c.name ? ` ${c.name}` : ''}`,
   selectVariant: () => 'Switched variant',
   removeVariant: () => 'Removed variant',
   renameVariant: (c) => `Renamed variant to ${c.name}`,
   setTempo: (c) => `Set tempo ${c.bpm}`,
+  setLength: (c) => `Set loop length ${c.lengthBeats}`,
+  setLoopStart: (c) => `Set loop start ${c.beats}`,
 };
 
 export function describeCommand(command: EditCommand): string {
