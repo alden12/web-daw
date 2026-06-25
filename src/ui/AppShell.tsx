@@ -106,9 +106,9 @@ export function AppShell() {
   }, [scheduler, engine]);
 
   useEffect(() => {
-    const handle = connectMcpBridge({ projectStore, engine, scheduler, editLog }, { onStatus: setMcpStatus });
+    const handle = connectMcpBridge({ projectStore, engine, scheduler, editLog, versionStore }, { onStatus: setMcpStatus });
     return () => handle.dispose();
-  }, [projectStore, engine, scheduler, editLog]);
+  }, [projectStore, engine, scheduler, editLog, versionStore]);
 
   // Undo / redo (Cmd/Ctrl-Z, Shift+Cmd/Ctrl-Z), unless typing in a field.
   useEffect(() => {

@@ -377,7 +377,10 @@ log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote foll
   versions** (the hybrid model). Undo/redo becomes **time-travel over commits** (survives
   reload). A **semantic diff** between commits ("Lead cutoff 400->800, +4 notes") renders in
   two-voice color; the activity feed becomes a commit timeline. MCP gains `commit` /
-  `list_history` / `diff`. The semantic DAG is the source of truth; `project.json` is a replay
+  `list_history` / `diff` / `revert_to` (landed as a follow-on): the commit DAG lives in the tab
+  (OPFS), so these tools use the one **request/reply** path on the bridge - the server sends a
+  `historyRequest`, the bridge answers from the `VersionStore` with a `historyReply` (everything
+  else is fire-and-forget). The semantic DAG is the source of truth; `project.json` is a replay
   cache. Also ships **export / import of a portable `.daw.zip`** - a plain zip of the *readable*
   bundle (pretty-printed `project.json` + `log.json` + real `samples/*.wav`), so you can unzip
   and inspect a project. This is the **same folder the disk-folder backend (15D) writes

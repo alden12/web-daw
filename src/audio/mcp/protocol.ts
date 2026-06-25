@@ -10,13 +10,22 @@ import type { ParamValue } from '../params/types';
 import type { ClipData, NoteEvent } from '../sequencer/types';
 import type { ClipContent, ProjectData } from '../project/types';
 
-/** Sent by the browser tab to the server (state sync). */
+/**
+ * Version-history RPC. The commit DAG lives in the tab (OPFS), so the server
+ * cannot read it directly: history tools send a `historyRequest` and await the
+ * matching `historyReply` (correlated by `id`). This is the one request/response
+ * path; everything else is fire-and-forget sync/commands.
+ */
+export type HistoryMethod = 'commit' | 'revert' | 'history' | 'diff' | 'state';
+
+/** Sent by the browser tab to the server (state sync + RPC replies). */
 export type BrowserToServer =
   | { type: 'projectSnapshot'; project: ProjectData }
   | { type: 'projectStructure'; project: ProjectData }
   | { type: 'paramChanged'; trackId: string; id: string; value: ParamValue }
   | { type: 'clipSnapshot'; trackId: string; clipId: string; clip: ClipData }
-  | { type: 'effectParamChanged'; hostId: string; effectId: string; id: string; value: ParamValue };
+  | { type: 'effectParamChanged'; hostId: string; effectId: string; id: string; value: ParamValue }
+  | { type: 'historyReply'; id: string; ok: boolean; result?: unknown; error?: string };
 
 /** Sent by the server to the browser tab (commands). */
 export type ServerToBrowser =
@@ -73,6 +82,8 @@ export type ServerToBrowser =
   | { type: 'setTempo'; bpm: number }
   | { type: 'setLength'; lengthBeats: number }
   | { type: 'setLoopStart'; beats: number }
-  | { type: 'transport'; action: 'play' | 'stop' };
+  | { type: 'transport'; action: 'play' | 'stop' }
+  // Version-history RPC (expects a matching historyReply, correlated by `id`)
+  | { type: 'historyRequest'; id: string; method: HistoryMethod; params?: Record<string, unknown> };
 
 export const DEFAULT_WS_PORT = 8765;
