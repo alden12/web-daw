@@ -132,4 +132,94 @@ describe('VersionStore (commit DAG)', () => {
 
     expect(await vs.diff(a!.id, b!.id)).toContain('Tempo 120 -> 96 BPM');
   });
+
+  // --- keyframe + delta storage ---------------------------------------------
+
+  it('stores deltas after the root keyframe and replays them exactly', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    // A run of distinct forward edits, one commit each. Only the first is the root
+    // keyframe; the rest are deltas (no stored snapshot).
+    const ids: string[] = [];
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    ids.push((await vs.commit('c0', 'you'))!.id);
+    for (let i = 1; i <= 5; i++) {
+      log.dispatch({ type: 'setTempo', bpm: 100 + i });
+      log.dispatch({ type: 'addNote', trackId: 't-1', note: { id: `n-${i}`, pitch: 60 + i, start: i, length: 1, velocity: 0.8 } });
+      ids.push((await vs.commit(`c${i}`, 'you'))!.id);
+    }
+
+    const root = await repo.readCommit(ids[0]);
+    const second = await repo.readCommit(ids[1]);
+    const last = await repo.readCommit(ids[ids.length - 1]);
+    expect(root!.snapshot).toBeTruthy(); // root is a keyframe
+    expect(second!.snapshot).toBeUndefined(); // a delta - no stored snapshot
+    expect(last!.snapshot).toBeUndefined();
+
+    // Reverting to the HEAD delta must reconstruct the exact live state.
+    const live = project.snapshot();
+    await vs.revertTo(ids[ids.length - 1], 'you');
+    expect(project.snapshot()).toEqual(live);
+    expect(project.getTrack('t-1')).toBeTruthy();
+    expect(project.tempo).toBe(105);
+  });
+
+  it('writes a keyframe on the cadence so long histories stay replayable', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    // 20 commits: root (keyframe) + 19 more; a keyframe falls on the cadence.
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      log.dispatch({ type: 'setTempo', bpm: 60 + i });
+      ids.push((await vs.commit(`v${i}`, 'you'))!.id);
+    }
+    const haveSnapshot = await Promise.all(ids.map(async (id) => !!(await repo.readCommit(id))!.snapshot));
+    const keyframeCount = haveSnapshot.filter(Boolean).length;
+    expect(keyframeCount).toBeGreaterThanOrEqual(2); // root + at least one cadence keyframe
+    // Every commit still materializes to the right tempo (spot-check a late delta).
+    expect(await vs.diff(ids[18], ids[19])).toContain('Tempo 78 -> 79 BPM');
+  });
+
+  it('forces a keyframe on a commit that contains undo/redo (cannot replay forward)', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'subtractive', id: 't-1' });
+    await vs.commit('base', 'you'); // root keyframe
+
+    log.dispatch({ type: 'createTrack', instrumentType: 'fm', id: 't-2' });
+    log.undo(); // removes t-2; this entry restores a snapshot, not a forward edit
+    const c = await vs.commit('with undo', 'you');
+
+    const stored = await repo.readCommit(c!.id);
+    expect(stored!.snapshot).toBeTruthy(); // forced keyframe
+    // And the materialized state is correct: t-2 was undone away.
+    await vs.revertTo(c!.id, 'you');
+    expect(project.getTrack('t-2')).toBeUndefined();
+    expect(project.getTrack('t-1')).toBeTruthy();
+  });
+
+  it('recomputes the keyframe distance on reload so cadence continues correctly', async () => {
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+    for (let i = 0; i < 5; i++) {
+      log.dispatch({ type: 'setTempo', bpm: 70 + i });
+      await vs.commit(`v${i}`, 'you');
+    }
+
+    // Reload mid-cadence; new commits must still materialize correctly.
+    const vs2 = new VersionStore(project, log, repo);
+    await vs2.load();
+    log.dispatch({ type: 'setTempo', bpm: 90 });
+    const head = await vs2.commit('after reload', 'you');
+    const hist = await vs2.history();
+    expect(hist[0].id).toBe(head!.id);
+    expect(await vs2.diff(hist[1].id, head!.id)).toContain('Tempo 74 -> 90 BPM');
+  });
 });

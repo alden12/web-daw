@@ -387,6 +387,19 @@ log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote foll
   uncompressed**, so export and on-disk are one format. It is the shareable, commit-able artifact
   that works *before* 15D, since today's bundle lives in OPFS (invisible to the filesystem). The
   controls live in a project menu to the left of the library title (with audio import).
+- **15B-storage - keyframe + delta commits (landed as a follow-on).** Commits are stored like
+  video frames: most hold only their `entries` (the semantic delta) and reconstruct on demand by
+  replaying forward from the nearest ancestor that carries a full `snapshot` (a *keyframe*). A
+  keyframe is written for the root, every Nth commit, a revert (a discontinuity), and **any
+  commit containing undo/redo entries** - those restore a snapshot rather than applying forward,
+  so they can't be replayed; forcing a keyframe there keeps every delta commit pure-forward and
+  exactly replayable via the shared `applyEdit`. This makes a checkpoint cost the size of one
+  edit-burst (~50-100x smaller than a full snapshot), so auto-checkpointing freely is cheap.
+  `materialize(commitId)` does the reconstruction (used by `revertTo`/`diff`); `project.json`
+  stays the O(1) working-state cache, so replay is only ever on the cold path. Audio was already
+  content-addressed (shared across commits), so the bundle stays lean. *Still pending: sample GC
+  (drop `samples/*` unreferenced by any commit or the working project) and including the
+  `history/` DAG in the `.daw.zip` export.*
 
 The follow-on slices (not in this push): **15C** branches + revert + cherry-pick (the "Claude
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
