@@ -97,9 +97,38 @@ export function tileClipNotes(
   return out;
 }
 
+/**
+ * Pure: metronome clicks (whole beats) whose continuous onset lands in
+ * [fromBeat, toBeat). Continuous beat 0 = playback start = the loop's start, so a
+ * continuous beat `b` maps to the musical beat `loopStart + (b mod loopLen)`; the
+ * click is accented on each bar (musical beat divisible by `beatsPerBar`). Matches
+ * the note scheduler's half-open range so clicks and notes line up tick to tick.
+ */
+export function metronomeClicksInBeatRange(
+  fromBeat: number,
+  toBeat: number,
+  loopStart: number,
+  loopLen: number,
+  beatsPerBar: number,
+): { atBeat: number; accent: boolean }[] {
+  const out: { atBeat: number; accent: boolean }[] = [];
+  if (loopLen <= 0 || beatsPerBar <= 0 || toBeat <= fromBeat) return out;
+  for (let b = Math.ceil(fromBeat); b < toBeat; b++) {
+    const musical = loopStart + (((b % loopLen) + loopLen) % loopLen);
+    out.push({ atBeat: b, accent: musical % beatsPerBar === 0 });
+  }
+  return out;
+}
+
+// Beats per bar for the metronome's bar accent. A project-level time signature is
+// a future feature; 4/4 matches the timeline ruler's DEFAULT_BEATS_PER_BAR.
+const BEATS_PER_BAR = 4;
+
 export class Scheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubscribe: (() => void) | null = null;
+  /** When true, the transport schedules a metronome click on every beat. */
+  private metronomeEnabled = false;
 
   private anchorBeat = 0;
   private anchorTime = 0;
@@ -118,6 +147,11 @@ export class Scheduler {
 
   get isPlaying(): boolean {
     return this.timer !== null;
+  }
+
+  /** Toggle the metronome click (read by `tick` each lookahead pass). */
+  setMetronomeEnabled(on: boolean): void {
+    this.metronomeEnabled = on;
   }
 
   play(): void {
@@ -168,6 +202,13 @@ export class Scheduler {
     const horizonBeats = this.anchorBeat + (now + SCHEDULE_AHEAD_SEC - this.anchorTime) * bps;
     const fromBeats = this.scheduledUntilBeats;
     if (horizonBeats <= fromBeats) return;
+
+    if (this.metronomeEnabled) {
+      for (const { atBeat, accent } of metronomeClicksInBeatRange(fromBeats, horizonBeats, loopStart, loopLen, BEATS_PER_BAR)) {
+        const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
+        this.engine.scheduleClick(when, accent);
+      }
+    }
 
     for (const track of this.project.getTracks()) {
       if (track.muted) continue;

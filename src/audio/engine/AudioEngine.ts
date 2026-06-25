@@ -53,6 +53,9 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private limiter: DynamicsCompressorNode | null = null;
+  /** A master-level bus for the metronome click (independent of any track). */
+  private metronomeGain: GainNode | null = null;
+  private metronomeVolume = 0.6;
   private readonly nodes = new Map<string, TrackNode>();
   private readonly audioNodes = new Map<string, AudioTrackNode>();
   private readonly groupNodes = new Map<string, GroupNode>();
@@ -89,6 +92,11 @@ export class AudioEngine {
     this.limiter.release.value = 0.25;
     this.master.connect(this.limiter);
     this.limiter.connect(ctx.destination);
+    // The metronome feeds the master bus (so it is limited with everything else)
+    // but is not a track, so it ignores mute/solo and the arrangement.
+    this.metronomeGain = ctx.createGain();
+    this.metronomeGain.gain.value = this.metronomeVolume;
+    this.metronomeGain.connect(this.master);
     this.reconcile();
     this.unsubscribe = project.subscribe(() => this.reconcile());
     await ctx.resume();
@@ -282,6 +290,44 @@ export class AudioEngine {
     };
   }
 
+  /**
+   * Schedule a metronome click at `when` (audio-clock seconds). A short pitched
+   * blip with a fast decay; the accented (downbeat) click is higher and louder.
+   * Each click is a throwaway oscillator + envelope into the metronome bus.
+   */
+  scheduleClick(when: number, accent: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.metronomeGain) return;
+    const t = Math.max(when, ctx.currentTime);
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.frequency.value = accent ? 2000 : 1000;
+    const peak = accent ? 0.9 : 0.55;
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(peak, t + 0.001);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    osc.connect(env);
+    env.connect(this.metronomeGain);
+    osc.start(t);
+    osc.stop(t + 0.06);
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        env.disconnect();
+      } catch {
+        // already torn down
+      }
+    };
+  }
+
+  /** Set the metronome click level (0..1). */
+  setMetronomeVolume(volume: number): void {
+    this.metronomeVolume = Math.min(1, Math.max(0, volume));
+    if (this.metronomeGain && this.ctx) {
+      this.metronomeGain.gain.setTargetAtTime(this.metronomeVolume, this.ctx.currentTime, 0.01);
+    }
+  }
+
   /** Stop all currently-playing audio clips (called on transport stop). */
   stopAllAudio(): void {
     for (const node of this.audioNodes.values()) this.disposeAudioSources(node);
@@ -315,10 +361,12 @@ export class AudioEngine {
     this.groupNodes.clear();
     this.audioBuffers.clear();
     this.decoding.clear();
+    this.metronomeGain?.disconnect();
     this.limiter?.disconnect();
     void this.ctx?.close();
     this.ctx = null;
     this.master = null;
     this.limiter = null;
+    this.metronomeGain = null;
   }
 }
