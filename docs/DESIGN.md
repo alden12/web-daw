@@ -630,9 +630,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   metronome clicks before capture. Latency is a fixed `outputLatency+baseLatency` estimate
   baked into the take's start beat. Monitoring is hardware/direct (input is never routed to
   output). Records into a NEW audio track from the loop start.
+- **Record arm + into-track - DONE (slice 29).** Per-track record-enable (a grey->coral circle on
+  audio track headers) arms one track; Record then lands the take on it via the new `addAudioClip`
+  edit (clip + placement, ids pre-minted -> deterministic replay), else a fresh track. The
+  transport Stop (and spacebar) now finalize the take, not just halt it. Audio tracks get the
+  vertical clip rail (recordings as chips) with a footer Record button.
 - **Recording follow-ups (slice C / later):** MCP arm/record tools, input level meter, remembered
   device + eager enumeration, software-monitoring option, loopback **latency calibration**
-  (store the offset on the region), punch-in at the playhead, arm an existing track, stereo.
+  (store the offset on the region), punch-in at the playhead, multi-track arm, stereo.
 - **MIDI device input + recording** via the Web MIDI API: capture played notes into a clip;
   reuses the same arm / record / quantize machinery as audio.
 

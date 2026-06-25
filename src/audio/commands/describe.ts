@@ -45,6 +45,7 @@ const DESCRIBE: DescribeMap = {
     return `Set volume${name}`;
   },
   setAudioClip: () => 'Edited audio clip',
+  addAudioClip: (c) => `Recorded ${c.name ? `"${c.name}"` : 'a take'}`,
   createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ''}`,
   removeGroup: () => 'Removed group',
   setGroup: (c, ctx) => {

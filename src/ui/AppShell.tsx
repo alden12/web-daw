@@ -135,12 +135,14 @@ export function AppShell() {
       const el = e.target as HTMLElement | null;
       if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
       e.preventDefault();
-      if (scheduler.isPlaying) scheduler.stop();
-      else scheduler.play();
+      if (scheduler.isPlaying) {
+        if (recorder.isActive) void recorder.stop(); // finalize the take, not just stop
+        else scheduler.stop();
+      } else scheduler.play();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [scheduler]);
+  }, [scheduler, recorder]);
 
   // Computer-keyboard plays the selected track's instrument (polyphonic).
   useEffect(() => {
@@ -179,7 +181,7 @@ export function AppShell() {
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? 'none' : undefined }}
       >
         <LibraryPanel projectStore={projectStore} editLog={editLog} dispatch={dispatch} />
-        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} selectedTrack={selectedTrack} />
+        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} recorder={recorder} dispatch={dispatch} selectedTrack={selectedTrack} />
         <AgentPanel
           mcpStatus={mcpStatus}
           editLog={editLog}

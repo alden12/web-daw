@@ -55,7 +55,9 @@ export function TransportBar({
       <button
         type="button"
         disabled={!started}
-        onClick={() => (isPlaying ? scheduler.stop() : scheduler.play())}
+        // Stopping while recording finalizes the take (recorder.stop also stops the
+        // transport), so Stop never leaves a recording dangling.
+        onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
         className="font-mono text-[13px] min-w-18 px-3 py-1.5 rounded-lg text-you bg-you/15 border border-you/45 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isPlaying ? "■ Stop" : "▶ Play"}

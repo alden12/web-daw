@@ -42,6 +42,20 @@ export type LocalEdit =
     }
   | { type: 'setAudioClip'; trackId: string; clipId?: string; patch: { gain?: number; name?: string } }
   | {
+      // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool
+      // and place it. Clip + placement ids are pre-minted by the caller and carried
+      // here, so replaying the command reproduces the same ids exactly.
+      type: 'addAudioClip';
+      trackId: string;
+      id: string;
+      placementId: string;
+      fileId: string;
+      name?: string;
+      durationSec?: number;
+      gain?: number;
+      startBeat?: number;
+    }
+  | {
       // Add an instrument track from a saved patch (instrument + params + effect
       // chain). Effect ids are pre-minted by the caller and carried here, so
       // replaying the command reproduces the same track/effect ids exactly.

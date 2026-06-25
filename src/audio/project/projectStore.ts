@@ -480,6 +480,39 @@ export class ProjectStore {
     return track;
   }
 
+  /**
+   * Add an audio clip (e.g. a recorded take) to an existing audio track's pool and
+   * place it on the arrangement. Clip + placement ids are supplied by the caller
+   * (carried in the `addAudioClip` edit), so this is a pure function of its argument
+   * and replays to the same clip/placement exactly. No-op on a non-audio track.
+   */
+  addAudioClip(spec: {
+    trackId: string;
+    id: string;
+    placementId: string;
+    fileId: string;
+    name?: string;
+    durationSec?: number;
+    gain?: number;
+    startBeat?: number;
+  }): void {
+    const t = this.getTrack(spec.trackId);
+    if (!t || t.kind !== 'audio' || t.clips.some((c) => c.id === spec.id)) return;
+    const durationSec = spec.durationSec ?? 0;
+    t.clips.push({ id: spec.id, name: spec.name ?? 'Take', author: 'you', fileId: spec.fileId, gain: spec.gain ?? 1, durationSec });
+    t.activeClipId = spec.id;
+    if (!t.placements.some((p) => p.id === spec.placementId)) {
+      t.placements.push({
+        id: spec.placementId,
+        clipId: spec.id,
+        startBeat: Math.max(0, spec.startBeat ?? 0),
+        offset: 0,
+        length: this.secondsToBeats(durationSec),
+      });
+    }
+    this.emit();
+  }
+
   /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */
   private secondsToBeats(durationSec: number): number {
     return Math.max(1, durationSec * (this.tempoBpm / 60));

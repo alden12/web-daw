@@ -34,6 +34,7 @@ const APPLY: ApplyMap = {
     if (c.name !== undefined) p.renameTrack(c.trackId, c.name);
   },
   setAudioClip: (p, c) => p.setAudioClip(c.trackId, c.clipId, c.patch),
+  addAudioClip: (p, c) => p.addAudioClip(c),
   createGroup: (p, c) => void p.addGroup({ id: c.id, name: c.name, parentId: c.parentId }),
   removeGroup: (p, c) => p.removeGroup(c.groupId),
   setGroup: (p, c) => {
