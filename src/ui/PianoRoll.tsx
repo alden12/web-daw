@@ -22,8 +22,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClipStore } from '../audio/sequencer/clipStore';
 import type { Scheduler } from '../audio/sequencer/scheduler';
+import type { Recorder } from '../audio/recording/recorder';
 import { GRID, type NoteEvent } from '../audio/sequencer/types';
 import { useClip } from '../audio/sequencer/useClip';
+import { useRecorder } from './useRecorder';
 import type { Dispatch } from '../audio/commands/types';
 import { newNoteId } from '../audio/commands/ids';
 import { usePersistentBoolean, usePersistentNumber } from './usePersistent';
@@ -61,15 +63,21 @@ type Drag =
 export function PianoRoll({
   clipStore,
   scheduler,
+  recorder,
   trackId,
   dispatch,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
+  recorder: Recorder;
   trackId: string;
   dispatch: Dispatch;
 }) {
   const clip = useClip(clipStore);
+  // The take in flight, if it is recording into THIS track: its notes overlay the
+  // roll live (absolute beats, so they sit under the playhead).
+  const rec = useRecorder(recorder);
+  const take = rec.take && rec.take.trackId === trackId ? rec.take : null;
   // The roll edits one clip [0, clip length]; the arrangement loop lives in the timeline.
   const len = clip.lengthBeats;
   const viewBeats = len + TRAIL_BEATS;
@@ -90,6 +98,7 @@ export function PianoRoll({
   const gridRef = useRef<HTMLDivElement>(null);
   const velRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+  const heldRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
 
   const width = beatToX(viewBeats, pxPerBeat);
@@ -150,13 +159,23 @@ export function PianoRoll({
   }, [pxPerBeat, rowH, setPxPerBeat, setRowH]);
 
   // Drive the playhead off the audio clock (already wrapped to the loop region).
+  // While a MIDI take records into this track, also grow the held-note ghosts from
+  // their onset out to the playhead, so notes draw in as they are played.
   useEffect(() => {
     let raf = 0;
     const tick = () => {
+      const head = beatToX(scheduler.getPositionBeats(), pxPerBeat);
       const el = playheadRef.current;
       if (el) {
-        el.style.transform = `translateX(${beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
+        el.style.transform = `translateX(${head}px)`;
         el.style.opacity = scheduler.isPlaying ? '1' : '0';
+      }
+      const layer = heldRef.current;
+      if (layer) {
+        for (const child of Array.from(layer.children) as HTMLElement[]) {
+          const left = Number(child.dataset.left);
+          child.style.width = `${Math.max(2, head - left)}px`;
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -471,6 +490,37 @@ export function PianoRoll({
               className="absolute border border-you/70 bg-you/10 pointer-events-none"
               style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
             />
+          )}
+
+          {/* Live record overlay: notes captured so far (static) plus the notes still
+              held (grown out to the playhead each frame). Drawn in the record colour. */}
+          {take && (
+            <>
+              {take.captured.map((n, i) => (
+                <div
+                  key={`cap-${i}`}
+                  data-testid="ghost-note"
+                  className="absolute rounded-sm bg-claude/70 border border-claude pointer-events-none z-4"
+                  style={{
+                    left: beatToX(n.startBeat, pxPerBeat),
+                    width: Math.max(2, beatToX(n.endBeat - n.startBeat, pxPerBeat) - 1),
+                    top: (MAX_PITCH - n.pitch) * rowH,
+                    height: rowH - 1,
+                  }}
+                />
+              ))}
+              <div ref={heldRef} className="contents">
+                {take.held.map((n) => (
+                  <div
+                    key={`held-${n.pitch}`}
+                    data-testid="ghost-note"
+                    data-left={beatToX(n.startBeat, pxPerBeat)}
+                    className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
+                    style={{ left: beatToX(n.startBeat, pxPerBeat), width: 2, top: (MAX_PITCH - n.pitch) * rowH, height: rowH - 1 }}
+                  />
+                ))}
+              </div>
+            </>
           )}
 
           <div ref={playheadRef} className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5" style={{ height }} />

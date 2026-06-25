@@ -738,8 +738,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `Recorder`; on stop they become one `addNoteClip` edit (clip + notes + placement, ids pre-minted,
   pure data). Notes land on the 16th grid (the `ClipStore` snaps, like the rest of the app). Record
   buttons sit on the transport, every track header, and the clip rail (both kinds).
-  *Follow-ups:* Web MIDI API device input (real keyboards + velocity), record-without-quantize,
-  overdub (merge into the existing clip instead of replacing), MCP arm/record tools.
+  The piano roll shows a **live overlay** of the take as it is played - notes already released
+  draw as static ghosts, the note still held grows out to the playhead each frame - in the record
+  colour, so you watch the clip fill in (slice 40).
+- **MIDI device input (Web MIDI API) - roadmap.** Capture from a real MIDI keyboard / controller
+  (not just the computer keyboard) with true velocity and (later) aftertouch/CC. Routes into the
+  same `Recorder.noteOn/noteOff` capture path and live monitoring, so recording, the live overlay,
+  and quantize all come along; just a new input source + a device picker.
+- **Quantize - roadmap.** Recorded notes currently snap to the 16th grid on the way in (the
+  `ClipStore` quantizes everything, app-wide). Make it a real control: a per-take **record-raw**
+  option (preserve exact timing, off the grid) plus a **quantize** action with adjustable strength
+  and grid (1/4 ... 1/32, triplets), applied after the fact to a selection. Needs the `ClipStore`
+  to allow off-grid note times (today it always snaps), so it is its own slice.
+- **Overdub & punch options - roadmap.** Record into the existing clip (merge takes) instead of
+  always punching in a fresh clip; a loop-record mode that stacks takes; MCP arm/record tools.
 
 **Instruments, content & ecosystem**
 

@@ -38,6 +38,17 @@ interface HeldNote {
   velocity: number;
 }
 
+/**
+ * A snapshot of the MIDI take in flight, for live display in the piano roll. Beats
+ * are absolute (looped) arrangement beats, so they line up with the playhead.
+ * `held` notes have no end yet - the roll grows them to the playhead each frame.
+ */
+export interface LiveTake {
+  trackId: string;
+  captured: { pitch: number; startBeat: number; endBeat: number }[];
+  held: { pitch: number; startBeat: number }[];
+}
+
 export type RecorderStatus = "idle" | "requesting" | "counting" | "recording" | "error";
 
 export interface RecorderState {
@@ -49,11 +60,13 @@ export interface RecorderState {
   countInBars: number;
   /** The audio track armed to receive the take; null = record into a new track. */
   armedTrackId: string | null;
+  /** The MIDI take in flight (for live display in the roll); null when not capturing MIDI. */
+  take: LiveTake | null;
   error: string | null;
 }
 
 export class Recorder {
-  private state: RecorderState = { status: "idle", deviceId: null, devices: [], countInBars: 1, armedTrackId: null, error: null };
+  private state: RecorderState = { status: "idle", deviceId: null, devices: [], countInBars: 1, armedTrackId: null, take: null, error: null };
   private readonly listeners = new Set<() => void>();
   private countInTimer: ReturnType<typeof setTimeout> | null = null;
   private startBeat = 0;
@@ -172,7 +185,7 @@ export class Recorder {
           this.captured = [];
           this.startBeat = this.scheduler.beatAtTime(this.engine.currentTime);
         }
-        this.set({ status: "recording" });
+        this.set({ status: "recording", take: this.mode === "midi" ? this.liveTake() : null });
       };
 
       if (countBeats > 0) {
@@ -194,6 +207,7 @@ export class Recorder {
   noteOn(midi: number, velocity = 0.8): void {
     if (this.state.status !== "recording" || this.mode !== "midi") return;
     this.held.set(midi, { startBeat: this.scheduler.beatAtTime(this.engine.currentTime), velocity });
+    this.set({ take: this.liveTake() });
   }
 
   /** Close a held note at the current beat (a no-op if it was not being captured). */
@@ -204,6 +218,17 @@ export class Recorder {
     this.held.delete(midi);
     const endBeat = this.scheduler.beatAtTime(this.engine.currentTime);
     this.captured.push({ pitch: midi, velocity: note.velocity, startBeat: note.startBeat, endBeat });
+    if (this.state.status === "recording") this.set({ take: this.liveTake() });
+  }
+
+  /** A snapshot of the take in flight (absolute beats), for the roll's live overlay. */
+  private liveTake(): LiveTake | null {
+    if (!this.targetTrackId) return null;
+    return {
+      trackId: this.targetTrackId,
+      captured: this.captured.map((n) => ({ pitch: n.pitch, startBeat: n.startBeat, endBeat: n.endBeat })),
+      held: [...this.held].map(([pitch, n]) => ({ pitch, startBeat: n.startBeat })),
+    };
   }
 
   /** Stop the take and place it: a WAV on an audio track, or a note clip on the MIDI track. */
@@ -228,7 +253,7 @@ export class Recorder {
     const capture = wasCounting ? null : await this.engine.stopRecording();
     if (this.scheduler.isPlaying) this.scheduler.stop();
     this.engine.disableInput();
-    this.set({ status: "idle" });
+    this.set({ status: "idle", take: null });
     if (!capture || capture.samples.length === 0) return;
 
     const { samples, sampleRate } = capture;
@@ -254,7 +279,7 @@ export class Recorder {
   private finishMidiTake(wasCounting: boolean): void {
     const stopBeat = this.scheduler.beatAtTime(this.engine.currentTime);
     if (this.scheduler.isPlaying) this.scheduler.stop();
-    this.set({ status: "idle" });
+    this.set({ status: "idle", take: null });
     if (wasCounting) {
       this.held.clear();
       this.captured = [];

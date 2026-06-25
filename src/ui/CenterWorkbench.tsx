@@ -491,6 +491,7 @@ export function CenterWorkbench({
                   key={active.id}
                   clipStore={active.store}
                   scheduler={scheduler}
+                  recorder={recorder}
                   trackId={selectedTrack.id}
                   dispatch={dispatch}
                 />
