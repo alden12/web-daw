@@ -739,6 +739,21 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     **TidalCycles Dirt-Samples** one-shot collection (GitHub; mixed licensing, check per folder).
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
+- **Custom-DSP AudioWorklet framework - DONE (slice 36), part A of the worklet intro.** The
+  ceiling of the node-graph approach (no per-sample logic / block algorithms) is lifted by a
+  worklet authoring + loading seam: worklet processors are authored in **TypeScript** under
+  `src/audio/worklets/` and bundled by Vite via the `?worker&url` import suffix (which transpiles
+  + inlines the worklet's imports and returns a URL for `addModule`); the pure DSP they run lives
+  in shared, unit-tested modules under `src/audio/dsp/` (the worklet is a thin realtime shell).
+  `worklets/index.ts` is the single module registry; `AudioEngine.start()` awaits `loadWorklets`
+  before building the graph so worklet-backed effects construct synchronously. Proven on two
+  processors: the new **bitcrusher** effect (per-sample quantize + sample-hold downsample, `bits`
+  / `downsample` as real `AudioParam`s, impossible with native nodes) and the recording
+  **capture** worklet (ported from the old `public/capture-worklet.js` to TS). A worklet effect
+  is the same three-touch extension as any effect (class + catalog + registry), so it appears in
+  the UI rack and the MCP palette automatically. Worklet-scope globals are declared in a tiny
+  ambient `worklets/audioworklet.d.ts` (no dependency). *Part B (next slice):* a worklet
+  **instrument** base (voice management + sample-accurate note timing) + a wavetable synth.
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
   **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
   automation, and persistence come for free (the catalog/registry are already the extension

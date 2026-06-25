@@ -24,6 +24,7 @@ import type { Effect } from '../effects/types';
 import { getAudioBuffer } from '../audioStore';
 import { soloMutedTrackIds } from './mix';
 import { audioPlayWindow } from './audioWindow';
+import { loadWorklets } from '../worklets';
 
 interface TrackNode {
   instrument: Instrument;
@@ -58,7 +59,6 @@ export class AudioEngine {
   private metronomeGain: GainNode | null = null;
   private metronomeVolume = 0.6;
   // --- live input capture (recording) ---
-  private workletReady = false;
   private inputStream: MediaStream | null = null;
   private inputSource: MediaStreamAudioSourceNode | null = null;
   private captureNode: AudioWorkletNode | null = null;
@@ -107,6 +107,9 @@ export class AudioEngine {
     this.metronomeGain = ctx.createGain();
     this.metronomeGain.gain.value = this.metronomeVolume;
     this.metronomeGain.connect(this.master);
+    // Load the worklet processor modules before building the graph, so effect
+    // factories can construct AudioWorkletNodes synchronously in reconcile().
+    await loadWorklets(ctx);
     this.reconcile();
     this.unsubscribe = project.subscribe(() => this.reconcile());
     await ctx.resume();
@@ -382,10 +385,7 @@ export class AudioEngine {
     const ctx = this.ctx;
     if (!ctx) throw new Error("Audio engine not started");
     this.disableInput();
-    if (!this.workletReady) {
-      await ctx.audioWorklet.addModule(`${import.meta.env.BASE_URL}capture-worklet.js`);
-      this.workletReady = true;
-    }
+    await loadWorklets(ctx); // idempotent; ensures the capture processor is registered
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: deviceId ? { exact: deviceId } : undefined,
@@ -475,7 +475,6 @@ export class AudioEngine {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.disableInput();
-    this.workletReady = false;
     for (const node of this.nodes.values()) {
       this.disposeEffects(node.effects);
       node.instrument.dispose();
