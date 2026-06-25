@@ -24,6 +24,9 @@ export async function restoreProject(
   if (!saved || !saved.project.tracks?.length) return;
   project.load(saved.project);
   editLog.restore(saved.log);
+  // Layer persisted undo/redo back on, so undo works after a reload.
+  const undo = await repo.readUndo();
+  if (undo) editLog.restoreCheckpoints(undo);
 }
 
 /**
@@ -40,7 +43,10 @@ export function attachAutosave(
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
     if (timer) clearTimeout(timer);
-    timer = setTimeout(() => void repo.save(project.snapshot(), editLog.getEntries()), SAVE_DEBOUNCE_MS);
+    timer = setTimeout(() => {
+      void repo.save(project.snapshot(), editLog.getEntries());
+      void repo.writeUndo(editLog.getCheckpoints()); // persist undo/redo so it survives a reload
+    }, SAVE_DEBOUNCE_MS);
   };
 
   // Per-track/group subscriptions are rebuilt on structural change (they come/go).

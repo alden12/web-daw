@@ -6,12 +6,13 @@
  * timeline). All the wiring is unchanged from the old SynthPanel - this slice is
  * presentation only.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ProjectStore } from '../audio/project/projectStore';
 import { AudioEngine } from '../audio/engine/AudioEngine';
 import { Scheduler } from '../audio/sequencer/scheduler';
 import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
 import { attachAutosave, restoreProject } from '../audio/persistence';
+import { VersionStore } from '../audio/commands/history';
 import { useProject } from '../audio/project/useProject';
 import { EditLog } from '../audio/commands/editLog';
 import { LibraryPanel } from './LibraryPanel';
@@ -75,20 +76,29 @@ export function AppShell() {
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
 
-  // Restore the saved project from the bundle, then autosave on any change.
-  // Restore is async (OPFS); attaching autosave only after it lands avoids a
-  // redundant immediate re-save of what we just loaded.
+  const versionStore = useMemo(() => new VersionStore(projectStore, editLog), [projectStore, editLog]);
+
+  // Restore the saved project from the bundle, then autosave on any change and
+  // auto-checkpoint the version history. Restore is async (OPFS); the version
+  // store loads after it so HEAD reflects the restored project, and both attach
+  // only then (avoids a redundant immediate re-save of what we just loaded).
   useEffect(() => {
     let active = true;
-    let dispose = () => {};
-    void restoreProject(projectStore, editLog).then(() => {
-      if (active) dispose = attachAutosave(projectStore, editLog);
-    });
+    let disposeAutosave = () => {};
+    let disposeCheckpoints = () => {};
+    void restoreProject(projectStore, editLog)
+      .then(() => versionStore.load())
+      .then(() => {
+        if (!active) return;
+        disposeAutosave = attachAutosave(projectStore, editLog);
+        disposeCheckpoints = versionStore.attach();
+      });
     return () => {
       active = false;
-      dispose();
+      disposeAutosave();
+      disposeCheckpoints();
     };
-  }, [projectStore, editLog]);
+  }, [projectStore, editLog, versionStore]);
 
   useEffect(() => () => {
     scheduler.dispose();
@@ -165,11 +175,12 @@ export function AppShell() {
         className="app-body flex-1 min-h-0 relative"
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? 'none' : undefined }}
       >
-        <LibraryPanel projectStore={projectStore} dispatch={dispatch} />
+        <LibraryPanel projectStore={projectStore} editLog={editLog} dispatch={dispatch} />
         <CenterWorkbench projectStore={projectStore} scheduler={scheduler} dispatch={dispatch} selectedTrack={selectedTrack} />
         <AgentPanel
           mcpStatus={mcpStatus}
           editLog={editLog}
+          versionStore={versionStore}
           collapsed={agentCollapsed}
           onToggle={() => setAgentCollapsed(!agentCollapsed)}
         />

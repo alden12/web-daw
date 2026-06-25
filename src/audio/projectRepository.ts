@@ -17,7 +17,8 @@
  * localStorage as a read-only fallback.
  */
 import type { ProjectData, TrackData } from './project/types';
-import type { EditEntry } from './commands/types';
+import type { Author, EditEntry } from './commands/types';
+import type { UndoState } from './commands/editLog';
 import { type BundleStore, createBundleStore } from './bundleStore';
 
 const FORMAT_VERSION = 1;
@@ -37,6 +38,35 @@ const LEGACY_KEYS = [
 export interface StoredProject {
   project: ProjectData;
   log: EditEntry[];
+}
+
+/** A bundle as a flat path -> bytes map (what gets zipped into a `.daw.zip`). */
+export type BundleFiles = Record<string, Uint8Array>;
+
+/**
+ * One node in the version-history DAG: a full snapshot plus the authored edits it
+ * bundles, and a pointer to its parent. The DAG is the durable source of truth;
+ * `project.json` is a replay cache of where HEAD currently is.
+ */
+export interface Commit {
+  id: string;
+  parent: string | null;
+  author: Author;
+  message: string;
+  time: number;
+  /** A system auto-checkpoint vs a user/Claude-named version. */
+  auto: boolean;
+  entryCount: number;
+  snapshot: ProjectData;
+  entries: EditEntry[];
+  /** Highest edit seq this commit includes (so reload knows where history ends). */
+  lastSeq: number;
+}
+
+/** Branch tips + the current branch (HEAD). Linear for now; branches are 15C. */
+export interface Refs {
+  head: string;
+  branches: Record<string, string | null>;
 }
 
 interface Manifest {
@@ -121,6 +151,79 @@ export class ProjectRepository {
     return this.store.exists(`samples/${id}`);
   }
 
+  /**
+   * The current project as a readable bundle (path -> bytes): pretty-printed
+   * manifest / project / log / meta JSON plus the referenced samples as real
+   * `.wav` bytes. The UI zips this into a portable `.daw.zip`. This is the same
+   * shape the disk-folder backend (15D) will write uncompressed, so export and
+   * on-disk are one format. Pass the live snapshot + log so it is always current.
+   */
+  async exportBundle(project: ProjectData, log: EditEntry[]): Promise<BundleFiles> {
+    if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
+    const manifest: Manifest = { formatVersion: FORMAT_VERSION, projectId: this.projectId, projectSchema: PROJECT_SCHEMA };
+    const files: BundleFiles = {
+      'manifest.json': json(manifest),
+      'project.json': json(project),
+      'log.json': json(log),
+      'meta.json': json({ name: 'Untitled', modifiedAt: new Date().toISOString() }),
+    };
+    for (const id of referencedSampleIds(project)) {
+      const buf = await this.store.readBlob(`samples/${id}`);
+      if (buf) files[`samples/${id}.wav`] = new Uint8Array(buf);
+    }
+    return files;
+  }
+
+  /** Load a bundle file map (from an unzipped `.daw.zip`), replacing the project. */
+  async importBundle(files: BundleFiles): Promise<StoredProject> {
+    const project = JSON.parse(text(files['project.json'])) as ProjectData;
+    if (!project?.tracks) throw new Error('bundle: missing project.json');
+    const log = files['log.json'] ? (JSON.parse(text(files['log.json'])) as EditEntry[]) : [];
+    for (const [path, bytes] of Object.entries(files)) {
+      if (!path.startsWith('samples/')) continue;
+      const id = path.slice('samples/'.length).replace(/\.[^.]*$/, ''); // strip dir + extension -> content hash
+      if (id && !(await this.store.exists(`samples/${id}`))) await this.store.writeBlob(`samples/${id}`, new Blob([bytes as BlobPart]));
+    }
+    try {
+      this.projectId = (JSON.parse(text(files['manifest.json'])) as Manifest).projectId;
+    } catch {
+      this.projectId = null;
+    }
+    await this.save(project, log);
+    return { project, log };
+  }
+
+  // ---- undo/redo (session checkpoints, persisted so undo survives a reload) ----
+
+  writeUndo(state: UndoState): Promise<void> {
+    return this.store.writeText('undo.json', JSON.stringify(state));
+  }
+
+  async readUndo(): Promise<UndoState | null> {
+    const raw = await this.store.readText('undo.json');
+    return raw ? (JSON.parse(raw) as UndoState) : null;
+  }
+
+  // ---- version history (the commit DAG, under history/) ----
+
+  writeCommit(commit: Commit): Promise<void> {
+    return this.store.writeText(`history/commits/${commit.id}.json`, JSON.stringify(commit, null, 2));
+  }
+
+  async readCommit(id: string): Promise<Commit | null> {
+    const raw = await this.store.readText(`history/commits/${id}.json`);
+    return raw ? (JSON.parse(raw) as Commit) : null;
+  }
+
+  async readRefs(): Promise<Refs | null> {
+    const raw = await this.store.readText('history/refs.json');
+    return raw ? (JSON.parse(raw) as Refs) : null;
+  }
+
+  writeRefs(refs: Refs): Promise<void> {
+    return this.store.writeText('history/refs.json', JSON.stringify(refs, null, 2));
+  }
+
   /** Re-store legacy `au-*` samples under content hashes; rewrite clip fileIds. */
   private async migrateSamples(project: ProjectData): Promise<ProjectData> {
     const oldIds = new Set<string>();
@@ -154,6 +257,25 @@ function rewriteSampleIds(project: ProjectData, map: Map<string, string>): Proje
       : t,
   );
   return { ...project, tracks };
+}
+
+/** Content hashes of every sample the project's audio clips reference. */
+function referencedSampleIds(project: ProjectData): string[] {
+  const ids = new Set<string>();
+  for (const t of project.tracks) {
+    if (t.kind !== 'audio') continue;
+    for (const c of t.clips ?? []) if (c.fileId) ids.add(c.fileId);
+  }
+  return [...ids];
+}
+
+/** Pretty-printed JSON as bytes (readable inside the zip). */
+function json(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value, null, 2));
+}
+
+function text(bytes: Uint8Array | undefined): string {
+  return bytes ? new TextDecoder().decode(bytes) : '';
 }
 
 async function sha256hex(buf: ArrayBuffer): Promise<string> {

@@ -378,10 +378,12 @@ log (sections 7, 8, 10). v1 is two commits; branches / disk-folder / remote foll
   reload). A **semantic diff** between commits ("Lead cutoff 400->800, +4 notes") renders in
   two-voice color; the activity feed becomes a commit timeline. MCP gains `commit` /
   `list_history` / `diff`. The semantic DAG is the source of truth; `project.json` is a replay
-  cache. Also ships **export / import of a portable `.daw` bundle** (download the whole bundle as
-  a single file, re-import to load) - a shareable, commit-able artifact that works *before* the
-  disk-folder slice (15D), since today's bundle lives in OPFS (invisible to the user's
-  filesystem and not directly gittable).
+  cache. Also ships **export / import of a portable `.daw.zip`** - a plain zip of the *readable*
+  bundle (pretty-printed `project.json` + `log.json` + real `samples/*.wav`), so you can unzip
+  and inspect a project. This is the **same folder the disk-folder backend (15D) writes
+  uncompressed**, so export and on-disk are one format. It is the shareable, commit-able artifact
+  that works *before* 15D, since today's bundle lives in OPFS (invisible to the filesystem). The
+  controls live in a project menu to the left of the library title (with audio import).
 
 The follow-on slices (not in this push): **15C** branches + revert + cherry-pick (the "Claude
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
