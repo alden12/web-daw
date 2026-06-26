@@ -490,23 +490,24 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     menu offers Add empty track / Add group. The popover renders in a **portal** (fixed-positioned) so it is
     never clipped by a row's overflow or painted over by a sibling row's controls, and only one menu is open
     at a time. **[foundational]**
-  - *BUG: context-menu popover can open offscreen.* `Menu` positions its portal popover at `top:
-    trigger.bottom + 4` with no viewport clamp, so a trigger near the bottom edge (e.g. the last track's ⋮)
-    opens a menu that runs off the bottom; same for the right edge. Fix: measure the popover and flip
-    above / clamp inside the viewport when it would overflow (in [ui/Menu.tsx](src/ui/Menu.tsx)).
-  - *BUG: a held note sticks on when you switch tracks mid-press.* The computer-keyboard play
-    handler in [ui/AppShell.tsx](src/ui/AppShell.tsx) reads `projectStore.selectedId` on **keyup** to
-    pick which instrument to release. Press a key (note-on on track A), select track B, then release:
-    keyup calls `noteOff` on track B's instrument, so track A's voice never releases and rings forever.
-    Fix: remember which instrument id each held key/midi was started on (a `Map<midi, instrumentId>`)
-    and route the matching note-off there regardless of the current selection; belt-and-braces, call
-    `allNotesOff()` on the previously-selected instrument when the selection changes. (Web MIDI / the
-    on-screen keyboard will want the same per-source held-note bookkeeping.)
-  - *BUG: center panel doesn't reflow when the right activity panel expands.* Toggling the right-hand
-    activity panel open/wider does not shrink the center workbench content to match, so the center can
-    be overlapped / clipped instead of reflowing into the remaining width. Fix the grid/flex sizing so
-    the center region is sized from the remaining space (min-width:0 on the flex child, panel width
-    driving the track layout) and the workbench re-lays-out when the panel width changes.
+  - *Context-menu popover could open offscreen - FIXED (slice 42).* `Menu` positioned its portal
+    popover at `top: trigger.bottom + 4` with no viewport clamp, so a trigger near the bottom edge
+    (e.g. the last track's ⋮) opened a menu that ran off the bottom; same for the right edge. Fix: a
+    `useLayoutEffect` in [ui/Menu.tsx](src/ui/Menu.tsx) measures the popover and clamps it inside the
+    viewport, flipping above the trigger when it would overflow the bottom (before paint, no flash).
+  - *Held note stuck on when you switch tracks mid-press - FIXED (slice 42).* The computer-keyboard
+    play handler in [ui/AppShell.tsx](src/ui/AppShell.tsx) read `projectStore.selectedId` on **keyup**
+    to pick which instrument to release. Press a key (note-on on track A), select track B, then
+    release: keyup called `noteOff` on track B's instrument, so track A's voice never released and rang
+    forever. Fix: a `heldKeys` ref (`Map<midi, instrumentId>`) remembers which instrument each held key
+    started on and routes the matching note-off there regardless of the current selection. (Web MIDI /
+    the on-screen keyboard will want the same per-source held-note bookkeeping.)
+  - *Center panel reflow when the activity panel expands - RESOLVED (verified slice 42).* Originally
+    the center could be clipped instead of reflowing when the activity panel grew. The flow-layout
+    rework (slice 31: `grid-template-columns: ... minmax(0, 1fr) ...` for the center column plus
+    `min-w-0` on the workbench) already sized the center from the remaining space, so it now reflows
+    correctly - confirmed by measurement (center 760 -> 1027 when the panel collapses, back to 760 when
+    it expands). Locked with a regression test in [e2e/layout.e2e.ts](e2e/layout.e2e.ts).
   - *Audio clip double-trigger when its loop region isn't bar-aligned - FIXED (slice 37).* The audio
     path in [sequencer/scheduler.ts](src/audio/sequencer/scheduler.ts) tiles the clip's region across
     the placement *and* `onsetsInBeatRange` wraps each onset over the arrangement loop, so when the

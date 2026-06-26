@@ -88,3 +88,18 @@ test("the activity panel collapses to a rail and expands again", async ({ page }
   await page.getByRole("button", { name: /expand activity panel/i }).click();
   await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
 });
+
+test("the center workbench reflows when the activity panel collapses and expands", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+
+  const expanded = await widthOf(page, "center");
+  // Collapsing the activity panel to its rail gives the center its width back.
+  await page.getByRole("button", { name: /collapse activity panel/i }).click();
+  await expect.poll(() => widthOf(page, "agent")).toBeLessThan(80);
+  await expect.poll(() => widthOf(page, "center")).toBeGreaterThan(expanded + 100);
+  // Expanding it again shrinks the center back to (about) its original width.
+  await page.getByRole("button", { name: /expand activity panel/i }).click();
+  await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
+  await expect.poll(() => widthOf(page, "center")).toBeLessThan(expanded + 1);
+});

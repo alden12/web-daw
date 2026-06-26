@@ -10,8 +10,10 @@
  * selection) or a `submenu` that opens as a hover flyout to the side - the flyout side
  * follows `align`, so a right-aligned menu flies its submenus left (toward the viewport).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+const VIEWPORT_MARGIN = 8; // keep the popover this far inside the viewport edges
 
 export interface MenuItem {
   label?: string;
@@ -110,8 +112,9 @@ export function Menu({
   align?: "left" | "right";
   triggerClassName?: string;
 }) {
-  const [coords, setCoords] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRect = useRef<DOMRect | null>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const open = coords !== null;
   // Right-aligned menus sit near the viewport's right edge, so their submenus fly left.
@@ -123,11 +126,30 @@ export function Menu({
     closeActiveMenu?.(); // enforce a single open menu
     const r = triggerRef.current?.getBoundingClientRect();
     if (!r) return;
-    setCoords({
-      top: r.bottom + 4,
-      ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
-    });
+    triggerRect.current = r;
+    // First guess: below the trigger, anchored to its near edge. The layout effect
+    // below refines this once the popover is measured (flip above / clamp inside).
+    setCoords({ top: r.bottom + 4, left: align === "right" ? r.right : r.left });
   };
+
+  // Keep the popover on-screen: anchor horizontally to the trigger (right edge for a
+  // right-aligned menu), clamp inside the viewport, and flip above the trigger when it
+  // would overflow the bottom (e.g. the last row's menu). Runs before paint, so there
+  // is no flash at the unclamped position.
+  useLayoutEffect(() => {
+    const r = triggerRect.current;
+    const pop = popRef.current;
+    if (!open || !r || !pop) return;
+    const { width, height } = pop.getBoundingClientRect();
+    const left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(align === "right" ? r.right - width : r.left, window.innerWidth - width - VIEWPORT_MARGIN),
+    );
+    const below = r.bottom + 4;
+    const top =
+      below + height > window.innerHeight - VIEWPORT_MARGIN ? Math.max(VIEWPORT_MARGIN, r.top - height - 4) : below;
+    setCoords((c) => (c && c.top === top && c.left === left ? c : { top, left }));
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -177,7 +199,7 @@ export function Menu({
           <div
             ref={popRef}
             role="menu"
-            style={{ position: "fixed", top: coords.top, left: coords.left, right: coords.right }}
+            style={{ position: "fixed", top: coords.top, left: coords.left }}
             className="z-50 min-w-40 py-1 rounded-lg border border-line bg-card shadow-lg"
           >
             {items.map((item, i) => (
