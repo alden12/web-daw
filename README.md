@@ -4,6 +4,8 @@ An open-source, web-based DAW that owns its core layers (parameter model, DSP, i
 
 The central bet: **one declarative parameter schema** is the keystone that UI controls, MCP tools, automation, and patch save/load all consume as views. See [docs/BRIEF.md](docs/BRIEF.md) for the full architecture and v1 scope.
 
+<img width="1424" height="1202" alt="Screenshot 2026-06-26 at 15 30 45" src="https://github.com/user-attachments/assets/29450947-7945-4b4c-91df-ffe6d5177e52" />
+
 ## Architecture at a glance
 
 - **Web Audio API** for the audio graph; **AudioWorklets** for all custom DSP (sample-accurate, on the audio thread).
