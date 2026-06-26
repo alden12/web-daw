@@ -109,7 +109,10 @@ export class VersionStore {
     // anchored to the version it describes. Notes are not edits (materialize never
     // replays them); they ride alongside the entries purely as history.
     const notes = this.uncommittedNotes();
-    const lastSeq = [...entries, ...notes].reduce((m, x) => Math.max(m, x.seq), this.lastCommittedSeq);
+    const lastSeq = [...entries, ...notes].reduce(
+      (highest, item) => Math.max(highest, item.seq),
+      this.lastCommittedSeq,
+    );
     // Keyframe when there is nothing to replay from (the root), on cadence, or when
     // the commit holds undo/redo entries - those restore a snapshot rather than
     // applying forward, so they can't be replayed; storing the snapshot makes this
@@ -117,7 +120,7 @@ export class VersionStore {
     const keyframe =
       this.headId() === null ||
       this.commitsSinceKeyframe + 1 >= KEYFRAME_INTERVAL ||
-      entries.some((e) => e.kind === "undo" || e.kind === "redo");
+      entries.some((entry) => entry.kind === "undo" || entry.kind === "redo");
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
       parent: this.headId(),
@@ -155,7 +158,7 @@ export class VersionStore {
     const notes = this.uncommittedNotes(); // attach any pending narration to the revert
     const lastSeq = Math.max(
       this.maxSeq(),
-      notes.reduce((m, n) => Math.max(m, n.seq), -1),
+      notes.reduce((highest, note) => Math.max(highest, note.seq), -1),
     ); // the jump consumes pending edits + notes
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
@@ -194,15 +197,15 @@ export class VersionStore {
 
   /** The commit chain from HEAD back to the root, newest first. */
   async history(limit = 100): Promise<CommitSummary[]> {
-    const out: CommitSummary[] = [];
+    const summaries: CommitSummary[] = [];
     let id = this.headId();
-    while (id && out.length < limit) {
-      const c = await this.repo.readCommit(id);
-      if (!c) break;
-      out.push(toSummary(c));
-      id = c.parent;
+    while (id && summaries.length < limit) {
+      const commit = await this.repo.readCommit(id);
+      if (!commit) break;
+      summaries.push(toSummary(commit));
+      id = commit.parent;
     }
-    return out;
+    return summaries;
   }
 
   getState(): VersionState {
@@ -226,50 +229,50 @@ export class VersionStore {
     let id: string | null = commitId;
     let base: Commit | null = null;
     while (id) {
-      const c = await this.repo.readCommit(id);
-      if (!c) return null;
-      if (c.snapshot) {
-        base = c;
+      const commit = await this.repo.readCommit(id);
+      if (!commit) return null;
+      if (commit.snapshot) {
+        base = commit;
         break;
       }
-      forward.push(c);
-      id = c.parent;
+      forward.push(commit);
+      id = commit.parent;
     }
     if (!base?.snapshot) return null;
     const store = new ProjectStore(false);
     store.load(base.snapshot); // the keyframe already includes its own entries
-    for (const c of forward.reverse()) {
-      for (const e of c.entries) applyEdit(store, e.command, e.author);
+    for (const commit of forward.reverse()) {
+      for (const entry of commit.entries) applyEdit(store, entry.command, entry.author);
     }
     return store.snapshot();
   }
 
   /** How many delta commits sit between `id` and the nearest keyframe (0 if it is one). */
   private async distanceToKeyframe(id: string | null): Promise<number> {
-    let n = 0;
+    let distance = 0;
     while (id) {
-      const c = await this.repo.readCommit(id);
-      if (!c || c.snapshot) break;
-      n++;
-      id = c.parent;
+      const commit = await this.repo.readCommit(id);
+      if (!commit || commit.snapshot) break;
+      distance++;
+      id = commit.parent;
     }
-    return n;
+    return distance;
   }
 
   private headId(): string | null {
     return this.refs.branches[this.refs.head] ?? null;
   }
   private uncommitted(): EditEntry[] {
-    return this.editLog.getEntries().filter((e) => e.seq > this.lastCommittedSeq);
+    return this.editLog.getEntries().filter((entry) => entry.seq > this.lastCommittedSeq);
   }
   private uncommittedNotes(): FeedNote[] {
-    return this.editLog.getNotes().filter((n) => n.seq > this.lastCommittedSeq);
+    return this.editLog.getNotes().filter((note) => note.seq > this.lastCommittedSeq);
   }
   private maxSeq(): number {
-    return this.editLog.getEntries().reduce((m, e) => Math.max(m, e.seq), -1);
+    return this.editLog.getEntries().reduce((highest, entry) => Math.max(highest, entry.seq), -1);
   }
   private emit(): void {
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 }
 
@@ -278,16 +281,16 @@ function autoMessage(entries: EditEntry[]): string {
   return entries.length === 1 ? desc : `${desc} (+${entries.length - 1} more)`;
 }
 
-function toSummary(c: Commit): CommitSummary {
+function toSummary(commit: Commit): CommitSummary {
   return {
-    id: c.id,
-    parent: c.parent,
-    author: c.author,
-    message: c.message,
-    time: c.time,
-    auto: c.auto,
-    entryCount: c.entryCount,
-    noteCount: c.notes?.length ?? 0,
-    lastSeq: c.lastSeq,
+    id: commit.id,
+    parent: commit.parent,
+    author: commit.author,
+    message: commit.message,
+    time: commit.time,
+    auto: commit.auto,
+    entryCount: commit.entryCount,
+    noteCount: commit.notes?.length ?? 0,
+    lastSeq: commit.lastSeq,
   };
 }
