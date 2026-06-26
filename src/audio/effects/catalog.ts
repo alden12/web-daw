@@ -47,6 +47,12 @@ export const tremoloSchema: ParamSchema = [
   { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 1, taper: 'linear', smoothMs: 20 },
 ] as const;
 
+export const bitcrusherSchema: ParamSchema = [
+  { id: 'bits', label: 'Bits', kind: 'number', min: 1, max: 16, default: 8, unit: 'bit', taper: 'linear', smoothMs: 20 },
+  { id: 'downsample', label: 'Downsample', kind: 'number', min: 1, max: 50, default: 4, unit: '×', taper: 'exponential', smoothMs: 20 },
+  { id: 'mix', label: 'Mix', kind: 'number', min: 0, max: 1, default: 1, taper: 'linear', smoothMs: 20 },
+] as const;
+
 export interface EffectInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -90,3 +96,4 @@ registerEffect({ type: 'reverb', label: 'Reverb', schema: reverbSchema });
 registerEffect({ type: 'filter', label: 'Filter', schema: filterSchema });
 registerEffect({ type: 'chorus', label: 'Chorus', schema: chorusSchema });
 registerEffect({ type: 'tremolo', label: 'Tremolo', schema: tremoloSchema });
+registerEffect({ type: 'bitcrusher', label: 'Bitcrusher', schema: bitcrusherSchema });

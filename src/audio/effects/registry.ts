@@ -15,6 +15,7 @@ import { ReverbEffect } from './Reverb';
 import { FilterEffect } from './Filter';
 import { ChorusEffect } from './Chorus';
 import { TremoloEffect } from './Tremolo';
+import { BitcrusherEffect } from './Bitcrusher';
 import { DEFAULT_EFFECT } from './catalog';
 
 type EffectFactory = (ctx: AudioContext, store: ParamStore) => Effect;
@@ -38,5 +39,6 @@ registerEffectFactory('reverb', (ctx, store) => new ReverbEffect(ctx, store));
 registerEffectFactory('filter', (ctx, store) => new FilterEffect(ctx, store));
 registerEffectFactory('chorus', (ctx, store) => new ChorusEffect(ctx, store));
 registerEffectFactory('tremolo', (ctx, store) => new TremoloEffect(ctx, store));
+registerEffectFactory('bitcrusher', (ctx, store) => new BitcrusherEffect(ctx, store));
 
 export { effectInfos, effectSchema, effectCatalogEntry, hasEffect, DEFAULT_EFFECT } from './catalog';

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { ParamStore } from '../src/audio/params/store';
 import { effectInfos, effectSchema } from '../src/audio/effects/catalog';
 import { createEffect } from '../src/audio/effects/registry';
@@ -47,6 +47,28 @@ function fakeCtx() {
     }),
   };
 }
+
+/**
+ * Worklet-based effects construct a global `AudioWorkletNode` (not a ctx method), so
+ * stub it for the catalog-iterating construction test - the worklet's own DSP is
+ * covered separately in bitcrush.test.ts. Its `parameters` map returns fakeParams so
+ * the bindings' rampParam calls run, like every other effect's.
+ */
+beforeAll(() => {
+  class FakeAudioWorkletNode {
+    parameters = new Map([
+      ['bits', fakeParam()],
+      ['downsample', fakeParam()],
+    ]);
+    connect(dest: unknown) {
+      if (!dest) throw new TypeError('connect() to undefined destination');
+      return dest;
+    }
+    disconnect() {}
+  }
+  (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode = FakeAudioWorkletNode;
+});
+afterAll(() => delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode);
 
 describe('effects', () => {
   for (const { type } of effectInfos()) {

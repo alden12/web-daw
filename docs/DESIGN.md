@@ -507,6 +507,20 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     be overlapped / clipped instead of reflowing into the remaining width. Fix the grid/flex sizing so
     the center region is sized from the remaining space (min-width:0 on the flex child, panel width
     driving the track layout) and the workbench re-lays-out when the panel width changes.
+  - *BUG: audio clip double-triggers at playback start when its loop region isn't bar-aligned.* The
+    audio path in [sequencer/scheduler.ts](src/audio/sequencer/scheduler.ts) loops twice: the `tau`
+    loop tiles the clip's loop region across the placement, and `onsetsInBeatRange` *also* wraps each
+    onset over the arrangement loop (loopLen/loopStart). When the clip region length isn't a divisor
+    of the arrangement loop length, onsets near the loop boundary collide, so playback starts the
+    clip and then fires a second slightly-offset copy. Pre-dates the worklet slice (slice 13/33 loop
+    logic). Fix: resolve onsets in a single pass that accounts for both the region tiling and the loop
+    wrap (or de-dupe onsets that land within an epsilon of each other before scheduling).
+  - *BUG: no playhead/ticker on an audio clip in launch (clip) mode.* A launched clip plays via a
+    synthetic placement (`{ id: '__launch', ... }`) the scheduler builds inline, which is not in
+    `track.placements`; the clip-panel playhead ([ui/CenterWorkbench.tsx](src/ui/CenterWorkbench.tsx))
+    only scans `track.placements`, so it never finds an active window to follow and stays hidden.
+    Pre-dates the worklet slice (slice 34 playhead). Fix: when `track.launchedClipId === clip.id`,
+    treat the transport loop region as the active window (mirror the scheduler's synthetic placement).
   - *Timeline resize handle vs loop markers - DONE (slice 26).* The bottom-timeline resize handle straddled
     the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
   - *Clip-rail width drag-resize - DONE.* The clip pool beside the piano roll is now drag-resizable
@@ -739,6 +753,21 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     **TidalCycles Dirt-Samples** one-shot collection (GitHub; mixed licensing, check per folder).
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
+- **Custom-DSP AudioWorklet framework - DONE (slice 36), part A of the worklet intro.** The
+  ceiling of the node-graph approach (no per-sample logic / block algorithms) is lifted by a
+  worklet authoring + loading seam: worklet processors are authored in **TypeScript** under
+  `src/audio/worklets/` and bundled by Vite via the `?worker&url` import suffix (which transpiles
+  + inlines the worklet's imports and returns a URL for `addModule`); the pure DSP they run lives
+  in shared, unit-tested modules under `src/audio/dsp/` (the worklet is a thin realtime shell).
+  `worklets/index.ts` is the single module registry; `AudioEngine.start()` awaits `loadWorklets`
+  before building the graph so worklet-backed effects construct synchronously. Proven on two
+  processors: the new **bitcrusher** effect (per-sample quantize + sample-hold downsample, `bits`
+  / `downsample` as real `AudioParam`s, impossible with native nodes) and the recording
+  **capture** worklet (ported from the old `public/capture-worklet.js` to TS). A worklet effect
+  is the same three-touch extension as any effect (class + catalog + registry), so it appears in
+  the UI rack and the MCP palette automatically. Worklet-scope globals are declared in a tiny
+  ambient `worklets/audioworklet.d.ts` (no dependency). *Part B (next slice):* a worklet
+  **instrument** base (voice management + sample-accurate note timing) + a wavetable synth.
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
   **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
   automation, and persistence come for free (the catalog/registry are already the extension
