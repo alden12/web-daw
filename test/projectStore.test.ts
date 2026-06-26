@@ -283,17 +283,34 @@ describe('ProjectStore audio tracks', () => {
     expect(p.getEffect(t.id, fx.id)).toBe(fx);
   });
 
-  it('edits clip gain (clamped) and placement start beat; ignores instrument tracks', () => {
+  it('edits clip gain (boost clamped to 4x) and placement start beat; ignores instrument tracks', () => {
     const p = new ProjectStore(false);
     const audio = p.addAudioTrack({ fileId: 'au-1' });
     p.setAudioClip(audio.id, undefined, { gain: 5 });
     p.movePlacement(audio.id, audio.placements[0].id, 2);
     const t = p.getTrack(audio.id) as { clips: { gain: number }[]; placements: { startBeat: number }[] };
-    expect(t.clips[0].gain).toBe(1); // clamped
+    expect(t.clips[0].gain).toBe(4); // boost allowed, clamped to 4x
+    p.setAudioClip(audio.id, undefined, { gain: 1.8 });
+    expect((p.getTrack(audio.id) as { clips: { gain: number }[] }).clips[0].gain).toBe(1.8);
     expect(t.placements[0].startBeat).toBe(2);
     // no-op on an instrument track
     const inst = p.addTrack('subtractive');
     expect(() => p.setAudioClip(inst.id, undefined, { gain: 0.5 })).not.toThrow();
+  });
+
+  it('sets a clip loop region in seconds, clamped inside the clip with a min span', () => {
+    const p = new ProjectStore(false);
+    const audio = p.addAudioTrack({ fileId: 'au-1', durationSec: 4 });
+    const get = () => p.getTrack(audio.id)!.clips[0] as { loopStartSec?: number; loopEndSec?: number };
+    p.setAudioClip(audio.id, undefined, { loopStartSec: 1, loopEndSec: 3 });
+    expect(get().loopStartSec).toBe(1);
+    expect(get().loopEndSec).toBe(3);
+    // end clamps inside the clip duration
+    p.setAudioClip(audio.id, undefined, { loopEndSec: 99 });
+    expect(get().loopEndSec).toBe(4);
+    // start cannot cross the end (keeps a minimum span)
+    p.setAudioClip(audio.id, undefined, { loopStartSec: 99 });
+    expect(get().loopStartSec!).toBeLessThan(get().loopEndSec!);
   });
 
   it('round-trips a mixed instrument + audio project through snapshot/load', () => {

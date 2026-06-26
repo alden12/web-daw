@@ -8,7 +8,11 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { useProject } from "../audio/project/useProject";
-import { effectInfos, effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
+import {
+  effectInfos,
+  effectCatalogEntry,
+  effectSchema,
+} from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId } from "../audio/commands/ids";
 import { Knob } from "./Knob";
@@ -34,7 +38,8 @@ export function EffectChain({
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (addRef.current && !addRef.current.contains(e.target as Node)) setMenuOpen(false);
+      if (addRef.current && !addRef.current.contains(e.target as Node))
+        setMenuOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
@@ -56,7 +61,10 @@ export function EffectChain({
               className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}
             >
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
-                <span className="font-mono text-[12px] font-semibold text-bright mr-1 truncate" title={effectCatalogEntry(fx.type).label}>
+                <span
+                  className="font-mono text-[12px] font-semibold text-bright mr-1 truncate"
+                  title={effectCatalogEntry(fx.type).label}
+                >
                   {effectCatalogEntry(fx.type).label}
                 </span>
                 <button
@@ -92,7 +100,7 @@ export function EffectChain({
                   }
                   className={`${iconBtn} disabled:opacity-30`}
                 >
-                  ↑
+                  ←
                 </button>
                 <button
                   type="button"
@@ -108,7 +116,7 @@ export function EffectChain({
                   }
                   className={`${iconBtn} disabled:opacity-30`}
                 >
-                  ↓
+                  →
                 </button>
                 <button
                   type="button"
@@ -171,7 +179,12 @@ export function EffectChain({
                 type="button"
                 role="menuitem"
                 onClick={() => {
-                  dispatch({ type: "addEffect", hostId: trackId, effectType: def.type, id: newEffectId() });
+                  dispatch({
+                    type: "addEffect",
+                    hostId: trackId,
+                    effectType: def.type,
+                    id: newEffectId(),
+                  });
                   setMenuOpen(false);
                 }}
                 className="flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[12.5px] text-ink cursor-pointer hover:bg-you/10"

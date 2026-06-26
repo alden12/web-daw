@@ -287,7 +287,13 @@ export class AudioEngine {
     } else {
       source.connect(node.input);
     }
-    source.start(when);
+    // Play only the clip's loop region (a slice of the buffer); the scheduler
+    // re-triggers it to tile/repeat across a placement. Omitted region = whole buffer.
+    const offset = Math.max(0, Math.min(clip.loopStartSec ?? 0, buffer.duration));
+    const end = clip.loopEndSec !== undefined ? Math.min(clip.loopEndSec, buffer.duration) : buffer.duration;
+    const span = end - offset;
+    if (offset > 0 || span < buffer.duration) source.start(when, offset, Math.max(0, span));
+    else source.start(when);
     node.sources.add(source);
     source.onended = () => {
       node.sources.delete(source);
