@@ -74,18 +74,18 @@ const COALESCABLE = new Set<EditCommand["type"]>([
 ]);
 
 /** Identity of a command's edit target, so successive edits to it can coalesce. */
-function coalesceKey(c: EditCommand): string {
-  switch (c.type) {
+function coalesceKey(command: EditCommand): string {
+  switch (command.type) {
     case "setParam":
-      return `setParam:${c.trackId}:${c.id}`;
+      return `setParam:${command.trackId}:${command.id}`;
     case "setEffectParam":
-      return `setEffectParam:${c.hostId}:${c.effectId}:${c.id}`;
+      return `setEffectParam:${command.hostId}:${command.effectId}:${command.id}`;
     case "setTrack":
-      return `setTrack:${c.trackId}`;
+      return `setTrack:${command.trackId}`;
     case "setGroup":
-      return `setGroup:${c.groupId}`;
+      return `setGroup:${command.groupId}`;
     case "setAudioClip":
-      return `setAudioClip:${c.trackId}`;
+      return `setAudioClip:${command.trackId}`;
     case "setTempo":
       return "setTempo";
     case "setLength":
@@ -93,20 +93,20 @@ function coalesceKey(c: EditCommand): string {
     case "setLoopStart":
       return "setLoopStart";
     case "setClipLength":
-      return `setClipLength:${c.trackId}:${c.clipId ?? ""}`;
+      return `setClipLength:${command.trackId}:${command.clipId ?? ""}`;
     case "movePlacement":
-      return `movePlacement:${c.trackId}:${c.placementId}`;
+      return `movePlacement:${command.trackId}:${command.placementId}`;
     case "resizePlacement":
-      return `resizePlacement:${c.trackId}:${c.placementId}`;
+      return `resizePlacement:${command.trackId}:${command.placementId}`;
     // Coalesce a continuous drag of a stable selection into one entry; a new
     // gesture (different note set) gets a fresh key, so it starts a new edit.
     case "editNotes":
-      return `editNotes:${c.trackId}:${c.clipId ?? ""}:${c.notes
-        .map((n) => n.id)
+      return `editNotes:${command.trackId}:${command.clipId ?? ""}:${command.notes
+        .map((note) => note.id)
         .sort()
         .join(",")}`;
     default:
-      return c.type;
+      return command.type;
   }
 }
 
@@ -275,8 +275,8 @@ export class EditLog {
   restore(entries: EditEntry[], notes: FeedNote[] = []): void {
     this.entries = entries.slice();
     this.feedNotes = notes.slice();
-    const maxEntry = entries.reduce((m, e) => Math.max(m, e.seq + 1), 0);
-    this.seq = notes.reduce((m, n) => Math.max(m, n.seq + 1), maxEntry);
+    const maxEntry = entries.reduce((max, entry) => Math.max(max, entry.seq + 1), 0);
+    this.seq = notes.reduce((max, note) => Math.max(max, note.seq + 1), maxEntry);
     this.undoStack = [];
     this.redoStack = [];
     this.lastKey = null;
@@ -299,7 +299,7 @@ export class EditLog {
 
   private emit(): void {
     this.rebuild();
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 }
 
@@ -315,13 +315,19 @@ export class EditLog {
 /** Pack an undo stack: anchor at the bottom snapshot; steps replay forward up it. */
 function packUndo(stack: Checkpoint[]): PackedStack {
   if (stack.length === 0) return { base: null, steps: [] };
-  return { base: stack[0].snap, steps: stack.map((cp) => ({ command: cp.command, author: cp.author })) };
+  return {
+    base: stack[0].snap,
+    steps: stack.map((checkpoint) => ({ command: checkpoint.command, author: checkpoint.author })),
+  };
 }
 
 /** Pack a redo stack: anchor at the top snapshot; steps replay forward back down it. */
 function packRedo(stack: Checkpoint[]): PackedStack {
   if (stack.length === 0) return { base: null, steps: [] };
-  return { base: stack[stack.length - 1].snap, steps: stack.map((cp) => ({ command: cp.command, author: cp.author })) };
+  return {
+    base: stack[stack.length - 1].snap,
+    steps: stack.map((checkpoint) => ({ command: checkpoint.command, author: checkpoint.author })),
+  };
 }
 
 /** Rebuild an undo stack from packed form (base snapshot + forward-replayed steps). */
@@ -329,31 +335,35 @@ function unpackUndo(packed: PackedStack | null | undefined): Checkpoint[] {
   if (!packed?.base) return [];
   const store = new ProjectStore(false);
   store.load(packed.base);
-  const out: Checkpoint[] = [];
-  let snap: ProjectData = packed.base;
-  packed.steps.forEach((step, i) => {
-    out.push({ snap, command: step.command, author: step.author });
-    if (i < packed.steps.length - 1) {
+  const checkpoints: Checkpoint[] = [];
+  let snapshot: ProjectData = packed.base;
+  packed.steps.forEach((step, index) => {
+    checkpoints.push({ snap: snapshot, command: step.command, author: step.author });
+    if (index < packed.steps.length - 1) {
       applyEdit(store, step.command, step.author); // advance to the next checkpoint's snapshot
-      snap = store.snapshot();
+      snapshot = store.snapshot();
     }
   });
-  return out;
+  return checkpoints;
 }
 
 /** Rebuild a redo stack from packed form (top snapshot + steps replayed back down it). */
 function unpackRedo(packed: PackedStack | null | undefined): Checkpoint[] {
   if (!packed?.base) return [];
-  const n = packed.steps.length;
+  const count = packed.steps.length;
   const store = new ProjectStore(false);
   store.load(packed.base);
-  const out: Checkpoint[] = new Array(n);
-  let snap: ProjectData = packed.base;
-  out[n - 1] = { snap, command: packed.steps[n - 1].command, author: packed.steps[n - 1].author };
-  for (let i = n - 2; i >= 0; i--) {
-    applyEdit(store, packed.steps[i].command, packed.steps[i].author); // step one checkpoint earlier
-    snap = store.snapshot();
-    out[i] = { snap, command: packed.steps[i].command, author: packed.steps[i].author };
+  const checkpoints: Checkpoint[] = new Array(count);
+  let snapshot: ProjectData = packed.base;
+  checkpoints[count - 1] = {
+    snap: snapshot,
+    command: packed.steps[count - 1].command,
+    author: packed.steps[count - 1].author,
+  };
+  for (let index = count - 2; index >= 0; index--) {
+    applyEdit(store, packed.steps[index].command, packed.steps[index].author); // step one checkpoint earlier
+    snapshot = store.snapshot();
+    checkpoints[index] = { snap: snapshot, command: packed.steps[index].command, author: packed.steps[index].author };
   }
-  return out;
+  return checkpoints;
 }

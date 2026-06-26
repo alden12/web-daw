@@ -19,98 +19,113 @@ type ApplyMap = {
 };
 
 const APPLY: ApplyMap = {
-  createTrack: (p, c) => void p.addTrack(c.instrumentType, { name: c.name, id: c.id, groupId: c.groupId }),
-  createTrackFromPatch: (p, c) => void p.addTrackFromPatch(c),
-  addAudioTrack: (p, c) =>
-    void p.addAudioTrack(
-      { fileId: c.fileId, name: c.name, durationSec: c.durationSec, startBeat: c.startBeat, gain: c.gain },
-      { id: c.id, groupId: c.groupId },
+  createTrack: (project, command) =>
+    void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
+  createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
+  addAudioTrack: (project, command) =>
+    void project.addAudioTrack(
+      {
+        fileId: command.fileId,
+        name: command.name,
+        durationSec: command.durationSec,
+        startBeat: command.startBeat,
+        gain: command.gain,
+      },
+      { id: command.id, groupId: command.groupId },
     ),
-  removeTrack: (p, c) => p.removeTrack(c.trackId),
-  setTrack: (p, c) => {
-    if (c.muted !== undefined) p.setMuted(c.trackId, c.muted);
-    if (c.solo !== undefined) p.setSolo(c.trackId, c.solo);
-    if (c.volume !== undefined) p.setVolume(c.trackId, c.volume);
-    if (c.name !== undefined) p.renameTrack(c.trackId, c.name);
+  removeTrack: (project, command) => project.removeTrack(command.trackId),
+  setTrack: (project, command) => {
+    if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);
+    if (command.solo !== undefined) project.setSolo(command.trackId, command.solo);
+    if (command.volume !== undefined) project.setVolume(command.trackId, command.volume);
+    if (command.name !== undefined) project.renameTrack(command.trackId, command.name);
   },
-  setAudioClip: (p, c) => p.setAudioClip(c.trackId, c.clipId, c.patch),
-  addAudioClip: (p, c) => p.addAudioClip(c),
+  setAudioClip: (project, command) => project.setAudioClip(command.trackId, command.clipId, command.patch),
+  addAudioClip: (project, command) => project.addAudioClip(command),
   // A recorded MIDI take: create the clip (with its notes), punch it in over the
   // lane, and place it. Tagged with the dispatching author (two-voice).
-  addNoteClip: (p, c, author) => p.addNoteClip(c, author),
-  createGroup: (p, c) => void p.addGroup({ id: c.id, name: c.name, parentId: c.parentId }),
-  removeGroup: (p, c) => p.removeGroup(c.groupId),
-  setGroup: (p, c) => {
-    if (c.name !== undefined) p.renameGroup(c.groupId, c.name);
-    if (c.muted !== undefined) p.setGroupMuted(c.groupId, c.muted);
-    if (c.solo !== undefined) p.setGroupSolo(c.groupId, c.solo);
-    if (c.volume !== undefined) p.setGroupVolume(c.groupId, c.volume);
-    if (c.collapsed !== undefined) p.setGroupCollapsed(c.groupId, c.collapsed);
+  addNoteClip: (project, command, author) => project.addNoteClip(command, author),
+  createGroup: (project, command) =>
+    void project.addGroup({ id: command.id, name: command.name, parentId: command.parentId }),
+  removeGroup: (project, command) => project.removeGroup(command.groupId),
+  setGroup: (project, command) => {
+    if (command.name !== undefined) project.renameGroup(command.groupId, command.name);
+    if (command.muted !== undefined) project.setGroupMuted(command.groupId, command.muted);
+    if (command.solo !== undefined) project.setGroupSolo(command.groupId, command.solo);
+    if (command.volume !== undefined) project.setGroupVolume(command.groupId, command.volume);
+    if (command.collapsed !== undefined) project.setGroupCollapsed(command.groupId, command.collapsed);
   },
-  moveTrack: (p, c) => p.moveTrack(c.trackId, c.groupId),
-  moveGroup: (p, c) => p.moveGroup(c.groupId, c.parentId),
-  setParam: (p, c) => {
-    const t = p.getTrack(c.trackId);
-    if (t?.kind === "instrument") t.params.set(c.id, c.value);
+  moveTrack: (project, command) => project.moveTrack(command.trackId, command.groupId),
+  moveGroup: (project, command) => project.moveGroup(command.groupId, command.parentId),
+  setParam: (project, command) => {
+    const track = project.getTrack(command.trackId);
+    if (track?.kind === "instrument") track.params.set(command.id, command.value);
   },
-  addEffect: (p, c) => void p.addEffect(c.hostId, c.effectType, c.id),
-  removeEffect: (p, c) => p.removeEffect(c.hostId, c.effectId),
-  moveEffect: (p, c) => p.moveEffect(c.hostId, c.effectId, c.toIndex),
-  bypassEffect: (p, c) => p.setEffectBypass(c.hostId, c.effectId, c.bypassed),
-  setEffectParam: (p, c) => p.getEffect(c.hostId, c.effectId)?.params.set(c.id, c.value),
+  addEffect: (project, command) => void project.addEffect(command.hostId, command.effectType, command.id),
+  removeEffect: (project, command) => project.removeEffect(command.hostId, command.effectId),
+  moveEffect: (project, command) => project.moveEffect(command.hostId, command.effectId, command.toIndex),
+  bypassEffect: (project, command) => project.setEffectBypass(command.hostId, command.effectId, command.bypassed),
+  setEffectParam: (project, command) =>
+    project.getEffect(command.hostId, command.effectId)?.params.set(command.id, command.value),
   // Note edits target a specific clip (defaulting to the active one). addNotes /
   // editNotes both insert-or-replace by id (putNote): a new id adds, an existing
   // id moves/resizes/re-velocities in place. One call, one edit.
-  addNote: (p, c) => p.getClipStore(c.trackId, c.clipId)?.putNote(c.note),
-  addNotes: (p, c) => {
-    const store = p.getClipStore(c.trackId, c.clipId);
-    if (store) for (const n of c.notes) store.putNote(n);
+  addNote: (project, command) => project.getClipStore(command.trackId, command.clipId)?.putNote(command.note),
+  addNotes: (project, command) => {
+    const store = project.getClipStore(command.trackId, command.clipId);
+    if (store) for (const note of command.notes) store.putNote(note);
   },
-  editNotes: (p, c) => {
-    const store = p.getClipStore(c.trackId, c.clipId);
-    if (store) for (const n of c.notes) store.putNote(n);
+  editNotes: (project, command) => {
+    const store = project.getClipStore(command.trackId, command.clipId);
+    if (store) for (const note of command.notes) store.putNote(note);
   },
-  removeNote: (p, c) => p.getClipStore(c.trackId, c.clipId)?.removeNote(c.id),
-  removeNotes: (p, c) => {
-    const store = p.getClipStore(c.trackId, c.clipId);
-    if (store) for (const id of c.ids) store.removeNote(id);
+  removeNote: (project, command) => project.getClipStore(command.trackId, command.clipId)?.removeNote(command.id),
+  removeNotes: (project, command) => {
+    const store = project.getClipStore(command.trackId, command.clipId);
+    if (store) for (const id of command.ids) store.removeNote(id);
   },
-  clearClip: (p, c) => p.getClipStore(c.trackId, c.clipId)?.clear(),
-  setClipLength: (p, c) => p.setClipLength(c.trackId, c.clipId, c.lengthBeats),
+  clearClip: (project, command) => project.getClipStore(command.trackId, command.clipId)?.clear(),
+  setClipLength: (project, command) => project.setClipLength(command.trackId, command.clipId, command.lengthBeats),
   // Clip pool. The new clip is tagged with the dispatching author (two-voice).
-  addClip: (p, c, author) =>
-    void p.addClip(c.trackId, {
-      id: c.id,
-      name: c.name,
-      fromClipId: c.fromClipId,
-      empty: c.empty,
-      lengthBeats: c.lengthBeats,
+  addClip: (project, command, author) =>
+    void project.addClip(command.trackId, {
+      id: command.id,
+      name: command.name,
+      fromClipId: command.fromClipId,
+      empty: command.empty,
+      lengthBeats: command.lengthBeats,
       author,
     }),
-  pasteClip: (p, c, author) => p.pasteClip(c.trackId, c.id, c.content, author),
-  removeClip: (p, c) => p.removeClip(c.trackId, c.clipId),
-  renameClip: (p, c) => p.renameClip(c.trackId, c.clipId, c.name),
+  pasteClip: (project, command, author) => project.pasteClip(command.trackId, command.id, command.content, author),
+  removeClip: (project, command) => project.removeClip(command.trackId, command.clipId),
+  renameClip: (project, command) => project.renameClip(command.trackId, command.clipId, command.name),
   // Arrangement placements.
-  addPlacement: (p, c) =>
-    void p.addPlacement(c.trackId, {
-      id: c.id,
-      clipId: c.clipId,
-      startBeat: c.startBeat,
-      offset: c.offset,
-      length: c.length,
+  addPlacement: (project, command) =>
+    void project.addPlacement(command.trackId, {
+      id: command.id,
+      clipId: command.clipId,
+      startBeat: command.startBeat,
+      offset: command.offset,
+      length: command.length,
     }),
-  movePlacement: (p, c) => p.movePlacement(c.trackId, c.placementId, c.startBeat),
-  resizePlacement: (p, c) => p.resizePlacement(c.trackId, c.placementId, { offset: c.offset, length: c.length }),
-  removePlacement: (p, c) => p.removePlacement(c.trackId, c.placementId),
-  splitPlacement: (p, c) => p.splitPlacement(c.trackId, c.placementId, c.atBeat, c.newId),
+  movePlacement: (project, command) => project.movePlacement(command.trackId, command.placementId, command.startBeat),
+  resizePlacement: (project, command) =>
+    project.resizePlacement(command.trackId, command.placementId, { offset: command.offset, length: command.length }),
+  removePlacement: (project, command) => project.removePlacement(command.trackId, command.placementId),
+  splitPlacement: (project, command) =>
+    project.splitPlacement(command.trackId, command.placementId, command.atBeat, command.newId),
   // Clip launching (override the arrangement with a looping clip).
-  launchClip: (p, c) => p.launchClip(c.trackId, c.clipId),
-  stopAllClips: (p) => p.stopAllClips(),
-  setTempo: (p, c) => p.setTempo(c.bpm),
-  setLength: (p, c) => p.setLength(c.lengthBeats),
-  setLoopStart: (p, c) => p.setLoopStart(c.beats),
+  launchClip: (project, command) => project.launchClip(command.trackId, command.clipId),
+  stopAllClips: (project) => project.stopAllClips(),
+  setTempo: (project, command) => project.setTempo(command.bpm),
+  setLength: (project, command) => project.setLength(command.lengthBeats),
+  setLoopStart: (project, command) => project.setLoopStart(command.beats),
 };
 
 export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {
-  (APPLY[command.type] as (p: ProjectStore, c: EditCommand, author: Author) => void)(project, command, author);
+  (APPLY[command.type] as (project: ProjectStore, command: EditCommand, author: Author) => void)(
+    project,
+    command,
+    author,
+  );
 }

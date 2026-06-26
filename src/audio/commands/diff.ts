@@ -13,14 +13,16 @@ export function diffProjects(from: ProjectData, to: ProjectData): string[] {
   if (from.tempoBpm !== to.tempoBpm) lines.push(`Tempo ${from.tempoBpm} -> ${to.tempoBpm} BPM`);
   if (from.lengthBeats !== to.lengthBeats) lines.push(`Length ${from.lengthBeats} -> ${to.lengthBeats} beats`);
 
-  const before = new Map(from.tracks.map((t) => [t.id, t]));
-  const after = new Map(to.tracks.map((t) => [t.id, t]));
-  for (const t of to.tracks) if (!before.has(t.id)) lines.push(`+ Track "${t.name}"`);
-  for (const t of from.tracks) if (!after.has(t.id)) lines.push(`- Track "${t.name}"`);
-  for (const t of to.tracks) {
-    const prev = before.get(t.id);
-    if (prev) lines.push(...diffTrack(prev, t));
-  }
+  const before = new Map(from.tracks.map((track) => [track.id, track]));
+  const after = new Map(to.tracks.map((track) => [track.id, track]));
+  lines.push(...to.tracks.filter((track) => !before.has(track.id)).map((track) => `+ Track "${track.name}"`));
+  lines.push(...from.tracks.filter((track) => !after.has(track.id)).map((track) => `- Track "${track.name}"`));
+  lines.push(
+    ...to.tracks.flatMap((track) => {
+      const prev = before.get(track.id);
+      return prev ? diffTrack(prev, track) : [];
+    }),
+  );
   return lines;
 }
 
@@ -35,51 +37,62 @@ function diffTrack(prev: TrackData, cur: TrackData): string[] {
   }
 
   // Effect chain: add / remove / bypass / param changes.
-  const pf = new Map((prev.effects ?? []).map((e) => [e.id, e]));
-  const cf = new Map((cur.effects ?? []).map((e) => [e.id, e]));
-  for (const e of cur.effects ?? []) if (!pf.has(e.id)) lines.push(`${name}: +effect ${e.type}`);
-  for (const e of prev.effects ?? []) if (!cf.has(e.id)) lines.push(`${name}: -effect ${e.type}`);
-  for (const e of cur.effects ?? []) {
-    const p = pf.get(e.id);
-    if (!p) continue;
-    if (p.bypassed !== e.bypassed) lines.push(`${name}: ${e.type} ${e.bypassed ? "bypassed" : "enabled"}`);
-    lines.push(...diffParams(`${name}: ${e.type}`, p.params, e.params));
+  const prevEffects = new Map((prev.effects ?? []).map((effect) => [effect.id, effect]));
+  const curEffects = new Map((cur.effects ?? []).map((effect) => [effect.id, effect]));
+  lines.push(
+    ...(cur.effects ?? [])
+      .filter((effect) => !prevEffects.has(effect.id))
+      .map((effect) => `${name}: +effect ${effect.type}`),
+  );
+  lines.push(
+    ...(prev.effects ?? [])
+      .filter((effect) => !curEffects.has(effect.id))
+      .map((effect) => `${name}: -effect ${effect.type}`),
+  );
+  for (const effect of cur.effects ?? []) {
+    const was = prevEffects.get(effect.id);
+    if (!was) continue;
+    if (was.bypassed !== effect.bypassed)
+      lines.push(`${name}: ${effect.type} ${effect.bypassed ? "bypassed" : "enabled"}`);
+    lines.push(...diffParams(`${name}: ${effect.type}`, was.params, effect.params));
   }
 
   // Clip pool: add / remove / note-count changes.
-  const pc = new Map((prev.clips ?? []).map((c) => [c.id, c]));
-  const cc = new Map((cur.clips ?? []).map((c) => [c.id, c]));
-  for (const c of cur.clips ?? []) if (!pc.has(c.id)) lines.push(`${name}: +clip "${c.name}"`);
-  for (const c of prev.clips ?? []) if (!cc.has(c.id)) lines.push(`${name}: -clip "${c.name}"`);
-  for (const c of cur.clips ?? []) {
-    const p = pc.get(c.id);
-    if (!p) continue;
-    const pn = noteCount(p);
-    const cn = noteCount(c);
-    if (pn !== cn) lines.push(`${name}: clip "${c.name}" ${pn} -> ${cn} notes`);
+  const prevClips = new Map((prev.clips ?? []).map((clip) => [clip.id, clip]));
+  const curClips = new Map((cur.clips ?? []).map((clip) => [clip.id, clip]));
+  lines.push(
+    ...(cur.clips ?? []).filter((clip) => !prevClips.has(clip.id)).map((clip) => `${name}: +clip "${clip.name}"`),
+  );
+  lines.push(
+    ...(prev.clips ?? []).filter((clip) => !curClips.has(clip.id)).map((clip) => `${name}: -clip "${clip.name}"`),
+  );
+  for (const clip of cur.clips ?? []) {
+    const was = prevClips.get(clip.id);
+    if (!was) continue;
+    const wasNotes = noteCount(was);
+    const nowNotes = noteCount(clip);
+    if (wasNotes !== nowNotes) lines.push(`${name}: clip "${clip.name}" ${wasNotes} -> ${nowNotes} notes`);
   }
 
   // Arrangement.
-  const pl = (prev.placements ?? []).length;
-  const cl = (cur.placements ?? []).length;
-  if (pl !== cl) lines.push(`${name}: ${pl} -> ${cl} placements`);
+  const prevPlacements = (prev.placements ?? []).length;
+  const curPlacements = (cur.placements ?? []).length;
+  if (prevPlacements !== curPlacements) lines.push(`${name}: ${prevPlacements} -> ${curPlacements} placements`);
   return lines;
 }
 
 function diffParams(label: string, prev: PatchValues, cur: PatchValues): string[] {
-  const lines: string[] = [];
-  for (const k of Object.keys(cur)) {
-    if (prev[k] !== cur[k]) lines.push(`${label}: ${k} ${fmt(prev[k])} -> ${fmt(cur[k])}`);
-  }
-  return lines;
+  return Object.keys(cur)
+    .filter((key) => prev[key] !== cur[key])
+    .map((key) => `${label}: ${key} ${fmt(prev[key])} -> ${fmt(cur[key])}`);
 }
 
 function noteCount(clip: NoteClipData | AudioClipData): number {
   return "notes" in clip ? clip.notes.length : 0;
 }
 
-function fmt(v: ParamValue | undefined): string {
-  if (v === undefined) return "-";
-  if (typeof v === "number") return Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
-  return String(v);
+function fmt(value: ParamValue | undefined): string {
+  if (value === undefined) return "-";
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : String(+value.toFixed(2));
+  return String(value);
 }
