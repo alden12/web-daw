@@ -494,6 +494,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     trigger.bottom + 4` with no viewport clamp, so a trigger near the bottom edge (e.g. the last track's ⋮)
     opens a menu that runs off the bottom; same for the right edge. Fix: measure the popover and flip
     above / clamp inside the viewport when it would overflow (in [ui/Menu.tsx](src/ui/Menu.tsx)).
+  - *BUG: a held note sticks on when you switch tracks mid-press.* The computer-keyboard play
+    handler in [ui/AppShell.tsx](src/ui/AppShell.tsx) reads `projectStore.selectedId` on **keyup** to
+    pick which instrument to release. Press a key (note-on on track A), select track B, then release:
+    keyup calls `noteOff` on track B's instrument, so track A's voice never releases and rings forever.
+    Fix: remember which instrument id each held key/midi was started on (a `Map<midi, instrumentId>`)
+    and route the matching note-off there regardless of the current selection; belt-and-braces, call
+    `allNotesOff()` on the previously-selected instrument when the selection changes. (Web MIDI / the
+    on-screen keyboard will want the same per-source held-note bookkeeping.)
+  - *BUG: center panel doesn't reflow when the right activity panel expands.* Toggling the right-hand
+    activity panel open/wider does not shrink the center workbench content to match, so the center can
+    be overlapped / clipped instead of reflowing into the remaining width. Fix the grid/flex sizing so
+    the center region is sized from the remaining space (min-width:0 on the flex child, panel width
+    driving the track layout) and the workbench re-lays-out when the panel width changes.
   - *Timeline resize handle vs loop markers - DONE (slice 26).* The bottom-timeline resize handle straddled
     the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
   - *Clip-rail width drag-resize - DONE.* The clip pool beside the piano roll is now drag-resizable
@@ -541,8 +554,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `patchRequest`/`patchReply` RPC (the same shape as the history RPC, since patches live in the
   tab's localStorage): `save` captures a track's live sound authored `claude`, `apply` dispatches
   a `createTrackFromPatch` edit (coral, undoable). Patch row dots are two-voice colored by author.
-- **Transport & grid:** time signature, metronome, timeline beat markers. Foundational for
-  everything rhythmic; small and transport-level.
+- **Transport & grid:** ~~time signature, metronome, timeline beat markers~~. Metronome (slice 27)
+  and beat markers (slices 33, the audio-clip ruler) are DONE; **changeable time signature** remains.
+  - *Time signature (own slice).* Today `BEATS_PER_BAR = 4` is hardcoded in the scheduler and the
+    rulers. Make it a transport-level project value (`{ numerator, denominator }` on `ProjectData`,
+    default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. It threads through
+    the metronome accent (downbeat per `numerator`), every bar/beat `Ruler`, the arrangement grid
+    snap, and `beatsToSeconds`/loop math. Keystone-friendly: one transport value projected into the
+    scheduler, the rulers, and MCP - no per-site hardcoding.
+  - *Timeline loop enable/disable toggle.* The arrangement has a loop **region** (start/length handles)
+    but no way to turn looping off - the scheduler always wraps at `loopStart + loopLen`. Add a
+    transport-level `loopEnabled` flag (a loop button by the transport, the region handles dim when
+    off) so playback can run straight through to the arrangement end. Transient-vs-durable: lean
+    durable (persist it with the project) like the loop region itself.
 - **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a
   per-track/group flag; the engine silences anything not solo-active - see `engine/mix.ts`) and a
   low-profile **fader** (a line with a triangle ticker; `ui/MixerControls.tsx`). *Pending:* a
@@ -659,6 +683,23 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   slice via `source.start(when, offset, duration)`, and the existing per-placement re-trigger tiles
   it (a placement longer than the region repeats it = looping). Same slice: clip **gain > 1** (clamp
   4x / +12 dB; master limiter guards clipping) so quiet recordings can be boosted.
+- **Audio clip panel feedback - DONE (slice 34).** The clip-gain control uses the shared `Fader`
+  (with a `max` prop, `max=4`); the `Waveform` scales its trace by the clip gain and paints any
+  column past full scale in the warning colour (clipping is visible as you boost), in both the clip
+  panel and the arrangement block; and a live playhead in the clip panel follows the active placement
+  and sweeps the loop region in sync with the transport.
+- **Slide audio under the grid - DONE (slice 35).** A per-clip **content offset** (`gridOffsetSec`
+  on `AudioClipData`, a `setAudioClip` patch) so a transient can be lined up with a bar line. The grid
+  and the loop window are the fixed frame; the **audio slides underneath** (drag the waveform in the
+  clip panel, double-click or "reset" to zero it) so a different part of the recording sits under the
+  window. The loop markers + playhead stay put on the grid. Audibly the played buffer slice is the loop
+  window shifted back by the slide - resolved by the pure, unit-tested `audioPlayWindow` helper
+  ([engine/audioWindow.ts](src/audio/engine/audioWindow.ts)): it clamps the slice to the buffer and, if
+  the slide pushes the window's head before the buffer, renders that head as silence (a delayed source
+  start) rather than playing earlier samples; the slice still plays *at* the placement onset and tiles
+  as before. Persists via the clip spread (no format bump). *Follow-ups:* the arrangement block's
+  thumbnail still draws the whole buffer (ignores offset + loop region); a per-placement nudge (vs
+  per-clip) is a later option.
 - **Audio pitch & time (own slice, harder).** (a) **Pitch-shift** - change a clip's key while keeping
   its speed; and (b) **time-stretch** - change speed while keeping pitch (also the basis for warp /
   tempo-following audio). Web Audio's `playbackRate`/`detune` couple the two, so both need a real
@@ -680,6 +721,22 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   pure `(notes, range, ctx)` transforms run in the scheduler. Full design in section 15.
 - **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
   instrument catalog and the slice-8 audio-clip storage.
+- **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or:
+  - *Synthesized classic voices (preferred for 808/909/707/606/LinnDrum).* The analog machines are
+    very synthesizable (sine + pitch-drop kick; noise + bandpass snare/hats), so model each voice as
+    a schema-driven instrument in the catalog/registry rather than shipping static WAVs. This fits the
+    parameter-schema keystone (tunable + automatable + MCP-drivable for free), reuses the synth engine,
+    and **sidesteps sample licensing entirely** - the legendary Roland recordings have murky rights.
+  - *Sampled kits via the **Sampler instrument** (above) for acoustic / character kits.* The constraint
+    for a (possibly distributed) web app is a license that permits **redistribution inside software**,
+    not just "free to use in your music": prioritize **CC0** (public domain, zero friction) then
+    **CC-BY** (keep a CREDITS file); avoid CC-BY-NC and "royalty-free for music only" packs. Verify the
+    actual license text per pack before bundling - terms drift. Curate small for the web (one velocity
+    layer per voice; OPFS content-addressed storage already exists). Clean, openly-licensed sources to
+    lean on: **DrumGizmo** kits (Black Pearl / MuldjordKit / Crocell, CC-BY-SA / some CC0; full
+    multi-velocity acoustic), **AVLDrumkits** (same lineage), **Salamander Drumkit** (CC-BY),
+    **Hydrogen** drumkits (GPL/CC, incl. some electronic kits), **Freesound** filtered to CC0, and the
+    **TidalCycles Dirt-Samples** one-shot collection (GitHub; mixed licensing, check per folder).
 - **Open-source instrument & effects library:** grow the catalogs, possibly a shareable /
   community device format (open question).
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for

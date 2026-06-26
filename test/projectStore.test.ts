@@ -313,6 +313,26 @@ describe('ProjectStore audio tracks', () => {
     expect(get().loopStartSec!).toBeLessThan(get().loopEndSec!);
   });
 
+  it('slides an audio clip under the grid (gridOffsetSec set, clamped to ±duration, round-trips)', () => {
+    const p = new ProjectStore(false);
+    const audio = p.addAudioTrack({ fileId: 'au-1', durationSec: 4 });
+    const get = () => p.getTrack(audio.id)!.clips[0] as { gridOffsetSec?: number };
+    p.setAudioClip(audio.id, undefined, { gridOffsetSec: 0.5 });
+    expect(get().gridOffsetSec).toBe(0.5);
+    // negative slide (audio earlier) is allowed
+    p.setAudioClip(audio.id, undefined, { gridOffsetSec: -0.75 });
+    expect(get().gridOffsetSec).toBe(-0.75);
+    // cannot slide further than the clip length in either direction
+    p.setAudioClip(audio.id, undefined, { gridOffsetSec: 99 });
+    expect(get().gridOffsetSec).toBe(4);
+    p.setAudioClip(audio.id, undefined, { gridOffsetSec: -99 });
+    expect(get().gridOffsetSec).toBe(-4);
+    // survives a snapshot/load round-trip
+    const b = new ProjectStore(false);
+    b.load(p.snapshot());
+    expect((b.getTrack(audio.id)!.clips[0] as { gridOffsetSec?: number }).gridOffsetSec).toBe(-4);
+  });
+
   it('round-trips a mixed instrument + audio project through snapshot/load', () => {
     const a = new ProjectStore(false);
     a.addTrack('subtractive', { name: 'Lead' });

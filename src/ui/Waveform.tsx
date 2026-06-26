@@ -57,11 +57,14 @@ export function Waveform({
   fileId,
   gain = 1,
   className = "",
+  style,
 }: {
   fileId: string;
   /** Scales the trace (clip gain); columns past full scale show clipping. */
   gain?: number;
   className?: string;
+  /** Positioning (e.g. sliding the trace under the grid); width drives the canvas. */
+  style?: React.CSSProperties;
 }) {
   const peaks = useWaveform(fileId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -81,5 +84,5 @@ export function Waveform({
   }, [peaks, gain]);
 
   if (!peaks) return null;
-  return <canvas ref={canvasRef} aria-hidden="true" className={`pointer-events-none ${className}`} />;
+  return <canvas ref={canvasRef} aria-hidden="true" style={style} className={`pointer-events-none ${className}`} />;
 }

@@ -19,10 +19,12 @@ const iconBtn =
 export function EffectChain({
   projectStore,
   trackId,
+  showFirstArrow = true,
   dispatch,
 }: {
   projectStore: ProjectStore;
   trackId: string;
+  showFirstArrow?: boolean;
   dispatch: Dispatch;
 }) {
   const project = useProject(projectStore);
@@ -37,7 +39,7 @@ export function EffectChain({
         if (!store) return null;
         return (
           <Fragment key={fx.id}>
-            {ARROW}
+            {i > 0 || showFirstArrow ? ARROW : null}
             <div
               className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}
             >
