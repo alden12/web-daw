@@ -13,8 +13,7 @@ import type { Dispatch } from "../audio/commands/types";
 import { Knob } from "./Knob";
 
 const ARROW = <div className="self-center text-faint text-sm px-0.5">→</div>;
-const iconBtn =
-  "font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer";
+const iconBtn = "font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer";
 
 export function EffectChain({
   projectStore,
@@ -40,9 +39,7 @@ export function EffectChain({
         return (
           <Fragment key={fx.id}>
             {i > 0 || showFirstArrow ? ARROW : null}
-            <div
-              className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}
-            >
+            <div className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}>
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
                 <span
                   className="font-mono text-[12px] font-semibold text-bright mr-1 truncate"
@@ -62,9 +59,7 @@ export function EffectChain({
                     })
                   }
                   className={`font-mono text-[10px] h-5 px-1.5 rounded border cursor-pointer ${
-                    fx.bypassed
-                      ? "border-line text-muted"
-                      : "border-you/45 text-you"
+                    fx.bypassed ? "border-line text-muted" : "border-you/45 text-you"
                   }`}
                 >
                   {fx.bypassed ? "Off" : "On"}

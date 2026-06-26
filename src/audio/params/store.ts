@@ -4,16 +4,16 @@
  * all read and write through this one object. It validates every write against
  * the schema and notifies subscribers.
  */
-import type { ParamSchema, ParamSpec, ParamValue, PatchValues } from './types';
+import type { ParamSchema, ParamSpec, ParamValue, PatchValues } from "./types";
 
 type Listener = (id: string, value: ParamValue) => void;
-type ByKind<K extends ParamSpec['kind']> = Extract<ParamSpec, { kind: K }>;
+type ByKind<K extends ParamSpec["kind"]> = Extract<ParamSpec, { kind: K }>;
 
 // Lenient normalization (clamp/snap a trusted value), keyed by kind. Distinct
 // from validation (validate.ts), which rejects. Map dispatch, not switch.
-const COERCE: { [K in ParamSpec['kind']]: (spec: ByKind<K>, value: ParamValue) => ParamValue } = {
+const COERCE: { [K in ParamSpec["kind"]]: (spec: ByKind<K>, value: ParamValue) => ParamValue } = {
   number: (spec, value) => {
-    const n = typeof value === 'number' ? value : Number(value);
+    const n = typeof value === "number" ? value : Number(value);
     return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
   },
   enum: (spec, value) => (spec.options.includes(value as string) ? (value as string) : spec.default),

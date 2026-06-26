@@ -7,10 +7,10 @@
  * A third synthesis style alongside subtractive and FM, added via the
  * registration API - schema in catalog.ts, factory in registry.ts.
  */
-import type { ParamStore } from '../params/store';
-import { BaseInstrument } from './BaseInstrument';
-import type { VoiceHandle } from './types';
-import { midiToFreq, type ParamBinding } from './binding';
+import type { ParamStore } from "../params/store";
+import { BaseInstrument } from "./BaseInstrument";
+import type { VoiceHandle } from "./types";
+import { midiToFreq, type ParamBinding } from "./binding";
 
 const HARMONICS = [1, 2, 3, 4, 5, 6];
 
@@ -29,7 +29,7 @@ export class OrganInstrument extends BaseInstrument {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'organ.brightness': { apply: (v) => void (this.brightness = v as number) },
+      "organ.brightness": { apply: (v) => void (this.brightness = v as number) },
     };
   }
 
@@ -43,7 +43,7 @@ export class OrganInstrument extends BaseInstrument {
     // partial gains ride out with the voice (GC'd when the base disconnects it).
     const oscillators = HARMONICS.map((h, i) => {
       const osc = this.ctx.createOscillator();
-      osc.type = 'sine';
+      osc.type = "sine";
       osc.frequency.setValueAtTime(freq * h, when);
       const g = this.ctx.createGain();
       g.gain.value = weights[i] / sum;

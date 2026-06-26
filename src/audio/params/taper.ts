@@ -6,11 +6,11 @@
  *
  * Pure functions, reused by the UI `Knob` and unit-tested directly.
  */
-import type { NumberSpec } from './types';
+import type { NumberSpec } from "./types";
 
 /** Exponential taper needs strictly positive bounds; fall back to linear otherwise. */
 function isExponential(spec: NumberSpec): boolean {
-  return spec.taper === 'exponential' && spec.min > 0 && spec.max > 0;
+  return spec.taper === "exponential" && spec.min > 0 && spec.max > 0;
 }
 
 /** value -> normalized position in [0, 1]. */

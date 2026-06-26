@@ -5,7 +5,7 @@
  * (0..1) and `clip` and renders a meter bar behind the line (red when clipping);
  * callers just don't pass them yet (see DESIGN.md roadmap: per-bus metering).
  */
-import { useRef } from 'react';
+import { useRef } from "react";
 
 export function Fader({
   value,
@@ -59,8 +59,8 @@ export function Fader({
         if (e.buttons) setFromClientX(e.clientX);
       }}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') onChange(Math.max(0, value - step));
-        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') onChange(Math.min(max, value + step));
+        if (e.key === "ArrowLeft" || e.key === "ArrowDown") onChange(Math.max(0, value - step));
+        if (e.key === "ArrowRight" || e.key === "ArrowUp") onChange(Math.min(max, value + step));
       }}
       className="relative h-4 shrink-0 cursor-pointer select-none touch-none"
       style={{ width }}
@@ -68,7 +68,7 @@ export function Fader({
       {/* Meter overlay (future): a level bar behind the line, red when clipping. */}
       {level !== undefined && (
         <div
-          className={`absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-sm ${clip ? 'bg-claude' : 'bg-good/70'}`}
+          className={`absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-sm ${clip ? "bg-claude" : "bg-good/70"}`}
           style={{ width: `${Math.min(1, Math.max(0, level)) * 100}%` }}
         />
       )}
@@ -93,28 +93,28 @@ export function MuteSolo({
   onMute: () => void;
   onSolo: () => void;
 }) {
-  const btn = 'font-mono text-[10px] leading-none w-5 h-6 cursor-pointer';
+  const btn = "font-mono text-[10px] leading-none w-5 h-6 cursor-pointer";
   return (
     <div className="flex shrink-0 rounded-md border border-line overflow-hidden">
       <button
         type="button"
-        title={muted ? 'Unmute' : 'Mute'}
+        title={muted ? "Unmute" : "Mute"}
         onClick={(e) => {
           e.stopPropagation();
           onMute();
         }}
-        className={`${btn} ${muted ? 'bg-claude/20 text-claude' : 'bg-card text-ink hover:text-bright'}`}
+        className={`${btn} ${muted ? "bg-claude/20 text-claude" : "bg-card text-ink hover:text-bright"}`}
       >
         M
       </button>
       <button
         type="button"
-        title={solo ? 'Unsolo' : 'Solo'}
+        title={solo ? "Unsolo" : "Solo"}
         onClick={(e) => {
           e.stopPropagation();
           onSolo();
         }}
-        className={`${btn} border-l border-line ${solo ? 'bg-warn/25 text-warn' : 'bg-card text-ink hover:text-bright'}`}
+        className={`${btn} border-l border-line ${solo ? "bg-warn/25 text-warn" : "bg-card text-ink hover:text-bright"}`}
       >
         S
       </button>

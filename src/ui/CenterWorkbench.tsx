@@ -6,12 +6,7 @@
  * piano roll; the effect chain is shared (audio tracks have inserts too).
  */
 import { useEffect, useRef, useState } from "react";
-import type {
-  ProjectStore,
-  Track,
-  AudioTrack,
-  InstrumentTrack,
-} from "../audio/project/projectStore";
+import type { ProjectStore, Track, AudioTrack, InstrumentTrack } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
@@ -112,8 +107,7 @@ function AudioClipPanel({
   loopLength: number;
   dispatch: Dispatch;
 }) {
-  const clip =
-    track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
+  const clip = track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
   const bps = tempoBpm / 60;
   const dur = clip?.durationSec || 0;
   const durBeats = Math.max(0.001, dur * bps);
@@ -164,12 +158,7 @@ function AudioClipPanel({
           const pos = scheduler.getPositionBeats();
           const active = launched
             ? { startBeat: loopStart, length: loopLength }
-            : placements.find(
-                (p) =>
-                  p.clipId === clipId &&
-                  pos >= p.startBeat &&
-                  pos < p.startBeat + p.length,
-              );
+            : placements.find((p) => p.clipId === clipId && pos >= p.startBeat && pos < p.startBeat + p.length);
           if (active) {
             let phase = (pos - active.startBeat) % regionBeats;
             if (phase < 0) phase += regionBeats;
@@ -185,19 +174,9 @@ function AudioClipPanel({
     return () => cancelAnimationFrame(raf);
   }, [scheduler, clipId, placements, pxPerBeat, loopStartSec, loopEndSec, bps, launched, loopStart, loopLength]);
 
-  if (!clip)
-    return (
-      <div className="flex-1 min-h-0 p-3 text-muted text-sm">
-        No audio clip.
-      </div>
-    );
+  if (!clip) return <div className="flex-1 min-h-0 p-3 text-muted text-sm">No audio clip.</div>;
 
-  const setClip = (patch: {
-    gain?: number;
-    loopStartSec?: number;
-    loopEndSec?: number;
-    gridOffsetSec?: number;
-  }) =>
+  const setClip = (patch: { gain?: number; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number }) =>
     dispatch({
       type: "setAudioClip",
       trackId: track.id,
@@ -225,26 +204,15 @@ function AudioClipPanel({
     <div className="flex-1 min-h-0 p-3">
       <div className="h-full flex flex-col rounded-lg border border-line bg-card overflow-hidden">
         <div className="flex items-center gap-2.5 px-3 py-2 border-b border-line">
-          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">
-            Audio clip
-          </span>
-          <span className="font-mono text-[12.5px] text-bright truncate">
-            {clip.name}
-          </span>
-          {dur > 0 && (
-            <span className="ml-auto font-mono text-[10.5px] text-faint">
-              {dur.toFixed(2)}s
-            </span>
-          )}
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Audio clip</span>
+          <span className="font-mono text-[12.5px] text-bright truncate">{clip.name}</span>
+          {dur > 0 && <span className="ml-auto font-mono text-[10.5px] text-faint">{dur.toFixed(2)}s</span>}
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
           {/* Beat-grid ruler (drag the two handles to set the loop region) over the
               waveform; the area outside the loop is dimmed; the playhead sweeps the
               region during playback. */}
-          <div
-            ref={previewRef}
-            className="relative flex-1 min-h-0 flex flex-col"
-          >
+          <div ref={previewRef} className="relative flex-1 min-h-0 flex flex-col">
             {previewW > 0 && dur > 0 && (
               <Ruler
                 viewBeats={durBeats}
@@ -314,13 +282,7 @@ function AudioClipPanel({
             </span>
             <label className="inline-flex items-center gap-2 font-mono text-[11px] text-muted ml-auto">
               Gain
-              <Fader
-                value={clip.gain}
-                max={4}
-                width={80}
-                title="Clip gain"
-                onChange={(v) => setClip({ gain: v })}
-              />
+              <Fader value={clip.gain} max={4} width={80} title="Clip gain" onChange={(v) => setClip({ gain: v })} />
               <span className="text-faint w-10">{clip.gain.toFixed(2)}×</span>
             </label>
           </div>
@@ -347,14 +309,10 @@ function TrackRecordButton({
       onClick={() => recorder.recordInto(trackId)}
       title={recording ? "Stop recording" : "Record a new take into this track"}
       className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-md border cursor-pointer ${
-        recording
-          ? "text-claude bg-claude/15 border-claude/55"
-          : "text-claude/85 border-claude/40 hover:bg-claude/10"
+        recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/85 border-claude/40 hover:bg-claude/10"
       }`}
     >
-      <span
-        className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`}
-      />
+      <span className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`} />
       {recording ? "Stop" : "Rec"}
     </button>
   );
@@ -377,20 +335,10 @@ export function CenterWorkbench({
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The instrument+effects rack is a resizable, wrapping panel above the roll.
-  const [deviceH, setDeviceH] = usePersistentNumber(
-    "web-daw:devices-height",
-    168,
-    80,
-    620,
-  );
+  const [deviceH, setDeviceH] = usePersistentNumber("web-daw:devices-height", 168, 80, 620);
   const deviceRef = useRef<HTMLDivElement>(null);
   // The clip rail beside the piano roll is drag-resizable too (its own width).
-  const [clipRailW, setClipRailW] = usePersistentNumber(
-    "web-daw:clip-rail-width",
-    96,
-    72,
-    260,
-  );
+  const [clipRailW, setClipRailW] = usePersistentNumber("web-daw:clip-rail-width", 96, 72, 260);
   const clipRailRef = useRef<HTMLDivElement>(null);
 
   if (!selectedTrack) {
@@ -403,11 +351,8 @@ export function CenterWorkbench({
     );
   }
 
-  const kindLabel =
-    selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType;
-  const activeClip =
-    selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ??
-    selectedTrack.clips[0];
+  const kindLabel = selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType;
+  const activeClip = selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
 
   return (
     <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -415,15 +360,11 @@ export function CenterWorkbench({
         <span className="w-2 h-2 rounded-full bg-you" />
         <InlineRename
           value={selectedTrack.name}
-          onCommit={(name) =>
-            dispatch({ type: "setTrack", trackId: selectedTrack.id, name })
-          }
+          onCommit={(name) => dispatch({ type: "setTrack", trackId: selectedTrack.id, name })}
           className="font-semibold text-sm text-bright"
         />
         <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
-        {selectedTrack.kind === "instrument" && (
-          <SavePatchControl track={selectedTrack} />
-        )}
+        {selectedTrack.kind === "instrument" && <SavePatchControl track={selectedTrack} />}
         {activeClip && (
           <span className="ml-auto inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
             clip
@@ -449,32 +390,18 @@ export function CenterWorkbench({
           roll (instrument) or the audio-clip panel (audio). The rail's footer is a
           record button that records a take into this track (mic / live MIDI). */}
       <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:body`}>
-        <div
-          ref={clipRailRef}
-          className="relative shrink-0 flex"
-          style={{ width: clipRailW }}
-        >
+        <div ref={clipRailRef} className="relative shrink-0 flex" style={{ width: clipRailW }}>
           <ClipRail
             projectStore={projectStore}
             scheduler={scheduler}
             trackId={selectedTrack.id}
             dispatch={dispatch}
             orientation="vertical"
-            footer={
-              <TrackRecordButton
-                trackId={selectedTrack.id}
-                recorder={recorder}
-                recording={recording}
-              />
-            }
+            footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
           />
           <ResizeHandle
             ariaLabel="Resize clips"
-            onResize={(x) =>
-              setClipRailW(
-                x - (clipRailRef.current?.getBoundingClientRect().left ?? 0),
-              )
-            }
+            onResize={(x) => setClipRailW(x - (clipRailRef.current?.getBoundingClientRect().left ?? 0))}
             style={{ right: 0, top: 0, bottom: 0 }}
           />
         </div>
@@ -482,9 +409,7 @@ export function CenterWorkbench({
           <div className="flex-1 min-w-0 min-h-0 p-3">
             {(() => {
               const active =
-                selectedTrack.clips.find(
-                  (c) => c.id === selectedTrack.activeClipId,
-                ) ?? selectedTrack.clips[0];
+                selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
               // Key by the active clip so the roll remounts (re-fits, resets selection) on switch.
               return (
                 <PianoRoll
@@ -521,11 +446,7 @@ export function CenterWorkbench({
         <ResizeHandle
           ariaLabel="Resize devices"
           orientation="horizontal"
-          onResize={(y) =>
-            setDeviceH(
-              (deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y,
-            )
-          }
+          onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
           style={{ left: 0, right: 0, top: 0 }}
         />
         <div className="flex-1 min-h-0 overflow-y-auto">

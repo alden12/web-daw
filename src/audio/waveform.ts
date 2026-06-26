@@ -8,7 +8,7 @@
  * is unit-testable; everything below it is browser-only and never imported by the
  * DOM-free Node server.
  */
-import { getAudioBuffer } from './audioStore';
+import { getAudioBuffer } from "./audioStore";
 
 /** A min/max pair per bucket, both in [-1, 1]; `min.length === max.length`. */
 export interface Peaks {

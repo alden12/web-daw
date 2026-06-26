@@ -7,10 +7,10 @@
  * content rides a module variable so a cross-track drop can copy it into the
  * target's pool. Shared by ClipRail (source) and the arrangement Lane (target).
  */
-import type { ClipContent } from '../audio/project/types';
-import type { TrackKind } from '../audio/project/types';
+import type { ClipContent } from "../audio/project/types";
+import type { TrackKind } from "../audio/project/types";
 
-export const CLIP_DND_TYPE = 'application/x-daw-clip';
+export const CLIP_DND_TYPE = "application/x-daw-clip";
 
 export const clipDndKindType = (kind: TrackKind) => `application/x-daw-clip-kind-${kind}`;
 

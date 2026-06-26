@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { ParamStore } from '../src/audio/params/store';
-import { instrumentSchema, instrumentInfos } from '../src/audio/instruments/catalog';
-import { createInstrument } from '../src/audio/instruments/registry';
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { ParamStore } from "../src/audio/params/store";
+import { instrumentSchema, instrumentInfos } from "../src/audio/instruments/catalog";
+import { createInstrument } from "../src/audio/instruments/registry";
 
 /**
  * A minimal fake Web Audio context. `connect(undefined)` throws like the real
@@ -22,7 +22,7 @@ function fakeParam() {
 function fakeNode(extra: Record<string, unknown> = {}) {
   return {
     connect(dest: unknown) {
-      if (!dest) throw new TypeError('connect() to undefined destination');
+      if (!dest) throw new TypeError("connect() to undefined destination");
       return dest;
     },
     disconnect() {},
@@ -34,8 +34,8 @@ function fakeCtx() {
     currentTime: 0,
     createGain: () => fakeNode({ gain: fakeParam() }),
     createOscillator: () =>
-      fakeNode({ type: 'sine', frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
-    createBiquadFilter: () => fakeNode({ type: 'lowpass', frequency: fakeParam(), Q: fakeParam() }),
+      fakeNode({ type: "sine", frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
+    createBiquadFilter: () => fakeNode({ type: "lowpass", frequency: fakeParam(), Q: fakeParam() }),
   };
 }
 
@@ -50,7 +50,7 @@ beforeAll(() => {
     parameters = { get: () => fakeParam() };
     port = { postMessage() {} };
     connect(dest: unknown) {
-      if (!dest) throw new TypeError('connect() to undefined destination');
+      if (!dest) throw new TypeError("connect() to undefined destination");
       return dest;
     }
     disconnect() {}
@@ -59,7 +59,7 @@ beforeAll(() => {
 });
 afterAll(() => delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode);
 
-describe('instruments', () => {
+describe("instruments", () => {
   for (const { type } of instrumentInfos()) {
     it(`${type}: constructs and plays voices without wiring to an undefined node`, () => {
       const store = new ParamStore(instrumentSchema(type));
@@ -78,7 +78,7 @@ describe('instruments', () => {
         inst.playNote(67, 1, 0.8, 0);
       }).not.toThrow();
       // param change drives a binding
-      expect(() => store.set('amp.level', 0.5)).not.toThrow();
+      expect(() => store.set("amp.level", 0.5)).not.toThrow();
       expect(() => inst.allNotesOff()).not.toThrow();
     });
   }

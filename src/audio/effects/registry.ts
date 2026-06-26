@@ -7,16 +7,16 @@
  * Factories are registered, mirroring the data registry in catalog.ts:
  * `registerEffectFactory` is the audio half of the extension point.
  */
-import type { ParamStore } from '../params/store';
-import type { Effect } from './types';
-import { DelayEffect } from './Delay';
-import { DistortionEffect } from './Distortion';
-import { ReverbEffect } from './Reverb';
-import { FilterEffect } from './Filter';
-import { ChorusEffect } from './Chorus';
-import { TremoloEffect } from './Tremolo';
-import { BitcrusherEffect } from './Bitcrusher';
-import { DEFAULT_EFFECT } from './catalog';
+import type { ParamStore } from "../params/store";
+import type { Effect } from "./types";
+import { DelayEffect } from "./Delay";
+import { DistortionEffect } from "./Distortion";
+import { ReverbEffect } from "./Reverb";
+import { FilterEffect } from "./Filter";
+import { ChorusEffect } from "./Chorus";
+import { TremoloEffect } from "./Tremolo";
+import { BitcrusherEffect } from "./Bitcrusher";
+import { DEFAULT_EFFECT } from "./catalog";
 
 type EffectFactory = (ctx: AudioContext, store: ParamStore) => Effect;
 
@@ -33,12 +33,12 @@ export function createEffect(type: string, ctx: AudioContext, store: ParamStore)
 }
 
 // --- built-in factories (self-registered) ---------------------------------
-registerEffectFactory('delay', (ctx, store) => new DelayEffect(ctx, store));
-registerEffectFactory('distortion', (ctx, store) => new DistortionEffect(ctx, store));
-registerEffectFactory('reverb', (ctx, store) => new ReverbEffect(ctx, store));
-registerEffectFactory('filter', (ctx, store) => new FilterEffect(ctx, store));
-registerEffectFactory('chorus', (ctx, store) => new ChorusEffect(ctx, store));
-registerEffectFactory('tremolo', (ctx, store) => new TremoloEffect(ctx, store));
-registerEffectFactory('bitcrusher', (ctx, store) => new BitcrusherEffect(ctx, store));
+registerEffectFactory("delay", (ctx, store) => new DelayEffect(ctx, store));
+registerEffectFactory("distortion", (ctx, store) => new DistortionEffect(ctx, store));
+registerEffectFactory("reverb", (ctx, store) => new ReverbEffect(ctx, store));
+registerEffectFactory("filter", (ctx, store) => new FilterEffect(ctx, store));
+registerEffectFactory("chorus", (ctx, store) => new ChorusEffect(ctx, store));
+registerEffectFactory("tremolo", (ctx, store) => new TremoloEffect(ctx, store));
+registerEffectFactory("bitcrusher", (ctx, store) => new BitcrusherEffect(ctx, store));
 
-export { effectInfos, effectSchema, effectCatalogEntry, hasEffect, DEFAULT_EFFECT } from './catalog';
+export { effectInfos, effectSchema, effectCatalogEntry, hasEffect, DEFAULT_EFFECT } from "./catalog";

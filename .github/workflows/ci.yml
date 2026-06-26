@@ -27,6 +27,9 @@ jobs:
       - name: Lint
         run: yarn lint
 
+      - name: Format check (Prettier)
+        run: yarn format:check
+
       - name: Typecheck + build (tsc -b + vite)
         run: yarn build
 

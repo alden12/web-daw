@@ -8,9 +8,9 @@
  * Beat bookkeeping is anchored as (anchorBeat at anchorTime), so a tempo change
  * mid-playback re-anchors and stays continuous.
  */
-import type { AudioEngine } from '../engine/AudioEngine';
-import type { ProjectStore } from '../project/projectStore';
-import { GRID, type NoteEvent } from './types';
+import type { AudioEngine } from "../engine/AudioEngine";
+import type { ProjectStore } from "../project/projectStore";
+import { GRID, type NoteEvent } from "./types";
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.1;
@@ -80,12 +80,7 @@ export function onsetsInBeatRange(
  * window: a window that fits within the clip plays once (a trim), a longer window
  * repeats the pattern. `offset` is the phase into the loop the window begins at.
  */
-export function tileClipNotes(
-  notes: NoteEvent[],
-  clipLen: number,
-  offset: number,
-  length: number,
-): NoteEvent[] {
+export function tileClipNotes(notes: NoteEvent[], clipLen: number, offset: number, length: number): NoteEvent[] {
   const out: NoteEvent[] = [];
   if (clipLen <= 0) return out;
   for (const note of notes) {
@@ -216,7 +211,13 @@ export class Scheduler {
     if (horizonBeats <= fromBeats) return;
 
     if (this.metronomeEnabled) {
-      for (const { atBeat, accent } of metronomeClicksInBeatRange(fromBeats, horizonBeats, loopStart, loopLen, BEATS_PER_BAR)) {
+      for (const { atBeat, accent } of metronomeClicksInBeatRange(
+        fromBeats,
+        horizonBeats,
+        loopStart,
+        loopLen,
+        BEATS_PER_BAR,
+      )) {
         const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
         this.engine.scheduleClick(when, accent);
       }
@@ -227,9 +228,9 @@ export class Scheduler {
       // A launched clip overrides the arrangement: play it as one full-region
       // placement, so the existing tiling loops it over the transport.
       const placements = track.launchedClipId
-        ? [{ id: '__launch', clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
+        ? [{ id: "__launch", clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
         : track.placements;
-      if (track.kind === 'instrument') {
+      if (track.kind === "instrument") {
         const instrument = this.engine.getInstrument(track.id);
         if (!instrument) continue;
         // Flatten the arrangement: each placement contributes its clip's notes,

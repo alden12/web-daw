@@ -804,8 +804,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   attack/release envelopes, a one-pole tone control, and the sample-accurate dispatch). Same
   three-touch extension as any instrument (catalog + registry + the worklet module URL), so it
   shows up in the library, the InstrumentPanel knobs, and the MCP palette for free.
-- **Adopt Prettier (next slice).** A repo-wide Prettier config + `yarn format` + a CI format check,
-  to end the editor quote-churn noted in CLAUDE.md. One-time whole-tree reformat, so its own PR.
+- **Adopt Prettier - DONE (slice 41).** A repo-wide Prettier config (double quotes, `printWidth:
+  120`) + `yarn format` / `yarn format:check` + a CI format-check step, to end the editor
+  quote-churn noted in CLAUDE.md. One-time whole-tree reformat in its own PR; double quotes match
+  the editor's own default, so format-on-save and the pinned config agree and stay in line.
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
   **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
   automation, and persistence come for free (the catalog/registry are already the extension

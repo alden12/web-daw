@@ -66,7 +66,15 @@ export interface RecorderState {
 }
 
 export class Recorder {
-  private state: RecorderState = { status: "idle", deviceId: null, devices: [], countInBars: 1, armedTrackId: null, take: null, error: null };
+  private state: RecorderState = {
+    status: "idle",
+    deviceId: null,
+    devices: [],
+    countInBars: 1,
+    armedTrackId: null,
+    take: null,
+    error: null,
+  };
   private readonly listeners = new Set<() => void>();
   private countInTimer: ReturnType<typeof setTimeout> | null = null;
   private startBeat = 0;
@@ -269,7 +277,16 @@ export class Recorder {
     // create a fresh track for the take.
     const target = this.targetTrackId ? this.project.getTrack(this.targetTrackId) : undefined;
     if (target && target.kind === "audio") {
-      this.dispatch({ type: "addAudioClip", trackId: target.id, id: newClipId(), placementId: newPlacementId(), fileId, name, durationSec, startBeat });
+      this.dispatch({
+        type: "addAudioClip",
+        trackId: target.id,
+        id: newClipId(),
+        placementId: newPlacementId(),
+        fileId,
+        name,
+        durationSec,
+        startBeat,
+      });
     } else {
       this.dispatch({ type: "addAudioTrack", id: newTrackId(), fileId, name, durationSec, startBeat });
     }
@@ -287,7 +304,12 @@ export class Recorder {
     }
     // Close notes still held at stop (give them a minimum sounding length).
     for (const [pitch, note] of this.held) {
-      this.captured.push({ pitch, velocity: note.velocity, startBeat: note.startBeat, endBeat: Math.max(stopBeat, note.startBeat + GRID) });
+      this.captured.push({
+        pitch,
+        velocity: note.velocity,
+        startBeat: note.startBeat,
+        endBeat: Math.max(stopBeat, note.startBeat + GRID),
+      });
     }
     this.held.clear();
     const captured = this.captured;
@@ -309,7 +331,16 @@ export class Recorder {
     }));
     const span = Math.max(...notes.map((n) => n.start + n.length));
     const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
-    this.dispatch({ type: "addNoteClip", trackId: target.id, id: newClipId(), placementId: newPlacementId(), name: this.nextTakeName(), notes, lengthBeats, startBeat: clipStart });
+    this.dispatch({
+      type: "addNoteClip",
+      trackId: target.id,
+      id: newClipId(),
+      placementId: newPlacementId(),
+      name: this.nextTakeName(),
+      notes,
+      lengthBeats,
+      startBeat: clipStart,
+    });
   }
 
   /** "Take N", N being the next unused index among existing Take tracks/clips. */

@@ -16,11 +16,11 @@ export interface BundleStore {
 }
 
 /** The single bundle's root directory name within OPFS. Multi-project is later. */
-const BUNDLE_DIR = 'project.daw';
+const BUNDLE_DIR = "project.daw";
 
 /** OPFS when available (browser), else an in-memory store (Node tests / no OPFS). */
 export function createBundleStore(): BundleStore {
-  if (typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory) return new OpfsBundleStore();
+  if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) return new OpfsBundleStore();
   return new MemoryBundleStore();
 }
 
@@ -39,7 +39,7 @@ export class OpfsBundleStore implements BundleStore {
   }
 
   private async fileHandle(path: string, create: boolean): Promise<FileSystemFileHandle | null> {
-    const parts = path.split('/');
+    const parts = path.split("/");
     const name = parts.pop()!;
     const dir = await this.dirFor(parts, create);
     if (!dir) return null;

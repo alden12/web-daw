@@ -5,20 +5,20 @@
  * This is the same folder shape the disk-folder backend (15D) will write
  * uncompressed, so export and on-disk are one format. Import replaces the project.
  */
-import { zipSync, unzipSync } from 'fflate';
-import { getRepository } from '../audio/projectRepository';
-import type { ProjectStore } from '../audio/project/projectStore';
-import type { EditLog } from '../audio/commands/editLog';
+import { zipSync, unzipSync } from "fflate";
+import { getRepository } from "../audio/projectRepository";
+import type { ProjectStore } from "../audio/project/projectStore";
+import type { EditLog } from "../audio/commands/editLog";
 
 /** Download the current project as `project.daw.zip`. */
 export async function exportProjectFile(projectStore: ProjectStore, editLog: EditLog): Promise<void> {
   const files = await getRepository().exportBundle(projectStore.snapshot(), editLog.getEntries(), editLog.getNotes());
   const zipped = zipSync(files, { level: 6 });
-  const blob = new Blob([zipped], { type: 'application/zip' });
+  const blob = new Blob([zipped], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = 'project.daw.zip';
+  a.download = "project.daw.zip";
   a.click();
   URL.revokeObjectURL(url);
 }

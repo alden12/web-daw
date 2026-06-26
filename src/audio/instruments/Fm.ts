@@ -5,10 +5,10 @@
  * modulation depth in Hz. Ratio/index apply to subsequent notes (each note
  * builds a fresh voice), which during playback is heard within a beat.
  */
-import type { ParamStore } from '../params/store';
-import { BaseInstrument } from './BaseInstrument';
-import type { VoiceHandle } from './types';
-import { midiToFreq, type ParamBinding } from './binding';
+import type { ParamStore } from "../params/store";
+import { BaseInstrument } from "./BaseInstrument";
+import type { VoiceHandle } from "./types";
+import { midiToFreq, type ParamBinding } from "./binding";
 
 export class FmInstrument extends BaseInstrument {
   private ratio = 2;
@@ -26,8 +26,8 @@ export class FmInstrument extends BaseInstrument {
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'fm.ratio': { apply: (v) => void (this.ratio = v as number) },
-      'fm.index': { apply: (v) => void (this.index = v as number) },
+      "fm.ratio": { apply: (v) => void (this.ratio = v as number) },
+      "fm.index": { apply: (v) => void (this.index = v as number) },
     };
   }
 

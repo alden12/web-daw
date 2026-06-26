@@ -6,7 +6,7 @@
  * Exposed as get/set functions (not a mutable export) so components never write
  * module state directly.
  */
-import type { ClipContent } from '../audio/project/types';
+import type { ClipContent } from "../audio/project/types";
 
 let clipboard: ClipContent | null = null;
 

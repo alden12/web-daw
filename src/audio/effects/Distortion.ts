@@ -2,9 +2,9 @@
  * Waveshaper distortion: input -> shaper -> tone (lowpass) -> wet. `dist.drive`
  * sets the curve amount, `dist.tone` tames the high end, `mix` blends.
  */
-import type { ParamStore } from '../params/store';
-import { rampParam, type ParamBinding } from '../params/binding';
-import { BaseEffect } from './BaseEffect';
+import type { ParamStore } from "../params/store";
+import { rampParam, type ParamBinding } from "../params/binding";
+import { BaseEffect } from "./BaseEffect";
 
 /** Classic tanh-ish waveshaper curve; higher `amount` = more drive. */
 function distortionCurve(amount: number): Float32Array<ArrayBuffer> {
@@ -30,17 +30,17 @@ export class DistortionEffect extends BaseEffect {
 
   protected buildGraph(): void {
     this.shaper = this.ctx.createWaveShaper();
-    this.shaper.oversample = '4x';
+    this.shaper.oversample = "4x";
     this.tone = this.ctx.createBiquadFilter();
-    this.tone.type = 'lowpass';
+    this.tone.type = "lowpass";
     this.input.connect(this.shaper).connect(this.tone).connect(this.wet);
   }
 
   protected buildBindings(): Record<string, ParamBinding> {
     return {
       ...this.commonBindings(),
-      'dist.drive': { apply: (v) => void (this.shaper.curve = distortionCurve(v as number)) },
-      'dist.tone': { apply: (v, ms) => rampParam(this.ctx, this.tone.frequency, v as number, ms) },
+      "dist.drive": { apply: (v) => void (this.shaper.curve = distortionCurve(v as number)) },
+      "dist.tone": { apply: (v, ms) => rampParam(this.ctx, this.tone.frequency, v as number, ms) },
     };
   }
 

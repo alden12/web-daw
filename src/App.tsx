@@ -1,7 +1,7 @@
-import { AppShell } from './ui/AppShell'
+import { AppShell } from "./ui/AppShell";
 
 function App() {
-  return <AppShell />
+  return <AppShell />;
 }
 
-export default App
+export default App;

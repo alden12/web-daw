@@ -15,8 +15,8 @@
  * played back as a buffer). Both share the base fields and the effect chain, so
  * they route identically; only the source differs.
  */
-import type { PatchValues } from '../params/types';
-import type { NoteEvent } from '../sequencer/types';
+import type { PatchValues } from "../params/types";
+import type { NoteEvent } from "../sequencer/types";
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export interface EffectMeta {
@@ -41,10 +41,10 @@ export interface GroupMeta {
   effects: EffectMeta[];
 }
 
-export type TrackKind = 'instrument' | 'audio';
+export type TrackKind = "instrument" | "audio";
 
 /** Who authored a piece of durable state (two-voice presence). Mirrors commands/types Author. */
-export type ClipAuthor = 'you' | 'claude';
+export type ClipAuthor = "you" | "claude";
 
 /**
  * A placement of a clip on a track's arrangement timeline. The same clip can be
@@ -67,8 +67,8 @@ export interface Placement {
  * refuse to cross instrument <-> audio; audio shares the source fileId (no copy).
  */
 export type ClipContent =
-  | { kind: 'instrument'; name: string; notes: NoteEvent[]; lengthBeats: number }
-  | { kind: 'audio'; name: string; fileId: string; gain: number; durationSec: number };
+  | { kind: "instrument"; name: string; notes: NoteEvent[]; lengthBeats: number }
+  | { kind: "audio"; name: string; fileId: string; gain: number; durationSec: number };
 
 /** A note clip (pattern) in an instrument track's pool. */
 export interface NoteClipData {
@@ -134,7 +134,7 @@ interface BaseTrackMeta {
 }
 
 export interface InstrumentTrackMeta extends BaseTrackMeta {
-  kind: 'instrument';
+  kind: "instrument";
   instrumentType: string;
   /** The track's clip pool (note patterns). The active clip is shown in the roll. */
   clips: NoteClipMeta[];
@@ -146,7 +146,7 @@ export interface InstrumentTrackMeta extends BaseTrackMeta {
 }
 
 export interface AudioTrackMeta extends BaseTrackMeta {
-  kind: 'audio';
+  kind: "audio";
   clips: AudioClipData[];
   activeClipId: string;
   placements: Placement[];
@@ -161,12 +161,14 @@ export interface EffectData extends EffectMeta {
   params: PatchValues;
 }
 
-export interface GroupData extends Omit<GroupMeta, 'effects'> {
+export interface GroupData extends Omit<GroupMeta, "effects"> {
   effects: EffectData[];
 }
 
-export interface InstrumentTrackData
-  extends Omit<InstrumentTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId' | 'launchedClipId'> {
+export interface InstrumentTrackData extends Omit<
+  InstrumentTrackMeta,
+  "effects" | "clips" | "placements" | "activeClipId" | "launchedClipId"
+> {
   /** Track-level sound (synth patch). Optional in the snapshot; defaulted on load. */
   params?: PatchValues;
   effects?: EffectData[];
@@ -177,8 +179,10 @@ export interface InstrumentTrackData
   launchedClipId?: string | null;
 }
 
-export interface AudioTrackData
-  extends Omit<AudioTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId' | 'launchedClipId'> {
+export interface AudioTrackData extends Omit<
+  AudioTrackMeta,
+  "effects" | "clips" | "placements" | "activeClipId" | "launchedClipId"
+> {
   effects?: EffectData[];
   clips?: AudioClipData[];
   placements?: Placement[];

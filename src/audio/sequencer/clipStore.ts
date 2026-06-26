@@ -5,7 +5,7 @@
  * through this one object; every mutation validates input and notifies
  * subscribers.
  */
-import { GRID, type ClipData, type NoteEvent } from './types';
+import { GRID, type ClipData, type NoteEvent } from "./types";
 
 const DEFAULT_LENGTH = 16;
 

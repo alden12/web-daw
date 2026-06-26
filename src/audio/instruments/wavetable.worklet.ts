@@ -9,13 +9,13 @@
  * Params are the schema's number params by the same names (see instruments/catalog
  * wavetableSchema), so WorkletInstrument binds them generically.
  */
-import { buildTables, sampleTable } from '../dsp/wavetable';
-import type { NoteMessage } from './WorkletInstrument';
+import { buildTables, sampleTable } from "../dsp/wavetable";
+import type { NoteMessage } from "./WorkletInstrument";
 
 const MAX_VOICES = 16;
 
 interface Voice {
-  stage: 'idle' | 'attack' | 'sustain' | 'release';
+  stage: "idle" | "attack" | "sustain" | "release";
   midi: number;
   phase: number; // 0..1 cycle position
   inc: number; // cycles per sample
@@ -32,17 +32,17 @@ function midiToFreq(midi: number): number {
 class WavetableProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors(): AudioParamDescriptor[] {
     return [
-      { name: 'wt.position', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'wt.tone', defaultValue: 0.6, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'amp.level', defaultValue: 0.7, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'env.attack', defaultValue: 8, minValue: 1, maxValue: 2000, automationRate: 'k-rate' },
-      { name: 'env.release', defaultValue: 300, minValue: 1, maxValue: 4000, automationRate: 'k-rate' },
+      { name: "wt.position", defaultValue: 0, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "wt.tone", defaultValue: 0.6, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "amp.level", defaultValue: 0.7, minValue: 0, maxValue: 1, automationRate: "k-rate" },
+      { name: "env.attack", defaultValue: 8, minValue: 1, maxValue: 2000, automationRate: "k-rate" },
+      { name: "env.release", defaultValue: 300, minValue: 1, maxValue: 4000, automationRate: "k-rate" },
     ];
   }
 
   private tables: Float32Array[] = buildTables();
   private voices: Voice[] = Array.from({ length: MAX_VOICES }, () => ({
-    stage: 'idle' as const,
+    stage: "idle" as const,
     midi: 0,
     phase: 0,
     inc: 0,
@@ -61,7 +61,7 @@ class WavetableProcessor extends AudioWorkletProcessor {
   }
 
   private allocate(): Voice {
-    let pick = this.voices.find((v) => v.stage === 'idle');
+    let pick = this.voices.find((v) => v.stage === "idle");
     if (!pick) {
       // Steal the oldest voice (lowest age).
       pick = this.voices[0];
@@ -72,7 +72,7 @@ class WavetableProcessor extends AudioWorkletProcessor {
 
   private startVoice(midi: number, velocity: number, releaseAt: number): void {
     const v = this.allocate();
-    v.stage = 'attack';
+    v.stage = "attack";
     v.midi = midi;
     v.phase = 0;
     v.inc = midiToFreq(midi) / sampleRate;
@@ -84,26 +84,26 @@ class WavetableProcessor extends AudioWorkletProcessor {
 
   private releaseMidi(midi: number): void {
     for (const v of this.voices) {
-      if (v.midi === midi && (v.stage === 'attack' || v.stage === 'sustain')) v.stage = 'release';
+      if (v.midi === midi && (v.stage === "attack" || v.stage === "sustain")) v.stage = "release";
     }
   }
 
   private handle(msg: NoteMessage): void {
-    if (msg.kind === 'on') this.startVoice(msg.midi, msg.velocity, Infinity);
-    else if (msg.kind === 'play') this.startVoice(msg.midi, msg.velocity, msg.when + msg.durationSec);
-    else if (msg.kind === 'off') this.releaseMidi(msg.midi);
-    else for (const v of this.voices) if (v.stage !== 'idle') v.stage = 'release';
+    if (msg.kind === "on") this.startVoice(msg.midi, msg.velocity, Infinity);
+    else if (msg.kind === "play") this.startVoice(msg.midi, msg.velocity, msg.when + msg.durationSec);
+    else if (msg.kind === "off") this.releaseMidi(msg.midi);
+    else for (const v of this.voices) if (v.stage !== "idle") v.stage = "release";
   }
 
   process(_inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const out = outputs[0] && outputs[0][0];
     if (!out) return true;
     const frames = out.length;
-    const position = parameters['wt.position'][0];
-    const tone = parameters['wt.tone'][0];
-    const level = parameters['amp.level'][0];
-    const attackInc = 1 / (Math.max(0.001, parameters['env.attack'][0] / 1000) * sampleRate);
-    const releaseDec = 1 / (Math.max(0.001, parameters['env.release'][0] / 1000) * sampleRate);
+    const position = parameters["wt.position"][0];
+    const tone = parameters["wt.tone"][0];
+    const level = parameters["amp.level"][0];
+    const attackInc = 1 / (Math.max(0.001, parameters["env.attack"][0] / 1000) * sampleRate);
+    const releaseDec = 1 / (Math.max(0.001, parameters["env.release"][0] / 1000) * sampleRate);
     const toneCoef = tone * tone; // one-pole coefficient: 1 = open, ~0 = dark
     const blockStart = currentTime;
     const secPerFrame = 1 / sampleRate;
@@ -123,19 +123,19 @@ class WavetableProcessor extends AudioWorkletProcessor {
 
       let mix = 0;
       for (const v of this.voices) {
-        if (v.stage === 'idle') continue;
-        if (v.releaseAt <= sampleTime && (v.stage === 'attack' || v.stage === 'sustain')) v.stage = 'release';
-        if (v.stage === 'attack') {
+        if (v.stage === "idle") continue;
+        if (v.releaseAt <= sampleTime && (v.stage === "attack" || v.stage === "sustain")) v.stage = "release";
+        if (v.stage === "attack") {
           v.env += attackInc;
           if (v.env >= 1) {
             v.env = 1;
-            v.stage = 'sustain';
+            v.stage = "sustain";
           }
-        } else if (v.stage === 'release') {
+        } else if (v.stage === "release") {
           v.env -= releaseDec;
           if (v.env <= 0) {
             v.env = 0;
-            v.stage = 'idle';
+            v.stage = "idle";
             continue;
           }
         }
@@ -151,4 +151,4 @@ class WavetableProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('wavetable-processor', WavetableProcessor);
+registerProcessor("wavetable-processor", WavetableProcessor);

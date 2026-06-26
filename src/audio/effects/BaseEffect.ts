@@ -5,9 +5,9 @@
  * uniform `mix` param crossfades dry/wet. Subclasses define buildGraph() and
  * buildBindings() (usually spreading commonBindings()).
  */
-import type { ParamStore } from '../params/store';
-import { bindParams, rampParam, type ParamBinding } from '../params/binding';
-import type { Effect } from './types';
+import type { ParamStore } from "../params/store";
+import { bindParams, rampParam, type ParamBinding } from "../params/binding";
+import type { Effect } from "./types";
 
 export abstract class BaseEffect implements Effect {
   protected readonly ctx: AudioContext;

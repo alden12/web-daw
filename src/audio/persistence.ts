@@ -7,9 +7,9 @@
  * along in the same save so the activity feed and authored history survive a reload
  * (undo/redo is session-scoped and intentionally not persisted).
  */
-import type { ProjectStore } from './project/projectStore';
-import type { EditLog } from './commands/editLog';
-import { getRepository, type ProjectRepository } from './projectRepository';
+import type { ProjectStore } from "./project/projectStore";
+import type { EditLog } from "./commands/editLog";
+import { getRepository, type ProjectRepository } from "./projectRepository";
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -56,12 +56,14 @@ export function attachAutosave(
   const resubscribeTracks = () => {
     for (const u of trackUnsubs) u();
     trackUnsubs = [
-      ...project.getTracks().flatMap((t) => [
-        ...(t.kind === 'instrument'
-          ? [t.params.subscribe(schedule), ...t.clips.map((c) => c.store.subscribe(schedule))]
-          : []),
-        ...t.effects.map((fx) => fx.params.subscribe(schedule)),
-      ]),
+      ...project
+        .getTracks()
+        .flatMap((t) => [
+          ...(t.kind === "instrument"
+            ? [t.params.subscribe(schedule), ...t.clips.map((c) => c.store.subscribe(schedule))]
+            : []),
+          ...t.effects.map((fx) => fx.params.subscribe(schedule)),
+        ]),
       ...project.getGroups().flatMap((g) => g.effects.map((fx) => fx.params.subscribe(schedule))),
     ];
   };

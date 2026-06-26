@@ -1,0 +1,11 @@
+# Build output and generated artifacts
+dist
+coverage
+playwright-report
+test-results
+
+# Dependency lockfile (no Prettier parser; leave it byte-for-byte)
+yarn.lock
+
+# Prose docs are hand-formatted; reformatting reflows them noisily
+*.md

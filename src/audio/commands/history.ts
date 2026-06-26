@@ -10,14 +10,14 @@
  * same kind of node. Linear for now (one branch, append); the storage is a DAG so
  * branches/merges (15C) and time-travel/diff (15B.3) drop in without reshaping.
  */
-import { ProjectStore } from '../project/projectStore';
-import type { ProjectData } from '../project/types';
-import { applyEdit } from './applyEdit';
-import { describeCommand } from './describe';
-import { diffProjects } from './diff';
-import type { Author, EditEntry } from './types';
-import type { EditLog, FeedNote } from './editLog';
-import { getRepository, type Commit, type ProjectRepository, type Refs } from '../projectRepository';
+import { ProjectStore } from "../project/projectStore";
+import type { ProjectData } from "../project/types";
+import { applyEdit } from "./applyEdit";
+import { describeCommand } from "./describe";
+import { diffProjects } from "./diff";
+import type { Author, EditEntry } from "./types";
+import type { EditLog, FeedNote } from "./editLog";
+import { getRepository, type Commit, type ProjectRepository, type Refs } from "../projectRepository";
 
 /** A burst of edits within this window collapses into one auto-checkpoint. */
 const CHECKPOINT_DEBOUNCE_MS = 4000;
@@ -54,7 +54,7 @@ export class VersionStore {
   private readonly project: ProjectStore;
   private readonly editLog: EditLog;
   private readonly repo: ProjectRepository;
-  private refs: Refs = { head: 'main', branches: { main: null } };
+  private refs: Refs = { head: "main", branches: { main: null } };
   private lastCommittedSeq = -1;
   /** Delta commits written since the last keyframe (drives keyframe cadence). */
   private commitsSinceKeyframe = 0;
@@ -117,7 +117,7 @@ export class VersionStore {
     const keyframe =
       this.headId() === null ||
       this.commitsSinceKeyframe + 1 >= KEYFRAME_INTERVAL ||
-      entries.some((e) => e.kind === 'undo' || e.kind === 'redo');
+      entries.some((e) => e.kind === "undo" || e.kind === "redo");
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
       parent: this.headId(),
@@ -146,14 +146,17 @@ export class VersionStore {
    * HEAD commit (history stays append-only - git-revert style, not a detached
    * HEAD). Subsequent edits checkpoint forward from here. No-op if id is unknown.
    */
-  async revertTo(commitId: string, author: Author = 'you'): Promise<CommitSummary | null> {
+  async revertTo(commitId: string, author: Author = "you"): Promise<CommitSummary | null> {
     const target = await this.repo.readCommit(commitId);
     if (!target) return null;
     const snapshot = await this.materialize(commitId); // reconstruct (target may be a delta)
     if (!snapshot) return null;
     this.project.load(snapshot); // live state jumps to the old snapshot
     const notes = this.uncommittedNotes(); // attach any pending narration to the revert
-    const lastSeq = Math.max(this.maxSeq(), notes.reduce((m, n) => Math.max(m, n.seq), -1)); // the jump consumes pending edits + notes
+    const lastSeq = Math.max(
+      this.maxSeq(),
+      notes.reduce((m, n) => Math.max(m, n.seq), -1),
+    ); // the jump consumes pending edits + notes
     const commit: Commit = {
       id: `cm-${crypto.randomUUID().slice(0, 8)}`,
       parent: this.headId(),

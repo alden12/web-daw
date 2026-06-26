@@ -5,11 +5,11 @@
  * snapshot only references a sample by its content hash (`fileId`). This module is
  * the thin façade the rest of the app calls; the bundle/backend lives behind it.
  */
-import { getRepository } from './projectRepository';
+import { getRepository } from "./projectRepository";
 
 /** OPFS is required to *persist* samples; feature-detect so import can degrade. */
 export function audioStorageAvailable(): boolean {
-  return typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory;
+  return typeof navigator !== "undefined" && !!navigator.storage?.getDirectory;
 }
 
 /** Store an audio blob; returns its content hash (used as the clip's `fileId`). */

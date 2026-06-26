@@ -13,12 +13,7 @@ import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
-import {
-  type Patch,
-  listPatches,
-  removePatch,
-  subscribePatches,
-} from "../audio/patches/library";
+import { type Patch, listPatches, removePatch, subscribePatches } from "../audio/patches/library";
 import { exportProjectFile, importProjectFile } from "./projectFile";
 import { Menu } from "./Menu";
 
@@ -89,9 +84,7 @@ function Leaf({
       title={label}
       className={`flex items-center gap-2.5 w-full text-left ${indent} pr-4 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10`}
     >
-      <span
-        className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`}
-      />
+      <span className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`} />
       <span className="truncate">{label}</span>
     </button>
   );
@@ -177,8 +170,7 @@ export function LibraryPanel({
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
-        setMenuOpen(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
@@ -200,10 +192,7 @@ export function LibraryPanel({
       return;
     }
     try {
-      const [fileId, durationSec] = await Promise.all([
-        putAudio(file),
-        audioDuration(file).catch(() => 0),
-      ]);
+      const [fileId, durationSec] = await Promise.all([putAudio(file), audioDuration(file).catch(() => 0)]);
       dispatch({
         type: "addAudioTrack",
         id: newTrackId(),
@@ -227,105 +216,102 @@ export function LibraryPanel({
   return (
     <div className="[grid-area:library] bg-rail border-r border-line flex flex-col min-h-0">
       <div className="shrink-0 pt-3">
-      <div className="flex items-center gap-1.5 px-3 pb-4 font-semibold text-sm text-bright">
-        <div className="relative" ref={menuRef}>
-          <button
-            type="button"
-            title="Project menu"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
-            className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-bright hover:bg-ground cursor-pointer"
-          >
-            <span className="text-base leading-none">☰</span>
-          </button>
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute z-30 left-0 mt-1 min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg font-normal text-[12.5px] text-ink"
+        <div className="flex items-center gap-1.5 px-3 pb-4 font-semibold text-sm text-bright">
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              title="Project menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+              className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-bright hover:bg-ground cursor-pointer"
             >
-              <button
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  audioInputRef.current?.click();
-                }}
-                className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
+              <span className="text-base leading-none">☰</span>
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute z-30 left-0 mt-1 min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg font-normal text-[12.5px] text-ink"
               >
-                Import audio…
-              </button>
-              <div className="my-1 border-t border-line" />
-              <button
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  void exportProjectFile(projectStore, editLog);
-                }}
-                className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
-              >
-                Export project…
-              </button>
-              <button
-                role="menuitem"
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  projectInputRef.current?.click();
-                }}
-                className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
-              >
-                Import project…
-              </button>
-            </div>
-          )}
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    audioInputRef.current?.click();
+                  }}
+                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
+                >
+                  Import audio…
+                </button>
+                <div className="my-1 border-t border-line" />
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void exportProjectFile(projectStore, editLog);
+                  }}
+                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
+                >
+                  Export project…
+                </button>
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    projectInputRef.current?.click();
+                  }}
+                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
+                >
+                  Import project…
+                </button>
+              </div>
+            )}
+          </div>
+          <span
+            className="w-4 h-4 rounded-full"
+            style={{
+              background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))",
+            }}
+          />
+          Web DAW
         </div>
-        <span
-          className="w-4 h-4 rounded-full"
-          style={{
-            background:
-              "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))",
+
+        {/* Hidden inputs driven by the menu items above. */}
+        <input
+          ref={audioInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onImport(file);
+            e.target.value = "";
           }}
         />
-        Web DAW
-      </div>
+        <input
+          ref={projectInputRef}
+          type="file"
+          accept=".zip,application/zip"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onImportProject(file);
+            e.target.value = "";
+          }}
+        />
 
-      {/* Hidden inputs driven by the menu items above. */}
-      <input
-        ref={audioInputRef}
-        type="file"
-        accept="audio/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void onImport(file);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={projectInputRef}
-        type="file"
-        accept=".zip,application/zip"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void onImportProject(file);
-          e.target.value = "";
-        }}
-      />
-
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search…"
-        aria-label="Search the library"
-        className="block w-[calc(100%-1.75rem)] mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
-      />
-      {importError && (
-        <p className="text-claude text-[11px] px-4 pb-1">{importError}</p>
-      )}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search…"
+          aria-label="Search the library"
+          className="block w-[calc(100%-1.75rem)] mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
+        />
+        {importError && <p className="text-claude text-[11px] px-4 pb-1">{importError}</p>}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto pb-3">
@@ -388,9 +374,7 @@ export function LibraryPanel({
           </Category>
         )}
 
-        {noMatches && (
-          <p className="px-4 py-2 text-[11.5px] text-faint">No matches for “{searchQuery.trim()}”.</p>
-        )}
+        {noMatches && <p className="px-4 py-2 text-[11.5px] text-faint">No matches for “{searchQuery.trim()}”.</p>}
       </div>
     </div>
   );

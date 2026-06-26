@@ -4,8 +4,8 @@
  * text diff (DESIGN.md section 7). Pure functions over ProjectData, so the version
  * timeline (15B.4) and any history tooling can render "what changed" between commits.
  */
-import type { ProjectData, TrackData, NoteClipData, AudioClipData } from '../project/types';
-import type { PatchValues, ParamValue } from '../params/types';
+import type { ProjectData, TrackData, NoteClipData, AudioClipData } from "../project/types";
+import type { PatchValues, ParamValue } from "../params/types";
 
 /** Readable changes turning snapshot `from` into snapshot `to`. */
 export function diffProjects(from: ProjectData, to: ProjectData): string[] {
@@ -30,7 +30,7 @@ function diffTrack(prev: TrackData, cur: TrackData): string[] {
   if (prev.name !== cur.name) lines.push(`Track "${prev.name}" renamed to "${cur.name}"`);
 
   // Synth patch (instrument tracks only).
-  if (prev.kind === 'instrument' && cur.kind === 'instrument') {
+  if (prev.kind === "instrument" && cur.kind === "instrument") {
     lines.push(...diffParams(name, prev.params ?? {}, cur.params ?? {}));
   }
 
@@ -42,7 +42,7 @@ function diffTrack(prev: TrackData, cur: TrackData): string[] {
   for (const e of cur.effects ?? []) {
     const p = pf.get(e.id);
     if (!p) continue;
-    if (p.bypassed !== e.bypassed) lines.push(`${name}: ${e.type} ${e.bypassed ? 'bypassed' : 'enabled'}`);
+    if (p.bypassed !== e.bypassed) lines.push(`${name}: ${e.type} ${e.bypassed ? "bypassed" : "enabled"}`);
     lines.push(...diffParams(`${name}: ${e.type}`, p.params, e.params));
   }
 
@@ -75,11 +75,11 @@ function diffParams(label: string, prev: PatchValues, cur: PatchValues): string[
 }
 
 function noteCount(clip: NoteClipData | AudioClipData): number {
-  return 'notes' in clip ? clip.notes.length : 0;
+  return "notes" in clip ? clip.notes.length : 0;
 }
 
 function fmt(v: ParamValue | undefined): string {
-  if (v === undefined) return '-';
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
+  if (v === undefined) return "-";
+  if (typeof v === "number") return Number.isInteger(v) ? String(v) : String(+v.toFixed(2));
   return String(v);
 }

@@ -6,7 +6,7 @@
  * duplication. Musical time is in beats; `GRID` (sequencer/types) is the finest
  * snap. 4/4 is assumed (beatsPerBar = 4) until time signatures land.
  */
-import { GRID } from '../../audio/sequencer/types';
+import { GRID } from "../../audio/sequencer/types";
 
 export const DEFAULT_BEATS_PER_BAR = 4;
 
@@ -17,12 +17,10 @@ export const beatToX = (beat: number, pxPerBeat: number): number => beat * pxPer
 export const xToBeat = (x: number, pxPerBeat: number): number => x / pxPerBeat;
 
 /** Snap a beat to the nearest multiple of `division` (e.g. GRID, 0.5, 1). */
-export const snapBeat = (beat: number, division: number = GRID): number =>
-  Math.round(beat / division) * division;
+export const snapBeat = (beat: number, division: number = GRID): number => Math.round(beat / division) * division;
 
 /** Floor a beat to its grid cell start (used when adding a note in a clicked cell). */
-export const floorBeat = (beat: number, division: number = GRID): number =>
-  Math.floor(beat / division) * division;
+export const floorBeat = (beat: number, division: number = GRID): number => Math.floor(beat / division) * division;
 
 export interface BeatTick {
   beat: number;

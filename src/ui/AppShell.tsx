@@ -6,23 +6,23 @@
  * timeline). All the wiring is unchanged from the old SynthPanel - this slice is
  * presentation only.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ProjectStore } from '../audio/project/projectStore';
-import { AudioEngine } from '../audio/engine/AudioEngine';
-import { Scheduler } from '../audio/sequencer/scheduler';
-import { connectMcpBridge, type McpStatus } from '../audio/mcp/bridge';
-import { Recorder } from '../audio/recording/recorder';
-import { attachAutosave, restoreProject } from '../audio/persistence';
-import { VersionStore } from '../audio/commands/history';
-import { useProject } from '../audio/project/useProject';
-import { EditLog } from '../audio/commands/editLog';
-import { LibraryPanel } from './LibraryPanel';
-import { CenterWorkbench } from './CenterWorkbench';
-import { AgentPanel } from './AgentPanel';
-import { ArrangementTimeline } from './ArrangementTimeline';
-import { ResizeHandle } from './ResizeHandle';
-import { StartDialog } from './StartDialog';
-import { usePersistentBoolean, usePersistentNumber } from './usePersistent';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ProjectStore } from "../audio/project/projectStore";
+import { AudioEngine } from "../audio/engine/AudioEngine";
+import { Scheduler } from "../audio/sequencer/scheduler";
+import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
+import { Recorder } from "../audio/recording/recorder";
+import { attachAutosave, restoreProject } from "../audio/persistence";
+import { VersionStore } from "../audio/commands/history";
+import { useProject } from "../audio/project/useProject";
+import { EditLog } from "../audio/commands/editLog";
+import { LibraryPanel } from "./LibraryPanel";
+import { CenterWorkbench } from "./CenterWorkbench";
+import { AgentPanel } from "./AgentPanel";
+import { ArrangementTimeline } from "./ArrangementTimeline";
+import { ResizeHandle } from "./ResizeHandle";
+import { StartDialog } from "./StartDialog";
+import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 
 // Layout bounds. The agent pane collapses to a thin rail (Produce mode); the
 // timeline can grow until only MIN_CENTER of the workbench remains.
@@ -31,8 +31,19 @@ const MIN_CENTER = 96;
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
 const KEY_MAP: Record<string, number> = {
-  a: 60, w: 61, s: 62, e: 63, d: 64, f: 65, t: 66,
-  g: 67, y: 68, h: 69, u: 70, j: 71, k: 72,
+  a: 60,
+  w: 61,
+  s: 62,
+  e: 63,
+  d: 64,
+  f: 65,
+  t: 66,
+  g: 67,
+  y: 68,
+  h: 69,
+  u: 70,
+  j: 71,
+  k: 72,
 };
 
 export function AppShell() {
@@ -43,15 +54,15 @@ export function AppShell() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
   const [recorder] = useState(() => new Recorder(engine, scheduler, projectStore, editLog.dispatch));
-  const [mcpStatus, setMcpStatus] = useState<McpStatus>('connecting');
+  const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
   const dispatch = editLog.dispatch;
 
   // Resizable, persisted side panels + agent collapse (replaces the old mode toggle).
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [libWidth, setLibWidth] = usePersistentNumber('web-daw:lib-width', 200, 150, 420);
-  const [agentWidth, setAgentWidth] = usePersistentNumber('web-daw:agent-width', 320, 240, 620);
-  const [timelineH, setTimelineH] = usePersistentNumber('web-daw:timeline-height', 244, 120, 2000);
-  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean('web-daw:agent-collapsed', false);
+  const [libWidth, setLibWidth] = usePersistentNumber("web-daw:lib-width", 200, 150, 420);
+  const [agentWidth, setAgentWidth] = usePersistentNumber("web-daw:agent-width", 320, 240, 620);
+  const [timelineH, setTimelineH] = usePersistentNumber("web-daw:timeline-height", 244, 120, 2000);
+  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", false);
   const [dragging, setDragging] = useState(false);
 
   // Track the body height so the timeline can never crowd out the workbench:
@@ -102,46 +113,53 @@ export function AppShell() {
     };
   }, [projectStore, editLog, versionStore]);
 
-  useEffect(() => () => {
-    recorder.dispose();
-    scheduler.dispose();
-    engine.dispose();
-  }, [recorder, scheduler, engine]);
+  useEffect(
+    () => () => {
+      recorder.dispose();
+      scheduler.dispose();
+      engine.dispose();
+    },
+    [recorder, scheduler, engine],
+  );
 
   useEffect(() => {
-    const handle = connectMcpBridge({ projectStore, engine, scheduler, editLog, versionStore }, { onStatus: setMcpStatus });
+    const handle = connectMcpBridge(
+      { projectStore, engine, scheduler, editLog, versionStore },
+      { onStatus: setMcpStatus },
+    );
     return () => handle.dispose();
   }, [projectStore, engine, scheduler, editLog, versionStore]);
 
   // Undo / redo (Cmd/Ctrl-Z, Shift+Cmd/Ctrl-Z), unless typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
       e.preventDefault();
       if (e.shiftKey) editLog.redo();
       else editLog.undo();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [editLog]);
 
   // Space anywhere toggles play/stop, unless typing in a field (scheduler.play
   // is a no-op until audio is started).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.code !== "Space" && e.key !== " ") return;
       const el = e.target as HTMLElement | null;
       if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
       e.preventDefault();
       if (scheduler.isPlaying) {
-        if (recorder.isActive) void recorder.stop(); // finalize the take, not just stop
+        if (recorder.isActive)
+          void recorder.stop(); // finalize the take, not just stop
         else scheduler.stop();
       } else scheduler.play();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [scheduler, recorder]);
 
   // Computer-keyboard plays the selected track's instrument (polyphonic).
@@ -164,11 +182,11 @@ export function AppShell() {
       engine.getInstrument(id)?.noteOff(midi);
       recorder.noteOff(midi);
     };
-    window.addEventListener('keydown', onDown);
-    window.addEventListener('keyup', onUp);
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
     return () => {
-      window.removeEventListener('keydown', onDown);
-      window.removeEventListener('keyup', onUp);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
     };
   }, [started, projectStore, engine, recorder]);
 
@@ -182,10 +200,16 @@ export function AppShell() {
       <div
         ref={bodyRef}
         className="app-body flex-1 min-h-0 relative"
-        style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? 'none' : undefined }}
+        style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? "none" : undefined }}
       >
         <LibraryPanel projectStore={projectStore} editLog={editLog} dispatch={dispatch} />
-        <CenterWorkbench projectStore={projectStore} scheduler={scheduler} recorder={recorder} dispatch={dispatch} selectedTrack={selectedTrack} />
+        <CenterWorkbench
+          projectStore={projectStore}
+          scheduler={scheduler}
+          recorder={recorder}
+          dispatch={dispatch}
+          selectedTrack={selectedTrack}
+        />
         <AgentPanel
           mcpStatus={mcpStatus}
           editLog={editLog}

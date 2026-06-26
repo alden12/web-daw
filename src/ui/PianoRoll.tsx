@@ -19,18 +19,18 @@
  * arrangement loop region lives in the timeline). The grid is drawn past the clip
  * end so you can scroll there and drag the end out.
  */
-import { useEffect, useRef, useState } from 'react';
-import type { ClipStore } from '../audio/sequencer/clipStore';
-import type { Scheduler } from '../audio/sequencer/scheduler';
-import type { Recorder } from '../audio/recording/recorder';
-import { GRID, type NoteEvent } from '../audio/sequencer/types';
-import { useClip } from '../audio/sequencer/useClip';
-import { useRecorder } from './useRecorder';
-import type { Dispatch } from '../audio/commands/types';
-import { newNoteId } from '../audio/commands/ids';
-import { usePersistentBoolean, usePersistentNumber } from './usePersistent';
-import { Ruler } from './timeline/Ruler';
-import { beatToX, floorBeat, snapBeat, xToBeat } from './timeline/timeGrid';
+import { useEffect, useRef, useState } from "react";
+import type { ClipStore } from "../audio/sequencer/clipStore";
+import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { Recorder } from "../audio/recording/recorder";
+import { GRID, type NoteEvent } from "../audio/sequencer/types";
+import { useClip } from "../audio/sequencer/useClip";
+import { useRecorder } from "./useRecorder";
+import type { Dispatch } from "../audio/commands/types";
+import { newNoteId } from "../audio/commands/ids";
+import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { Ruler } from "./timeline/Ruler";
+import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
 
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
@@ -45,20 +45,36 @@ const ZOOM_Y = { min: 7, max: 28 };
 const VEL = { min: 24, max: 160 };
 
 const SNAP_OPTIONS = [
-  { label: '1/4', value: 1 },
-  { label: '1/8', value: 0.5 },
-  { label: '1/16', value: 0.25 },
+  { label: "1/4", value: 1 },
+  { label: "1/8", value: 0.5 },
+  { label: "1/16", value: 0.25 },
 ];
 
 const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitchNote = (pitch: number) => `${NOTE_NAMES[((pitch % 12) + 12) % 12]}${Math.floor(pitch / 12) - 1}`;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type Drag =
-  | { kind: 'move' | 'resize'; ids: string[]; origin: Map<string, NoteEvent>; startBeat: number; startPitch: number; moved: boolean }
-  | { kind: 'velocity'; ids: string[]; origin: Map<string, NoteEvent>; moved: boolean }
-  | { kind: 'empty' | 'marquee'; downX: number; downY: number; cX: number; cY: number; base: Set<string>; additive: boolean; moved: boolean };
+  | {
+      kind: "move" | "resize";
+      ids: string[];
+      origin: Map<string, NoteEvent>;
+      startBeat: number;
+      startPitch: number;
+      moved: boolean;
+    }
+  | { kind: "velocity"; ids: string[]; origin: Map<string, NoteEvent>; moved: boolean }
+  | {
+      kind: "empty" | "marquee";
+      downX: number;
+      downY: number;
+      cX: number;
+      cY: number;
+      base: Set<string>;
+      additive: boolean;
+      moved: boolean;
+    };
 
 export function PianoRoll({
   clipStore,
@@ -82,11 +98,11 @@ export function PianoRoll({
   const len = clip.lengthBeats;
   const viewBeats = len + TRAIL_BEATS;
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber('web-daw:roll-zoom-x', 64, ZOOM_X.min, ZOOM_X.max);
-  const [rowH, setRowH] = usePersistentNumber('web-daw:roll-zoom-y', 12, ZOOM_Y.min, ZOOM_Y.max);
-  const [snapDiv, setSnapDiv] = usePersistentNumber('web-daw:roll-snap-div', 0.25, 0.25, 1);
-  const [snapOn, setSnapOn] = usePersistentBoolean('web-daw:roll-snap-on', true);
-  const [velH, setVelH] = usePersistentNumber('web-daw:roll-vel-height', 56, VEL.min, VEL.max);
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
+  const [rowH, setRowH] = usePersistentNumber("web-daw:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
+  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:roll-snap-div", 0.25, 0.25, 1);
+  const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
+  const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -111,8 +127,10 @@ export function PianoRoll({
   const clampLen = (l: number, start: number) => clamp(l, snapOn ? snapDiv : GRID, len - start);
 
   // Pointer -> grid coordinates (the grid rect already accounts for scroll).
-  const beatAt = (clientX: number) => xToBeat(clientX - (gridRef.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
-  const pitchAt = (clientY: number) => MAX_PITCH - Math.floor((clientY - (gridRef.current?.getBoundingClientRect().top ?? 0)) / rowH);
+  const beatAt = (clientX: number) =>
+    xToBeat(clientX - (gridRef.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
+  const pitchAt = (clientY: number) =>
+    MAX_PITCH - Math.floor((clientY - (gridRef.current?.getBoundingClientRect().top ?? 0)) / rowH);
 
   // Fit the clip's notes into view on first load of this track (the component
   // remounts per track, so this runs once each time). Scrolls only - zoom is the
@@ -154,8 +172,8 @@ export function PianoRoll({
         el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left);
       });
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, [pxPerBeat, rowH, setPxPerBeat, setRowH]);
 
   // Drive the playhead off the audio clock (already wrapped to the loop region).
@@ -168,7 +186,7 @@ export function PianoRoll({
       const el = playheadRef.current;
       if (el) {
         el.style.transform = `translateX(${head}px)`;
-        el.style.opacity = scheduler.isPlaying ? '1' : '0';
+        el.style.opacity = scheduler.isPlaying ? "1" : "0";
       }
       const layer = heldRef.current;
       if (layer) {
@@ -188,8 +206,8 @@ export function PianoRoll({
     const onDown = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setSelection(new Set());
     };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, []);
 
   // Keyboard: delete / deselect / copy / cut / paste / select-all, unless typing in a field.
@@ -200,25 +218,30 @@ export function PianoRoll({
       const mod = e.metaKey || e.ctrlKey;
       const ids = [...selection];
 
-      if (e.key === 'Escape' && ids.length) {
+      if (e.key === "Escape" && ids.length) {
         setSelection(new Set());
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && ids.length) {
+      } else if ((e.key === "Delete" || e.key === "Backspace") && ids.length) {
         e.preventDefault();
-        dispatch({ type: 'removeNotes', trackId, ids });
+        dispatch({ type: "removeNotes", trackId, ids });
         setSelection(new Set());
-      } else if (mod && e.key.toLowerCase() === 'a') {
+      } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
         setSelection(new Set(clip.notes.map((n) => n.id)));
-      } else if (mod && (e.key === 'c' || e.key === 'x') && ids.length) {
+      } else if (mod && (e.key === "c" || e.key === "x") && ids.length) {
         e.preventDefault();
         const picked = clip.notes.filter((n) => selection.has(n.id));
         const base = Math.min(...picked.map((n) => n.start));
-        clipboard.current = picked.map((n) => ({ relStart: n.start - base, pitch: n.pitch, length: n.length, velocity: n.velocity }));
-        if (e.key === 'x') {
-          dispatch({ type: 'removeNotes', trackId, ids });
+        clipboard.current = picked.map((n) => ({
+          relStart: n.start - base,
+          pitch: n.pitch,
+          length: n.length,
+          velocity: n.velocity,
+        }));
+        if (e.key === "x") {
+          dispatch({ type: "removeNotes", trackId, ids });
           setSelection(new Set());
         }
-      } else if (mod && e.key === 'v' && clipboard.current.length) {
+      } else if (mod && e.key === "v" && clipboard.current.length) {
         e.preventDefault();
         const at = snapB(scheduler.getPositionBeats());
         const notes: NoteEvent[] = clipboard.current.map((c) => ({
@@ -228,12 +251,12 @@ export function PianoRoll({
           length: c.length,
           velocity: c.velocity,
         }));
-        dispatch({ type: 'addNotes', trackId, notes });
+        dispatch({ type: "addNotes", trackId, notes });
         setSelection(new Set(notes.map((n) => n.id)));
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, clip.notes, trackId, dispatch, snapOn, snapDiv, len]);
 
@@ -256,13 +279,13 @@ export function PianoRoll({
     const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((n) => n.id === id)! }]));
     const startBeat = beatAt(e.clientX);
     const startPitch = pitchAt(e.clientY);
-    drag.current = { kind: isEdge ? 'resize' : 'move', ids, origin, startBeat, startPitch, moved: false };
+    drag.current = { kind: isEdge ? "resize" : "move", ids, origin, startBeat, startPitch, moved: false };
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
-      if (!d || (d.kind !== 'move' && d.kind !== 'resize')) return;
+      if (!d || (d.kind !== "move" && d.kind !== "resize")) return;
       const dB = snapB(beatAt(ev.clientX) - d.startBeat);
-      if (d.kind === 'move') {
+      if (d.kind === "move") {
         const dP = pitchAt(ev.clientY) - d.startPitch;
         if (!d.moved && dB === 0 && dP === 0) return;
         d.moved = true;
@@ -270,7 +293,7 @@ export function PianoRoll({
           const o = d.origin.get(id)!;
           return { ...o, start: clampStart(o.start + dB), pitch: clampPitch(o.pitch + dP) };
         });
-        dispatch({ type: 'editNotes', trackId, notes });
+        dispatch({ type: "editNotes", trackId, notes });
       } else {
         if (!d.moved && dB === 0) return;
         d.moved = true;
@@ -279,16 +302,16 @@ export function PianoRoll({
           return { ...o, length: clampLen(o.length + dB, o.start) };
         });
         if (notes.length === 1) lastLen.current = notes[0].length;
-        dispatch({ type: 'editNotes', trackId, notes });
+        dispatch({ type: "editNotes", trackId, notes });
       }
     };
     const onUp = () => {
       drag.current = null;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   // --- empty-grid press: click -> add, drag -> marquee ----------------------
@@ -297,14 +320,23 @@ export function PianoRoll({
     const rect = gridRef.current!.getBoundingClientRect();
     const downX = e.clientX - rect.left;
     const downY = e.clientY - rect.top;
-    drag.current = { kind: 'empty', downX, downY, cX: e.clientX, cY: e.clientY, base: new Set(selection), additive: e.shiftKey, moved: false };
+    drag.current = {
+      kind: "empty",
+      downX,
+      downY,
+      cX: e.clientX,
+      cY: e.clientY,
+      base: new Set(selection),
+      additive: e.shiftKey,
+      moved: false,
+    };
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
-      if (!d || (d.kind !== 'empty' && d.kind !== 'marquee')) return;
+      if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
       if (!d.moved && Math.hypot(ev.clientX - d.cX, ev.clientY - d.cY) < DRAG_THRESH) return;
       d.moved = true;
-      d.kind = 'marquee';
+      d.kind = "marquee";
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
       const x0 = Math.min(d.downX, x);
@@ -324,9 +356,9 @@ export function PianoRoll({
       const d = drag.current;
       drag.current = null;
       setMarquee(null);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      if (!d || (d.kind !== 'empty' && d.kind !== 'marquee')) return;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
       if (d.moved || d.additive) return; // dragged (marquee), or shift-click: keep selection
       const pitch = MAX_PITCH - Math.floor(downY / rowH);
       const beat = xToBeat(downX, pxPerBeat);
@@ -336,11 +368,11 @@ export function PianoRoll({
       }
       const id = newNoteId();
       const start = clampStart(floorBeat(beat, snapOn ? snapDiv : GRID));
-      dispatch({ type: 'addNote', trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
+      dispatch({ type: "addNote", trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
       setSelection(new Set([id]));
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   // --- velocity lane --------------------------------------------------------
@@ -350,23 +382,23 @@ export function PianoRoll({
     const ids = selection.has(note.id) ? [...selection] : [note.id];
     setSelection(new Set(ids));
     const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((n) => n.id === id)! }]));
-    drag.current = { kind: 'velocity', ids, origin, moved: false };
+    drag.current = { kind: "velocity", ids, origin, moved: false };
 
     const apply = (clientY: number) => {
       const rect = velRef.current!.getBoundingClientRect();
       const v = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
       const notes = ids.map((id) => ({ ...origin.get(id)!, velocity: v }));
-      dispatch({ type: 'editNotes', trackId, notes });
+      dispatch({ type: "editNotes", trackId, notes });
     };
     apply(e.clientY);
     const onMove = (ev: PointerEvent) => apply(ev.clientY);
     const onUp = () => {
       drag.current = null;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   // Drag the velocity lane's top edge to resize it.
@@ -377,20 +409,21 @@ export function PianoRoll({
     const startH = velH;
     const onMove = (ev: PointerEvent) => setVelH(startH + (startY - ev.clientY));
     const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   const gridBg = [
     `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${pxPerBeat}px)`,
     `repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${cellW}px)`,
     `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${rowH}px)`,
-  ].join(', ');
+  ].join(", ");
 
-  const zoomBtn = 'font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright';
+  const zoomBtn =
+    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
@@ -414,10 +447,20 @@ export function PianoRoll({
         </select>
         <div className="ml-auto flex items-center gap-1.5">
           <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button type="button" title="Zoom out (time)" className={zoomBtn} onClick={() => setPxPerBeat(Math.round(pxPerBeat / 1.25))}>
+          <button
+            type="button"
+            title="Zoom out (time)"
+            className={zoomBtn}
+            onClick={() => setPxPerBeat(Math.round(pxPerBeat / 1.25))}
+          >
             −
           </button>
-          <button type="button" title="Zoom in (time)" className={zoomBtn} onClick={() => setPxPerBeat(Math.round(pxPerBeat * 1.25))}>
+          <button
+            type="button"
+            title="Zoom in (time)"
+            className={zoomBtn}
+            onClick={() => setPxPerBeat(Math.round(pxPerBeat * 1.25))}
+          >
             +
           </button>
           <button type="button" title="Shorter rows" className={zoomBtn} onClick={() => setRowH(rowH - 2)}>
@@ -436,10 +479,16 @@ export function PianoRoll({
           loopStart={0}
           loopEnd={len}
           pxPerBeat={pxPerBeat}
-          onSetLoopEnd={(beats) => dispatch({ type: 'setClipLength', trackId, lengthBeats: beats })}
+          onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, lengthBeats: beats })}
         />
 
-        <div ref={gridRef} data-testid="piano-grid" className="relative cursor-copy" style={{ width, height, background: gridBg }} onPointerDown={onGridDown}>
+        <div
+          ref={gridRef}
+          data-testid="piano-grid"
+          className="relative cursor-copy"
+          style={{ width, height, background: gridBg }}
+          onPointerDown={onGridDown}
+        >
           {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
           <div
             className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
@@ -451,7 +500,7 @@ export function PianoRoll({
             return (
               <div
                 key={pitch}
-                className={`absolute left-0 right-0 pointer-events-none ${isBlackKey(pitch) ? 'bg-white/[0.035]' : ''}`}
+                className={`absolute left-0 right-0 pointer-events-none ${isBlackKey(pitch) ? "bg-white/[0.035]" : ""}`}
                 style={{ top: row * rowH, height: rowH }}
               >
                 {pitch % 12 === 0 && (
@@ -469,7 +518,9 @@ export function PianoRoll({
                 data-testid="note"
                 onPointerDown={(e) => onNoteDown(note, e)}
                 className={`absolute rounded-sm box-border cursor-grab ${
-                  selected ? 'bg-bright border border-you ring-1 ring-you' : 'bg-you border border-you/40 hover:brightness-125'
+                  selected
+                    ? "bg-bright border border-you ring-1 ring-you"
+                    : "bg-you border border-you/40 hover:brightness-125"
                 }`}
                 style={{
                   left: beatToX(note.start, pxPerBeat),
@@ -516,18 +567,32 @@ export function PianoRoll({
                     data-testid="ghost-note"
                     data-left={beatToX(n.startBeat, pxPerBeat)}
                     className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
-                    style={{ left: beatToX(n.startBeat, pxPerBeat), width: 2, top: (MAX_PITCH - n.pitch) * rowH, height: rowH - 1 }}
+                    style={{
+                      left: beatToX(n.startBeat, pxPerBeat),
+                      width: 2,
+                      top: (MAX_PITCH - n.pitch) * rowH,
+                      height: rowH - 1,
+                    }}
                   />
                 ))}
               </div>
             </>
           )}
 
-          <div ref={playheadRef} className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5" style={{ height }} />
+          <div
+            ref={playheadRef}
+            className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
+            style={{ height }}
+          />
         </div>
 
         {/* velocity lane */}
-        <div ref={velRef} className="sticky bottom-0 z-10 border-t border-line bg-rail" style={{ width, height: velH }} title="Velocity - drag a bar">
+        <div
+          ref={velRef}
+          className="sticky bottom-0 z-10 border-t border-line bg-rail"
+          style={{ width, height: velH }}
+          title="Velocity - drag a bar"
+        >
           {/* resize the lane by dragging its top edge */}
           <div
             role="separator"
@@ -541,7 +606,7 @@ export function PianoRoll({
               <div
                 key={note.id}
                 onPointerDown={(e) => onVelDown(note, e)}
-                className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? 'bg-bright' : 'bg-you/80 hover:bg-you'}`}
+                className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
                 style={{
                   left: beatToX(note.start, pxPerBeat),
                   width: VEL_BAR_W,
