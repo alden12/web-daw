@@ -108,7 +108,7 @@ export class Recorder {
   }
   private set(patch: Partial<RecorderState>): void {
     this.state = { ...this.state, ...patch };
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 
   get isActive(): boolean {
@@ -235,7 +235,7 @@ export class Recorder {
     if (!this.targetTrackId) return null;
     return {
       trackId: this.targetTrackId,
-      captured: this.captured.map((n) => ({ pitch: n.pitch, startBeat: n.startBeat, endBeat: n.endBeat })),
+      captured: this.captured.map((note) => ({ pitch: note.pitch, startBeat: note.startBeat, endBeat: note.endBeat })),
       held: [...this.held].map(([pitch, n]) => ({ pitch, startBeat: n.startBeat })),
     };
   }
@@ -323,14 +323,14 @@ export class Recorder {
     // relative to the bar and the clip lines up with the grid. The clip is sized
     // up to whole bars to cover the last note.
     const clipStart = Math.max(0, Math.floor(this.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR);
-    const notes: NoteEvent[] = captured.map((n) => ({
+    const notes: NoteEvent[] = captured.map((note) => ({
       id: newNoteId(),
-      pitch: n.pitch,
-      start: Math.max(0, n.startBeat - clipStart),
-      length: Math.max(GRID, n.endBeat - n.startBeat),
-      velocity: n.velocity,
+      pitch: note.pitch,
+      start: Math.max(0, note.startBeat - clipStart),
+      length: Math.max(GRID, note.endBeat - note.startBeat),
+      velocity: note.velocity,
     }));
-    const span = Math.max(...notes.map((n) => n.start + n.length));
+    const span = Math.max(...notes.map((note) => note.start + note.length));
     const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
     this.dispatch({
       type: "addNoteClip",
@@ -348,12 +348,12 @@ export class Recorder {
   private nextTakeName(): string {
     const nums: number[] = [];
     const add = (name: string) => {
-      const m = /^Take (\d+)$/.exec(name);
-      if (m) nums.push(Number(m[1]));
+      const match = /^Take (\d+)$/.exec(name);
+      if (match) nums.push(Number(match[1]));
     };
-    for (const t of this.project.getStructure().tracks) {
-      add(t.name);
-      for (const c of t.clips) add(c.name);
+    for (const track of this.project.getStructure().tracks) {
+      add(track.name);
+      for (const clip of track.clips) add(clip.name);
     }
     return `Take ${nums.length ? Math.max(...nums) + 1 : 1}`;
   }

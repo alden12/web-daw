@@ -128,7 +128,7 @@ export class AudioEngine {
     const mutedTracks = soloMutedTrackIds(groups, tracks);
 
     // Dispose nodes for removed groups/tracks (by kind - ids live in one map).
-    const liveGroupIds = new Set(groups.map((g) => g.id));
+    const liveGroupIds = new Set(groups.map((group) => group.id));
     for (const [id, node] of this.groupNodes) {
       if (!liveGroupIds.has(id)) {
         this.disposeEffects(node.effects);
@@ -137,7 +137,7 @@ export class AudioEngine {
         this.groupNodes.delete(id);
       }
     }
-    const instrumentIds = new Set(tracks.filter((t) => t.kind === "instrument").map((t) => t.id));
+    const instrumentIds = new Set(tracks.filter((track) => track.kind === "instrument").map((track) => track.id));
     for (const [id, node] of this.nodes) {
       if (!instrumentIds.has(id)) {
         this.disposeEffects(node.effects);
@@ -146,7 +146,7 @@ export class AudioEngine {
         this.nodes.delete(id);
       }
     }
-    const audioIds = new Set(tracks.filter((t) => t.kind === "audio").map((t) => t.id));
+    const audioIds = new Set(tracks.filter((track) => track.kind === "audio").map((track) => track.id));
     for (const [id, node] of this.audioNodes) {
       if (!audioIds.has(id)) {
         this.disposeAudioSources(node);
@@ -383,7 +383,9 @@ export class AudioEngine {
   async listInputDevices(): Promise<{ deviceId: string; label: string }[]> {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
     const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices.filter((d) => d.kind === "audioinput").map((d) => ({ deviceId: d.deviceId, label: d.label }));
+    return devices
+      .filter((device) => device.kind === "audioinput")
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
   }
 
   /**
@@ -444,12 +446,12 @@ export class AudioEngine {
     }
     await new Promise((resolve) => setTimeout(resolve, 60));
     this.capturing = false;
-    const total = this.captureChunks.reduce((n, c) => n + c.length, 0);
+    const total = this.captureChunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const samples = new Float32Array(total);
     let offset = 0;
-    for (const c of this.captureChunks) {
-      samples.set(c, offset);
-      offset += c.length;
+    for (const chunk of this.captureChunks) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
     }
     this.captureChunks = [];
     return { samples, sampleRate: ctx.sampleRate };

@@ -109,7 +109,7 @@ function AudioClipPanel({
   loopLength: number;
   dispatch: Dispatch;
 }) {
-  const clip = track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
+  const clip = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
   const bps = beatsPerSecond(tempoBpm);
   const dur = clip?.durationSec || 0;
   const durBeats = Math.max(0.001, dur * bps);
@@ -158,7 +158,10 @@ function AudioClipPanel({
       const pos = scheduler.getPositionBeats();
       const active = launched
         ? { startBeat: loopStart, length: loopLength }
-        : placements.find((p) => p.clipId === clipId && pos >= p.startBeat && pos < p.startBeat + p.length);
+        : placements.find(
+            (placement) =>
+              placement.clipId === clipId && pos >= placement.startBeat && pos < placement.startBeat + placement.length,
+          );
       if (active) {
         let phase = (pos - active.startBeat) % regionBeats;
         if (phase < 0) phase += regionBeats;
@@ -347,7 +350,8 @@ export function CenterWorkbench({
   }
 
   const kindLabel = selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType;
-  const activeClip = selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
+  const activeClip =
+    selectedTrack.clips.find((clip) => clip.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
 
   return (
     <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -404,7 +408,7 @@ export function CenterWorkbench({
           <div className="flex-1 min-w-0 min-h-0 p-3">
             {(() => {
               const active =
-                selectedTrack.clips.find((c) => c.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
+                selectedTrack.clips.find((clip) => clip.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
               // Key by the active clip so the roll remounts (re-fits, resets selection) on switch.
               return (
                 <PianoRoll

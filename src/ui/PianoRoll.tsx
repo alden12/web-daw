@@ -141,7 +141,7 @@ export function PianoRoll({
     const el = scrollRef.current;
     if (!el) return;
     const notes = clipStore.getClip().notes;
-    const pitches = notes.map((n) => n.pitch);
+    const pitches = notes.map((note) => note.pitch);
     const hi = pitches.length ? Math.max(...pitches) : 64;
     const lo = pitches.length ? Math.min(...pitches) : 57; // frame around C4
     const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
@@ -222,16 +222,16 @@ export function PianoRoll({
         setSelection(new Set());
       } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
-        setSelection(new Set(clip.notes.map((n) => n.id)));
+        setSelection(new Set(clip.notes.map((note) => note.id)));
       } else if (mod && (e.key === "c" || e.key === "x") && ids.length) {
         e.preventDefault();
-        const picked = clip.notes.filter((n) => selection.has(n.id));
-        const base = Math.min(...picked.map((n) => n.start));
-        clipboard.current = picked.map((n) => ({
-          relStart: n.start - base,
-          pitch: n.pitch,
-          length: n.length,
-          velocity: n.velocity,
+        const picked = clip.notes.filter((note) => selection.has(note.id));
+        const base = Math.min(...picked.map((note) => note.start));
+        clipboard.current = picked.map((note) => ({
+          relStart: note.start - base,
+          pitch: note.pitch,
+          length: note.length,
+          velocity: note.velocity,
         }));
         if (e.key === "x") {
           dispatch({ type: "removeNotes", trackId, ids });
@@ -240,15 +240,15 @@ export function PianoRoll({
       } else if (mod && e.key === "v" && clipboard.current.length) {
         e.preventDefault();
         const at = snapB(scheduler.getPositionBeats());
-        const notes: NoteEvent[] = clipboard.current.map((c) => ({
+        const notes: NoteEvent[] = clipboard.current.map((entry) => ({
           id: newNoteId(),
-          pitch: clampPitch(c.pitch),
-          start: clampStart(at + c.relStart),
-          length: c.length,
-          velocity: c.velocity,
+          pitch: clampPitch(entry.pitch),
+          start: clampStart(at + entry.relStart),
+          length: entry.length,
+          velocity: entry.velocity,
         }));
         dispatch({ type: "addNotes", trackId, notes });
-        setSelection(new Set(notes.map((n) => n.id)));
+        setSelection(new Set(notes.map((note) => note.id)));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -272,7 +272,7 @@ export function PianoRoll({
     if (e.shiftKey && !sel.has(note.id)) return; // toggled off -> no drag
 
     const ids = [...sel];
-    const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((n) => n.id === id)! }]));
+    const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((note) => note.id === id)! }]));
     const startBeat = beatAt(e.clientX);
     const startPitch = pitchAt(e.clientY);
     drag.current = { kind: isEdge ? "resize" : "move", ids, origin, startBeat, startPitch, moved: false };
@@ -286,16 +286,16 @@ export function PianoRoll({
         if (!d.moved && dB === 0 && dP === 0) return;
         d.moved = true;
         const notes = d.ids.map((id) => {
-          const o = d.origin.get(id)!;
-          return { ...o, start: clampStart(o.start + dB), pitch: clampPitch(o.pitch + dP) };
+          const original = d.origin.get(id)!;
+          return { ...original, start: clampStart(original.start + dB), pitch: clampPitch(original.pitch + dP) };
         });
         dispatch({ type: "editNotes", trackId, notes });
       } else {
         if (!d.moved && dB === 0) return;
         d.moved = true;
         const notes = d.ids.map((id) => {
-          const o = d.origin.get(id)!;
-          return { ...o, length: clampLen(o.length + dB, o.start) };
+          const original = d.origin.get(id)!;
+          return { ...original, length: clampLen(original.length + dB, original.start) };
         });
         if (notes.length === 1) lastLen.current = notes[0].length;
         dispatch({ type: "editNotes", trackId, notes });
@@ -337,10 +337,11 @@ export function PianoRoll({
       const h = Math.abs(y - d.downY);
       setMarquee({ x: x0, y: y0, w, h });
       const next = new Set(d.additive ? d.base : []);
-      for (const n of clip.notes) {
-        const nx = beatToX(n.start, pxPerBeat);
-        const ny = (MAX_PITCH - n.pitch) * rowH;
-        if (nx < x0 + w && nx + beatToX(n.length, pxPerBeat) > x0 && ny < y0 + h && ny + rowH > y0) next.add(n.id);
+      for (const note of clip.notes) {
+        const nx = beatToX(note.start, pxPerBeat);
+        const ny = (MAX_PITCH - note.pitch) * rowH;
+        if (nx < x0 + w && nx + beatToX(note.length, pxPerBeat) > x0 && ny < y0 + h && ny + rowH > y0)
+          next.add(note.id);
       }
       setSelection(next);
     };
@@ -369,7 +370,7 @@ export function PianoRoll({
     e.stopPropagation();
     const ids = selection.has(note.id) ? [...selection] : [note.id];
     setSelection(new Set(ids));
-    const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((n) => n.id === id)! }]));
+    const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((note) => note.id === id)! }]));
     drag.current = { kind: "velocity", ids, origin, moved: false };
 
     const apply = (clientY: number) => {
@@ -419,9 +420,9 @@ export function PianoRoll({
           onChange={(e) => setSnapDiv(Number(e.target.value))}
           className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
         >
-          {SNAP_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
+          {SNAP_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>
@@ -527,30 +528,30 @@ export function PianoRoll({
               held (grown out to the playhead each frame). Drawn in the record colour. */}
           {take && (
             <>
-              {take.captured.map((n, i) => (
+              {take.captured.map((note, i) => (
                 <div
                   key={`cap-${i}`}
                   data-testid="ghost-note"
                   className="absolute rounded-sm bg-claude/70 border border-claude pointer-events-none z-4"
                   style={{
-                    left: beatToX(n.startBeat, pxPerBeat),
-                    width: Math.max(2, beatToX(n.endBeat - n.startBeat, pxPerBeat) - 1),
-                    top: (MAX_PITCH - n.pitch) * rowH,
+                    left: beatToX(note.startBeat, pxPerBeat),
+                    width: Math.max(2, beatToX(note.endBeat - note.startBeat, pxPerBeat) - 1),
+                    top: (MAX_PITCH - note.pitch) * rowH,
                     height: rowH - 1,
                   }}
                 />
               ))}
               <div ref={heldRef} className="contents">
-                {take.held.map((n) => (
+                {take.held.map((note) => (
                   <div
-                    key={`held-${n.pitch}`}
+                    key={`held-${note.pitch}`}
                     data-testid="ghost-note"
-                    data-left={beatToX(n.startBeat, pxPerBeat)}
+                    data-left={beatToX(note.startBeat, pxPerBeat)}
                     className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
                     style={{
-                      left: beatToX(n.startBeat, pxPerBeat),
+                      left: beatToX(note.startBeat, pxPerBeat),
                       width: 2,
-                      top: (MAX_PITCH - n.pitch) * rowH,
+                      top: (MAX_PITCH - note.pitch) * rowH,
                       height: rowH - 1,
                     }}
                   />

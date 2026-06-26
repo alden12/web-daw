@@ -58,16 +58,17 @@ function flattenRows(groups: GroupMeta[], tracks: TrackMeta[]): Row[] {
   const walk = (group: GroupMeta, depth: number) => {
     rows.push({ kind: "group", group, depth });
     if (group.collapsed) return;
-    for (const sub of groups.filter((g) => g.parentId === group.id)) walk(sub, depth + 1);
+    for (const sub of groups.filter((child) => child.parentId === group.id)) walk(sub, depth + 1);
     // Tracks sit at their group's depth (not indented one further), so a group and
     // its tracks share the leading gutter and their mute/solo controls line up; the
     // group's distinct styling (uppercase, darker bg) carries the hierarchy.
-    for (const t of tracks.filter((t) => t.parentId === group.id)) rows.push({ kind: "track", track: t, depth });
+    for (const track of tracks.filter((track) => track.parentId === group.id))
+      rows.push({ kind: "track", track, depth });
   };
-  for (const g of groups.filter((g) => g.parentId === null)) walk(g, 0);
+  for (const group of groups.filter((group) => group.parentId === null)) walk(group, 0);
   // Defensive: surface any orphaned tracks (model keeps every track in a group).
-  for (const t of tracks.filter((t) => !groups.some((g) => g.id === t.parentId)))
-    rows.push({ kind: "track", track: t, depth: 0 });
+  for (const track of tracks.filter((track) => !groups.some((group) => group.id === track.parentId)))
+    rows.push({ kind: "track", track, depth: 0 });
   return rows;
 }
 
@@ -123,13 +124,13 @@ export function ArrangementTimeline({
   const beatsPerBar = DEFAULT_BEATS_PER_BAR;
   const lengthBeats = project.lengthBeats;
   const rows = flattenRows(project.groups, project.tracks);
-  const clipMode = project.tracks.some((t) => t.launchedClipId);
+  const clipMode = project.tracks.some((track) => track.launchedClipId);
 
   // The grid runs past the loop and the furthest placement (room to arrange into),
   // and never stops short of the visible panel, so the bar grid fills it at any zoom.
   const arrangedEnd = Math.max(
     lengthBeats,
-    ...project.tracks.flatMap((t) => t.placements.map((p) => p.startBeat + p.length)),
+    ...project.tracks.flatMap((track) => track.placements.map((placement) => placement.startBeat + placement.length)),
     0,
   );
   const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
@@ -193,7 +194,7 @@ export function ArrangementTimeline({
       if (key === "c" || key === "x") {
         if (!selection) return;
         const t = projectStore.getTrack(selection.trackId);
-        const p = t?.placements.find((x) => x.id === selection.id);
+        const p = t?.placements.find((placement) => placement.id === selection.id);
         if (!p) return;
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -218,11 +219,14 @@ export function ArrangementTimeline({
       const cb = clipboard.current;
       const targetId = marker?.trackId ?? selection?.trackId ?? projectStore.selectedId ?? undefined;
       const t = targetId ? projectStore.getTrack(targetId) : undefined;
-      if (!cb || !t || !t.clips.some((c) => c.id === cb.clipId)) return;
+      if (!cb || !t || !t.clips.some((clip) => clip.id === cb.clipId)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const anchor = selection ? t.placements.find((x) => x.id === selection.id) : null;
-      const trackEnd = t.placements.reduce((m, p) => Math.max(m, p.startBeat + p.length), 0);
+      const anchor = selection ? t.placements.find((placement) => placement.id === selection.id) : null;
+      const trackEnd = t.placements.reduce(
+        (max, placement) => Math.max(max, placement.startBeat + placement.length),
+        0,
+      );
       const startBeat = marker ? marker.beat : anchor ? anchor.startBeat + anchor.length : trackEnd;
       const id = newPlacementId();
       dispatch({
@@ -328,14 +332,14 @@ export function ArrangementTimeline({
             {
               label: "New track in",
               submenu: [
-                ...project.groups.map((g) => ({
-                  label: g.name,
+                ...project.groups.map((group) => ({
+                  label: group.name,
                   onClick: () =>
                     dispatch({
                       type: "createTrack",
                       instrumentType: DEFAULT_INSTRUMENT,
                       id: newTrackId(),
-                      groupId: g.id,
+                      groupId: group.id,
                     }),
                 })),
                 {
@@ -383,10 +387,10 @@ export function ArrangementTimeline({
                   checked: rec.deviceId === null,
                   onClick: () => recorder.setDevice(null),
                 },
-                ...rec.devices.map((d) => ({
-                  label: d.label || "Microphone",
-                  checked: rec.deviceId === d.deviceId,
-                  onClick: () => recorder.setDevice(d.deviceId),
+                ...rec.devices.map((device) => ({
+                  label: device.label || "Microphone",
+                  checked: rec.deviceId === device.deviceId,
+                  onClick: () => recorder.setDevice(device.deviceId),
                 })),
               ],
             },
@@ -416,9 +420,9 @@ export function ArrangementTimeline({
             title="Snap division"
             className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
           >
-            {SNAP_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            {SNAP_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

@@ -35,19 +35,19 @@ export class OrganInstrument extends BaseInstrument {
 
   protected createVoice(midi: number, when: number): VoiceHandle {
     const freq = midiToFreq(midi);
-    const weights = HARMONICS.map((h) => Math.pow(this.brightness, h - 1));
-    const sum = weights.reduce((a, b) => a + b, 0) || 1;
+    const weights = HARMONICS.map((harmonic) => Math.pow(this.brightness, harmonic - 1));
+    const sum = weights.reduce((total, weight) => total + weight, 0) || 1;
     const amp = this.ctx.createGain();
     amp.connect(this.output);
     // Each partial: sine at freq*h through a fixed normalized gain into amp. The
     // partial gains ride out with the voice (GC'd when the base disconnects it).
-    const oscillators = HARMONICS.map((h, i) => {
+    const oscillators = HARMONICS.map((harmonic, index) => {
       const osc = this.ctx.createOscillator();
       osc.type = "sine";
-      osc.frequency.setValueAtTime(freq * h, when);
-      const g = this.ctx.createGain();
-      g.gain.value = weights[i] / sum;
-      osc.connect(g).connect(amp);
+      osc.frequency.setValueAtTime(freq * harmonic, when);
+      const gain = this.ctx.createGain();
+      gain.gain.value = weights[index] / sum;
+      osc.connect(gain).connect(amp);
       return osc;
     });
     return { amp, oscillators };

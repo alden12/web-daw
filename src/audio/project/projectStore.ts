@@ -181,7 +181,7 @@ export class ProjectStore {
 
   private emit(): void {
     this.rebuild();
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 
   // --- reads ---
@@ -192,13 +192,13 @@ export class ProjectStore {
     return this.tracks;
   }
   getTrack(id: string): Track | undefined {
-    return this.tracks.find((t) => t.id === id);
+    return this.tracks.find((track) => track.id === id);
   }
   getGroups(): Group[] {
     return this.groups;
   }
   getGroup(id: string): Group | undefined {
-    return this.groups.find((g) => g.id === id);
+    return this.groups.find((group) => group.id === id);
   }
   get selectedId(): string | null {
     return this.selectedTrackId;
@@ -245,7 +245,7 @@ export class ProjectStore {
    *  the command. Existing groups still match by name, so old projects are unaffected. */
   private ensureFamilyGroup(family: string): Group {
     return (
-      this.groups.find((g) => g.parentId === null && g.name === family) ??
+      this.groups.find((group) => group.parentId === null && group.name === family) ??
       this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: family })
     );
   }
@@ -260,10 +260,10 @@ export class ProjectStore {
   private descendantGroupIds(id: string): Set<string> {
     const out = new Set<string>();
     const walk = (gid: string) => {
-      for (const g of this.groups) {
-        if (g.parentId === gid && !out.has(g.id)) {
-          out.add(g.id);
-          walk(g.id);
+      for (const group of this.groups) {
+        if (group.parentId === gid && !out.has(group.id)) {
+          out.add(group.id);
+          walk(group.id);
         }
       }
     };
@@ -276,8 +276,8 @@ export class ProjectStore {
     if (!this.getGroup(id)) return;
     const doomed = this.descendantGroupIds(id);
     doomed.add(id);
-    this.tracks = this.tracks.filter((t) => !doomed.has(t.parentId));
-    this.groups = this.groups.filter((g) => !doomed.has(g.id));
+    this.tracks = this.tracks.filter((track) => !doomed.has(track.parentId));
+    this.groups = this.groups.filter((group) => !doomed.has(group.id));
     if (this.selectedTrackId && !this.getTrack(this.selectedTrackId)) {
       this.selectedTrackId = this.tracks[0]?.id ?? null;
     }
@@ -467,7 +467,7 @@ export class ProjectStore {
     startBeat?: number;
   }): void {
     const t = this.getTrack(spec.trackId);
-    if (!t || t.kind !== "audio" || t.clips.some((c) => c.id === spec.id)) return;
+    if (!t || t.kind !== "audio" || t.clips.some((clip) => clip.id === spec.id)) return;
     const durationSec = spec.durationSec ?? 0;
     t.clips.push({
       id: spec.id,
@@ -478,7 +478,7 @@ export class ProjectStore {
       durationSec,
     });
     t.activeClipId = spec.id;
-    if (!t.placements.some((p) => p.id === spec.placementId)) {
+    if (!t.placements.some((placement) => placement.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat ?? 0);
       const length = this.naturalBeats(durationSec);
       // A recorded take punches in over the lane: replace whatever it overlaps.
@@ -508,16 +508,16 @@ export class ProjectStore {
     author: ClipAuthor = "you",
   ): void {
     const t = this.getTrack(spec.trackId);
-    if (!t || t.kind !== "instrument" || t.clips.some((c) => c.id === spec.id)) return;
+    if (!t || t.kind !== "instrument" || t.clips.some((clip) => clip.id === spec.id)) return;
     const lengthBeats = Math.max(GRID, spec.lengthBeats);
     t.clips.push({
       id: spec.id,
       name: spec.name ?? this.nextClipName(t),
       author,
-      store: new ClipStore({ notes: spec.notes.map((n) => ({ ...n })), lengthBeats }),
+      store: new ClipStore({ notes: spec.notes.map((note) => ({ ...note })), lengthBeats }),
     });
     t.activeClipId = spec.id;
-    if (!t.placements.some((p) => p.id === spec.placementId)) {
+    if (!t.placements.some((placement) => placement.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat);
       this.replaceRegion(t, startBeat, startBeat + lengthBeats, spec.placementId);
       t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length: lengthBeats });
@@ -534,23 +534,31 @@ export class ProjectStore {
    */
   private replaceRegion(t: Track, start: number, end: number, idPrefix: string): void {
     if (end <= start) return;
-    t.placements = t.placements.flatMap((p) => {
-      const pEnd = p.startBeat + p.length;
-      if (pEnd <= start || p.startBeat >= end) return [p]; // no overlap
-      const keepLeft = p.startBeat < start; // some of p survives before the region
-      const keepRight = pEnd > end; // some of p survives after the region
+    t.placements = t.placements.flatMap((placement) => {
+      const placementEnd = placement.startBeat + placement.length;
+      if (placementEnd <= start || placement.startBeat >= end) return [placement]; // no overlap
+      const keepLeft = placement.startBeat < start; // some survives before the region
+      const keepRight = placementEnd > end; // some survives after the region
       if (keepLeft && keepRight) {
         const right: Placement = {
-          id: `${idPrefix}-r-${p.id}`,
-          clipId: p.clipId,
+          id: `${idPrefix}-r-${placement.id}`,
+          clipId: placement.clipId,
           startBeat: end,
-          offset: p.offset + (end - p.startBeat),
-          length: pEnd - end,
+          offset: placement.offset + (end - placement.startBeat),
+          length: placementEnd - end,
         };
-        return [{ ...p, length: start - p.startBeat }, right];
+        return [{ ...placement, length: start - placement.startBeat }, right];
       }
-      if (keepLeft) return [{ ...p, length: start - p.startBeat }];
-      if (keepRight) return [{ ...p, startBeat: end, offset: p.offset + (end - p.startBeat), length: pEnd - end }];
+      if (keepLeft) return [{ ...placement, length: start - placement.startBeat }];
+      if (keepRight)
+        return [
+          {
+            ...placement,
+            startBeat: end,
+            offset: placement.offset + (end - placement.startBeat),
+            length: placementEnd - end,
+          },
+        ];
       return []; // fully covered -> drop
     });
   }
@@ -568,7 +576,7 @@ export class ProjectStore {
   ): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== "audio") return;
-    const clip = t.clips.find((c) => c.id === (clipId ?? t.activeClipId));
+    const clip = t.clips.find((clip) => clip.id === (clipId ?? t.activeClipId));
     if (!clip) return;
     if (patch.gain !== undefined) clip.gain = clamp(patch.gain, 0, MAX_AUDIO_GAIN);
     if (patch.name !== undefined) clip.name = patch.name;
@@ -593,7 +601,7 @@ export class ProjectStore {
   }
 
   removeTrack(id: string): void {
-    const idx = this.tracks.findIndex((t) => t.id === id);
+    const idx = this.tracks.findIndex((track) => track.id === id);
     if (idx === -1) return;
     this.tracks.splice(idx, 1);
     if (this.selectedTrackId === id) {
@@ -674,7 +682,7 @@ export class ProjectStore {
   // --- clip pool + arrangement (instrument & audio) -------------------------
   /** A unique, human clip name (A, B, C, ... AA) not already used on the track. */
   private nextClipName(t: Track): string {
-    const used = new Set(t.clips.map((c) => c.name));
+    const used = new Set(t.clips.map((clip) => clip.name));
     for (let i = 0; ; i++) {
       const name = String.fromCharCode(65 + (i % 26)).repeat(Math.floor(i / 26) + 1);
       if (!used.has(name)) return name;
@@ -683,17 +691,17 @@ export class ProjectStore {
 
   /** Reconcile an effect chain against a target list IN PLACE (reuse by id, keep bindings). */
   private loadEffectsInPlace(host: EffectHost, want: EffectData[]): void {
-    const byId = new Map(host.effects.map((fx) => [fx.id, fx] as const));
-    host.effects = want.map((w) => {
-      const existing = byId.get(w.id);
-      if (existing && existing.type === w.type) {
-        existing.bypassed = w.bypassed;
-        existing.params.load(w.params);
+    const byId = new Map(host.effects.map((effect) => [effect.id, effect] as const));
+    host.effects = want.map((wanted) => {
+      const existing = byId.get(wanted.id);
+      if (existing && existing.type === wanted.type) {
+        existing.bypassed = wanted.bypassed;
+        existing.params.load(wanted.params);
         return existing;
       }
-      const params = new ParamStore(effectSchema(w.type));
-      if (w.params) params.load(w.params);
-      return { id: w.id, type: w.type, bypassed: w.bypassed, params };
+      const params = new ParamStore(effectSchema(wanted.type));
+      if (wanted.params) params.load(wanted.params);
+      return { id: wanted.id, type: wanted.type, bypassed: wanted.bypassed, params };
     });
   }
 
@@ -701,13 +709,13 @@ export class ProjectStore {
   getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
     const t = this.getTrack(trackId);
     if (t?.kind !== "instrument") return undefined;
-    return t.clips.find((c) => c.id === (clipId ?? t.activeClipId))?.store;
+    return t.clips.find((clip) => clip.id === (clipId ?? t.activeClipId))?.store;
   }
 
   /** Natural length (beats) of a clip in a track's pool: notes length, or audio duration. */
   private naturalLength(t: Track, clipId: string): number {
-    if (t.kind === "instrument") return t.clips.find((c) => c.id === clipId)?.store.getClip().lengthBeats ?? 4;
-    const c = t.clips.find((x) => x.id === clipId);
+    if (t.kind === "instrument") return t.clips.find((clip) => clip.id === clipId)?.store.getClip().lengthBeats ?? 4;
+    const c = t.clips.find((clip) => clip.id === clipId);
     return c ? this.naturalBeats(c.durationSec) : 4;
   }
 
@@ -731,15 +739,15 @@ export class ProjectStore {
     if (!t || t.kind !== "instrument") return undefined;
     const source = opts.empty
       ? undefined
-      : (t.clips.find((c) => c.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0]);
-    const id = opts.id && !t.clips.some((c) => c.id === opts.id) ? opts.id : this.nextClipId();
+      : (t.clips.find((clip) => clip.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0]);
+    const id = opts.id && !t.clips.some((clip) => clip.id === opts.id) ? opts.id : this.nextClipId();
     const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
     const clip: NoteClip = {
       id,
       name: opts.name ?? this.nextClipName(t),
       author: opts.author ?? "you",
       store: new ClipStore({
-        notes: seed.notes.map((n) => ({ ...n })),
+        notes: seed.notes.map((note) => ({ ...note })),
         lengthBeats: opts.lengthBeats ?? seed.lengthBeats,
       }),
     };
@@ -758,13 +766,13 @@ export class ProjectStore {
   pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = "you"): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== content.kind) return;
-    const clipId = id && !t.clips.some((c) => c.id === id) ? id : this.nextClipId();
+    const clipId = id && !t.clips.some((clip) => clip.id === id) ? id : this.nextClipId();
     if (t.kind === "instrument" && content.kind === "instrument") {
       t.clips.push({
         id: clipId,
         name: content.name,
         author,
-        store: new ClipStore({ notes: content.notes.map((n) => ({ ...n })), lengthBeats: content.lengthBeats }),
+        store: new ClipStore({ notes: content.notes.map((note) => ({ ...note })), lengthBeats: content.lengthBeats }),
       });
     } else if (t.kind === "audio" && content.kind === "audio") {
       t.clips.push({
@@ -783,7 +791,7 @@ export class ProjectStore {
   /** Make a clip the active one (shown/edited in the piano roll). */
   selectClip(trackId: string, clipId: string): void {
     const t = this.getTrack(trackId);
-    if (!t || t.activeClipId === clipId || !t.clips.some((c) => c.id === clipId)) return;
+    if (!t || t.activeClipId === clipId || !t.clips.some((clip) => clip.id === clipId)) return;
     t.activeClipId = clipId;
     this.emit();
   }
@@ -792,10 +800,10 @@ export class ProjectStore {
   removeClip(trackId: string, clipId: string): void {
     const t = this.getTrack(trackId);
     if (!t || t.clips.length <= 1) return;
-    const idx = t.clips.findIndex((c) => c.id === clipId);
+    const idx = t.clips.findIndex((clip) => clip.id === clipId);
     if (idx === -1) return;
     t.clips.splice(idx, 1);
-    t.placements = t.placements.filter((p) => p.clipId !== clipId);
+    t.placements = t.placements.filter((placement) => placement.clipId !== clipId);
     if (t.activeClipId === clipId) t.activeClipId = t.clips[Math.min(idx, t.clips.length - 1)].id;
     this.emit();
   }
@@ -803,7 +811,7 @@ export class ProjectStore {
   renameClip(trackId: string, clipId: string, name: string): void {
     const t = this.getTrack(trackId);
     if (!t) return;
-    const c = t.clips.find((x) => x.id === clipId);
+    const c = t.clips.find((clip) => clip.id === clipId);
     if (!c || c.name === name) return;
     c.name = name;
     this.emit();
@@ -825,8 +833,9 @@ export class ProjectStore {
     const t = this.getTrack(trackId);
     if (!t) return undefined;
     const clipId = opts.clipId ?? t.activeClipId;
-    if (!t.clips.some((c) => c.id === clipId)) return undefined;
-    const id = opts.id && !t.placements.some((p) => p.id === opts.id) ? opts.id : this.nextPlacementId();
+    if (!t.clips.some((clip) => clip.id === clipId)) return undefined;
+    const id =
+      opts.id && !t.placements.some((placement) => placement.id === opts.id) ? opts.id : this.nextPlacementId();
     const placement: Placement = {
       id,
       clipId,
@@ -840,14 +849,14 @@ export class ProjectStore {
   }
 
   movePlacement(trackId: string, placementId: string, startBeat: number): void {
-    const p = this.getTrack(trackId)?.placements.find((x) => x.id === placementId);
+    const p = this.getTrack(trackId)?.placements.find((placement) => placement.id === placementId);
     if (!p) return;
     p.startBeat = Math.max(0, startBeat);
     this.emit();
   }
 
   resizePlacement(trackId: string, placementId: string, patch: { offset?: number; length?: number }): void {
-    const p = this.getTrack(trackId)?.placements.find((x) => x.id === placementId);
+    const p = this.getTrack(trackId)?.placements.find((placement) => placement.id === placementId);
     if (!p) return;
     if (patch.offset !== undefined) p.offset = Math.max(0, patch.offset);
     if (patch.length !== undefined) p.length = Math.max(GRID, patch.length);
@@ -858,19 +867,19 @@ export class ProjectStore {
     const t = this.getTrack(trackId);
     if (!t) return;
     const before = t.placements.length;
-    t.placements = t.placements.filter((p) => p.id !== placementId);
+    t.placements = t.placements.filter((placement) => placement.id !== placementId);
     if (t.placements.length !== before) this.emit();
   }
 
   /** Split a placement at an absolute beat into two windows over the same clip. */
   splitPlacement(trackId: string, placementId: string, atBeat: number, newId?: string): void {
     const t = this.getTrack(trackId);
-    const p = t?.placements.find((x) => x.id === placementId);
+    const p = t?.placements.find((placement) => placement.id === placementId);
     if (!t || !p) return;
     const local = atBeat - p.startBeat;
     if (local <= 0 || local >= p.length) return;
     const right: Placement = {
-      id: newId && !t.placements.some((x) => x.id === newId) ? newId : this.nextPlacementId(),
+      id: newId && !t.placements.some((placement) => placement.id === newId) ? newId : this.nextPlacementId(),
       clipId: p.clipId,
       startBeat: p.startBeat + local,
       offset: p.offset + local,
@@ -890,7 +899,7 @@ export class ProjectStore {
   launchClip(trackId: string, clipId: string | null): void {
     const t = this.getTrack(trackId);
     if (!t) return;
-    const next = clipId && t.clips.some((c) => c.id === clipId) ? clipId : null;
+    const next = clipId && t.clips.some((clip) => clip.id === clipId) ? clipId : null;
     if (t.launchedClipId === next) return;
     t.launchedClipId = next;
     this.emit();
@@ -899,9 +908,9 @@ export class ProjectStore {
   /** Stop every launched clip - the whole project plays its arrangement again. */
   stopAllClips(): void {
     let changed = false;
-    for (const t of this.tracks) {
-      if (t.launchedClipId !== null) {
-        t.launchedClipId = null;
+    for (const track of this.tracks) {
+      if (track.launchedClipId !== null) {
+        track.launchedClipId = null;
         changed = true;
       }
     }
@@ -955,7 +964,7 @@ export class ProjectStore {
   }
 
   setEffectBypass(hostId: string, effectId: string, bypassed: boolean): void {
-    const fx = this.getEffectHost(hostId)?.effects.find((e) => e.id === effectId);
+    const fx = this.getEffectHost(hostId)?.effects.find((effect) => effect.id === effectId);
     if (!fx || fx.bypassed === bypassed) return;
     fx.bypassed = bypassed;
     this.emit();
@@ -982,53 +991,56 @@ export class ProjectStore {
 
   load(data: ProjectData): void {
     const projLen = data.lengthBeats ?? 16;
-    this.groups = (data.groups ?? []).map((g) => ({
-      id: g.id,
-      name: g.name,
-      parentId: g.parentId ?? null,
-      collapsed: g.collapsed ?? false,
-      muted: g.muted ?? false,
-      solo: g.solo ?? false,
-      volume: g.volume ?? 0.8,
-      effects: loadEffectInstances(g.effects),
+    this.groups = (data.groups ?? []).map((group) => ({
+      id: group.id,
+      name: group.name,
+      parentId: group.parentId ?? null,
+      collapsed: group.collapsed ?? false,
+      muted: group.muted ?? false,
+      solo: group.solo ?? false,
+      volume: group.volume ?? 0.8,
+      effects: loadEffectInstances(group.effects),
     }));
     // Reuse existing child stores by id so the engine's per-track bindings stay
     // valid across load (undo/redo) - replacing a ParamStore would orphan the
     // bound instrument. Stores are mutated in place below.
-    const prev = new Map(this.tracks.map((t) => [t.id, t] as const));
-    this.tracks = (data.tracks ?? []).map((t): Track => {
+    const prev = new Map(this.tracks.map((track) => [track.id, track] as const));
+    this.tracks = (data.tracks ?? []).map((stored): Track => {
       const base = {
-        id: t.id,
-        name: t.name,
-        parentId: t.parentId,
-        muted: t.muted ?? false,
-        solo: t.solo ?? false,
-        volume: t.volume ?? 0.8,
+        id: stored.id,
+        name: stored.name,
+        parentId: stored.parentId,
+        muted: stored.muted ?? false,
+        solo: stored.solo ?? false,
+        volume: stored.volume ?? 0.8,
       };
-      if (t.kind === "audio") {
-        const pool = audioClipPool(t);
+      if (stored.kind === "audio") {
+        const pool = audioClipPool(stored);
         const launchedClipId =
-          t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
-        return { ...base, kind: "audio", effects: loadEffectInstances(t.effects), ...pool, launchedClipId };
+          stored.launchedClipId && pool.clips.some((clip) => clip.id === stored.launchedClipId)
+            ? stored.launchedClipId
+            : null;
+        return { ...base, kind: "audio", effects: loadEffectInstances(stored.effects), ...pool, launchedClipId };
       }
       // Instrument track: the sound (params + effects) is track-level; the clip
       // pool + placements come from the stored clips/placements.
-      const sound = instrumentSound(t);
-      const { clips, activeClipId, placements } = noteClipPool(t, projLen, {
+      const sound = instrumentSound(stored);
+      const { clips, activeClipId, placements } = noteClipPool(stored, projLen, {
         clipId: () => this.nextClipId(),
         placementId: () => this.nextPlacementId(),
       });
       // Reuse the prior track's ParamStore + effect instances by id so the engine's
       // per-track bindings stay live across the load (clips are not engine-bound).
-      const reuse = prev.get(t.id);
-      const reused = reuse?.kind === "instrument" && reuse.instrumentType === t.instrumentType ? reuse : undefined;
-      const params = reused?.params ?? new ParamStore(instrumentSchema(t.instrumentType));
+      const reuse = prev.get(stored.id);
+      const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
+      const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
       params.load(sound.params);
-      const launchedClipId = t.launchedClipId && clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
+      const launchedClipId =
+        stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;
       const track: InstrumentTrack = {
         ...base,
         kind: "instrument",
-        instrumentType: t.instrumentType,
+        instrumentType: stored.instrumentType,
         params,
         effects: reused?.effects ?? [],
         clips,
@@ -1041,10 +1053,10 @@ export class ProjectStore {
     });
     // Invariant: every track must belong to a real group; file any orphan into its
     // instrument's family group.
-    for (const t of this.tracks) {
-      if (!t.parentId || !this.getGroup(t.parentId)) {
-        const family = t.kind === "audio" ? AUDIO_FAMILY : instrumentFamily(t.instrumentType);
-        t.parentId = this.ensureFamilyGroup(family).id;
+    for (const track of this.tracks) {
+      if (!track.parentId || !this.getGroup(track.parentId)) {
+        const family = track.kind === "audio" ? AUDIO_FAMILY : instrumentFamily(track.instrumentType);
+        track.parentId = this.ensureFamilyGroup(family).id;
       }
     }
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);

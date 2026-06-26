@@ -46,8 +46,8 @@ export class ClipStore {
   private applyClip(clip: Partial<ClipData>): void {
     this.lengthBeats = clip.lengthBeats ?? this.lengthBeats;
     this.notes.clear();
-    for (const n of clip.notes ?? []) {
-      this.notes.set(n.id, this.normalize(n, n.id));
+    for (const note of clip.notes ?? []) {
+      this.notes.set(note.id, this.normalize(note, note.id));
     }
   }
 
@@ -60,7 +60,7 @@ export class ClipStore {
 
   private emit(): void {
     this.rebuild();
-    for (const l of this.listeners) l();
+    for (const listener of this.listeners) listener();
   }
 
   /** Stable reference between mutations - safe for useSyncExternalStore. */
