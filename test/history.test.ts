@@ -6,7 +6,7 @@ import { ProjectRepository } from '../src/audio/projectRepository';
 import { MemoryBundleStore } from '../src/audio/bundleStore';
 
 /** A project + log + a fresh in-memory repository, sharing one bundle store. */
-function setup(repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null })) {
+function setup(repo = new ProjectRepository(new MemoryBundleStore())) {
   const project = new ProjectStore(false);
   const log = new EditLog(project);
   return { project, log, repo };

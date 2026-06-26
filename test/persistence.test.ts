@@ -7,9 +7,8 @@ import { MemoryBundleStore } from '../src/audio/bundleStore';
 import type { ProjectData } from '../src/audio/project/types';
 
 const MAX_PERSISTED_ENTRIES = 2000;
-const V5_KEY = 'web-daw:project:v5';
 
-// persistence/migration talk to localStorage; the unit env (node) has none, so
+// Some persistence paths touch localStorage; the unit env (node) has none, so
 // install a minimal in-memory shim per test.
 function installLocalStorage(): Map<string, string> {
   const store = new Map<string, string>();
@@ -74,7 +73,7 @@ describe('project + edit-log persistence', () => {
   it('round-trips the project state and the authored log through a save/restore', async () => {
     vi.useFakeTimers();
     // A fresh bundle (no legacy migration) shared by save and restore.
-    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     const dispose = attachAutosave(project, log, repo);
@@ -100,7 +99,7 @@ describe('project + edit-log persistence', () => {
 
   it('persists a feed note posted with no following edit (saved via the log subscription)', async () => {
     vi.useFakeTimers();
-    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     const dispose = attachAutosave(project, log, repo);
@@ -120,7 +119,7 @@ describe('project + edit-log persistence', () => {
 
   it('persists undo/redo so undo works after a restore (reload)', async () => {
     vi.useFakeTimers();
-    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     const dispose = attachAutosave(project, log, repo);
@@ -187,26 +186,9 @@ describe('project + edit-log persistence', () => {
     press('undo');
   });
 
-  it('still loads a legacy (full-snapshot) undo state', () => {
-    const project = new ProjectStore(false);
-    const log = new EditLog(project);
-    log.dispatch({ type: 'setTempo', bpm: 137 });
-    const snap = project.snapshot();
-
-    // Pre-delta persisted form: arrays of full checkpoints.
-    const legacy = { undo: [{ snap, command: { type: 'setTempo', bpm: 120 }, author: 'you' }], redo: [] };
-    const project2 = new ProjectStore(false);
-    const log2 = new EditLog(project2);
-    log2.restoreCheckpoints(legacy as unknown as Parameters<EditLog['restoreCheckpoints']>[0]);
-
-    expect(log2.getState().canUndo).toBe(true);
-    log2.undo();
-    expect(project2.snapshot()).toEqual(snap); // the legacy snapshot loaded verbatim
-  });
-
   it('trims the persisted log to the last MAX_PERSISTED_ENTRIES', async () => {
     vi.useFakeTimers();
-    const repo = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     project.addTrack('subtractive', { id: 't-1' }); // direct (not logged)
@@ -229,81 +211,9 @@ describe('project + edit-log persistence', () => {
     expect(log2.getEntries().at(-1)?.seq).toBe(MAX_PERSISTED_ENTRIES + 4);
   });
 
-  it('migrates a legacy v5 blob (no log) into a bundle with the project intact', async () => {
-    // Build a v5-shaped blob: same project shape, but no `log` field.
-    const raw = installLocalStorage();
-    const seed = new ProjectStore(false);
-    seed.addTrack('fm', { id: 't-legacy' });
-    raw.set(V5_KEY, JSON.stringify({ version: 5, project: seed.snapshot() }));
-
-    // Default loadLegacy reads the localStorage shim above; no bundle exists yet.
-    const repo = new ProjectRepository(new MemoryBundleStore());
-    const project = new ProjectStore(false);
-    const log = new EditLog(project);
-    await restoreProject(project, log, repo);
-
-    expect(project.getTrack('t-legacy')?.kind).toBe('instrument');
-    expect(log.getState().entries).toEqual([]);
-
-    // A second load now reads the migrated bundle (not the legacy blob).
-    const reloaded = await repo.load();
-    expect(reloaded?.project.tracks.map((t) => t.id)).toEqual(['t-legacy']);
-  });
-
-  it('migrates legacy au-* samples to content-addressed fileIds, deduped', async () => {
-    const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
-    // A minimal v7 project: two audio clips sharing one legacy sample id.
-    const legacyProject = {
-      groups: [],
-      tempoBpm: 120,
-      lengthBeats: 16,
-      selectedTrackId: null,
-      tracks: [
-        {
-          kind: 'audio',
-          id: 't-a',
-          name: 'Aud',
-          parentId: 'master',
-          muted: false,
-          volume: 1,
-          effects: [],
-          placements: [],
-          activeClipId: 'c-1',
-          launchedClipId: null,
-          clips: [
-            { id: 'c-1', name: 'A', author: 'you', fileId: 'au-x', gain: 1, durationSec: 1 },
-            { id: 'c-2', name: 'B', author: 'you', fileId: 'au-x', gain: 1, durationSec: 1 },
-          ],
-        },
-      ],
-    } as unknown as ProjectData;
-
-    const reads: string[] = [];
-    const repo = new ProjectRepository(new MemoryBundleStore(), {
-      loadLegacy: () => ({ project: legacyProject, log: [], notes: [] }),
-      legacySampleReader: async (id) => {
-        reads.push(id);
-        return id === 'au-x' ? bytes : null;
-      },
-    });
-
-    const saved = await repo.load();
-    const clips = (saved!.project.tracks[0] as { clips: { fileId: string }[] }).clips;
-
-    // Both clips rewritten to the same sha256 hex (dedup); the source read once.
-    expect(clips[0].fileId).not.toBe('au-x');
-    expect(clips[0].fileId).toHaveLength(64);
-    expect(clips[1].fileId).toBe(clips[0].fileId);
-    expect(reads).toEqual(['au-x']);
-
-    // The bytes are retrievable under the new content hash.
-    const buf = await repo.getSample(clips[0].fileId);
-    expect(new Uint8Array(buf)).toEqual(new Uint8Array(bytes));
-  });
-
   it('round-trips a project + samples through a portable bundle export/import', async () => {
     const bytes = new Uint8Array([9, 8, 7]).buffer;
-    const source = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const source = new ProjectRepository(new MemoryBundleStore());
     const hash = await source.putSample(new Blob([bytes]));
 
     const project = {
@@ -338,7 +248,7 @@ describe('project + edit-log persistence', () => {
     expect(files[`samples/${hash}.wav`]).toBeTruthy();
 
     // Import into a brand-new, empty repository.
-    const dest = new ProjectRepository(new MemoryBundleStore(), { loadLegacy: () => null });
+    const dest = new ProjectRepository(new MemoryBundleStore());
     const restored = await dest.importBundle(files);
     expect(restored.project.tempoBpm).toBe(128);
     expect(restored.log.map((e) => e.command.type)).toEqual(['setTempo']);

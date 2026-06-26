@@ -982,14 +982,9 @@ export class ProjectStore {
   }
 
   /**
-   * The note-clip pool + active id + placements for an instrument track, reading
-   * forward from any older shape:
-   * - v7: `clips`/`activeClipId`/`placements` as stored.
-   * - v6 variants: one clip per variant (notes only; per-variant params/effects are
-   *   dropped - the track sound is migrated separately from the active variant).
-   * - v4 single `clip`: one clip "A".
-   * Migrated projects get a single placement of the active clip at beat 0, so they
-   * play exactly as before.
+   * The note-clip pool + active id + placements for an instrument track from the
+   * stored `clips`/`activeClipId`/`placements`. A pool with no clips falls back to a
+   * single empty clip "A" so the track always has something to edit.
    */
   private noteClipPool(
     t: InstrumentTrackData,
@@ -1002,43 +997,27 @@ export class ProjectStore {
       store: new ClipStore({ notes: (clip.notes as never) ?? [], lengthBeats: clip.lengthBeats ?? projLen }),
     });
 
-    let clips: NoteClip[];
-    if (t.clips?.length) {
-      clips = t.clips.map((c) => mk(c.id, c.name, ProjectStore.author(c.author), c));
-    } else if (t.variants?.length) {
-      clips = t.variants.map((v) => mk(v.id, v.name, ProjectStore.author(v.author), v.clip ?? {}));
-    } else {
-      clips = [mk(this.nextClipId(), 'A', 'you', t.clip ?? {})];
-    }
+    const clips: NoteClip[] = t.clips?.length
+      ? t.clips.map((clip) => mk(clip.id, clip.name, ProjectStore.author(clip.author), clip))
+      : [mk(this.nextClipId(), 'A', 'you', {})];
 
-    const wantActive = t.activeClipId ?? t.activeVariantId;
-    const activeClipId = wantActive && clips.some((c) => c.id === wantActive) ? wantActive : clips[0].id;
+    const activeClipId = t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : clips[0].id;
     const placements: Placement[] = t.placements?.length
-      ? t.placements.map((p) => ({ ...p }))
-      : [{ id: this.nextPlacementId(), clipId: activeClipId, startBeat: 0, offset: 0, length: clips.find((c) => c.id === activeClipId)!.store.getClip().lengthBeats }];
+      ? t.placements.map((placement) => ({ ...placement }))
+      : [{ id: this.nextPlacementId(), clipId: activeClipId, startBeat: 0, offset: 0, length: clips.find((clip) => clip.id === activeClipId)!.store.getClip().lengthBeats }];
     return { clips, activeClipId, placements };
   }
 
-  /** The track-level sound for an instrument track (v7 top-level, else the active variant). */
+  /** The track-level sound (params + effect chain) for an instrument track. */
   private instrumentSound(t: InstrumentTrackData): { params: PatchValues; effects: EffectData[] } {
-    const active = t.variants?.find((v) => v.id === (t.activeVariantId ?? t.variants?.[0]?.id)) ?? t.variants?.[0];
-    return { params: t.params ?? active?.params ?? {}, effects: t.effects ?? active?.effects ?? [] };
+    return { params: t.params ?? {}, effects: t.effects ?? [] };
   }
 
-  /** The audio-clip pool + active id + placements for an audio track (migrates `audioClip`). */
+  /** The audio-clip pool + active id + placements for an audio track. */
   private audioClipPool(t: AudioTrackData): { clips: AudioClipData[]; activeClipId: string; placements: Placement[] } {
-    if (t.clips?.length) {
-      const activeClipId = t.activeClipId && t.clips.some((c) => c.id === t.activeClipId) ? t.activeClipId : t.clips[0].id;
-      return { clips: t.clips.map((c) => ({ ...c })), activeClipId, placements: (t.placements ?? []).map((p) => ({ ...p })) };
-    }
-    const a = t.audioClip;
-    if (!a) return { clips: [], activeClipId: '', placements: [] };
-    const clip: AudioClipData = { id: a.id, name: a.name, author: ProjectStore.author(a.author), fileId: a.fileId, gain: a.gain ?? 1, durationSec: a.durationSec ?? 0 };
-    return {
-      clips: [clip],
-      activeClipId: clip.id,
-      placements: [{ id: this.nextPlacementId(), clipId: clip.id, startBeat: a.startBeat ?? 0, offset: 0, length: this.secondsToBeats(clip.durationSec) }],
-    };
+    const clips = (t.clips ?? []).map((clip) => ({ ...clip }));
+    const activeClipId = t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : (clips[0]?.id ?? '');
+    return { clips, activeClipId, placements: (t.placements ?? []).map((placement) => ({ ...placement })) };
   }
 
   load(data: ProjectData): void {
@@ -1054,8 +1033,8 @@ export class ProjectStore {
       effects: this.loadEffects(g.effects),
     }));
     // Reuse existing child stores by id so the engine's per-track bindings stay
-    // valid across load (undo/redo, variant switches) - replacing a ParamStore
-    // would orphan the bound instrument. Stores are mutated in place below.
+    // valid across load (undo/redo) - replacing a ParamStore would orphan the
+    // bound instrument. Stores are mutated in place below.
     const prev = new Map(this.tracks.map((t) => [t.id, t] as const));
     this.tracks = (data.tracks ?? []).map((t): Track => {
       const base = {
@@ -1071,9 +1050,8 @@ export class ProjectStore {
         const launchedClipId = t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
         return { ...base, kind: 'audio', effects: this.loadEffects(t.effects), ...pool, launchedClipId };
       }
-      // Legacy tracks predate `kind`; treat them as instrument tracks. The sound
-      // (params + effects) is track-level; the clip pool + placements come from
-      // whatever shape was stored (v7 clips, v6 variants, or a v4 single clip).
+      // Instrument track: the sound (params + effects) is track-level; the clip
+      // pool + placements come from the stored clips/placements.
       const sound = this.instrumentSound(t);
       const { clips, activeClipId, placements } = this.noteClipPool(t, projLen);
       // Reuse the prior track's ParamStore + effect instances by id so the engine's
@@ -1097,8 +1075,8 @@ export class ProjectStore {
       this.loadEffectsInPlace(track, sound.effects);
       return track;
     });
-    // Repair: every track must belong to a real group (migrates flat/legacy
-    // projects by filing tracks into their instrument's family group).
+    // Invariant: every track must belong to a real group; file any orphan into its
+    // instrument's family group.
     for (const t of this.tracks) {
       if (!t.parentId || !this.getGroup(t.parentId)) {
         const family = t.kind === 'audio' ? AUDIO_FAMILY : instrumentFamily(t.instrumentType);

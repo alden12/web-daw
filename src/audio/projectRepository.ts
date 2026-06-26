@@ -14,28 +14,18 @@
  *
  * Samples are content-addressed: `putSample` hashes the bytes and stores them under
  * that hash, so the same file imported twice is stored once and a clip's `fileId`
- * doubles as an integrity check. On first run with no bundle, `load` migrates the
- * pre-bundle localStorage blob + the old `au-*` OPFS samples into a bundle, leaving
- * localStorage as a read-only fallback.
+ * doubles as an integrity check.
  */
-import type { ProjectData, TrackData } from './project/types';
+import type { ProjectData } from './project/types';
 import type { Author, EditEntry } from './commands/types';
 import type { FeedNote, UndoState } from './commands/editLog';
 import { type BundleStore, createBundleStore } from './bundleStore';
 
 const FORMAT_VERSION = 1;
-/** Schema version of `project.json` (ProjectStore.load migrates older shapes). */
+/** Schema version of `project.json`. We do not support older shapes (single-user app). */
 const PROJECT_SCHEMA = 7;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
 const MAX_PERSISTED_ENTRIES = 2000;
-/** Pre-bundle localStorage keys, newest first. Read once, to migrate into a bundle. */
-const LEGACY_KEYS = [
-  'web-daw:project:v7',
-  'web-daw:project:v6',
-  'web-daw:project:v5',
-  'web-daw:project:v4',
-  'web-daw:project:v3',
-];
 
 export interface StoredProject {
   project: ProjectData;
@@ -87,50 +77,31 @@ interface Manifest {
   projectSchema: number;
 }
 
-export interface RepositoryOptions {
-  /** Read a pre-bundle localStorage blob to migrate (default: real localStorage). */
-  loadLegacy?: () => StoredProject | null;
-  /** Read a pre-bundle OPFS sample by its old `au-*` id (default: real OPFS). */
-  legacySampleReader?: (id: string) => Promise<ArrayBuffer | null>;
-}
-
 export class ProjectRepository {
   private projectId: string | null = null;
   private saveChain: Promise<void> = Promise.resolve();
   private readonly store: BundleStore;
-  private readonly loadLegacy: () => StoredProject | null;
-  private readonly legacySampleReader: (id: string) => Promise<ArrayBuffer | null>;
 
-  constructor(store: BundleStore, opts: RepositoryOptions = {}) {
+  constructor(store: BundleStore) {
     this.store = store;
-    this.loadLegacy = opts.loadLegacy ?? defaultLoadLegacy;
-    this.legacySampleReader = opts.legacySampleReader ?? defaultLegacySampleReader;
   }
 
-  /** Load the working snapshot + log, migrating a pre-bundle blob on first run. */
+  /** Load the working snapshot + log; null if no bundle has been written yet. */
   async load(): Promise<StoredProject | null> {
     const manifestRaw = await this.store.readText('manifest.json');
-    if (manifestRaw) {
-      const manifest = JSON.parse(manifestRaw) as Manifest;
-      this.projectId = manifest.projectId;
-      const projectRaw = await this.store.readText('project.json');
-      if (!projectRaw) return null;
-      const project = JSON.parse(projectRaw) as ProjectData;
-      const logRaw = await this.store.readText('log.json');
-      const notesRaw = await this.store.readText('notes.json');
-      return {
-        project,
-        log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
-        notes: notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [],
-      };
-    }
-
-    // No bundle yet: migrate a pre-bundle localStorage blob, if any exists.
-    const legacy = this.loadLegacy();
-    if (!legacy) return null;
-    const project = await this.migrateSamples(legacy.project);
-    await this.save(project, legacy.log, legacy.notes);
-    return { project, log: legacy.log, notes: legacy.notes };
+    if (!manifestRaw) return null;
+    const manifest = JSON.parse(manifestRaw) as Manifest;
+    this.projectId = manifest.projectId;
+    const projectRaw = await this.store.readText('project.json');
+    if (!projectRaw) return null;
+    const project = JSON.parse(projectRaw) as ProjectData;
+    const logRaw = await this.store.readText('log.json');
+    const notesRaw = await this.store.readText('notes.json');
+    return {
+      project,
+      log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
+      notes: notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [],
+    };
   }
 
   /** Persist the working snapshot + log + feed notes. Writes are serialized so they never overlap. */
@@ -245,40 +216,6 @@ export class ProjectRepository {
   writeRefs(refs: Refs): Promise<void> {
     return this.store.writeText('history/refs.json', JSON.stringify(refs, null, 2));
   }
-
-  /** Re-store legacy `au-*` samples under content hashes; rewrite clip fileIds. */
-  private async migrateSamples(project: ProjectData): Promise<ProjectData> {
-    const oldIds = new Set<string>();
-    for (const t of project.tracks) {
-      if (t.kind !== 'audio') continue;
-      for (const c of t.clips ?? []) if (c.fileId?.startsWith('au-')) oldIds.add(c.fileId);
-    }
-    if (oldIds.size === 0) return project;
-
-    const map = new Map<string, string>();
-    for (const old of oldIds) {
-      try {
-        const buf = await this.legacySampleReader(old);
-        if (!buf) continue;
-        const hash = await sha256hex(buf);
-        if (!(await this.store.exists(`samples/${hash}`))) await this.store.writeBlob(`samples/${hash}`, new Blob([buf]));
-        map.set(old, hash);
-      } catch {
-        // unreadable sample: leave the clip's id as-is (it will fail to decode, as before)
-      }
-    }
-    return map.size ? rewriteSampleIds(project, map) : project;
-  }
-}
-
-/** Replace audio clips' `fileId`s per `map`, leaving everything else untouched. */
-function rewriteSampleIds(project: ProjectData, map: Map<string, string>): ProjectData {
-  const tracks: TrackData[] = project.tracks.map((t) =>
-    t.kind === 'audio'
-      ? { ...t, clips: (t.clips ?? []).map((c) => (map.has(c.fileId) ? { ...c, fileId: map.get(c.fileId)! } : c)) }
-      : t,
-  );
-  return { ...project, tracks };
 }
 
 /** Content hashes of every sample the project's audio clips reference. */
@@ -303,33 +240,6 @@ function text(bytes: Uint8Array | undefined): string {
 async function sha256hex(buf: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buf);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function defaultLoadLegacy(): StoredProject | null {
-  if (typeof localStorage === 'undefined') return null;
-  for (const key of LEGACY_KEYS) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const data = JSON.parse(raw) as { project?: ProjectData; log?: EditEntry[]; notes?: FeedNote[] };
-      if (data.project?.tracks) return { project: data.project, log: data.log ?? [], notes: data.notes ?? [] };
-    } catch {
-      // try the next key
-    }
-  }
-  return null;
-}
-
-async function defaultLegacySampleReader(id: string): Promise<ArrayBuffer | null> {
-  try {
-    if (!(typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory)) return null;
-    const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle('audio');
-    const handle = await dir.getFileHandle(id);
-    return (await handle.getFile()).arrayBuffer();
-  } catch {
-    return null;
-  }
 }
 
 let singleton: ProjectRepository | null = null;

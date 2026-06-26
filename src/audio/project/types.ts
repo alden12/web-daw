@@ -16,7 +16,7 @@
  * they route identically; only the source differs.
  */
 import type { PatchValues } from '../params/types';
-import type { ClipData, NoteEvent } from '../sequencer/types';
+import type { NoteEvent } from '../sequencer/types';
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export interface EffectMeta {
@@ -119,22 +119,6 @@ export interface AudioClipData {
   gridOffsetSec?: number;
 }
 
-/** Legacy (pre-v7): a clip variant bundling the whole sound. Read only for migration. */
-export interface VariantData {
-  id: string;
-  name: string;
-  author: ClipAuthor;
-  clip: ClipData;
-  params: PatchValues;
-  effects: EffectData[];
-}
-
-/** Legacy (pre-v7): a single positioned audio clip on a track. Read only for migration. */
-export interface LegacyAudioClip extends AudioClipData {
-  /** Onset within the loop, in beats (now carried by the placement). */
-  startBeat: number;
-}
-
 interface BaseTrackMeta {
   id: string;
   name: string;
@@ -183,21 +167,14 @@ export interface GroupData extends Omit<GroupMeta, 'effects'> {
 
 export interface InstrumentTrackData
   extends Omit<InstrumentTrackMeta, 'effects' | 'clips' | 'placements' | 'activeClipId' | 'launchedClipId'> {
-  /** Track-level sound (synth patch). Optional for migration; defaulted on load. */
+  /** Track-level sound (synth patch). Optional in the snapshot; defaulted on load. */
   params?: PatchValues;
   effects?: EffectData[];
   clips?: NoteClipData[];
   placements?: Placement[];
   activeClipId?: string;
-  /** Launched clip id (optional; older snapshots default to null = arrangement). */
+  /** Launched clip id (optional; defaults to null = arrangement). */
   launchedClipId?: string | null;
-  // --- legacy, read only for migration in ProjectStore.load ---
-  /** Pre-v7 variant stack. */
-  variants?: VariantData[];
-  /** Pre-v7 active variant id. */
-  activeVariantId?: string;
-  /** v4 single clip. */
-  clip?: ClipData;
 }
 
 export interface AudioTrackData
@@ -206,11 +183,8 @@ export interface AudioTrackData
   clips?: AudioClipData[];
   placements?: Placement[];
   activeClipId?: string;
-  /** Launched clip id (optional; older snapshots default to null = arrangement). */
+  /** Launched clip id (optional; defaults to null = arrangement). */
   launchedClipId?: string | null;
-  // --- legacy, read only for migration ---
-  /** Pre-v7 single positioned clip. */
-  audioClip?: LegacyAudioClip;
 }
 
 export type TrackData = InstrumentTrackData | AudioTrackData;

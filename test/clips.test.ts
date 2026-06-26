@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { ProjectStore, type InstrumentTrack } from '../src/audio/project/projectStore';
-import type { ProjectData } from '../src/audio/project/types';
 import { EditLog } from '../src/audio/commands/editLog';
 
 /** A track seeded with one default clip; returns the store + a typed accessor. */
@@ -201,81 +200,7 @@ describe('clip copy/paste', () => {
   });
 });
 
-describe('migration', () => {
-  it('migrates a v6 variant track into a clip pool + one placement, sound from the active variant', () => {
-    const v6 = {
-      groups: [],
-      tracks: [
-        {
-          id: 't-v6',
-          name: 'Old',
-          parentId: '',
-          muted: false,
-          volume: 0.8,
-          kind: 'instrument',
-          instrumentType: 'subtractive',
-          activeVariantId: 'v-2',
-          variants: [
-            { id: 'v-1', name: 'A', author: 'you', clip: { notes: [], lengthBeats: 16 }, params: { 'filter.cutoff': 1000 }, effects: [] },
-            {
-              id: 'v-2',
-              name: 'B',
-              author: 'claude',
-              clip: { notes: [{ id: 'n1', pitch: 60, start: 0, length: 1, velocity: 0.8 }], lengthBeats: 16 },
-              params: { 'filter.cutoff': 2200 },
-              effects: [],
-            },
-          ],
-        },
-      ],
-      tempoBpm: 120,
-      lengthBeats: 16,
-      selectedTrackId: 't-v6',
-    } as unknown as ProjectData;
-
-    const project = new ProjectStore(false);
-    project.load(v6);
-    const t = project.getTrack('t-v6');
-    if (t?.kind !== 'instrument') throw new Error('expected instrument');
-    expect(t.clips.map((c) => c.id)).toEqual(['v-1', 'v-2']);
-    expect(t.activeClipId).toBe('v-2');
-    expect(t.params.get('filter.cutoff')).toBe(2200); // sound from the active variant
-    expect(t.placements).toHaveLength(1);
-    expect(t.placements[0].clipId).toBe('v-2');
-  });
-
-  it('migrates a v4 single-clip track into one clip', () => {
-    const v4 = {
-      groups: [],
-      tracks: [
-        {
-          id: 't-v4',
-          name: 'Old',
-          parentId: '',
-          muted: false,
-          volume: 0.8,
-          kind: 'instrument',
-          instrumentType: 'subtractive',
-          params: { 'filter.cutoff': 1234 },
-          clip: { notes: [{ id: 'n1', pitch: 60, start: 0, length: 1, velocity: 0.8 }], lengthBeats: 16 },
-          effects: [],
-        },
-      ],
-      tempoBpm: 120,
-      lengthBeats: 16,
-      selectedTrackId: 't-v4',
-    } as unknown as ProjectData;
-
-    const project = new ProjectStore(false);
-    project.load(v4);
-    const t = project.getTrack('t-v4');
-    if (t?.kind !== 'instrument') throw new Error('expected instrument');
-    expect(t.clips).toHaveLength(1);
-    expect(t.clips[0].store.getClip().notes).toHaveLength(1);
-    expect(t.params.get('filter.cutoff')).toBe(1234);
-    expect(t.placements).toHaveLength(1);
-  });
-
+describe('snapshot/load', () => {
   it('round-trips clips + placements + track sound through snapshot/load', () => {
     const { project, id, inst } = trackWithClip();
     project.addClip(id, { author: 'claude' });
