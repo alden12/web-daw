@@ -17,12 +17,26 @@ short list of coding conventions to follow throughout the codebase.
 - Favour functional, declarative code over imperative. Prefer `map`/`filter`/
   `reduce`/`flatMap` and immutable transforms over manual loops and mutation where
   it reads as clearly.
+- **Real-time carve-out:** the scheduler tick and per-sample DSP loops stay
+  imperative (`for`/`while`, in-place mutation) - allocation and iterator overhead
+  matter on the audio path. Apply the functional preference everywhere else.
 - For key-based dispatch, use an **object key -> value (or key -> function) map**
   instead of `switch`/`case` or long `if`/`else if` chains. Examples in the code:
   the MCP bridge inbound handlers (`src/audio/mcp/bridge.ts`), the param coercers
   (`src/audio/params/store.ts`), and the schema-to-zod builders
   (`src/audio/params/zod.ts`). This keeps the set of cases data, so it is easy to
   extend and hard to leave a case unhandled.
+
+## Style: descriptive names
+
+- Prefer full, descriptive variable names over single-letter or condensed ones,
+  **including in iterator/collection callbacks** - `tracks.map((track) => ...)`,
+  not `(t)`. Names should read as domain terms (`clip`, `placement`, `note`,
+  `effect`), not initials.
+- Carve-outs where short names stay idiomatic: React event params (`e`), numeric
+  loop indices (`i`), and sort comparators (`(a, b)`). The real-time scheduler
+  tick and per-sample DSP loops are also left alone (see the functional carve-out
+  above).
 
 ## Extensibility: don't hardcode the catalog
 
