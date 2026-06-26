@@ -6,10 +6,10 @@
  * subscribers.
  */
 import { GRID, type ClipData, type NoteEvent } from "./types";
+import { clamp } from "../../util";
 
 const DEFAULT_LENGTH = 16;
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const snap = (v: number) => Math.round(v / GRID) * GRID;
 
 /** Input accepted by addNote; id/length/velocity are filled in if omitted. */

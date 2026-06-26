@@ -28,6 +28,9 @@ import { useClip } from "../audio/sequencer/useClip";
 import { useRecorder } from "./useRecorder";
 import type { Dispatch } from "../audio/commands/types";
 import { newNoteId } from "../audio/commands/ids";
+import { clamp } from "../util";
+import { beginPointerDrag } from "./pointerDrag";
+import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
@@ -53,7 +56,6 @@ const SNAP_OPTIONS = [
 const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const pitchNote = (pitch: number) => `${NOTE_NAMES[((pitch % 12) + 12) % 12]}${Math.floor(pitch / 12) - 1}`;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type Drag =
   | {
@@ -179,26 +181,20 @@ export function PianoRoll({
   // Drive the playhead off the audio clock (already wrapped to the loop region).
   // While a MIDI take records into this track, also grow the held-note ghosts from
   // their onset out to the playhead, so notes draw in as they are played.
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const head = beatToX(scheduler.getPositionBeats(), pxPerBeat);
-      const el = playheadRef.current;
-      if (el) {
-        el.style.transform = `translateX(${head}px)`;
-        el.style.opacity = scheduler.isPlaying ? "1" : "0";
+  useAnimationFrame(() => {
+    const head = beatToX(scheduler.getPositionBeats(), pxPerBeat);
+    const el = playheadRef.current;
+    if (el) {
+      el.style.transform = `translateX(${head}px)`;
+      el.style.opacity = scheduler.isPlaying ? "1" : "0";
+    }
+    const layer = heldRef.current;
+    if (layer) {
+      for (const child of Array.from(layer.children) as HTMLElement[]) {
+        const left = Number(child.dataset.left);
+        child.style.width = `${Math.max(2, head - left)}px`;
       }
-      const layer = heldRef.current;
-      if (layer) {
-        for (const child of Array.from(layer.children) as HTMLElement[]) {
-          const left = Number(child.dataset.left);
-          child.style.width = `${Math.max(2, head - left)}px`;
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    }
   }, [scheduler, pxPerBeat]);
 
   // Click outside the roll deselects.
@@ -305,13 +301,9 @@ export function PianoRoll({
         dispatch({ type: "editNotes", trackId, notes });
       }
     };
-    const onUp = () => {
+    beginPointerDrag(onMove, () => {
       drag.current = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    });
   };
 
   // --- empty-grid press: click -> add, drag -> marquee ----------------------
@@ -352,12 +344,10 @@ export function PianoRoll({
       }
       setSelection(next);
     };
-    const onUp = () => {
+    beginPointerDrag(onMove, () => {
       const d = drag.current;
       drag.current = null;
       setMarquee(null);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
       if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
       if (d.moved || d.additive) return; // dragged (marquee), or shift-click: keep selection
       const pitch = MAX_PITCH - Math.floor(downY / rowH);
@@ -370,9 +360,7 @@ export function PianoRoll({
       const start = clampStart(floorBeat(beat, snapOn ? snapDiv : GRID));
       dispatch({ type: "addNote", trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
       setSelection(new Set([id]));
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    });
   };
 
   // --- velocity lane --------------------------------------------------------
@@ -391,14 +379,12 @@ export function PianoRoll({
       dispatch({ type: "editNotes", trackId, notes });
     };
     apply(e.clientY);
-    const onMove = (ev: PointerEvent) => apply(ev.clientY);
-    const onUp = () => {
-      drag.current = null;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    beginPointerDrag(
+      (ev) => apply(ev.clientY),
+      () => {
+        drag.current = null;
+      },
+    );
   };
 
   // Drag the velocity lane's top edge to resize it.
@@ -407,13 +393,7 @@ export function PianoRoll({
     e.stopPropagation();
     const startY = e.clientY;
     const startH = velH;
-    const onMove = (ev: PointerEvent) => setVelH(startH + (startY - ev.clientY));
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    beginPointerDrag((ev) => setVelH(startH + (startY - ev.clientY)));
   };
 
   const gridBg = [

@@ -14,6 +14,8 @@
 import { ParamStore } from "../params/store";
 import { ClipStore } from "../sequencer/clipStore";
 import { GRID, type NoteEvent } from "../sequencer/types";
+import { clamp } from "../../util";
+import { secondsToBeats } from "../timing";
 import {
   hasInstrument,
   catalogEntry,
@@ -45,7 +47,6 @@ const MAX_AUDIO_GAIN = 4; // ~+12 dB - lets a quiet recording be boosted
 const MIN_LOOP_SEC = 0.05; // seconds - smallest audio loop region
 /** Default group family imported/recorded audio is filed into (the librarian). */
 const AUDIO_FAMILY = "Audio";
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** An effect at runtime: meta + its own ParamStore over the effect's schema. */
 export interface EffectInstance {
@@ -482,7 +483,7 @@ export class ProjectStore {
           clipId,
           startBeat: clip.startBeat ?? 0,
           offset: 0,
-          length: this.secondsToBeats(durationSec),
+          length: this.naturalBeats(durationSec),
         },
       ],
       launchedClipId: null,
@@ -523,7 +524,7 @@ export class ProjectStore {
     t.activeClipId = spec.id;
     if (!t.placements.some((p) => p.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat ?? 0);
-      const length = this.secondsToBeats(durationSec);
+      const length = this.naturalBeats(durationSec);
       // A recorded take punches in over the lane: replace whatever it overlaps.
       this.replaceRegion(t, startBeat, startBeat + length, spec.placementId);
       t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length });
@@ -599,8 +600,8 @@ export class ProjectStore {
   }
 
   /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */
-  private secondsToBeats(durationSec: number): number {
-    return Math.max(1, durationSec * (this.tempoBpm / 60));
+  private naturalBeats(durationSec: number): number {
+    return Math.max(1, secondsToBeats(durationSec, this.tempoBpm));
   }
 
   /** Edit an audio clip's gain / name / loop region in the pool (no-op on instrument tracks). */
@@ -751,7 +752,7 @@ export class ProjectStore {
   private naturalLength(t: Track, clipId: string): number {
     if (t.kind === "instrument") return t.clips.find((c) => c.id === clipId)?.store.getClip().lengthBeats ?? 4;
     const c = t.clips.find((x) => x.id === clipId);
-    return c ? this.secondsToBeats(c.durationSec) : 4;
+    return c ? this.naturalBeats(c.durationSec) : 4;
   }
 
   /**

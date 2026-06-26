@@ -11,6 +11,8 @@ import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
 import { useProject } from "../audio/project/useProject";
+import { beatsPerSecond } from "../audio/timing";
+import { useAnimationFrame } from "./useAnimationFrame";
 import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
 import { InstrumentPanel } from "./InstrumentPanel";
@@ -108,7 +110,7 @@ function AudioClipPanel({
   dispatch: Dispatch;
 }) {
   const clip = track.clips.find((c) => c.id === track.activeClipId) ?? track.clips[0];
-  const bps = tempoBpm / 60;
+  const bps = beatsPerSecond(tempoBpm);
   const dur = clip?.durationSec || 0;
   const durBeats = Math.max(0.001, dur * bps);
   const loopStartSec = clip?.loopStartSec ?? 0;
@@ -144,34 +146,27 @@ function AudioClipPanel({
   // so its playback window is the loop region (mirrors the scheduler's synthetic
   // placement), not a `track.placements` entry.
   const launched = clipId !== undefined && track.launchedClipId === clipId;
-  useEffect(() => {
-    let raf = 0;
+  useAnimationFrame(() => {
+    const el = playheadRef.current;
+    if (!el) return;
     const regionBeats = Math.max(0.001, (loopEndSec - loopStartSec) * bps);
     // The loop window is fixed on the grid (the slide moves the audio under it, not
     // the window), so the playhead sweeps the window's grid position straight.
     const loopStartBeats = loopStartSec * bps;
-    const tick = () => {
-      const el = playheadRef.current;
-      if (el) {
-        let x: number | null = null;
-        if (clipId && scheduler.isPlaying && pxPerBeat > 0) {
-          const pos = scheduler.getPositionBeats();
-          const active = launched
-            ? { startBeat: loopStart, length: loopLength }
-            : placements.find((p) => p.clipId === clipId && pos >= p.startBeat && pos < p.startBeat + p.length);
-          if (active) {
-            let phase = (pos - active.startBeat) % regionBeats;
-            if (phase < 0) phase += regionBeats;
-            x = beatToX(loopStartBeats + phase, pxPerBeat);
-          }
-        }
-        el.style.opacity = x === null ? "0" : "1";
-        if (x !== null) el.style.transform = `translateX(${x}px)`;
+    let x: number | null = null;
+    if (clipId && scheduler.isPlaying && pxPerBeat > 0) {
+      const pos = scheduler.getPositionBeats();
+      const active = launched
+        ? { startBeat: loopStart, length: loopLength }
+        : placements.find((p) => p.clipId === clipId && pos >= p.startBeat && pos < p.startBeat + p.length);
+      if (active) {
+        let phase = (pos - active.startBeat) % regionBeats;
+        if (phase < 0) phase += regionBeats;
+        x = beatToX(loopStartBeats + phase, pxPerBeat);
       }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    }
+    el.style.opacity = x === null ? "0" : "1";
+    if (x !== null) el.style.transform = `translateX(${x}px)`;
   }, [scheduler, clipId, placements, pxPerBeat, loopStartSec, loopEndSec, bps, launched, loopStart, loopLength]);
 
   if (!clip) return <div className="flex-1 min-h-0 p-3 text-muted text-sm">No audio clip.</div>;

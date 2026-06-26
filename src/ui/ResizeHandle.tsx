@@ -8,6 +8,7 @@
  * the mobile/touch roadmap.
  */
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { beginPointerDrag } from "./pointerDrag";
 
 export function ResizeHandle({
   ariaLabel,
@@ -29,16 +30,14 @@ export function ResizeHandle({
     onDragChange?.(true);
     document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
-    const move = (ev: PointerEvent) => onResize(orientation === "vertical" ? ev.clientX : ev.clientY);
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      onDragChange?.(false);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    beginPointerDrag(
+      (ev) => onResize(orientation === "vertical" ? ev.clientX : ev.clientY),
+      () => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        onDragChange?.(false);
+      },
+    );
   };
 
   return (
