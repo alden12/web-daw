@@ -46,3 +46,22 @@ test("a group row menu adds an empty track into that group", async ({ page }) =>
   await page.getByRole("menuitem", { name: "Add empty track" }).click();
   await expect(trackMenus).toHaveCount(before + 1);
 });
+
+test("a row menu near the bottom edge flips above and stays inside the viewport", async ({ page }) => {
+  // A short viewport puts the arrangement's track ⋮ near the bottom, so a menu opened
+  // straight below it would run off-screen; it must flip above the trigger and clamp.
+  await page.setViewportSize({ width: 1320, height: 260 });
+  await page.goto("/");
+  await dismissStart(page);
+
+  const trigger = page.getByRole("button", { name: "Track actions" }).first();
+  const triggerBox = (await trigger.boundingBox())!;
+  await trigger.click();
+  const box = (await page.getByRole("menu").first().boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.y, "menu flips above the trigger near the bottom edge").toBeLessThan(triggerBox.y);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(view.height + 0.5);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(view.width + 0.5);
+});

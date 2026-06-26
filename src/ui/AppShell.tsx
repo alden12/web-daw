@@ -162,7 +162,10 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [scheduler, recorder]);
 
-  // Computer-keyboard plays the selected track's instrument (polyphonic).
+  // Computer-keyboard plays the selected track's instrument (polyphonic). Each held
+  // key remembers which instrument it started on, so its note-off routes back there
+  // even if you change the selection mid-press (otherwise the held voice rings on).
+  const heldKeys = useRef<Map<number, string>>(new Map());
   useEffect(() => {
     if (!started) return;
     const onDown = (e: KeyboardEvent) => {
@@ -172,13 +175,17 @@ export function AppShell() {
       const midi = KEY_MAP[e.key.toLowerCase()];
       const id = projectStore.selectedId;
       if (midi === undefined || !id) return;
+      heldKeys.current.set(midi, id);
       engine.getInstrument(id)?.noteOn(midi);
       recorder.noteOn(midi); // captured only while a MIDI take is recording
     };
     const onUp = (e: KeyboardEvent) => {
       const midi = KEY_MAP[e.key.toLowerCase()];
-      const id = projectStore.selectedId;
-      if (midi === undefined || !id) return;
+      if (midi === undefined) return;
+      // Release on the instrument the key started on, not the currently-selected one.
+      const id = heldKeys.current.get(midi) ?? projectStore.selectedId;
+      heldKeys.current.delete(midi);
+      if (!id) return;
       engine.getInstrument(id)?.noteOff(midi);
       recorder.noteOff(midi);
     };
