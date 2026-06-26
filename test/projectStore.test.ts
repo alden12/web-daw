@@ -355,6 +355,78 @@ describe('ProjectStore audio tracks', () => {
   });
 });
 
+describe('addNoteClip (recorded MIDI take)', () => {
+  const lane = (p: ProjectStore, trackId: string) =>
+    p.getStructure().tracks.find((t) => t.id === trackId)!.placements;
+
+  it('adds a clip with its notes and places it at the given beat', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    p.addNoteClip({
+      trackId: t.id,
+      id: 'c-take',
+      placementId: 'p-take',
+      name: 'Take 1',
+      notes: [{ id: 'n1', pitch: 60, start: 0, length: 1, velocity: 0.8 }],
+      lengthBeats: 4,
+      startBeat: 8,
+    });
+    const placements = lane(p, t.id);
+    const placed = placements.find((pl) => pl.id === 'p-take')!;
+    expect(placed.clipId).toBe('c-take');
+    expect(placed.startBeat).toBe(8);
+    expect(placed.length).toBe(4);
+    expect(p.getClipStore(t.id, 'c-take')!.getClip().notes).toHaveLength(1);
+    // The recorded clip becomes the active one.
+    expect(p.getStructure().tracks.find((x) => x.id === t.id)!.activeClipId).toBe('c-take');
+  });
+
+  it('is a no-op on a non-instrument track and ignores a duplicate clip id', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    p.addNoteClip({ trackId: t.id, id: 'c-dup', placementId: 'p-a', notes: [], lengthBeats: 4, startBeat: 0 });
+    p.addNoteClip({ trackId: t.id, id: 'c-dup', placementId: 'p-b', notes: [], lengthBeats: 4, startBeat: 0 });
+    expect(lane(p, t.id).filter((pl) => pl.clipId === 'c-dup')).toHaveLength(1);
+  });
+
+  it('punches in: drops a fully covered placement, keeps a disjoint one', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    p.addPlacement(t.id, { id: 'p-old', startBeat: 0, length: 4 }); // covered by [0,4)
+    p.addPlacement(t.id, { id: 'p-far', startBeat: 8, length: 4 }); // disjoint
+    p.addNoteClip({ trackId: t.id, id: 'c-take', placementId: 'p-take', notes: [], lengthBeats: 4, startBeat: 0 });
+    const ids = lane(p, t.id).map((pl) => pl.id);
+    expect(ids).toContain('p-far');
+    expect(ids).toContain('p-take');
+    expect(ids).not.toContain('p-old');
+  });
+
+  it('punches in: trims a placement that straddles an edge', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    p.addPlacement(t.id, { id: 'p-left', startBeat: 0, length: 6 }); // overlaps left edge of [4,8)
+    p.addNoteClip({ trackId: t.id, id: 'c-take', placementId: 'p-take', notes: [], lengthBeats: 4, startBeat: 4 });
+    const left = lane(p, t.id).find((pl) => pl.id === 'p-left')!;
+    expect(left.startBeat).toBe(0);
+    expect(left.length).toBe(4); // trimmed back to the take's start
+  });
+
+  it('punches in: splits a placement that spans the whole take, keeping both remnants', () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack('subtractive');
+    p.addPlacement(t.id, { id: 'p-big', clipId: undefined, startBeat: 0, offset: 0, length: 12 });
+    p.addNoteClip({ trackId: t.id, id: 'c-take', placementId: 'p-take', notes: [], lengthBeats: 4, startBeat: 4 });
+    const placements = lane(p, t.id);
+    const left = placements.find((pl) => pl.id === 'p-big')!;
+    expect(left.startBeat).toBe(0);
+    expect(left.length).toBe(4); // [0,4)
+    const right = placements.find((pl) => pl.id === 'p-take-r-p-big')!;
+    expect(right.startBeat).toBe(8); // [8,12)
+    expect(right.length).toBe(4);
+    expect(right.offset).toBe(8); // window advanced past the punched-out region
+  });
+});
+
 describe('instrument catalog', () => {
   it('exposes a label and a valid schema for every instrument type', () => {
     for (const def of instrumentInfos()) {

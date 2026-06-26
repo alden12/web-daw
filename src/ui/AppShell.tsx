@@ -153,12 +153,16 @@ export function AppShell() {
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return; // don't play while typing
       const midi = KEY_MAP[e.key.toLowerCase()];
       const id = projectStore.selectedId;
-      if (midi !== undefined && id) engine.getInstrument(id)?.noteOn(midi);
+      if (midi === undefined || !id) return;
+      engine.getInstrument(id)?.noteOn(midi);
+      recorder.noteOn(midi); // captured only while a MIDI take is recording
     };
     const onUp = (e: KeyboardEvent) => {
       const midi = KEY_MAP[e.key.toLowerCase()];
       const id = projectStore.selectedId;
-      if (midi !== undefined && id) engine.getInstrument(id)?.noteOff(midi);
+      if (midi === undefined || !id) return;
+      engine.getInstrument(id)?.noteOff(midi);
+      recorder.noteOff(midi);
     };
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
@@ -166,7 +170,7 @@ export function AppShell() {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
     };
-  }, [started, projectStore, engine]);
+  }, [started, projectStore, engine, recorder]);
 
   const handleStart = async () => {
     await engine.start(projectStore);

@@ -10,6 +10,7 @@
  */
 import type { ServerToBrowser } from '../mcp/protocol';
 import type { PatchValues } from '../params/types';
+import type { NoteEvent } from '../sequencer/types';
 
 export type Author = 'you' | 'claude';
 
@@ -59,6 +60,20 @@ export type LocalEdit =
       durationSec?: number;
       gain?: number;
       startBeat?: number;
+    }
+  | {
+      // Add a note clip (a recorded MIDI take) to an EXISTING instrument track's
+      // pool and place it, punching in over whatever it overlaps. Clip + placement
+      // ids and every note id are pre-minted by the caller and carried here, so
+      // replaying the command reproduces the same ids and notes exactly.
+      type: 'addNoteClip';
+      trackId: string;
+      id: string;
+      placementId: string;
+      name?: string;
+      notes: NoteEvent[];
+      lengthBeats: number;
+      startBeat: number;
     }
   | {
       // Add an instrument track from a saved patch (instrument + params + effect

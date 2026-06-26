@@ -46,6 +46,7 @@ const DESCRIBE: DescribeMap = {
   },
   setAudioClip: () => 'Edited audio clip',
   addAudioClip: (c) => `Recorded ${c.name ? `"${c.name}"` : 'a take'}`,
+  addNoteClip: (c) => `Recorded ${c.name ? `"${c.name}"` : 'a take'} (${plural(c.notes.length)})`,
   createGroup: (c) => `Added group${c.name ? ` ${c.name}` : ''}`,
   removeGroup: () => 'Removed group',
   setGroup: (c, ctx) => {

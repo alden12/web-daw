@@ -330,8 +330,9 @@ function AudioClipPanel({
   );
 }
 
-/** Record a new take into this audio track (arms it first); stops if recording. */
-function AudioRecordButton({
+/** Record a new take into this track (arms it first); stops if recording. Audio
+ *  tracks capture the mic; instrument tracks capture live MIDI notes. */
+function TrackRecordButton({
   trackId,
   recorder,
   recording,
@@ -445,8 +446,8 @@ export function CenterWorkbench({
       {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
           instrument + effect rack below, then the arrangement output (bottom panel).
           Both kinds share the resizable clip rail on the left; the right is the piano
-          roll (instrument) or the audio-clip panel (audio). For audio, the rail's
-          footer is a record button that records a take into this track. */}
+          roll (instrument) or the audio-clip panel (audio). The rail's footer is a
+          record button that records a take into this track (mic / live MIDI). */}
       <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:body`}>
         <div
           ref={clipRailRef}
@@ -460,13 +461,11 @@ export function CenterWorkbench({
             dispatch={dispatch}
             orientation="vertical"
             footer={
-              selectedTrack.kind === "audio" ? (
-                <AudioRecordButton
-                  trackId={selectedTrack.id}
-                  recorder={recorder}
-                  recording={recording}
-                />
-              ) : undefined
+              <TrackRecordButton
+                trackId={selectedTrack.id}
+                recorder={recorder}
+                recording={recording}
+              />
             }
           />
           <ResizeHandle
@@ -492,6 +491,7 @@ export function CenterWorkbench({
                   key={active.id}
                   clipStore={active.store}
                   scheduler={scheduler}
+                  recorder={recorder}
                   trackId={selectedTrack.id}
                   dispatch={dispatch}
                 />
