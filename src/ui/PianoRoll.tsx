@@ -34,6 +34,9 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
+import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
+import { QUANT_KEYS } from "./quantizeSettings";
+import { Menu, type MenuItem } from "./Menu";
 
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
@@ -47,11 +50,9 @@ const ZOOM_X = { min: 24, max: 240 };
 const ZOOM_Y = { min: 7, max: 28 };
 const VEL = { min: 24, max: 160 };
 
-const SNAP_OPTIONS = [
-  { label: "1/4", value: 1 },
-  { label: "1/8", value: 0.5 },
-  { label: "1/16", value: 0.25 },
-];
+// The note-grid choices (incl. triplets) come from the one shared list, so the snap
+// dropdown and the quantize action always offer the same resolutions.
+const STRENGTH_OPTIONS = [0.25, 0.5, 0.75, 1];
 
 const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -102,9 +103,15 @@ export function PianoRoll({
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
   const [rowH, setRowH] = usePersistentNumber("web-daw:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:roll-snap-div", 0.25, 0.25, 1);
+  const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
   const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
+
+  // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
+  // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
+  const [quantStrength, setQuantStrength] = usePersistentNumber(QUANT_KEYS.strength, 1, 0, 1);
+  const [quantEnds, setQuantEnds] = usePersistentBoolean(QUANT_KEYS.ends, false);
+  const [quantOnRecord, setQuantOnRecord] = usePersistentBoolean(QUANT_KEYS.onRecord, false);
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -403,8 +410,33 @@ export function PianoRoll({
     `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${rowH}px)`,
   ].join(", ");
 
+  // Quantize the selection (or the whole clip if nothing is selected) to the snap grid,
+  // by the current strength, as ONE editNotes command (one undo step, one feed entry).
+  const targets = selection.size ? clip.notes.filter((note) => selection.has(note.id)) : clip.notes;
+  const quantize = () => {
+    if (!targets.length) return;
+    const notes = quantizeNotes(targets, { gridBeats: snapDiv, strength: quantStrength, ends: quantEnds });
+    dispatch({ type: "editNotes", trackId, notes });
+  };
+
+  const settingsItems: MenuItem[] = [
+    {
+      label: "Strength",
+      submenu: STRENGTH_OPTIONS.map((value) => ({
+        label: `${Math.round(value * 100)}%`,
+        checked: quantStrength === value,
+        onClick: () => setQuantStrength(value),
+      })),
+    },
+    { label: "Quantize note ends", checked: quantEnds, onClick: () => setQuantEnds(!quantEnds) },
+    { separator: true },
+    { label: "Auto-quantize recordings", checked: quantOnRecord, onClick: () => setQuantOnRecord(!quantOnRecord) },
+  ];
+
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+  const toolBtn =
+    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
@@ -420,12 +452,31 @@ export function PianoRoll({
           onChange={(e) => setSnapDiv(Number(e.target.value))}
           className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
         >
-          {SNAP_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
+          {GRID_DIVISIONS.map((division) => (
+            <option key={division.label} value={division.beats}>
+              {division.label}
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          title={selection.size ? "Quantize selected notes to the grid" : "Quantize all notes to the grid"}
+          className={toolBtn}
+          disabled={!targets.length}
+          onClick={quantize}
+        >
+          Quantize{selection.size ? " sel" : ""}
+        </button>
+        <button
+          type="button"
+          title="Auto-quantize notes as they're recorded"
+          aria-pressed={quantOnRecord}
+          className={`${toolBtn} ${quantOnRecord ? "border-you text-you" : ""}`}
+          onClick={() => setQuantOnRecord(!quantOnRecord)}
+        >
+          Auto-Q
+        </button>
+        <Menu items={settingsItems} label="Quantize settings" align="left" />
         <div className="ml-auto flex items-center gap-1.5">
           <span className="font-mono text-[10px] text-faint">zoom</span>
           <button

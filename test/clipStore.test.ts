@@ -9,23 +9,24 @@ describe("ClipStore", () => {
     expect(clip.lengthBeats).toBe(16);
   });
 
-  it("adds notes (snapping start/length to the grid) and returns ids", () => {
+  it("keeps off-grid positions (no force-snap) and returns ids", () => {
     const store = new ClipStore();
     const id = store.addNote({ pitch: 60, start: 1.1, length: 0.9 });
     expect(typeof id).toBe("string");
     const [note] = store.getClip().notes;
     expect(note.pitch).toBe(60);
-    expect(note.start).toBe(1.0); // 1.1 snaps to nearest 0.25
-    expect(note.length % GRID).toBe(0);
+    expect(note.start).toBe(1.1); // preserved exactly - quantize is now explicit
+    expect(note.length).toBe(0.9); // preserved exactly
     expect(note.velocity).toBe(0.8); // default
   });
 
-  it("clamps pitch and velocity", () => {
+  it("clamps pitch, velocity, and floors length to a 16th", () => {
     const store = new ClipStore();
-    store.addNote({ pitch: 999, start: 0, velocity: 5 });
+    store.addNote({ pitch: 999, start: 0, velocity: 5, length: 0.01 });
     const [note] = store.getClip().notes;
     expect(note.pitch).toBe(127);
     expect(note.velocity).toBe(1);
+    expect(note.length).toBe(GRID); // tiny length floored to the minimum
   });
 
   it("removes and clears notes", () => {
