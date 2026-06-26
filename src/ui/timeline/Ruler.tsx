@@ -8,6 +8,7 @@
  */
 import { useRef } from "react";
 import { beatTicks, beatToX, DEFAULT_BEATS_PER_BAR } from "./timeGrid";
+import { beginPointerDrag } from "../pointerDrag";
 
 const RULER_H = 22; // px
 
@@ -42,13 +43,7 @@ export function Ruler({
     e.stopPropagation();
     const left = ref.current?.getBoundingClientRect().left ?? 0;
     const toBeats = (clientX: number) => Math.max(0, Math.round((clientX - left) / pxPerBeat));
-    const onMove = (ev: PointerEvent) => commit(toBeats(ev.clientX));
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    beginPointerDrag((ev) => commit(toBeats(ev.clientX)));
   };
 
   return (

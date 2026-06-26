@@ -24,6 +24,7 @@ import type { Dispatch } from "../commands/types";
 import { newClipId, newNoteId, newPlacementId, newTrackId } from "../commands/ids";
 import { audioStorageAvailable, putAudio } from "../audioStore";
 import { GRID, type NoteEvent } from "../sequencer/types";
+import { beatsPerSecond } from "../timing";
 import { encodeWav } from "./wav";
 
 const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
@@ -269,7 +270,7 @@ export class Recorder {
     const fileId = await putAudio(encodeWav(samples, sampleRate));
     // Shift the take back by the estimated round-trip so it lands where it was
     // played (clamped to the start). A loopback calibration refines this later.
-    const offsetBeats = this.engine.inputLatencySec() * (this.project.tempo / 60);
+    const offsetBeats = this.engine.inputLatencySec() * beatsPerSecond(this.project.tempo);
     const startBeat = Math.max(0, this.startBeat - offsetBeats);
     const name = this.nextTakeName();
 

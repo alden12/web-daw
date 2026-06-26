@@ -33,6 +33,9 @@ import { Menu } from "./Menu";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { useClip } from "../audio/sequencer/useClip";
+import { clamp } from "../util";
+import { beginPointerDrag } from "./pointerDrag";
+import { useAnimationFrame } from "./useAnimationFrame";
 import { TransportBar } from "./TransportBar";
 import { InlineRename } from "./InlineRename";
 import { Fader, MuteSolo } from "./MixerControls";
@@ -64,8 +67,6 @@ const SNAP_OPTIONS = [
   { label: "Beat", value: 1 },
   { label: "1/2", value: 0.5 },
 ];
-
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type Selection = { trackId: string; id: string } | null;
 
@@ -306,12 +307,7 @@ function Lane({
           });
       }
     };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    beginPointerDrag(onMove);
   };
 
   // Double-click a block to split it at the cursor.
@@ -371,9 +367,7 @@ function Lane({
         width: beatToX(length, pxPerBeat),
       });
     };
-    const onUp = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+    beginPointerDrag(onMove, (ev) => {
       setDraft(null);
       if (!moved) {
         // Click: drop a paste marker (copy/paste lands here).
@@ -384,9 +378,7 @@ function Lane({
       const start = Math.max(0, floorB(Math.min(downBeat, beatAt(ev.clientX))));
       const length = Math.max(snapOn ? snapDiv : GRID, snapB(Math.max(downBeat, beatAt(ev.clientX))) - start);
       createClip(start, length);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    });
   };
 
   const laneBg = [
@@ -816,18 +808,12 @@ export function ArrangementTimeline({
   }, [pxPerBeat, setPxPerBeat, headerW]);
 
   // Drive the playhead off the audio clock (0 when stopped).
-  useEffect(() => {
-    let raf = 0;
-    const tick = () => {
-      const el = playheadRef.current;
-      if (el) {
-        el.style.transform = `translateX(${headerW + beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
-        el.style.opacity = scheduler.isPlaying ? "1" : "0";
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+  useAnimationFrame(() => {
+    const el = playheadRef.current;
+    if (el) {
+      el.style.transform = `translateX(${headerW + beatToX(scheduler.getPositionBeats(), pxPerBeat)}px)`;
+      el.style.opacity = scheduler.isPlaying ? "1" : "0";
+    }
   }, [scheduler, pxPerBeat, headerW]);
 
   // Drag the header/lane divider to resize the left header column.
@@ -836,13 +822,7 @@ export function ArrangementTimeline({
     const el = scrollRef.current;
     if (!el) return;
     const left = el.getBoundingClientRect().left;
-    const move = (ev: PointerEvent) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    beginPointerDrag((ev) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX)));
   };
 
   const zoomBtn =

@@ -7,13 +7,14 @@
  * (direct on the store); add / remove / rename go through dispatch, so undo/redo +
  * the activity feed cover them.
  */
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { ClipContent } from "../audio/project/types";
 import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
 import { newClipId } from "../audio/commands/ids";
+import { InlineRename } from "./InlineRename";
 import { CLIP_DND_TYPE, clipDndKindType, clearDraggedClip, setDraggedClip } from "./clipDnd";
 import { getClipClipboard, setClipClipboard } from "./clipClipboard";
 
@@ -35,18 +36,11 @@ export function ClipRail({
   footer?: ReactNode;
 }) {
   const project = useProject(projectStore);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const track = project.tracks.find((t) => t.id === trackId);
   if (!track) return null;
 
   const { clips, activeClipId, launchedClipId } = track;
   const vertical = orientation === "vertical";
-
-  const commitRename = (clipId: string, name: string) => {
-    setEditingId(null);
-    const trimmed = name.trim();
-    if (trimmed) dispatch({ type: "renameClip", trackId, clipId, name: trimmed });
-  };
 
   // Delete a clip. A track must keep at least one clip, so deleting the last one
   // replaces it with a fresh empty clip (a blank-slate reset). The new id is minted
@@ -121,21 +115,6 @@ export function ClipRail({
       {clips.map((c) => {
         const active = c.id === activeClipId;
         const voice = c.author === "claude" ? "bg-claude" : "bg-you";
-        if (editingId === c.id) {
-          return (
-            <input
-              key={c.id}
-              autoFocus
-              defaultValue={c.name}
-              onBlur={(e) => commitRename(c.id, e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename(c.id, e.currentTarget.value);
-                if (e.key === "Escape") setEditingId(null);
-              }}
-              className={`font-mono text-[11px] px-1.5 py-1 rounded-md border border-you bg-ground text-bright ${vertical ? "w-full" : "w-16"}`}
-            />
-          );
-        }
         return (
           <div
             key={c.id}
@@ -153,8 +132,7 @@ export function ClipRail({
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, c.id)}
-            onDoubleClick={() => setEditingId(c.id)}
-            title={`${c.author === "claude" ? "Claude" : "You"} - drag onto the lane to place, double-click to rename`}
+            title={`${c.author === "claude" ? "Claude" : "You"} - drag onto the lane to place`}
           >
             <button
               type="button"
@@ -174,7 +152,11 @@ export function ClipRail({
               {launchedClipId === c.id ? "■" : "▶"}
             </button>
             <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
-            <span>{c.name}</span>
+            <InlineRename
+              value={c.name}
+              onCommit={(name) => dispatch({ type: "renameClip", trackId, clipId: c.id, name })}
+              className="min-w-0"
+            />
             {/* Audio's last clip has no empty-clip fallback, so hide its no-op delete. */}
             {!(track.kind === "audio" && clips.length <= 1) && (
               <button
