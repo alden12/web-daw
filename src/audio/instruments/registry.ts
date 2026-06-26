@@ -14,6 +14,7 @@ import { SubtractiveInstrument } from './Subtractive';
 import { FmInstrument } from './Fm';
 import { SupersawInstrument } from './Supersaw';
 import { OrganInstrument } from './Organ';
+import { WorkletInstrument } from './WorkletInstrument';
 import { DEFAULT_INSTRUMENT } from './catalog';
 
 type InstrumentFactory = (ctx: AudioContext, store: ParamStore) => Instrument;
@@ -35,5 +36,6 @@ registerInstrumentFactory('subtractive', (ctx, store) => new SubtractiveInstrume
 registerInstrumentFactory('fm', (ctx, store) => new FmInstrument(ctx, store));
 registerInstrumentFactory('supersaw', (ctx, store) => new SupersawInstrument(ctx, store));
 registerInstrumentFactory('organ', (ctx, store) => new OrganInstrument(ctx, store));
+registerInstrumentFactory('wavetable', (ctx, store) => new WorkletInstrument(ctx, store, 'wavetable-processor'));
 
 export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from './catalog';

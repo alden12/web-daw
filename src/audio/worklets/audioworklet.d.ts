@@ -31,3 +31,6 @@ declare function registerProcessor(
 
 /** The worklet render quantum's sample rate (Hz), available in the global scope. */
 declare const sampleRate: number;
+
+/** The audio context's time (seconds) at the start of the current render quantum. */
+declare const currentTime: number;

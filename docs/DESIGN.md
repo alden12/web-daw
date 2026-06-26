@@ -770,8 +770,21 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   **capture** worklet (ported from the old `public/capture-worklet.js` to TS). A worklet effect
   is the same three-touch extension as any effect (class + catalog + registry), so it appears in
   the UI rack and the MCP palette automatically. Worklet-scope globals are declared in a tiny
-  ambient `worklets/audioworklet.d.ts` (no dependency). *Part B (next slice):* a worklet
-  **instrument** base (voice management + sample-accurate note timing) + a wavetable synth.
+  ambient `worklets/audioworklet.d.ts` (no dependency).
+- **Worklet *instrument* framework + wavetable synth - DONE (slice 39), part B of the worklet
+  intro.** A `WorkletInstrument` base ([instruments/WorkletInstrument.ts](src/audio/instruments/WorkletInstrument.ts))
+  implements the `Instrument` interface over an `AudioWorkletNode`: note events post to the
+  processor with their absolute `when` (the scheduler's lookahead delivers them ahead of time, so
+  the processor places them **sample-accurately**), and params bind **generically** - every number
+  param in the schema binds to the processor's same-named `AudioParam` via `rampParam`, so a
+  worklet instrument needs no per-param code, just a processor name + matching
+  `parameterDescriptors`. Shipped on it: a polyphonic **wavetable synth** (a morphing bank of
+  single-cycle tables in pure `dsp/wavetable.ts`; the processor runs a 16-voice pool with linear
+  attack/release envelopes, a one-pole tone control, and the sample-accurate dispatch). Same
+  three-touch extension as any instrument (catalog + registry + the worklet module URL), so it
+  shows up in the library, the InstrumentPanel knobs, and the MCP palette for free.
+- **Adopt Prettier (next slice).** A repo-wide Prettier config + `yarn format` + a CI format check,
+  to end the editor quote-churn noted in CLAUDE.md. One-time whole-tree reformat, so its own PR.
 - **In-app IDE / user-authored components.** An embedded editor (Monaco / CodeMirror) for
   **custom instruments/effects via AudioWorklet** - declared by a param schema, so UI, MCP,
   automation, and persistence come for free (the catalog/registry are already the extension

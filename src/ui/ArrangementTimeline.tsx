@@ -516,7 +516,7 @@ function GroupHeader({
 }) {
   return (
     <div
-      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line bg-center`}
+      className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line bg-ground`}
       style={{ paddingLeft: GUTTER_PAD + depth * INDENT }}
     >
       {/* Leading gutter (shared with track rows) holds the collapse arrow, so the
