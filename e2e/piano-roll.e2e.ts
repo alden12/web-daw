@@ -18,7 +18,13 @@ test.use({ viewport: { width: 1280, height: 1100 } });
 
 async function dismissStart(page: Page) {
   const start = page.getByRole('button', { name: /start audio/i });
-  if (await start.count()) await start.click();
+  if (await start.count()) {
+    await start.click();
+    // Wait for the start overlay to clear before interacting: engine.start() now
+    // awaits the worklet modules, so it resolves (and the layout settles) a beat
+    // later - clicking the grid before that races the re-layout and misses.
+    await expect(start).toHaveCount(0);
+  }
 }
 
 /**

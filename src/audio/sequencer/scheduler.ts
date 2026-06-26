@@ -260,7 +260,11 @@ export class Scheduler {
           for (let tau = 0; tau < p.length; tau += Math.max(GRID, clipBeats)) {
             for (const atBeat of onsetsInBeatRange(p.startBeat + tau, fromBeats, horizonBeats, loopLen, loopStart)) {
               const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-              this.engine.scheduleAudioClip(track.id, clip, when);
+              // Cut playback at the next loop boundary so a region that overruns the
+              // loop (its length doesn't divide loopLen) is truncated instead of
+              // overlapping the loop's restart (the double-trigger bug).
+              const maxBeats = (Math.floor(atBeat / loopLen) + 1) * loopLen - atBeat;
+              this.engine.scheduleAudioClip(track.id, clip, when, maxBeats / bps);
             }
           }
         }
