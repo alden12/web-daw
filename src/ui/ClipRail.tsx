@@ -36,7 +36,7 @@ export function ClipRail({
   footer?: ReactNode;
 }) {
   const project = useProject(projectStore);
-  const track = project.tracks.find((t) => t.id === trackId);
+  const track = project.tracks.find((track) => track.id === trackId);
   if (!track) return null;
 
   const { clips, activeClipId, launchedClipId } = track;
@@ -66,17 +66,17 @@ export function ClipRail({
   const clipContentOf = (clipId: string): ClipContent | null => {
     if (track.kind === "instrument") {
       const store = projectStore.getClipStore(trackId, clipId);
-      const meta = clips.find((c) => c.id === clipId);
+      const meta = clips.find((clip) => clip.id === clipId);
       if (!store || !meta) return null;
       const data = store.getClip();
       return {
         kind: "instrument",
         name: meta.name,
-        notes: data.notes.map((n) => ({ ...n })),
+        notes: data.notes.map((note) => ({ ...note })),
         lengthBeats: data.lengthBeats,
       };
     }
-    const c = track.clips.find((x) => x.id === clipId);
+    const c = track.clips.find((clip) => clip.id === clipId);
     return c ? { kind: "audio", name: c.name, fileId: c.fileId, gain: c.gain, durationSec: c.durationSec } : null;
   };
 
@@ -112,17 +112,17 @@ export function ClipRail({
   return (
     <div className={`${containerClass} outline-none`} data-clip-rail tabIndex={0} onKeyDown={onKeyDown}>
       <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1">Clips</span>
-      {clips.map((c) => {
-        const active = c.id === activeClipId;
-        const voice = c.author === "claude" ? "bg-claude" : "bg-you";
+      {clips.map((clip) => {
+        const active = clip.id === activeClipId;
+        const voice = clip.author === "claude" ? "bg-claude" : "bg-you";
         return (
           <div
-            key={c.id}
+            key={clip.id}
             draggable
             onDragStart={(e) => {
-              const content = clipContentOf(c.id);
+              const content = clipContentOf(clip.id);
               if (!content) return;
-              e.dataTransfer.setData(CLIP_DND_TYPE, c.id);
+              e.dataTransfer.setData(CLIP_DND_TYPE, clip.id);
               e.dataTransfer.setData(clipDndKindType(track.kind), "");
               e.dataTransfer.effectAllowed = "copy";
               setDraggedClip(content);
@@ -131,30 +131,30 @@ export function ClipRail({
             className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-grab active:cursor-grabbing ${
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
-            onClick={() => projectStore.selectClip(trackId, c.id)}
-            title={`${c.author === "claude" ? "Claude" : "You"} - drag onto the lane to place`}
+            onClick={() => projectStore.selectClip(trackId, clip.id)}
+            title={`${clip.author === "claude" ? "Claude" : "You"} - drag onto the lane to place`}
           >
             <button
               type="button"
               title={
-                launchedClipId === c.id ? "Stop (back to timeline)" : "Launch clip (loops, overrides the timeline)"
+                launchedClipId === clip.id ? "Stop (back to timeline)" : "Launch clip (loops, overrides the timeline)"
               }
               onClick={(e) => {
                 e.stopPropagation();
-                toggleLaunch(c.id);
+                toggleLaunch(clip.id);
               }}
               className={`font-mono text-[9px] pl-px pb-px leading-none w-4 h-4 rounded-full border cursor-pointer shrink-0 ${
-                launchedClipId === c.id
+                launchedClipId === clip.id
                   ? "border-you bg-you text-ground"
                   : "border-line text-muted hover:text-you hover:border-you"
               }`}
             >
-              {launchedClipId === c.id ? "■" : "▶"}
+              {launchedClipId === clip.id ? "■" : "▶"}
             </button>
             <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
             <InlineRename
-              value={c.name}
-              onCommit={(name) => dispatch({ type: "renameClip", trackId, clipId: c.id, name })}
+              value={clip.name}
+              onCommit={(name) => dispatch({ type: "renameClip", trackId, clipId: clip.id, name })}
               className="min-w-0"
             />
             {/* Audio's last clip has no empty-clip fallback, so hide its no-op delete. */}
@@ -164,7 +164,7 @@ export function ClipRail({
                 title={clips.length > 1 ? "Remove clip" : "Clear clip (replaces it with a fresh empty one)"}
                 onClick={(e) => {
                   e.stopPropagation();
-                  deleteClip(c.id);
+                  deleteClip(clip.id);
                 }}
                 className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
               >

@@ -57,17 +57,17 @@ export function listPatches(): Patch[] {
 
 function write(list: Patch[]): void {
   store()?.setItem(STORAGE_KEY, JSON.stringify(list));
-  for (const l of listeners) l();
+  for (const listener of listeners) listener();
 }
 
 /** Insert or replace a patch (by id), keeping the list newest-first. */
 export function savePatch(patch: Patch): void {
-  write([patch, ...listPatches().filter((p) => p.id !== patch.id)]);
+  write([patch, ...listPatches().filter((entry) => entry.id !== patch.id)]);
 }
 
 /** Remove a patch by id. */
 export function removePatch(id: string): void {
-  write(listPatches().filter((p) => p.id !== id));
+  write(listPatches().filter((patch) => patch.id !== id));
 }
 
 /** Subscribe to library changes (save/remove). Returns an unsubscribe fn. */

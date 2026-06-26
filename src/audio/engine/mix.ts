@@ -20,21 +20,21 @@ interface TrackLike {
 
 /** Ids of tracks that should be silenced (gain 0) given mute + solo state. */
 export function soloMutedTrackIds(groups: readonly GroupLike[], tracks: readonly TrackLike[]): Set<string> {
-  const anySolo = tracks.some((t) => t.solo) || groups.some((g) => g.solo);
-  const byId = new Map(groups.map((g) => [g.id, g]));
+  const anySolo = tracks.some((track) => track.solo) || groups.some((group) => group.solo);
+  const byId = new Map(groups.map((group) => [group.id, group]));
   const ancestorSoloed = (id: string | null): boolean => {
-    let cur = id;
-    while (cur) {
-      const g = byId.get(cur);
-      if (!g) break;
-      if (g.solo) return true;
-      cur = g.parentId;
+    let ancestorId = id;
+    while (ancestorId) {
+      const group = byId.get(ancestorId);
+      if (!group) break;
+      if (group.solo) return true;
+      ancestorId = group.parentId;
     }
     return false;
   };
   const muted = new Set<string>();
-  for (const t of tracks) {
-    if (t.muted || (anySolo && !(t.solo || ancestorSoloed(t.parentId)))) muted.add(t.id);
+  for (const track of tracks) {
+    if (track.muted || (anySolo && !(track.solo || ancestorSoloed(track.parentId)))) muted.add(track.id);
   }
   return muted;
 }

@@ -68,8 +68,8 @@ function NoteMinis({ store, placement, pxPerBeat }: { store: ClipStore; placemen
   const clip = useClip(store);
   const clipLen = clip.lengthBeats;
   if (clipLen <= 0) return null;
-  const body = clip.notes.filter((n) => n.start >= 0 && n.start < clipLen);
-  const pitches = body.map((n) => n.pitch);
+  const body = clip.notes.filter((note) => note.start >= 0 && note.start < clipLen);
+  const pitches = body.map((note) => note.pitch);
   const lo = pitches.length ? Math.min(...pitches) : 48;
   const hi = pitches.length ? Math.max(...pitches) : 72;
   const span = Math.max(1, hi - lo);
@@ -168,7 +168,7 @@ export function Lane({
     onHover(null);
     const startBeat = Math.max(0, floorB(beatAt(e.clientX)));
     const draggedId = e.dataTransfer.getData(CLIP_DND_TYPE);
-    if (draggedId && track.clips.some((c) => c.id === draggedId)) {
+    if (draggedId && track.clips.some((clip) => clip.id === draggedId)) {
       // Same track: place the existing clip.
       const id = newPlacementId();
       dispatch({
@@ -324,21 +324,21 @@ export function Lane({
       className={`${ROW} relative border-b border-line-soft cursor-copy`}
       style={{ width, background: laneBg }}
     >
-      {track.placements.map((p) => {
-        const clip = track.clips.find((c) => c.id === p.clipId);
-        const selected = selection?.trackId === track.id && selection.id === p.id;
+      {track.placements.map((placement) => {
+        const clip = track.clips.find((candidate) => candidate.id === placement.clipId);
+        const selected = selection?.trackId === track.id && selection.id === placement.id;
         return (
           <Block
-            key={p.id}
+            key={placement.id}
             name={clip?.name}
-            left={beatToX(p.startBeat, pxPerBeat)}
-            width={beatToX(p.length, pxPerBeat)}
+            left={beatToX(placement.startBeat, pxPerBeat)}
+            width={beatToX(placement.length, pxPerBeat)}
             selected={selected}
-            onPointerDown={(e) => onBlockDown(p, e)}
-            onDoubleClick={(e) => onBlockDouble(p, e)}
+            onPointerDown={(e) => onBlockDown(placement, e)}
+            onDoubleClick={(e) => onBlockDouble(placement, e)}
           >
             {clip && "store" in clip ? (
-              <NoteMinis store={clip.store} placement={p} pxPerBeat={pxPerBeat} />
+              <NoteMinis store={clip.store} placement={placement} pxPerBeat={pxPerBeat} />
             ) : clip && "fileId" in clip ? (
               <Waveform fileId={clip.fileId} gain={clip.gain} className="absolute inset-0 w-full h-full opacity-80" />
             ) : null}
@@ -369,7 +369,7 @@ export function Lane({
       {track.launchedClipId && (
         <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">
           <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-you bg-ground/80 border border-you/50 rounded px-1.5 py-0.5">
-            ▶ {track.clips.find((c) => c.id === track.launchedClipId)?.name ?? "clip"}
+            ▶ {track.clips.find((clip) => clip.id === track.launchedClipId)?.name ?? "clip"}
           </span>
         </div>
       )}

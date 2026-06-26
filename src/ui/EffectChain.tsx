@@ -27,7 +27,7 @@ export function EffectChain({
   dispatch: Dispatch;
 }) {
   const project = useProject(projectStore);
-  const track = project.tracks.find((t) => t.id === trackId);
+  const track = project.tracks.find((track) => track.id === trackId);
   if (!track) return null;
   const effects = track.effects;
 

@@ -230,9 +230,9 @@ export class ProjectRepository {
 /** Content hashes of every sample the project's audio clips reference. */
 function referencedSampleIds(project: ProjectData): string[] {
   const ids = new Set<string>();
-  for (const t of project.tracks) {
-    if (t.kind !== "audio") continue;
-    for (const c of t.clips ?? []) if (c.fileId) ids.add(c.fileId);
+  for (const track of project.tracks) {
+    if (track.kind !== "audio") continue;
+    for (const clip of track.clips ?? []) if (clip.fileId) ids.add(clip.fileId);
   }
   return [...ids];
 }
@@ -248,7 +248,7 @@ function text(bytes: Uint8Array | undefined): string {
 
 async function sha256hex(buf: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", buf);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 let singleton: ProjectRepository | null = null;

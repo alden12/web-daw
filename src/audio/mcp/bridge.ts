@@ -61,7 +61,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     selectClip: (msg) => projectStore.selectClip(msg.trackId, msg.clipId),
     noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
     noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
-    allNotesOff: () => projectStore.getTracks().forEach((t) => engine.getInstrument(t.id)?.allNotesOff()),
+    allNotesOff: () => projectStore.getTracks().forEach((track) => engine.getInstrument(track.id)?.allNotesOff()),
     transport: (msg) => (msg.action === "play" ? scheduler.play() : scheduler.stop()),
     // Feed annotation from Claude: a line of intent narration in the activity feed.
     note: (msg) => editLog.note(msg.text, "claude"),
@@ -178,32 +178,32 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // Per-track/group param/clip subscriptions, rebuilt whenever structure changes.
   // Effects are host-addressed (the host is the track or group that owns them).
   const resubscribeTracks = () => {
-    for (const u of trackUnsubs) u();
+    for (const unsub of trackUnsubs) unsub();
     trackUnsubs = [
-      ...projectStore.getTracks().flatMap((t) => [
-        ...(t.kind === "instrument"
+      ...projectStore.getTracks().flatMap((track) => [
+        ...(track.kind === "instrument"
           ? [
-              t.params.subscribe((id, value) => send({ type: "paramChanged", trackId: t.id, id, value })),
+              track.params.subscribe((id, value) => send({ type: "paramChanged", trackId: track.id, id, value })),
               // One subscription per clip in the pool; the snapshot carries the clip id.
-              ...t.clips.map((c) =>
-                c.store.subscribe(() =>
-                  send({ type: "clipSnapshot", trackId: t.id, clipId: c.id, clip: c.store.snapshot() }),
+              ...track.clips.map((clip) =>
+                clip.store.subscribe(() =>
+                  send({ type: "clipSnapshot", trackId: track.id, clipId: clip.id, clip: clip.store.snapshot() }),
                 ),
               ),
             ]
           : []),
-        ...t.effects.map((fx) =>
-          fx.params.subscribe((id, value) =>
-            send({ type: "effectParamChanged", hostId: t.id, effectId: fx.id, id, value }),
+        ...track.effects.map((effect) =>
+          effect.params.subscribe((id, value) =>
+            send({ type: "effectParamChanged", hostId: track.id, effectId: effect.id, id, value }),
           ),
         ),
       ]),
       ...projectStore
         .getGroups()
-        .flatMap((g) =>
-          g.effects.map((fx) =>
-            fx.params.subscribe((id, value) =>
-              send({ type: "effectParamChanged", hostId: g.id, effectId: fx.id, id, value }),
+        .flatMap((group) =>
+          group.effects.map((effect) =>
+            effect.params.subscribe((id, value) =>
+              send({ type: "effectParamChanged", hostId: group.id, effectId: effect.id, id, value }),
             ),
           ),
         ),
@@ -222,7 +222,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   const teardownOutbound = () => {
     structureUnsub?.();
     structureUnsub = null;
-    for (const u of trackUnsubs) u();
+    for (const unsub of trackUnsubs) unsub();
     trackUnsubs = [];
   };
 

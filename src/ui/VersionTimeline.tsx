@@ -38,8 +38,8 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
     let alive = true;
     const refresh = () => {
       setHasUncommitted(versionStore.getState().hasUncommitted);
-      void versionStore.history().then((h) => {
-        if (alive) setCommits(h);
+      void versionStore.history().then((commits) => {
+        if (alive) setCommits(commits);
       });
     };
     refresh();
@@ -57,24 +57,24 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
     setMessage("");
   };
 
-  const toggle = (c: CommitSummary) => {
-    if (openId === c.id) {
+  const toggle = (commit: CommitSummary) => {
+    if (openId === commit.id) {
       setOpenId(null);
       setDiff(null);
       setNotes(null);
       return;
     }
-    setOpenId(c.id);
+    setOpenId(commit.id);
     setDiff(null);
     setNotes(null);
     // The intent narration captured with this version (notes are not edits).
-    if (c.noteCount > 0) void versionStore.getCommit(c.id).then((full) => setNotes(full?.notes ?? []));
+    if (commit.noteCount > 0) void versionStore.getCommit(commit.id).then((full) => setNotes(full?.notes ?? []));
     else setNotes([]);
-    if (!c.parent) {
+    if (!commit.parent) {
       setDiff([]); // root commit: nothing before it
       return;
     }
-    void versionStore.diff(c.parent, c.id).then((d) => setDiff(d));
+    void versionStore.diff(commit.parent, commit.id).then((diff) => setDiff(diff));
   };
 
   return (
@@ -108,42 +108,42 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
-          {commits.map((c) => {
-            const open = openId === c.id;
+          {commits.map((commit) => {
+            const open = openId === commit.id;
             return (
               <li
-                key={c.id}
-                className={`rounded-md bg-card/60 border-l-2 ${c.author === "claude" ? "border-claude" : "border-you"}`}
+                key={commit.id}
+                className={`rounded-md bg-card/60 border-l-2 ${commit.author === "claude" ? "border-claude" : "border-you"}`}
               >
                 <button
                   type="button"
-                  onClick={() => toggle(c)}
+                  onClick={() => toggle(commit)}
                   className="flex items-center gap-2 w-full text-left px-2.5 py-1.5 cursor-pointer"
                 >
                   <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.author === "claude" ? "bg-claude" : "bg-you"}`}
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${commit.author === "claude" ? "bg-claude" : "bg-you"}`}
                   />
-                  <span className="font-mono text-[11.5px] truncate text-ink">{c.message}</span>
-                  {c.auto && (
+                  <span className="font-mono text-[11.5px] truncate text-ink">{commit.message}</span>
+                  {commit.auto && (
                     <span className="font-mono text-[9px] uppercase tracking-wide text-faint shrink-0">auto</span>
                   )}
-                  {c.noteCount > 0 && (
+                  {commit.noteCount > 0 && (
                     <span
-                      title={`${c.noteCount} intent ${c.noteCount === 1 ? "note" : "notes"}`}
+                      title={`${commit.noteCount} intent ${commit.noteCount === 1 ? "note" : "notes"}`}
                       className="font-mono text-[10px] text-claude shrink-0"
                     >
-                      “{c.noteCount}
+                      “{commit.noteCount}
                     </span>
                   )}
-                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{timeAgo(c.time, now)}</span>
+                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{timeAgo(commit.time, now)}</span>
                 </button>
                 {open && (
                   <div className="px-2.5 pb-2 pt-0.5 flex flex-col gap-1.5">
                     {notes && notes.length > 0 && (
                       <ul className="flex flex-col gap-0.5 border-l-2 border-claude/50 pl-2">
-                        {notes.map((n) => (
-                          <li key={n.seq} className="font-mono text-[10.5px] italic text-muted wrap-break-word">
-                            “{n.text}”
+                        {notes.map((note) => (
+                          <li key={note.seq} className="font-mono text-[10.5px] italic text-muted wrap-break-word">
+                            “{note.text}”
                           </li>
                         ))}
                       </ul>
@@ -152,7 +152,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                       <span className="font-mono text-[10.5px] text-faint">Diffing…</span>
                     ) : diff.length === 0 ? (
                       <span className="font-mono text-[10.5px] text-faint">
-                        {c.parent ? "No detected changes." : "Initial version."}
+                        {commit.parent ? "No detected changes." : "Initial version."}
                       </span>
                     ) : (
                       <ul className="flex flex-col gap-0.5">
@@ -166,7 +166,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                     <button
                       type="button"
                       title="Revert to this version (records a new version)"
-                      onClick={() => void versionStore.revertTo(c.id, "you")}
+                      onClick={() => void versionStore.revertTo(commit.id, "you")}
                       className="self-start font-mono text-[10.5px] px-2 py-1 rounded border border-line text-muted hover:text-ink hover:border-you cursor-pointer"
                     >
                       Revert to this version

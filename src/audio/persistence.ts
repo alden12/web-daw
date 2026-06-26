@@ -54,17 +54,17 @@ export function attachAutosave(
   // Per-track/group subscriptions are rebuilt on structural change (they come/go).
   let trackUnsubs: (() => void)[] = [];
   const resubscribeTracks = () => {
-    for (const u of trackUnsubs) u();
+    for (const unsub of trackUnsubs) unsub();
     trackUnsubs = [
       ...project
         .getTracks()
-        .flatMap((t) => [
-          ...(t.kind === "instrument"
-            ? [t.params.subscribe(schedule), ...t.clips.map((c) => c.store.subscribe(schedule))]
+        .flatMap((track) => [
+          ...(track.kind === "instrument"
+            ? [track.params.subscribe(schedule), ...track.clips.map((clip) => clip.store.subscribe(schedule))]
             : []),
-          ...t.effects.map((fx) => fx.params.subscribe(schedule)),
+          ...track.effects.map((effect) => effect.params.subscribe(schedule)),
         ]),
-      ...project.getGroups().flatMap((g) => g.effects.map((fx) => fx.params.subscribe(schedule))),
+      ...project.getGroups().flatMap((group) => group.effects.map((effect) => effect.params.subscribe(schedule))),
     ];
   };
 
@@ -78,7 +78,7 @@ export function attachAutosave(
 
   return () => {
     if (timer) clearTimeout(timer);
-    for (const u of trackUnsubs) u();
+    for (const unsub of trackUnsubs) unsub();
     unsubStructure();
     unsubLog();
   };

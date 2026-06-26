@@ -591,6 +591,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   low-profile **fader** (a line with a triangle ticker; `ui/MixerControls.tsx`). *Pending:* a
   **live level meter** overlaid on the fader (red when clipping) - the `Fader` already accepts
   `level`/`clip`; needs per-bus metering in the `AudioEngine` (AnalyserNodes) + a rAF read loop.
+  *Includes live input/mic monitoring:* when an audio track is armed, feed its capture stream
+  through the same metering so the fader shows the incoming mic level (pre-record, no audio routed
+  to output - input monitoring stays hardware/direct per section 12), giving a visual "is it
+  hot / is it clipping" check while setting levels before a take.
 - **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
   manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
   marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
@@ -605,7 +609,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
   follow-ups below (quantize/groove, project key) still pending.*
 - **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
-  project key with the roll showing note intervals/scale relative to it.
+  project key with the roll showing note intervals/scale relative to it. *Groove model:* a
+  groove is a small template `{ grid, swing, slots: [{ offsetTicks, velocityScale }], strength }`
+  applied **at schedule time** by the scheduler (nudge each note's `when` + scale velocity by the
+  slot it lands in) over **untouched** stored notes - so it is non-destructive, instantly
+  toggleable, and auditionable. swing/strength are schema params, so the knob/automation/MCP/persist
+  dividends come for free; the only new infra is a groove library + the scheduler slot-offset step.
+  Open questions: scope (per-clip vs per-track vs project default; lean per-track) and whether
+  groove *extraction* (analyze a clip's deviations into a template) is v1 or a follow-up.
 - **Timeline & arrangement interactions - DONE (slice 13 + follow-ups), the third "real DAW"
   piece.** The bottom timeline is editable: zoom + scroll (reusing the piano-roll's
   beats<->px+ruler primitive), move / resize / split / delete placements, drag empty lane to

@@ -61,13 +61,13 @@ export function Ruler({
         style={{ left: beatToX(loopEnd, pxPerBeat), width: beatToX(viewBeats - loopEnd, pxPerBeat) }}
       />
 
-      {ticks.map((t) => (
+      {ticks.map((tick) => (
         <div
-          key={t.beat}
-          className={`absolute top-0 bottom-0 ${t.isBar ? "bg-line" : "bg-line-soft"}`}
-          style={{ left: beatToX(t.beat, pxPerBeat), width: 1 }}
+          key={tick.beat}
+          className={`absolute top-0 bottom-0 ${tick.isBar ? "bg-line" : "bg-line-soft"}`}
+          style={{ left: beatToX(tick.beat, pxPerBeat), width: 1 }}
         >
-          {t.isBar && <span className="absolute left-1 top-0.5 font-mono text-[9px] text-faint">{t.bar}</span>}
+          {tick.isBar && <span className="absolute left-1 top-0.5 font-mono text-[9px] text-faint">{tick.bar}</span>}
         </div>
       ))}
 
