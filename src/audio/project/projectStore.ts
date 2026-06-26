@@ -17,6 +17,14 @@ import { GRID, type NoteEvent } from "../sequencer/types";
 import { clamp } from "../../util";
 import { secondsToBeats } from "../timing";
 import {
+  snapshotProject,
+  loadEffectInstances,
+  noteClipPool,
+  instrumentSound,
+  audioClipPool,
+} from "./projectSerialization";
+import { buildStructure } from "./projectStructure";
+import {
   hasInstrument,
   catalogEntry,
   instrumentSchema,
@@ -34,8 +42,6 @@ import type {
   ClipAuthor,
   ClipContent,
   EffectData,
-  InstrumentTrackData,
-  AudioTrackData,
 } from "./types";
 
 const MIN_BPM = 20;
@@ -57,7 +63,7 @@ export interface EffectInstance {
 }
 
 /** Anything that owns an ordered effect chain: a track or a group bus. */
-interface EffectHost {
+export interface EffectHost {
   effects: EffectInstance[];
 }
 
@@ -164,63 +170,13 @@ export class ProjectStore {
     return `p-${crypto.randomUUID().slice(0, 8)}`;
   }
 
-  private effectMetas(host: EffectHost): TrackMeta["effects"] {
-    return host.effects.map((fx) => ({ id: fx.id, type: fx.type, bypassed: fx.bypassed }));
-  }
-
-  private trackMeta(t: Track): TrackMeta {
-    const base = {
-      id: t.id,
-      name: t.name,
-      parentId: t.parentId,
-      muted: t.muted,
-      solo: t.solo,
-      volume: t.volume,
-      effects: this.effectMetas(t),
-    };
-    return t.kind === "audio"
-      ? {
-          ...base,
-          kind: "audio",
-          clips: t.clips.map((c) => ({ ...c })),
-          activeClipId: t.activeClipId,
-          placements: t.placements.map((p) => ({ ...p })),
-          launchedClipId: t.launchedClipId,
-        }
-      : {
-          ...base,
-          kind: "instrument",
-          instrumentType: t.instrumentType,
-          clips: t.clips.map((c) => ({
-            id: c.id,
-            name: c.name,
-            author: c.author,
-            lengthBeats: c.store.getClip().lengthBeats,
-          })),
-          activeClipId: t.activeClipId,
-          placements: t.placements.map((p) => ({ ...p })),
-          launchedClipId: t.launchedClipId,
-        };
-  }
-
   private rebuild(): void {
-    this.cached = {
-      groups: this.groups.map((g) => ({
-        id: g.id,
-        name: g.name,
-        parentId: g.parentId,
-        collapsed: g.collapsed,
-        muted: g.muted,
-        solo: g.solo,
-        volume: g.volume,
-        effects: this.effectMetas(g),
-      })),
-      tracks: this.tracks.map((t) => this.trackMeta(t)),
+    this.cached = buildStructure(this.tracks, this.groups, {
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
-      loopStart: this.loopStartBeats,
+      loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
-    };
+    });
   }
 
   private emit(): void {
@@ -1015,133 +971,13 @@ export class ProjectStore {
   }
 
   // --- persistence / sync ---
-  private snapshotEffects(host: EffectHost) {
-    return host.effects.map((fx) => ({
-      id: fx.id,
-      type: fx.type,
-      bypassed: fx.bypassed,
-      params: fx.params.snapshot(),
-    }));
-  }
-
   snapshot(): ProjectData {
-    return {
-      groups: this.groups.map((g) => ({
-        id: g.id,
-        name: g.name,
-        parentId: g.parentId,
-        collapsed: g.collapsed,
-        muted: g.muted,
-        solo: g.solo,
-        volume: g.volume,
-        effects: this.snapshotEffects(g),
-      })),
-      tracks: this.tracks.map((t) => {
-        const base = { id: t.id, name: t.name, parentId: t.parentId, muted: t.muted, solo: t.solo, volume: t.volume };
-        const arrangement = {
-          activeClipId: t.activeClipId,
-          placements: t.placements.map((p) => ({ ...p })),
-          launchedClipId: t.launchedClipId,
-        };
-        if (t.kind === "audio") {
-          return {
-            ...base,
-            kind: "audio" as const,
-            effects: this.snapshotEffects(t),
-            clips: t.clips.map((c) => ({ ...c })),
-            ...arrangement,
-          };
-        }
-        return {
-          ...base,
-          kind: "instrument" as const,
-          instrumentType: t.instrumentType,
-          params: t.params.snapshot(),
-          effects: this.snapshotEffects(t),
-          clips: t.clips.map((c) => {
-            const data = c.store.snapshot();
-            return {
-              id: c.id,
-              name: c.name,
-              author: c.author,
-              notes: data.notes.map((n) => ({ ...n })),
-              lengthBeats: data.lengthBeats,
-            };
-          }),
-          ...arrangement,
-        };
-      }),
+    return snapshotProject(this.tracks, this.groups, {
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
-      loopStart: this.loopStartBeats,
+      loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
-    };
-  }
-
-  private loadEffects(effects: ProjectData["tracks"][number]["effects"] = []): EffectInstance[] {
-    return effects.map((fx) => {
-      const store = new ParamStore(effectSchema(fx.type));
-      if (fx.params) store.load(fx.params);
-      return { id: fx.id, type: fx.type, bypassed: fx.bypassed ?? false, params: store };
     });
-  }
-
-  private static author(a: unknown): ClipAuthor {
-    return a === "claude" ? "claude" : "you";
-  }
-
-  /**
-   * The note-clip pool + active id + placements for an instrument track from the
-   * stored `clips`/`activeClipId`/`placements`. A pool with no clips falls back to a
-   * single empty clip "A" so the track always has something to edit.
-   */
-  private noteClipPool(
-    t: InstrumentTrackData,
-    projLen: number,
-  ): { clips: NoteClip[]; activeClipId: string; placements: Placement[] } {
-    const mk = (
-      id: string,
-      name: string,
-      author: ClipAuthor,
-      clip: { notes?: unknown; lengthBeats?: number },
-    ): NoteClip => ({
-      id,
-      name,
-      author,
-      store: new ClipStore({ notes: (clip.notes as never) ?? [], lengthBeats: clip.lengthBeats ?? projLen }),
-    });
-
-    const clips: NoteClip[] = t.clips?.length
-      ? t.clips.map((clip) => mk(clip.id, clip.name, ProjectStore.author(clip.author), clip))
-      : [mk(this.nextClipId(), "A", "you", {})];
-
-    const activeClipId =
-      t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : clips[0].id;
-    const placements: Placement[] = t.placements?.length
-      ? t.placements.map((placement) => ({ ...placement }))
-      : [
-          {
-            id: this.nextPlacementId(),
-            clipId: activeClipId,
-            startBeat: 0,
-            offset: 0,
-            length: clips.find((clip) => clip.id === activeClipId)!.store.getClip().lengthBeats,
-          },
-        ];
-    return { clips, activeClipId, placements };
-  }
-
-  /** The track-level sound (params + effect chain) for an instrument track. */
-  private instrumentSound(t: InstrumentTrackData): { params: PatchValues; effects: EffectData[] } {
-    return { params: t.params ?? {}, effects: t.effects ?? [] };
-  }
-
-  /** The audio-clip pool + active id + placements for an audio track. */
-  private audioClipPool(t: AudioTrackData): { clips: AudioClipData[]; activeClipId: string; placements: Placement[] } {
-    const clips = (t.clips ?? []).map((clip) => ({ ...clip }));
-    const activeClipId =
-      t.activeClipId && clips.some((clip) => clip.id === t.activeClipId) ? t.activeClipId : (clips[0]?.id ?? "");
-    return { clips, activeClipId, placements: (t.placements ?? []).map((placement) => ({ ...placement })) };
   }
 
   load(data: ProjectData): void {
@@ -1154,7 +990,7 @@ export class ProjectStore {
       muted: g.muted ?? false,
       solo: g.solo ?? false,
       volume: g.volume ?? 0.8,
-      effects: this.loadEffects(g.effects),
+      effects: loadEffectInstances(g.effects),
     }));
     // Reuse existing child stores by id so the engine's per-track bindings stay
     // valid across load (undo/redo) - replacing a ParamStore would orphan the
@@ -1170,15 +1006,18 @@ export class ProjectStore {
         volume: t.volume ?? 0.8,
       };
       if (t.kind === "audio") {
-        const pool = this.audioClipPool(t);
+        const pool = audioClipPool(t);
         const launchedClipId =
           t.launchedClipId && pool.clips.some((c) => c.id === t.launchedClipId) ? t.launchedClipId : null;
-        return { ...base, kind: "audio", effects: this.loadEffects(t.effects), ...pool, launchedClipId };
+        return { ...base, kind: "audio", effects: loadEffectInstances(t.effects), ...pool, launchedClipId };
       }
       // Instrument track: the sound (params + effects) is track-level; the clip
       // pool + placements come from the stored clips/placements.
-      const sound = this.instrumentSound(t);
-      const { clips, activeClipId, placements } = this.noteClipPool(t, projLen);
+      const sound = instrumentSound(t);
+      const { clips, activeClipId, placements } = noteClipPool(t, projLen, {
+        clipId: () => this.nextClipId(),
+        placementId: () => this.nextPlacementId(),
+      });
       // Reuse the prior track's ParamStore + effect instances by id so the engine's
       // per-track bindings stay live across the load (clips are not engine-bound).
       const reuse = prev.get(t.id);
