@@ -12,6 +12,7 @@ export function Fader({
   onChange,
   title,
   width = 56,
+  max = 1,
   level,
   clip = false,
   onPointerDownCapture,
@@ -20,6 +21,8 @@ export function Fader({
   onChange: (v: number) => void;
   title?: string;
   width?: number;
+  /** Top of the range (default 1). Clip gain uses >1 to allow a boost. */
+  max?: number;
   /** Live output level 0..1 for the meter overlay (omitted = no meter yet). */
   level?: number;
   /** Clipping (>= 0 dBFS): the meter turns red. */
@@ -27,13 +30,14 @@ export function Fader({
   onPointerDownCapture?: (e: React.PointerEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const frac = Math.min(1, Math.max(0, value));
+  const frac = Math.min(1, Math.max(0, value / max));
+  const step = max * 0.05;
 
   const setFromClientX = (clientX: number) => {
     const el = ref.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    onChange(Math.min(1, Math.max(0, (clientX - r.left) / r.width)));
+    onChange(Math.min(max, Math.max(0, ((clientX - r.left) / r.width) * max)));
   };
 
   return (
@@ -55,8 +59,8 @@ export function Fader({
         if (e.buttons) setFromClientX(e.clientX);
       }}
       onKeyDown={(e) => {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') onChange(Math.max(0, value - 0.05));
-        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') onChange(Math.min(1, value + 0.05));
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') onChange(Math.max(0, value - step));
+        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') onChange(Math.min(max, value + step));
       }}
       className="relative h-4 shrink-0 cursor-pointer select-none touch-none"
       style={{ width }}
