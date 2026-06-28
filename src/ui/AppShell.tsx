@@ -23,6 +23,7 @@ import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
 import { StartDialog } from "./StartDialog";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { readAutoQuantize } from "./quantizeSettings";
 
 // Layout bounds. The agent pane collapses to a thin rail (Produce mode); the
 // timeline can grow until only MIN_CENTER of the workbench remains.
@@ -53,7 +54,7 @@ export function AppShell() {
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
-  const [recorder] = useState(() => new Recorder(engine, scheduler, projectStore, editLog.dispatch));
+  const [recorder] = useState(() => new Recorder(engine, scheduler, projectStore, editLog.dispatch, readAutoQuantize));
   const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
   const dispatch = editLog.dispatch;
 

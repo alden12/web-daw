@@ -37,13 +37,26 @@ const itemClass = (danger?: boolean) =>
   }`;
 
 /** One row in a popover: a leaf action, a radio selection, or a submenu parent. */
-function Row({ item, side, onClose }: { item: MenuItem; side: "left" | "right"; onClose: () => void }) {
+function Row({
+  item,
+  side,
+  onClose,
+  reserveCheck,
+}: {
+  item: MenuItem;
+  side: "left" | "right";
+  onClose: () => void;
+  /** Reserve the check gutter even on uncheckable rows, so a mixed menu's labels align. */
+  reserveCheck: boolean;
+}) {
   const [openSub, setOpenSub] = useState(false);
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
-  // A check column only when this item participates in a radio group, so plain
-  // action menus aren't indented by an empty gutter.
+  // Show the check column for radio items; reserve an empty one on the menu's other
+  // rows when any sibling is checkable, so plain/submenu rows still line up.
   const check =
-    item.checked !== undefined ? <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span> : null;
+    item.checked !== undefined || reserveCheck ? (
+      <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span>
+    ) : null;
 
   if (item.submenu) {
     return (
@@ -74,7 +87,13 @@ function Row({ item, side, onClose }: { item: MenuItem; side: "left" | "right"; 
             } min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg z-50`}
           >
             {item.submenu.map((sub, i) => (
-              <Row key={sub.label ?? i} item={sub} side={side} onClose={onClose} />
+              <Row
+                key={sub.label ?? i}
+                item={sub}
+                side={side}
+                onClose={onClose}
+                reserveCheck={item.submenu!.some((s) => s.checked !== undefined)}
+              />
             ))}
           </div>
         )}
@@ -203,7 +222,13 @@ export function Menu({
             className="z-50 min-w-40 py-1 rounded-lg border border-line bg-card shadow-lg"
           >
             {items.map((item, i) => (
-              <Row key={item.label ?? i} item={item} side={submenuSide} onClose={closeMenu} />
+              <Row
+                key={item.label ?? i}
+                item={item}
+                side={submenuSide}
+                onClose={closeMenu}
+                reserveCheck={items.some((other) => other.checked !== undefined)}
+              />
             ))}
           </div>,
           document.body,

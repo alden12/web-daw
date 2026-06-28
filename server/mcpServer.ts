@@ -18,6 +18,7 @@ import { instrumentInfos, hasInstrument, instrumentSchema, instrumentFamily } fr
 import { effectInfos, hasEffect, effectSchema } from "../src/audio/effects/catalog";
 import { validateParam } from "../src/audio/params/validate";
 import type { NoteEvent } from "../src/audio/sequencer/types";
+import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequencer/quantize";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
 
@@ -774,6 +775,41 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
         return fail("No DAW tab connected.");
       for (const note of edited) r.store.putNote(note);
       return ok(`Edited ${edited.length} notes on ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    "quantize",
+    {
+      title: "Quantize",
+      description:
+        "Pull a clip's note timings toward a grid. Quantizes the given note ids, or the whole clip if none are given. Applied as one atomic edit.",
+      inputSchema: {
+        ...trackArg,
+        ...clipArg,
+        grid: z
+          .enum(GRID_DIVISIONS.map((division) => division.label) as [string, ...string[]])
+          .optional()
+          .describe("grid resolution (default 1/16)"),
+        strength: z.number().min(0).max(1).optional().describe("0 = no change, 1 = full snap (default 1)"),
+        ends: z.boolean().optional().describe("also snap note ends, so lengths land on the grid (default false)"),
+        ids: z.array(z.string()).optional().describe("note ids to quantize; omit to quantize the whole clip"),
+      },
+    },
+    async ({ track, clip, grid, strength, ends, ids }) => {
+      const r = resolveClip(track, clip);
+      if ("error" in r) return fail(r.error);
+      const all = r.store.getClip().notes;
+      const targets = ids?.length ? all.filter((note) => ids.includes(note.id)) : all;
+      if (!targets.length) return fail("No notes to quantize.");
+      const notes = quantizeNotes(targets, {
+        gridBeats: beatsForGrid(grid ?? "1/16"),
+        strength: strength ?? 1,
+        ends: ends ?? false,
+      });
+      if (!sendToTab({ type: "editNotes", trackId: r.id, clipId: clip, notes })) return fail("No DAW tab connected.");
+      for (const note of notes) r.store.putNote(note);
+      return ok(`Quantized ${notes.length} notes on ${r.id} to ${grid ?? "1/16"}.`);
     },
   );
 
