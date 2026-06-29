@@ -115,6 +115,7 @@ export type ServerToBrowser =
   | { type: "allNotesOff" }
   // Transport (project-level)
   | { type: "setTempo"; bpm: number }
+  | { type: "setGroove"; grooveId?: string; amount?: number }
   | { type: "setLength"; lengthBeats: number }
   | { type: "setLoopStart"; beats: number }
   | { type: "transport"; action: "play" | "stop" }

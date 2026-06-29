@@ -206,6 +206,18 @@ describe("MCP server (tracks)", () => {
     expect(parse(await call("list_tracks")).tempoBpm).toBe(90);
   });
 
+  it("set_groove forwards and updates the mirror; list_grooves reports it", async () => {
+    const messages = await connectTab();
+    await makeTrack();
+    await call("set_groove", { groove: "8th-58", amount: 0.5 });
+    await waitFor(() => typesOf(messages).includes("setGroove"));
+    const grooves = parse(await call("list_grooves"));
+    expect(grooves.current).toEqual({ id: "8th-58", amount: 0.5 });
+    expect(grooves.grooves.map((g: { id: string }) => g.id)).toContain("straight");
+    // bad id is rejected by the enum schema
+    expect((await call("set_groove", { groove: "nope" })).isError).toBe(true);
+  });
+
   it("play / stop forward transport commands", async () => {
     const messages = await connectTab();
     await call("play");

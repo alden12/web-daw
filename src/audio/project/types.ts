@@ -200,5 +200,9 @@ export interface ProjectData {
   lengthBeats: number;
   /** Loop start in beats (loop region is [loopStart, lengthBeats]). Optional: older snapshots default to 0. */
   loopStart?: number;
+  /** Project-wide groove template id (see grooves/catalog). Optional: defaults to "straight". */
+  grooveId?: string;
+  /** How strongly the groove applies, 0..1. Optional: defaults to 1. */
+  grooveAmount?: number;
   selectedTrackId: string | null;
 }

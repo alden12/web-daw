@@ -23,7 +23,7 @@ import { type BundleStore, createBundleStore } from "./bundleStore";
 
 const FORMAT_VERSION = 1;
 /** Schema version of `project.json`. We do not support older shapes (single-user app). */
-const PROJECT_SCHEMA = 7;
+const PROJECT_SCHEMA = 8;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
 const MAX_PERSISTED_ENTRIES = 2000;
 
