@@ -18,6 +18,8 @@ const COERCE: { [K in ParamSpec["kind"]]: (spec: ByKind<K>, value: ParamValue) =
   },
   enum: (spec, value) => (spec.options.includes(value as string) ? (value as string) : spec.default),
   boolean: (_spec, value) => Boolean(value),
+  // A sample ref is an opaque tagged string; trust a string, fall back otherwise.
+  sample: (spec, value) => (typeof value === "string" ? value : spec.default),
 };
 
 function coerce(spec: ParamSpec, value: ParamValue): ParamValue {

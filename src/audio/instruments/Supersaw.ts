@@ -53,6 +53,6 @@ export class SupersawInstrument extends BaseInstrument {
       osc.connect(mix);
       oscillators.push(osc);
     }
-    return { amp, oscillators };
+    return { amp, sources: oscillators };
   }
 }

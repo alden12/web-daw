@@ -190,6 +190,36 @@ export const wavetableSchema: ParamSchema = [
   },
 ] as const;
 
+// One-shot sampler. `sampler.sample` is the keystone's `sample` kind - a ref into
+// the built-in kit (or, later, an imported file); the picker fills the choices.
+// Short envelope by default since notes play the whole sample (percussive).
+export const samplerSchema: ParamSchema = [
+  { id: "sampler.sample", label: "Sample", kind: "sample", default: "builtin:kick" },
+  { id: "sampler.root", label: "Root", kind: "number", min: 0, max: 127, default: 60, taper: "linear" },
+  { id: "sampler.keytrack", label: "Keytrack", kind: "boolean", default: true },
+  { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.85, taper: "linear", smoothMs: 10 },
+  {
+    id: "env.attack",
+    label: "Attack",
+    kind: "number",
+    min: 1,
+    max: 2000,
+    default: 1,
+    unit: "ms",
+    taper: "exponential",
+  },
+  {
+    id: "env.release",
+    label: "Release",
+    kind: "number",
+    min: 1,
+    max: 4000,
+    default: 5,
+    unit: "ms",
+    taper: "exponential",
+  },
+] as const;
+
 export interface InstrumentInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -244,3 +274,4 @@ registerInstrument({ type: "fm", label: "FM", schema: fmSchema, family: "Bass" }
 registerInstrument({ type: "supersaw", label: "Supersaw", schema: supersawSchema, family: "Synths" });
 registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family: "Keys" });
 registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
+registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });

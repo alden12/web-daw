@@ -43,7 +43,7 @@ export abstract class BaseInstrument implements Instrument {
   protected abstract buildGraph(): void;
   /** Param id -> binding. Subclasses usually spread `commonBindings()`. */
   protected abstract buildBindings(): Record<string, ParamBinding>;
-  /** Build + connect + tune a voice (oscillators not started; base starts it). */
+  /** Build + connect + tune a voice (sources not started; base starts it). */
   protected abstract createVoice(midi: number, when: number): VoiceHandle;
 
   /** amp.level (output gain) + envelope times - shared by every instrument. */
@@ -65,11 +65,11 @@ export abstract class BaseInstrument implements Instrument {
     const g = voice.amp.gain;
     g.setValueAtTime(0, when);
     g.linearRampToValueAtTime(Math.max(0.0001, velocity), when + attack);
-    for (const osc of voice.oscillators) osc.start(when);
+    for (const source of voice.sources) source.start(when);
     this.active.add(voice);
-    voice.oscillators[0].onended = () => {
+    voice.sources[0].onended = () => {
       this.active.delete(voice);
-      for (const osc of voice.oscillators) osc.disconnect();
+      for (const source of voice.sources) source.disconnect();
       voice.amp.disconnect();
     };
   }
@@ -87,7 +87,7 @@ export abstract class BaseInstrument implements Instrument {
       g.setValueAtTime(g.value, at);
     }
     g.linearRampToValueAtTime(0, at + release);
-    for (const osc of voice.oscillators) osc.stop(at + release + 0.02);
+    for (const source of voice.sources) source.stop(at + release + 0.02);
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {

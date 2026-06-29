@@ -17,8 +17,13 @@ export interface Instrument {
   dispose(): void;
 }
 
-/** One sounding voice: its amp gain (envelope target) and oscillators. */
+/**
+ * One sounding voice: its amp gain (the envelope target) and its scheduled
+ * sound sources. Sources are `AudioScheduledSourceNode`s - oscillators for the
+ * synths, an `AudioBufferSourceNode` for the sampler - so the base owns
+ * start/stop/cleanup uniformly regardless of what produces the sound.
+ */
 export interface VoiceHandle {
   amp: GainNode;
-  oscillators: OscillatorNode[];
+  sources: AudioScheduledSourceNode[];
 }

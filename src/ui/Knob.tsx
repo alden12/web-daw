@@ -9,6 +9,7 @@ import type { EnumSpec, NumberSpec, ParamSpec, ParamValue } from "../audio/param
 import type { ParamStore } from "../audio/params/store";
 import { useParam } from "../audio/params/useParam";
 import { fromNormalized, toNormalized } from "../audio/params/taper";
+import { BUILTIN_SAMPLES, builtinRef } from "../audio/samples/catalog";
 
 const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
 
@@ -95,6 +96,25 @@ export function Knob({ spec, store, onChange }: { spec: ParamSpec; store: ParamS
       <label className="flex flex-col items-center gap-1.5 w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
         <input type="checkbox" checked={value as boolean} onChange={(e) => onChange(spec.id, e.target.checked)} />
+      </label>
+    ),
+    // A sample picker lists the built-in kit by name; the stored value is the
+    // tagged ref ("builtin:<id>"). Imported "file:" refs (PR 2) are set elsewhere.
+    sample: () => (
+      <label className="flex flex-col items-center gap-1.5 w-20">
+        <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
+        <select
+          value={value as string}
+          onChange={(e) => onChange(spec.id, e.target.value)}
+          className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1 max-w-20"
+        >
+          <option value="">None</option>
+          {BUILTIN_SAMPLES.map((sample) => (
+            <option key={sample.id} value={builtinRef(sample.id)}>
+              {sample.name}
+            </option>
+          ))}
+        </select>
       </label>
     ),
   };

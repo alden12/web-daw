@@ -33,13 +33,15 @@ export class SubtractiveInstrument extends BaseInstrument {
       "osc.waveform": {
         apply: (v) => {
           this.waveform = v as Waveform;
-          for (const voice of this.voices) voice.oscillators[0].type = v as Waveform;
+          // Single-oscillator voice; the cast recovers the OscillatorNode-only props.
+          for (const voice of this.voices) (voice.sources[0] as OscillatorNode).type = v as Waveform;
         },
       },
       "osc.detune": {
         apply: (v, ms) => {
           this.detune = v as number;
-          for (const voice of this.voices) rampParam(this.ctx, voice.oscillators[0].detune, v as number, ms);
+          for (const voice of this.voices)
+            rampParam(this.ctx, (voice.sources[0] as OscillatorNode).detune, v as number, ms);
         },
       },
     };
@@ -52,6 +54,6 @@ export class SubtractiveInstrument extends BaseInstrument {
     osc.frequency.setValueAtTime(midiToFreq(midi), when);
     const amp = this.ctx.createGain();
     osc.connect(amp).connect(this.filter);
-    return { amp, oscillators: [osc] };
+    return { amp, sources: [osc] };
   }
 }

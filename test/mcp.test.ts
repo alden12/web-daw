@@ -72,6 +72,7 @@ describe("MCP server (tracks)", () => {
     expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual([
       "fm",
       "organ",
+      "sampler",
       "subtractive",
       "supersaw",
       "wavetable",
@@ -118,6 +119,22 @@ describe("MCP server (tracks)", () => {
     expect((await call("set_parameter", { id: "nope", value: 1 })).isError).toBe(true);
     // fm.ratio is not a subtractive param
     expect((await call("set_parameter", { id: "fm.ratio", value: 2 })).isError).toBe(true);
+  });
+
+  it("list_samples lists the built-in kit; set_parameter validates a sampler sample ref", async () => {
+    const data = parse(await call("list_samples"));
+    const refs = data.samples.map((sample: { ref: string }) => sample.ref);
+    expect(refs).toContain("builtin:kick");
+    expect(refs.length).toBeGreaterThanOrEqual(5);
+
+    const messages = await connectTab();
+    const trackId = await makeTrack("sampler");
+
+    expect((await call("set_parameter", { id: "sampler.sample", value: "builtin:clap" })).isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("setParam"));
+    expect(messages).toContainEqual({ type: "setParam", trackId, id: "sampler.sample", value: "builtin:clap" });
+    // a bare string is not a valid tagged sample ref
+    expect((await call("set_parameter", { id: "sampler.sample", value: "garbage" })).isError).toBe(true);
   });
 
   it("add_note / add_notes / clear_clip target the selected track", async () => {

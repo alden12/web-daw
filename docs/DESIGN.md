@@ -801,9 +801,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 - **MIDI effects (arpeggiator, octavator)** - a third device class on the note path, transforming
   notes before the instrument. Cataloged + schema-driven + per-track chain like audio effects;
   pure `(notes, range, ctx)` transforms run in the scheduler. Full design in section 15.
-- **Sampler instrument:** plays an audio buffer chromatically - a natural bridge between the
-  instrument catalog and the slice-8 audio-clip storage.
-- **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or:
+- **Sampler instrument - DONE (slice 50, PR 1 of the drum arc).** A single-voice, one-shot
+  Sampler plays an audio buffer chromatically (keytracked playback rate around a root note). It is
+  the first consumer of a new keystone **`sample` param kind** (a tagged-string ref: `builtin:<id>`
+  now, `file:<fileId>` for imports later) - so the picker, MCP, persistence, and patches all
+  project off the schema with no per-instrument branching. It ships a small **built-in CC0 kit**
+  (kick/snare/hats/clap/rim/tom) synthesized from scratch (`src/audio/samples/assets/generate.mjs`,
+  unambiguously CC0) and bundled via Vite `?url`; the shared voice was generalized from
+  `oscillators` to `AudioScheduledSourceNode[]` so a buffer source reuses the base envelope.
+  *Follow-ups:* **local file import + a project sample manifest** (so imported WAVs get names and
+  `file:` refs resolve through the existing content-addressed OPFS store) is PR 2; the **drum rack**
+  (below) + the deferred **per-track groove override** is PR 3.
+- **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or (the Sampler above is
+  the shared substrate for the sampled path):
   - *Synthesized classic voices (preferred for 808/909/707/606/LinnDrum).* The analog machines are
     very synthesizable (sine + pitch-drop kick; noise + bandpass snare/hats), so model each voice as
     a schema-driven instrument in the catalog/registry rather than shipping static WAVs. This fits the
