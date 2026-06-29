@@ -622,8 +622,8 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   schedule time** by the slot each note lands in, over **untouched** stored notes - non-destructive
   and instantly toggleable (the un-snap work made it possible). v1 is a **project-wide** groove: a
   preset catalog (`src/audio/grooves/catalog.ts` - Straight + 8th/16th swing + an accent feel,
-  iterated by the transport dropdown and MCP) plus an **amount** slider, resolved once per tick and
-  applied in the scheduler (`src/audio/sequencer/groove.ts`, pure/shared). A groove tiles by its own
+  iterated by the timeline-options ⋯ menu and MCP) plus an **amount** (25/50/75/100%), resolved once
+  per tick and applied in the scheduler (`src/audio/sequencer/groove.ts`, pure/shared). A groove tiles by its own
   period (no `BEATS_PER_BAR` dependency), so it is meter-agnostic. Wired as a `setGroove` command +
   `set_groove`/`list_grooves` MCP tools; persisted (project schema 8). Offsets are in beats (no PPQ).
   *Follow-ups:* **per-track override** (pairs with the drum machine, where "swing the hats not the
