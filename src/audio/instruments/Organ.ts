@@ -50,6 +50,6 @@ export class OrganInstrument extends BaseInstrument {
       osc.connect(gain).connect(amp);
       return osc;
     });
-    return { amp, oscillators };
+    return { amp, sources: oscillators };
   }
 }

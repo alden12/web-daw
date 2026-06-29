@@ -45,6 +45,6 @@ export class FmInstrument extends BaseInstrument {
 
     const amp = this.ctx.createGain();
     carrier.connect(amp).connect(this.output);
-    return { amp, oscillators: [carrier, modulator] };
+    return { amp, sources: [carrier, modulator] };
   }
 }
