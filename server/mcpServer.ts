@@ -19,6 +19,7 @@ import { effectInfos, hasEffect, effectSchema } from "../src/audio/effects/catal
 import { validateParam } from "../src/audio/params/validate";
 import type { NoteEvent } from "../src/audio/sequencer/types";
 import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequencer/quantize";
+import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
 
@@ -1131,6 +1132,45 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
       mirror.setTempo(bpm);
       return ok(`Tempo set to ${bpm} BPM.`);
     },
+  );
+
+  server.registerTool(
+    "set_groove",
+    {
+      title: "Set groove",
+      description:
+        "Set the project-wide groove (swing/feel) applied to all instrument tracks at playback, and/or its amount. Non-destructive - notes are untouched. Use list_grooves for ids.",
+      inputSchema: {
+        groove: z
+          .enum(GROOVES.map((g) => g.id) as [string, ...string[]])
+          .optional()
+          .describe("groove id (see list_grooves); omit to change only the amount"),
+        amount: z.number().min(0).max(1).optional().describe("how strongly the groove applies, 0..1 (default 1)"),
+      },
+    },
+    async ({ groove, amount }) => {
+      if (groove === undefined && amount === undefined) return fail("Pass a groove and/or an amount.");
+      if (!sendToTab({ type: "setGroove", grooveId: groove, amount })) return fail("No DAW tab connected.");
+      mirror.setGroove(groove, amount);
+      const g = mirror.getGroove();
+      return ok(`Groove: ${grooveById(g.id).name} at ${Math.round(g.amount * 100)}%.`);
+    },
+  );
+
+  server.registerTool(
+    "list_grooves",
+    {
+      title: "List grooves",
+      description: "List the available groove templates (id + name) and the current selection.",
+    },
+    async () =>
+      ok(
+        JSON.stringify(
+          { grooves: GROOVES.map((g) => ({ id: g.id, name: g.name })), current: mirror.getGroove() },
+          null,
+          2,
+        ),
+      ),
   );
 
   server.registerTool(

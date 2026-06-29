@@ -12,6 +12,7 @@ import type { Dispatch } from "../audio/commands/types";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { usePersistentBoolean } from "./usePersistent";
+import { GROOVES, DEFAULT_GROOVE_ID } from "../audio/grooves/catalog";
 
 export function TransportBar({
   projectStore,
@@ -90,6 +91,35 @@ export function TransportBar({
           className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
         BPM
+      </label>
+      <label
+        className="inline-flex items-center gap-2 font-mono text-xs text-muted"
+        title="Swing / groove feel applied to all instrument tracks at playback"
+      >
+        Groove
+        <select
+          value={project.grooveId}
+          onChange={(e) => dispatch({ type: "setGroove", grooveId: e.target.value })}
+          className="font-mono text-[12px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
+        >
+          {GROOVES.map((groove) => (
+            <option key={groove.id} value={groove.id}>
+              {groove.name}
+            </option>
+          ))}
+        </select>
+        {project.grooveId !== DEFAULT_GROOVE_ID && (
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={project.grooveAmount}
+            title={`Groove amount ${Math.round(project.grooveAmount * 100)}%`}
+            onChange={(e) => dispatch({ type: "setGroove", amount: Number(e.target.value) })}
+            className="w-16 accent-you"
+          />
+        )}
       </label>
       <button
         type="button"

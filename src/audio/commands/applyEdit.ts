@@ -118,6 +118,7 @@ const APPLY: ApplyMap = {
   launchClip: (project, command) => project.launchClip(command.trackId, command.clipId),
   stopAllClips: (project) => project.stopAllClips(),
   setTempo: (project, command) => project.setTempo(command.bpm),
+  setGroove: (project, command) => project.setGroove(command.grooveId, command.amount),
   setLength: (project, command) => project.setLength(command.lengthBeats),
   setLoopStart: (project, command) => project.setLoopStart(command.beats),
 };
