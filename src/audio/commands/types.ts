@@ -86,7 +86,19 @@ export type LocalEdit =
       instrumentType: string;
       params: PatchValues;
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
-    };
+    }
+  | {
+      // Add an imported sample to the project library. The bytes are already in the
+      // content-addressed store (contentHash); the id is pre-minted by the caller so
+      // replaying reproduces the same library entry. Browser-only (Node can't hash a
+      // local file), so this lives in LocalEdit, not the MCP protocol.
+      type: "addSample";
+      id: string;
+      name: string;
+      contentHash: string;
+      source?: string;
+    }
+  | { type: "removeSample"; id: string };
 
 /** Every durable, authored edit. Serializable by construction. */
 export type EditCommand = ProtocolEdit | LocalEdit;

@@ -17,6 +17,7 @@
  */
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
+import type { SampleAsset } from "../samples/catalog";
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export interface EffectMeta {
@@ -204,5 +205,7 @@ export interface ProjectData {
   grooveId?: string;
   /** How strongly the groove applies, 0..1. Optional: defaults to 1. */
   grooveAmount?: number;
+  /** The imported-sample library (referenced by Sampler params). Optional: defaults to []. */
+  samples?: SampleAsset[];
   selectedTrackId: string | null;
 }

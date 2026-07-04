@@ -121,6 +121,14 @@ const APPLY: ApplyMap = {
   setGroove: (project, command) => project.setGroove(command.grooveId, command.amount),
   setLength: (project, command) => project.setLength(command.lengthBeats),
   setLoopStart: (project, command) => project.setLoopStart(command.beats),
+  addSample: (project, command) =>
+    project.addSample({
+      id: command.id,
+      name: command.name,
+      contentHash: command.contentHash,
+      source: command.source,
+    }),
+  removeSample: (project, command) => project.removeSample(command.id),
 };
 
 export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {

@@ -20,7 +20,7 @@ import { validateParam } from "../src/audio/params/validate";
 import type { NoteEvent } from "../src/audio/sequencer/types";
 import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequencer/quantize";
 import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
-import { BUILTIN_SAMPLES, builtinRef } from "../src/audio/samples/catalog";
+import { BUILTIN_SAMPLES, builtinRef, assetRef } from "../src/audio/samples/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
 
@@ -1179,12 +1179,15 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     {
       title: "List samples",
       description:
-        'List the built-in sample kit (ref + name) for the Sampler instrument. Set a Sampler track\'s sample by calling set_parameter with param "sampler.sample" and one of these refs.',
+        "List samples for the Sampler instrument: the built-in kit plus the project's imported library. Set a Sampler track's sample by calling set_parameter with param \"sampler.sample\" and one of these refs. Importing a new file is done in the app UI (the server can't read local files).",
     },
     async () =>
       ok(
         JSON.stringify(
-          { samples: BUILTIN_SAMPLES.map((sample) => ({ ref: builtinRef(sample.id), name: sample.name })) },
+          {
+            builtin: BUILTIN_SAMPLES.map((sample) => ({ ref: builtinRef(sample.id), name: sample.name })),
+            project: mirror.getSamples().map((sample) => ({ ref: assetRef(sample.id), name: sample.name })),
+          },
           null,
           2,
         ),

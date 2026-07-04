@@ -6,6 +6,8 @@
 import type { ParamStore } from "../audio/params/store";
 import { instrumentSchema, catalogEntry } from "../audio/instruments/catalog";
 import type { Dispatch } from "../audio/commands/types";
+import type { SampleAsset } from "../audio/samples/catalog";
+import { importSampleFile } from "../audio/samples/importSample";
 import { Knob } from "./Knob";
 
 export function InstrumentPanel({
@@ -13,14 +15,21 @@ export function InstrumentPanel({
   instrumentType,
   trackId,
   dispatch,
+  samples,
 }: {
   params: ParamStore;
   instrumentType: string;
   trackId: string;
   dispatch: Dispatch;
+  /** The project sample library, threaded down so a `sample` param can browse/import. */
+  samples: SampleAsset[];
 }) {
   const schema = instrumentSchema(instrumentType);
   const label = catalogEntry(instrumentType).label;
+  const sampleContext = {
+    assets: samples,
+    onImportFile: (file: File) => importSampleFile(file, samples, dispatch),
+  };
   return (
     <div className="shrink-0 border border-line rounded-xl bg-card">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line text-[12px] font-semibold text-bright">
@@ -36,6 +45,7 @@ export function InstrumentPanel({
             spec={spec}
             store={params}
             onChange={(id, value) => dispatch({ type: "setParam", trackId, id, value })}
+            sampleContext={sampleContext}
           />
         ))}
       </div>

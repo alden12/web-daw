@@ -9,7 +9,15 @@ import type { EnumSpec, NumberSpec, ParamSpec, ParamValue } from "../audio/param
 import type { ParamStore } from "../audio/params/store";
 import { useParam } from "../audio/params/useParam";
 import { fromNormalized, toNormalized } from "../audio/params/taper";
-import { BUILTIN_SAMPLES, builtinRef } from "../audio/samples/catalog";
+import type { SampleAsset } from "../audio/samples/catalog";
+import { SamplePicker } from "./SamplePicker";
+
+/** Extra context the `sample` control needs (the project library + import action);
+ *  optional, since only instrument panels with a sample param supply it. */
+export interface SampleContext {
+  assets: SampleAsset[];
+  onImportFile?: (file: File) => Promise<string | null>;
+}
 
 const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
 
@@ -69,7 +77,18 @@ function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamS
   );
 }
 
-export function Knob({ spec, store, onChange }: { spec: ParamSpec; store: ParamStore; onChange: OnChange }) {
+export function Knob({
+  spec,
+  store,
+  onChange,
+  sampleContext,
+}: {
+  spec: ParamSpec;
+  store: ParamStore;
+  onChange: OnChange;
+  /** Supplied by instrument panels so a `sample` param can browse/import; omitted elsewhere. */
+  sampleContext?: SampleContext;
+}) {
   const [value] = useParam(store, spec.id);
 
   // One renderer per kind (map dispatch). useParam runs above unconditionally, so
@@ -98,24 +117,16 @@ export function Knob({ spec, store, onChange }: { spec: ParamSpec; store: ParamS
         <input type="checkbox" checked={value as boolean} onChange={(e) => onChange(spec.id, e.target.checked)} />
       </label>
     ),
-    // A sample picker lists the built-in kit by name; the stored value is the
-    // tagged ref ("builtin:<id>"). Imported "file:" refs (PR 2) are set elsewhere.
+    // The sample picker lists built-ins + the project library, and can import a
+    // file. It needs project context, so the panel threads it via sampleContext.
     sample: () => (
-      <label className="flex flex-col items-center gap-1.5 w-20">
-        <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
-        <select
-          value={value as string}
-          onChange={(e) => onChange(spec.id, e.target.value)}
-          className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1 max-w-20"
-        >
-          <option value="">None</option>
-          {BUILTIN_SAMPLES.map((sample) => (
-            <option key={sample.id} value={builtinRef(sample.id)}>
-              {sample.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <SamplePicker
+        spec={spec}
+        value={value as string}
+        onChange={onChange}
+        assets={sampleContext?.assets ?? []}
+        onImportFile={sampleContext?.onImportFile}
+      />
     ),
   };
 

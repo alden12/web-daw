@@ -13,8 +13,8 @@ const SCHEMA: { [K in ParamSpec["kind"]]: (spec: ByKind<K>) => z.ZodType } = {
   number: (spec) => z.number().refine((v) => Number.isFinite(v) && v >= spec.min && v <= spec.max),
   enum: (spec) => z.enum(spec.options as [string, ...string[]]),
   boolean: () => z.boolean(),
-  // Empty (unset), or a tagged ref: "builtin:<id>" / "file:<fileId>".
-  sample: () => z.string().regex(/^$|^(builtin|file):.+/),
+  // Empty (unset), or a tagged ref: "builtin:<id>" / "asset:<id>".
+  sample: () => z.string().regex(/^$|^(builtin|asset):.+/),
 };
 
 export function specToZod(spec: ParamSpec): z.ZodType {

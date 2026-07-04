@@ -22,6 +22,7 @@ import type { Instrument } from "../instruments/types";
 import { createEffect } from "../effects/registry";
 import type { Effect } from "../effects/types";
 import { getAudioBuffer } from "../audioStore";
+import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
 import { audioPlayWindow } from "./audioWindow";
 import { loadWorklets } from "../worklets";
@@ -122,6 +123,10 @@ export class AudioEngine {
 
     const groups = project.getGroups();
     const tracks = project.getTracks();
+
+    // Keep the sample registry current before (re)building instruments, so a
+    // Sampler can resolve its "asset:<id>" ref to a content hash immediately.
+    setSampleAssets(project.getSamples());
 
     // Solo + mute: enforced at the track gain; group buses stay open so a soloed
     // track inside an un-soloed group still routes through (see mix.ts).

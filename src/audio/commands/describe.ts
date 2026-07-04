@@ -92,6 +92,8 @@ const DESCRIBE: DescribeMap = {
       : `Set groove amount ${Math.round((command.amount ?? 0) * 100)}%`,
   setLength: (command) => `Set loop length ${command.lengthBeats}`,
   setLoopStart: (command) => `Set loop start ${command.beats}`,
+  addSample: (command) => `Imported "${command.name}"`,
+  removeSample: () => "Removed sample",
 };
 
 export function describeCommand(command: EditCommand, ctx?: DescribeContext): string {

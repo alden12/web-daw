@@ -24,6 +24,7 @@ import type {
   AudioTrackData,
 } from "./types";
 import type { Track, Group, NoteClip, EffectInstance, EffectHost } from "./projectStore";
+import type { SampleAsset } from "../samples/catalog";
 
 /** Serialize an effect chain (its params snapshotted) for persistence. */
 function snapshotEffects(host: EffectHost): EffectData[] {
@@ -43,6 +44,7 @@ export interface TransportState {
   selectedTrackId: string | null;
   grooveId: string;
   grooveAmount: number;
+  samples: SampleAsset[];
 }
 
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
@@ -106,6 +108,7 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     selectedTrackId: transport.selectedTrackId,
     grooveId: transport.grooveId,
     grooveAmount: transport.grooveAmount,
+    samples: transport.samples.map((sample) => ({ ...sample })),
   };
 }
 
