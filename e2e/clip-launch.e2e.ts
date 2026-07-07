@@ -21,9 +21,15 @@ async function dismissStart(page: Page) {
 const launchBtn = (page: Page) => page.getByTitle(/Launch clip/).first();
 const backToTimeline = (page: Page) => page.getByRole("button", { name: /Back to timeline/ });
 
+/** Open the Activity rail view so the edit feed is visible. */
+async function openActivity(page: Page) {
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+}
+
 test("launch a clip from the rail; clip-mode indicator; back to timeline", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
 
   // No clip launched yet -> no clip-mode indicator.
   await expect(backToTimeline(page)).toHaveCount(0);

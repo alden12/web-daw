@@ -2,9 +2,9 @@
  * The app shell. Owns the project (tracks), the AudioEngine, and the Scheduler;
  * handles the audio-start gesture and computer-keyboard input (to the selected
  * track); restores/persists the project; bridges to MCP; and lays everything out
- * in the four-region video-editor spine (top bar, library | center | agent,
- * timeline). All the wiring is unchanged from the old SynthPanel - this slice is
- * presentation only.
+ * in the video-editor spine (activity rail + library | center | agent, timeline).
+ * The library rail switches a single view; the panel header carries the app chrome
+ * (search, MCP, undo/redo) so there is no separate top toolbar.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ProjectStore } from "../audio/project/projectStore";
@@ -18,18 +18,22 @@ import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { EditLog } from "../audio/commands/editLog";
 import { LibraryPanel } from "./LibraryPanel";
+import { ActivityRail, type LibraryView } from "./ActivityRail";
 import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
 import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
 import { StartDialog } from "./StartDialog";
-import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "./usePersistent";
 import { readAutoQuantize } from "./quantizeSettings";
 
-// Layout bounds. The agent pane collapses to a thin rail (Produce mode); the
-// timeline can grow until only MIN_CENTER of the workbench remains.
-const AGENT_RAIL = 52;
+// Layout bounds. The activity rail is always shown on the left; the library panel
+// beside it collapses to that rail. The agent pane collapses away entirely (its
+// expand control lives in the workbench tab bar). The timeline can grow until only
+// MIN_CENTER of the workbench remains.
+const RAIL_WIDTH = 48;
 const MIN_CENTER = 96;
+const LIBRARY_VIEWS = ["search", "project", "instruments", "effects", "patches", "samples", "activity"] as const;
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
 const KEY_MAP: Record<string, number> = {
@@ -59,13 +63,32 @@ export function AppShell() {
   const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
   const dispatch = editLog.dispatch;
 
-  // Resizable, persisted side panels + agent collapse (replaces the old mode toggle).
+  // Resizable, persisted side panels + collapse state. The activity rail chooses
+  // which single library view shows beside it; clicking the active icon collapses
+  // the panel to the rail.
   const bodyRef = useRef<HTMLDivElement>(null);
   const [libWidth, setLibWidth] = usePersistentNumber("web-daw:lib-width", 200, 150, 420);
   const [agentWidth, setAgentWidth] = usePersistentNumber("web-daw:agent-width", 320, 240, 620);
   const [timelineH, setTimelineH] = usePersistentNumber("web-daw:timeline-height", 244, 120, 2000);
-  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", false);
+  const [libCollapsed, setLibCollapsed] = usePersistentBoolean("web-daw:lib-collapsed", false);
+  const [libView, setLibView] = usePersistentString<LibraryView>("web-daw:lib-view", "instruments", LIBRARY_VIEWS);
+  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", true);
+  const [search, setSearch] = useState("");
   const [dragging, setDragging] = useState(false);
+
+  // Rail interaction: a non-active icon selects its view (opening the panel if
+  // collapsed); the active icon toggles the panel collapsed.
+  const selectView = (view: LibraryView) => {
+    setLibView(view);
+    if (libCollapsed) setLibCollapsed(false);
+  };
+
+  // Typing in the panel's search box jumps to the Search results view (and opens the
+  // panel if it was collapsed), so results replace whatever view was showing.
+  const onSearch = (query: string) => {
+    setSearch(query);
+    if (query.trim()) selectView("search");
+  };
 
   // Track the body height so the timeline can never crowd out the workbench:
   // the effective height is clamped to leave at least MIN_CENTER up top, which
@@ -82,7 +105,8 @@ export function AppShell() {
   }, []);
 
   const effTimelineH = bodyH ? Math.min(timelineH, bodyH - MIN_CENTER) : timelineH;
-  const gridCols = `${libWidth}px minmax(0, 1fr) ${agentCollapsed ? AGENT_RAIL : agentWidth}px`;
+  const libCol = RAIL_WIDTH + (libCollapsed ? 0 : libWidth);
+  const gridCols = `${libCol}px minmax(0, 1fr) ${agentCollapsed ? 0 : agentWidth}px`;
   const gridRows = `minmax(0, 1fr) ${effTimelineH}px`;
   const bodyRect = () => bodyRef.current?.getBoundingClientRect();
   const bodyLeft = () => bodyRect()?.left ?? 0;
@@ -209,21 +233,37 @@ export function AppShell() {
         className="app-body flex-1 min-h-0 relative"
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? "none" : undefined }}
       >
-        <LibraryPanel projectStore={projectStore} editLog={editLog} versionStore={versionStore} dispatch={dispatch} />
+        <div className="[grid-area:library] flex min-w-0 min-h-0">
+          <ActivityRail
+            active={libView}
+            collapsed={libCollapsed}
+            onSelect={selectView}
+            onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
+          />
+          {!libCollapsed && (
+            <LibraryPanel
+              projectStore={projectStore}
+              editLog={editLog}
+              versionStore={versionStore}
+              dispatch={dispatch}
+              activeView={libView}
+              search={search}
+              onSearch={onSearch}
+              mcpStatus={mcpStatus}
+            />
+          )}
+        </div>
         <CenterWorkbench
           projectStore={projectStore}
           scheduler={scheduler}
           recorder={recorder}
           dispatch={dispatch}
           selectedTrack={selectedTrack}
+          onRevealSamples={() => selectView("samples")}
+          agentCollapsed={agentCollapsed}
+          onExpandAgent={() => setAgentCollapsed(false)}
         />
-        <AgentPanel
-          mcpStatus={mcpStatus}
-          editLog={editLog}
-          versionStore={versionStore}
-          collapsed={agentCollapsed}
-          onToggle={() => setAgentCollapsed(!agentCollapsed)}
-        />
+        {!agentCollapsed && <AgentPanel onCollapse={() => setAgentCollapsed(true)} />}
         <ArrangementTimeline
           projectStore={projectStore}
           scheduler={scheduler}
@@ -233,12 +273,14 @@ export function AppShell() {
           started={started}
         />
 
-        <ResizeHandle
-          ariaLabel="Resize library"
-          onDragChange={setDragging}
-          onResize={(x) => setLibWidth(x - bodyLeft())}
-          style={{ left: libWidth - 3, top: 0, bottom: effTimelineH }}
-        />
+        {!libCollapsed && (
+          <ResizeHandle
+            ariaLabel="Resize library"
+            onDragChange={setDragging}
+            onResize={(x) => setLibWidth(x - bodyLeft() - RAIL_WIDTH)}
+            style={{ left: libCol - 3, top: 0, bottom: effTimelineH }}
+          />
+        )}
         {!agentCollapsed && (
           <ResizeHandle
             ariaLabel="Resize agent panel"

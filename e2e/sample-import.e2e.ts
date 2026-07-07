@@ -42,6 +42,7 @@ const sampleRow = (page: Page) => page.getByTitle('Add a Sampler track playing "
 test("import a sample, it lists, and persists across reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await page.getByRole("button", { name: "Samples" }).click(); // open the Samples rail view
 
   await expect(sampleRow(page)).toHaveCount(0);
 

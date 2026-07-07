@@ -322,12 +322,20 @@ export function CenterWorkbench({
   recorder,
   dispatch,
   selectedTrack,
+  onRevealSamples,
+  agentCollapsed,
+  onExpandAgent,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
   recorder: Recorder;
   dispatch: Dispatch;
   selectedTrack: Track | undefined;
+  /** Reveal the Samples library view (threaded to an empty Sampler's picker). */
+  onRevealSamples?: () => void;
+  /** The agent pane is collapsed away; the tab bar hosts its expand control. */
+  agentCollapsed: boolean;
+  onExpandAgent: () => void;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -339,9 +347,24 @@ export function CenterWorkbench({
   const [clipRailW, setClipRailW] = usePersistentNumber("web-daw:clip-rail-width", 96, 72, 260);
   const clipRailRef = useRef<HTMLDivElement>(null);
 
+  // The agent-expand control lives at the tab bar's right (the pane collapses away
+  // entirely, so there is no idle rail to reopen it from).
+  const expandAgent = agentCollapsed && (
+    <button
+      type="button"
+      onClick={onExpandAgent}
+      aria-label="Expand agent panel"
+      title="Open the agent panel"
+      className="ml-auto self-center mr-2 flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-bright hover:bg-panel cursor-pointer"
+    >
+      <span className="text-lg leading-none">«</span>
+    </button>
+  );
+
   if (!selectedTrack) {
     return (
       <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
+        <div className="flex items-center h-11 border-b border-line shrink-0">{expandAgent}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
         </div>
@@ -350,37 +373,24 @@ export function CenterWorkbench({
   }
 
   const kindLabel = selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType;
-  const activeClip =
-    selectedTrack.clips.find((clip) => clip.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
 
   return (
     <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
-      <div className="flex items-center gap-2.5 h-12 px-4 border-b border-line shrink-0">
-        <span className="w-2 h-2 rounded-full bg-you" />
-        <InlineRename
-          value={selectedTrack.name}
-          onCommit={(name) => dispatch({ type: "setTrack", trackId: selectedTrack.id, name })}
-          className="font-semibold text-sm text-bright"
-        />
-        <span className="font-mono text-[10.5px] text-faint">{kindLabel}</span>
-        {selectedTrack.kind === "instrument" && <SavePatchControl track={selectedTrack} />}
-        {activeClip && (
-          <span className="ml-auto inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
-            clip
-            <InlineRename
-              value={activeClip.name}
-              onCommit={(name) =>
-                dispatch({
-                  type: "renameClip",
-                  trackId: selectedTrack.id,
-                  clipId: activeClip.id,
-                  name,
-                })
-              }
-              className="text-[12px] text-bright"
-            />
-          </span>
-        )}
+      {/* The selected track is a single editor tab (reserving space for future
+          multi-window tabs); it carries the track name + kind chip. The agent-expand
+          control sits at the far right of the tab bar. */}
+      <div className="flex items-stretch h-11 border-b border-line shrink-0" role="tablist" aria-label="Open editors">
+        <div className="relative flex items-center gap-2 h-full pl-3.5 pr-4 border-r border-line bg-card/50 max-w-72">
+          <span className="absolute left-0 right-0 bottom-0 h-0.5 bg-you" />
+          <span className="w-2 h-2 rounded-full bg-you shrink-0" />
+          <InlineRename
+            value={selectedTrack.name}
+            onCommit={(name) => dispatch({ type: "setTrack", trackId: selectedTrack.id, name })}
+            className="font-semibold text-sm text-bright"
+          />
+          <span className="font-mono text-[9px] tracking-wider uppercase text-faint shrink-0">{kindLabel}</span>
+        </div>
+        {expandAgent}
       </div>
 
       {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
@@ -405,20 +415,34 @@ export function CenterWorkbench({
           />
         </div>
         {selectedTrack.kind === "instrument" ? (
-          <div className="flex-1 min-w-0 min-h-0 p-3">
+          <div className="flex-1 min-w-0 min-h-0 p-3 flex flex-col gap-2">
             {(() => {
               const active =
                 selectedTrack.clips.find((clip) => clip.id === selectedTrack.activeClipId) ?? selectedTrack.clips[0];
               // Key by the active clip so the roll remounts (re-fits, resets selection) on switch.
               return (
-                <PianoRoll
-                  key={active.id}
-                  clipStore={active.store}
-                  scheduler={scheduler}
-                  recorder={recorder}
-                  trackId={selectedTrack.id}
-                  dispatch={dispatch}
-                />
+                <>
+                  <div className="shrink-0 inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
+                    clip
+                    <InlineRename
+                      value={active.name}
+                      onCommit={(name) =>
+                        dispatch({ type: "renameClip", trackId: selectedTrack.id, clipId: active.id, name })
+                      }
+                      className="text-[12px] text-bright"
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <PianoRoll
+                      key={active.id}
+                      clipStore={active.store}
+                      scheduler={scheduler}
+                      recorder={recorder}
+                      trackId={selectedTrack.id}
+                      dispatch={dispatch}
+                    />
+                  </div>
+                </>
               );
             })()}
           </div>
@@ -448,6 +472,14 @@ export function CenterWorkbench({
           onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
           style={{ left: 0, right: 0, top: 0 }}
         />
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line shrink-0">
+          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Devices</span>
+          {selectedTrack.kind === "instrument" && (
+            <span className="ml-auto">
+              <SavePatchControl track={selectedTrack} />
+            </span>
+          )}
+        </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
             {selectedTrack.kind === "instrument" && (
@@ -457,6 +489,7 @@ export function CenterWorkbench({
                 trackId={selectedTrack.id}
                 dispatch={dispatch}
                 samples={project.samples}
+                onRevealSamples={onRevealSamples}
               />
             )}
             <EffectChain

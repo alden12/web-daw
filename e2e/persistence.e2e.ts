@@ -17,6 +17,7 @@ async function dismissStart(page: Page) {
 test("the activity feed records an edit and survives a reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await page.getByRole("button", { name: "Activity", exact: true }).click(); // open the Activity rail view
 
   // Add a clip -> one authored "New clip" entry in the feed.
   await page.getByRole("button", { name: "+ Clip" }).click();

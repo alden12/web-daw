@@ -16,6 +16,7 @@ export function InstrumentPanel({
   trackId,
   dispatch,
   samples,
+  onRevealSamples,
 }: {
   params: ParamStore;
   instrumentType: string;
@@ -23,12 +24,15 @@ export function InstrumentPanel({
   dispatch: Dispatch;
   /** The project sample library, threaded down so a `sample` param can browse/import. */
   samples: SampleAsset[];
+  /** Reveal the Samples library view (offered by an empty sample picker). */
+  onRevealSamples?: () => void;
 }) {
   const schema = instrumentSchema(instrumentType);
   const label = catalogEntry(instrumentType).label;
   const sampleContext = {
     assets: samples,
     onImportFile: (file: File) => importSampleFile(file, samples, dispatch),
+    onReveal: onRevealSamples,
   };
   return (
     <div className="shrink-0 border border-line rounded-xl bg-card">

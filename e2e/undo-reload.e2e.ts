@@ -33,7 +33,8 @@ test("an edit can be undone after a reload", async ({ page }) => {
   await dismissStart(page);
   await expect(arr(page).getByText("Zeta", { exact: true })).toBeVisible(); // persisted
 
-  // Undo after the reload reverts the rename.
-  await page.getByTitle("Undo (Cmd/Ctrl-Z)").click();
+  // Undo after the reload reverts the rename (undo/redo live in the panel's History menu).
+  await page.getByRole("button", { name: "History" }).click();
+  await page.getByRole("menuitem", { name: "Undo" }).click();
   await expect(arr(page).getByText("Zeta", { exact: true })).toHaveCount(0);
 });
