@@ -65,31 +65,33 @@ test("typing in search jumps to the Search view with grouped results", async ({ 
   await expect(page.getByRole("button", { name: "Sampler", exact: true })).toBeVisible();
 });
 
-test("the panel header carries the MCP status and an undo/redo menu", async ({ page }) => {
+test("the workbench tab bar shows MCP; the header menu has undo/redo", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  // MCP status moved to the workbench tab bar's indicator area.
   await expect(page.getByText("MCP")).toBeVisible();
-  await page.getByRole("button", { name: "History" }).click();
+  // Undo/redo live in the library header's main (Project) menu.
+  await page.getByRole("button", { name: "Project menu" }).click();
   await expect(page.getByRole("menuitem", { name: "Undo" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Redo" })).toBeVisible();
 });
 
-test("the Project view creates a project that survives a reload", async ({ page }) => {
+test("the project switcher creates a project that survives a reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
+  // Open the Project view, then its switcher menu: one project is listed (checked).
   await page.getByRole("button", { name: "Projects" }).click();
-  const rows = page.getByTestId("project-row");
-  await expect(rows).toHaveCount(1);
+  await page.getByRole("button", { name: "Project menu" }).click();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(1);
+  await page.getByRole("menuitem", { name: "New project" }).click();
+  await page.waitForTimeout(500); // let the create + save settle
 
-  await page.getByRole("button", { name: "+ New project" }).click();
-  await expect(rows).toHaveCount(2);
-
+  // The second project persists across a reload (the Projects view is persisted too).
   await page.reload();
   await dismissStart(page);
-  // The Projects view is still active after reload (the view is persisted), so both
-  // projects should be listed without re-selecting it.
-  await expect(page.getByTestId("project-row")).toHaveCount(2);
+  await page.getByRole("button", { name: "Project menu" }).click();
+  await expect(page.getByRole("menuitemradio")).toHaveCount(2);
 });
 
 test("an empty Sampler picker reveals the Samples view", async ({ page }) => {

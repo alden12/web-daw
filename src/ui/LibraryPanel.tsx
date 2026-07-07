@@ -1,19 +1,16 @@
 /**
  * The library panel (beside the activity rail): shows exactly one view at a time -
  * the view chosen on the rail. A search box sits above the view title; typing shows
- * a grouped results view across the catalogs. The header also carries the app chrome
- * that used to live in a top toolbar: an undo/redo menu (left of the title) and the
- * MCP connection dot (right). Instruments / Effects / Patches / Samples read from the
- * same catalogs the engine and MCP use; Project and Activity delegate to their own
- * components.
+ * a grouped results view across tracks + the catalogs. The title bar and its main
+ * menu live in `LibraryHeader`. Instruments / Effects / Patches / Samples read from
+ * the same catalogs the engine and MCP use; Project and Activity delegate to their
+ * own components.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
 import type { VersionStore } from "../audio/commands/history";
-import type { McpStatus } from "../audio/mcp/bridge";
-import { useEditLog } from "../audio/commands/useEditLog";
 import { instrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
 import { assetRef } from "../audio/samples/catalog";
@@ -26,29 +23,8 @@ import { type Patch, listPatches, removePatch, subscribePatches } from "../audio
 import type { LibraryView } from "./ActivityRail";
 import { ActivityView } from "./ActivityView";
 import { ProjectView } from "./ProjectView";
+import { LibraryHeader } from "./LibraryHeader";
 import { Menu } from "./Menu";
-
-const VIEW_TITLE: Record<LibraryView, string> = {
-  search: "Search",
-  project: "Projects",
-  instruments: "Instruments",
-  effects: "Effects",
-  patches: "Patches",
-  samples: "Samples",
-  activity: "Activity",
-};
-
-const MCP_DOT: Record<McpStatus, string> = {
-  connected: "bg-good",
-  connecting: "bg-warn",
-  disconnected: "bg-claude",
-};
-
-const MCP_TITLE: Record<McpStatus, string> = {
-  connected: "MCP connected",
-  connecting: "MCP connecting…",
-  disconnected: "MCP disconnected",
-};
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -148,7 +124,6 @@ export function LibraryPanel({
   activeView,
   search,
   onSearch,
-  mcpStatus,
 }: {
   projectStore: ProjectStore;
   editLog: EditLog;
@@ -157,10 +132,8 @@ export function LibraryPanel({
   activeView: LibraryView;
   search: string;
   onSearch: (query: string) => void;
-  mcpStatus: McpStatus;
 }) {
   const project = useProject(projectStore);
-  const { canUndo, canRedo } = useEditLog(editLog);
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
   const [importError, setImportError] = useState<string | null>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
@@ -234,16 +207,41 @@ export function LibraryPanel({
   const effects = effectInfos().filter((def) => matches(def.label));
   const matchedPatches = patches.filter((patch) => matches(patch.name));
   const matchedSamples = project.samples.filter((sample) => matches(sample.name));
+  const matchedTracks = project.tracks.filter((track) => matches(track.name));
 
   // One renderer per view (data-driven, so adding a view is a single entry).
   const views: Record<LibraryView, () => ReactNode> = {
     search: () =>
       query === "" ? (
-        <Hint>Type above to search instruments, effects, patches, and samples.</Hint>
-      ) : instruments.length + effects.length + matchedPatches.length + matchedSamples.length === 0 ? (
+        <Hint>Type above to search tracks, instruments, effects, patches, and samples.</Hint>
+      ) : instruments.length + effects.length + matchedPatches.length + matchedSamples.length + matchedTracks.length ===
+        0 ? (
         <Hint>No matches for “{search.trim()}”.</Hint>
       ) : (
         <div className="pb-2">
+          {matchedTracks.length > 0 && (
+            <>
+              <SectionLabel>Tracks</SectionLabel>
+              {matchedTracks.map((track) => (
+                <button
+                  key={track.id}
+                  type="button"
+                  onClick={() => projectStore.selectTrack(track.id)}
+                  title={`Select "${track.name}"`}
+                  className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`w-1.75 h-1.75 shrink-0 ${track.kind === "audio" ? "rounded-full" : "rounded-sm"} bg-line`}
+                  />
+                  <span className="truncate">{track.name}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">
+                    {track.kind === "audio" ? "audio" : track.instrumentType}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
           {instruments.length > 0 && (
             <>
               <SectionLabel>Instruments</SectionLabel>
@@ -288,7 +286,7 @@ export function LibraryPanel({
           )}
         </div>
       ),
-    project: () => <ProjectView projectStore={projectStore} editLog={editLog} versionStore={versionStore} />,
+    project: () => <ProjectView projectStore={projectStore} dispatch={dispatch} />,
     activity: () => <ActivityView editLog={editLog} versionStore={versionStore} />,
     instruments: () => (
       <div className="py-1">
@@ -372,25 +370,12 @@ export function LibraryPanel({
           className="w-full px-2.5 py-1.5 border border-line rounded-md bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
         />
       </div>
-      {/* View header: undo/redo menu (left), title, MCP dot (right). */}
-      <div className="shrink-0 flex items-center gap-2 h-9 px-2.5 border-b border-line">
-        <Menu
-          label="History"
-          align="left"
-          triggerClassName="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md text-muted hover:text-bright hover:bg-ground cursor-pointer text-base leading-none"
-          items={[
-            { label: "Undo", disabled: !canUndo, onClick: () => editLog.undo() },
-            { label: "Redo", disabled: !canRedo, onClick: () => editLog.redo() },
-          ]}
-        />
-        <span className="font-semibold text-[13px] text-bright">{VIEW_TITLE[activeView]}</span>
-        <span
-          className="ml-auto inline-flex items-center gap-1.5 font-mono text-[11px] text-muted"
-          title={MCP_TITLE[mcpStatus]}
-        >
-          <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} /> MCP
-        </span>
-      </div>
+      <LibraryHeader
+        activeView={activeView}
+        projectStore={projectStore}
+        editLog={editLog}
+        versionStore={versionStore}
+      />
       <div className="flex-1 min-h-0 overflow-y-auto">{views[activeView]()}</div>
 
       {/* Hidden inputs for the Samples view's import actions. */}

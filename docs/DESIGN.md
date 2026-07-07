@@ -445,6 +445,28 @@ via the File System Access API (+ optional git export), **15E** remote sync / co
   search results that jump to a track, the agent chat itself, drag-a-sample-into-the-Sampler, and
   MCP project tools.
 
+- **Project explorer tree - DONE (slice 54).** The Project view became a real explorer for the
+  *current* project: a tree of the `main` group and its tracks (`ProjectView.tsx`, derived from the
+  `parentId` forest). Clicking a track selects it - selection is one shared value (`selectTrack`), so
+  the workbench + timeline follow, and the arrangement scrolls the selected lane into view
+  (`data-track-id` + a `scrollIntoView` effect). Expanding a track row reveals compact mixer controls
+  (mute/solo/gain; sends are a placeholder). The project **title + switcher merged into the panel
+  header's main menu** (`LibraryHeader.tsx`): the header shows the project name (double-click to
+  rename) and one menu holding undo/redo + switch/new/rename/delete/export/import; the MCP dot moved
+  to the workbench tab bar. Search now includes a **Tracks** section, and emptying the box returns to
+  the previous view. Grouping changed from per-instrument-family groups (the old "librarian") to a
+  **single default `main` group** every new track files into; manual grouping is the follow-on below.
+
+- **Grouping + track roadmap (follow-ons).** (a) **Drag tracks into groups** (and reorder) in the
+  tree/timeline - needs DnD wiring over the existing `moveTrack`/`moveGroup`. (b) **Right-click add**
+  menus (add group / add track) in the timeline and the project tree. (c) **Empty tracks** - create a
+  track with no instrument yet and assign one later: needs a silent/"none" instrument in the
+  catalog+registry (or an engine skip for an empty `instrumentType`), a `setInstrument` command
+  (protocol + applyEdit + a ProjectStore method that rebuilds the track's ParamStore from the new
+  schema, keeping clips/effects, with the engine reconciling the swapped node), and a "choose an
+  instrument" state in the workbench device rack. Deterministic replay: params reset to schema
+  defaults is a pure function of the chosen type.
+
 **Extension SDK - third-party instruments & effects (ecosystem + ownership)**
 
 The project is licensed **AGPL-3.0** (strong copyleft so a modified core can't be closed and

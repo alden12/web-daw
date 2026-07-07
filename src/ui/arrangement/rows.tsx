@@ -205,7 +205,7 @@ export function TrackRow({
 }) {
   const track = projectStore.getTrack(meta.id);
   return (
-    <div className="flex">
+    <div className="flex" data-track-id={meta.id}>
       <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
         <TrackHeader
           track={meta}

@@ -1,127 +1,162 @@
 /**
- * The Project view (a library-rail view): the multi-project explorer. Lists saved
- * projects with the current one marked, switches on click, and creates / renames /
- * deletes via the project operations. Project-level file actions that used to live
- * in the library's hamburger menu - export / import a `.daw.zip` - live here too,
- * since this is the project's home. (Import audio lives in the Samples view.)
+ * The Project view (a library-rail view): a project explorer for the current project
+ * - a tree of groups and their tracks. Clicking a track selects it (which drives the
+ * timeline and workbench, since selection is one shared value); expanding a track
+ * reveals compact mixer controls (mute / solo / gain; sends are a future placeholder).
+ * The tree is a navigator, so deeper editing stays in the workbench. Switching /
+ * creating projects lives in the panel header's menu (LibraryHeader).
+ *
+ * Selection is a direct store call (not an edit); mute/solo/gain go through the edit
+ * log (undoable). The tree re-renders from `useProject` on any structural change.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
-import type { EditLog } from "../audio/commands/editLog";
-import type { VersionStore } from "../audio/commands/history";
-import { type ProjectMeta, listProjects, refreshProjects, subscribeProjects } from "../audio/projects/library";
-import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
-import { currentProjectId } from "../audio/projectRepository";
-import { exportProjectFile, importProjectFile } from "./projectFile";
-import { Menu } from "./Menu";
+import type { Dispatch } from "../audio/commands/types";
+import type { GroupMeta, TrackMeta } from "../audio/project/types";
+import { useProject } from "../audio/project/useProject";
+import { Fader, MuteSolo } from "./MixerControls";
 
-export function ProjectView({
-  projectStore,
-  editLog,
-  versionStore,
-}: {
-  projectStore: ProjectStore;
-  editLog: EditLog;
-  versionStore: VersionStore;
-}) {
-  const [projects, setProjects] = useState<ProjectMeta[]>(() => listProjects());
-  const [error, setError] = useState<string | null>(null);
-  const projectInputRef = useRef<HTMLInputElement>(null);
-  const deps = { projectStore, editLog, versionStore };
-  const currentId = currentProjectId();
+/** One flattened tree row: a group header or a track, tagged with its depth. */
+type Row = { kind: "group"; group: GroupMeta; depth: number } | { kind: "track"; track: TrackMeta; depth: number };
 
-  // Mirror the project library, and re-enumerate on mount: this view can mount during
-  // boot (when the persisted view is "project") and would otherwise race the initial
-  // refresh and miss it, showing an empty list until the next change.
-  useEffect(() => {
-    const sync = () => setProjects(listProjects());
-    sync();
-    const unsub = subscribeProjects(sync);
-    void refreshProjects();
-    return unsub;
-  }, []);
-
-  const onImportProject = async (file: File) => {
-    setError(null);
-    try {
-      await importProjectFile(file, projectStore, editLog);
-    } catch {
-      setError("Could not open that .daw.zip file.");
+/** Depth-first flatten of the group/track forest (parentId links), honouring collapse. */
+function flattenTree(groups: GroupMeta[], tracks: TrackMeta[], collapsed: Set<string>): Row[] {
+  const rows: Row[] = [];
+  const walk = (parentId: string | null, depth: number) => {
+    for (const group of groups.filter((candidate) => candidate.parentId === parentId)) {
+      rows.push({ kind: "group", group, depth });
+      if (collapsed.has(group.id)) continue;
+      walk(group.id, depth + 1); // subgroups first, then this group's tracks
+      for (const track of tracks.filter((candidate) => candidate.parentId === group.id))
+        rows.push({ kind: "track", track, depth: depth + 1 });
     }
   };
+  walk(null, 0);
+  // Surface any orphan tracks (parent group missing) so nothing is hidden.
+  const groupIds = new Set(groups.map((group) => group.id));
+  for (const track of tracks.filter((track) => !groupIds.has(track.parentId)))
+    rows.push({ kind: "track", track, depth: 0 });
+  return rows;
+}
 
-  const actionBtn =
-    "block w-full text-left px-3.5 py-1.5 text-[12.5px] text-muted hover:text-ink hover:bg-you/10 cursor-pointer";
+/** The expandable per-track detail: compact mixer controls (sends are future). */
+function TrackDetail({ track, dispatch }: { track: TrackMeta; dispatch: Dispatch }) {
+  return (
+    <div className="flex flex-col gap-2 pr-3 pb-2 pl-9 text-[11px] text-muted">
+      <div className="flex items-center gap-2">
+        <MuteSolo
+          muted={track.muted}
+          solo={track.solo}
+          onMute={() => dispatch({ type: "setTrack", trackId: track.id, muted: !track.muted })}
+          onSolo={() => dispatch({ type: "setTrack", trackId: track.id, solo: !track.solo })}
+        />
+        <span className="ml-1 w-8 shrink-0 font-mono text-faint">gain</span>
+        <Fader
+          value={track.volume}
+          title="Track gain"
+          width={96}
+          onChange={(volume) => dispatch({ type: "setTrack", trackId: track.id, volume })}
+        />
+        <span className="w-8 shrink-0 text-right font-mono text-faint">{Math.round(track.volume * 100)}</span>
+      </div>
+      <div className="flex items-center gap-2 text-faint/70">
+        <span className="font-mono">sends</span>
+        <span className="italic">coming soon</span>
+      </div>
+    </div>
+  );
+}
+
+export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectStore; dispatch: Dispatch }) {
+  const project = useProject(projectStore);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(() => new Set());
+  const selectedRowRef = useRef<HTMLDivElement>(null);
+
+  const selectedId = project.selectedTrackId;
+  const rows = flattenTree(project.groups, project.tracks, collapsedGroups);
+
+  // Keep the selected track visible: when selection changes (e.g. from a timeline
+  // click while this view is open), scroll its row into view.
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
+
+  const toggle = (set: Set<string>, id: string) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  };
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex-1 min-h-0 overflow-y-auto py-1">
-        {projects.map((meta) => (
-          <div key={meta.id} className="group flex items-center pr-2 hover:bg-you/10">
+    <div className="flex-1 min-h-0 overflow-y-auto py-1">
+      {rows.map((row) => {
+        const indent = { paddingLeft: `${8 + row.depth * 14}px` };
+        if (row.kind === "group") {
+          const open = !collapsedGroups.has(row.group.id);
+          return (
             <button
+              key={`g-${row.group.id}`}
               type="button"
-              data-testid="project-row"
-              onClick={() => {
-                if (meta.id !== currentId) void switchProject(deps, meta.id);
-              }}
-              className="flex items-center gap-2 flex-1 min-w-0 text-left px-3.5 py-1.5 cursor-pointer"
+              onClick={() => setCollapsedGroups((set) => toggle(set, row.group.id))}
+              style={indent}
+              className="flex items-center gap-1.5 w-full text-left pr-3 py-1 text-[11.5px] font-semibold text-muted hover:text-ink cursor-pointer"
             >
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.id === currentId ? "bg-you" : "bg-transparent"}`}
-              />
-              <span className={`truncate text-[12.5px] ${meta.id === currentId ? "text-bright" : "text-ink"}`}>
-                {meta.name}
-              </span>
+              <span className="w-2.5 text-center text-[10px] text-muted">{open ? "▾" : "▸"}</span>
+              <span className="truncate uppercase tracking-wide">{row.group.name}</span>
             </button>
-            <Menu
-              label={`Project actions: ${meta.name}`}
-              triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
-              items={[
-                {
-                  label: "Rename…",
-                  onClick: () => {
-                    const name = window.prompt("Rename project", meta.name)?.trim();
-                    if (name) void renameProject(meta.id, name);
-                  },
-                },
-                {
-                  label: "Delete",
-                  danger: true,
-                  disabled: projects.length <= 1,
-                  onClick: () => {
-                    if (window.confirm(`Delete project "${meta.name}"? This cannot be undone.`))
-                      void deleteProject(deps, meta.id);
-                  },
-                },
-              ]}
-            />
+          );
+        }
+
+        const track = row.track;
+        const selected = track.id === selectedId;
+        const expanded = expandedTracks.has(track.id);
+        const kind = track.kind === "audio" ? "audio" : track.instrumentType;
+        return (
+          <div key={`t-${track.id}`} ref={selected ? selectedRowRef : undefined}>
+            <div
+              className={`group flex items-center pr-2 cursor-pointer ${
+                selected ? "bg-you/10 shadow-[inset_2px_0_0_var(--color-you)]" : "hover:bg-you/10"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpandedTracks((set) => toggle(set, track.id));
+                }}
+                style={indent}
+                aria-label={expanded ? "Collapse track" : "Expand track"}
+                className="shrink-0 w-4 text-center text-[10px] text-faint hover:text-ink py-1.5 cursor-pointer"
+              >
+                {expanded ? "▾" : "▸"}
+              </button>
+              <button
+                type="button"
+                data-testid="tree-track"
+                onClick={() => projectStore.selectTrack(track.id)}
+                title={track.name}
+                className="flex items-center gap-2 flex-1 min-w-0 text-left py-1.5 pr-2 cursor-pointer"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`w-1.75 h-1.75 shrink-0 ${track.kind === "audio" ? "rounded-full" : "rounded-sm"} ${
+                    selected ? "bg-you" : "bg-line"
+                  }`}
+                />
+                <span className={`truncate text-[12.5px] ${selected ? "text-bright" : "text-ink"}`}>{track.name}</span>
+                {track.muted && <span className="shrink-0 font-mono text-[9px] text-claude">M</span>}
+                {track.solo && <span className="shrink-0 font-mono text-[9px] text-warn">S</span>}
+                <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">
+                  {kind}
+                </span>
+              </button>
+            </div>
+            {expanded && <TrackDetail track={track} dispatch={dispatch} />}
           </div>
-        ))}
-        <button type="button" onClick={() => void createProject(deps)} className={actionBtn}>
-          + New project
-        </button>
-
-        <div className="my-1.5 mx-3.5 border-t border-line" />
-        <button type="button" onClick={() => void exportProjectFile(projectStore, editLog)} className={actionBtn}>
-          Export project…
-        </button>
-        <button type="button" onClick={() => projectInputRef.current?.click()} className={actionBtn}>
-          Import project…
-        </button>
-        {error && <p className="text-claude text-[11px] px-3.5 pt-1">{error}</p>}
-      </div>
-
-      <input
-        ref={projectInputRef}
-        type="file"
-        accept=".zip,application/zip"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void onImportProject(file);
-          e.target.value = "";
-        }}
-      />
+        );
+      })}
     </div>
   );
 }

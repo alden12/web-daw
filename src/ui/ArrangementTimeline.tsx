@@ -93,6 +93,16 @@ export function ArrangementTimeline({
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
+  // Bring the selected track's row into view (e.g. when selection is driven from the
+  // project tree). `nearest` is a no-op when the row is already visible.
+  const selectedTrackId = project.selectedTrackId;
+  useEffect(() => {
+    if (!selectedTrackId) return;
+    scrollRef.current
+      ?.querySelector(`[data-track-id="${CSS.escape(selectedTrackId)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedTrackId]);
+
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);

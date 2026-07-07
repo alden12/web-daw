@@ -24,13 +24,7 @@ import {
   audioClipPool,
 } from "./projectSerialization";
 import { buildStructure } from "./projectStructure";
-import {
-  hasInstrument,
-  catalogEntry,
-  instrumentSchema,
-  instrumentFamily,
-  DEFAULT_INSTRUMENT,
-} from "../instruments/catalog";
+import { hasInstrument, catalogEntry, instrumentSchema, DEFAULT_INSTRUMENT } from "../instruments/catalog";
 import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import type { SampleAsset } from "../samples/catalog";
@@ -53,8 +47,9 @@ const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this late
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
 const MAX_AUDIO_GAIN = 4; // ~+12 dB - lets a quiet recording be boosted
 const MIN_LOOP_SEC = 0.05; // seconds - smallest audio loop region
-/** Default group family imported/recorded audio is filed into (the librarian). */
-const AUDIO_FAMILY = "Audio";
+/** The single default group every new track is filed into (stable id for delta replay). */
+const MAIN_GROUP_NAME = "main";
+const MAIN_GROUP_ID = "g-main";
 
 /** An effect at runtime: meta + its own ParamStore over the effect's schema. */
 export interface EffectInstance {
@@ -250,16 +245,15 @@ export class ProjectStore {
     return group;
   }
 
-  /** Find the top-level group named for a family, or create it (no emit). The
-   *  "librarian": new tracks are filed into their instrument's family group. The
-   *  created id is derived from the family name (not random) so that replaying a
-   *  createTrack which auto-files into a family group reconstructs the SAME id -
-   *  delta replay (undo, commit materialize) needs apply to be a pure function of
-   *  the command. Existing groups still match by name, so old projects are unaffected. */
-  private ensureFamilyGroup(family: string): Group {
+  /** Find the single default "main" group, or create it (no emit). New tracks are
+   *  filed here; grouping is otherwise manual. The id is fixed (not random) so that
+   *  replaying a createTrack that auto-files into it reconstructs the SAME id - delta
+   *  replay (undo, commit materialize) needs apply to be a pure function of the command. */
+  private ensureMainGroup(): Group {
     return (
-      this.groups.find((group) => group.parentId === null && group.name === family) ??
-      this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: family })
+      this.groups.find((group) => group.parentId === null && group.id === MAIN_GROUP_ID) ??
+      this.groups.find((group) => group.parentId === null) ??
+      this.createGroup({ id: MAIN_GROUP_ID, name: MAIN_GROUP_NAME })
     );
   }
 
@@ -358,8 +352,7 @@ export class ProjectStore {
   addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
-    const parentId =
-      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(instrumentFamily(type)).id;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
     const params = new ParamStore(instrumentSchema(type));
     // Derive the seed clip/placement ids from the (agreed) track id so the browser
@@ -427,8 +420,7 @@ export class ProjectStore {
     opts: { name?: string; id?: string; groupId?: string } = {},
   ): AudioTrack {
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
-    const parentId =
-      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(AUDIO_FAMILY).id;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
     const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
     const clipId = `c-${trackId}`;
@@ -1101,13 +1093,9 @@ export class ProjectStore {
       this.loadEffectsInPlace(track, sound.effects);
       return track;
     });
-    // Invariant: every track must belong to a real group; file any orphan into its
-    // instrument's family group.
+    // Invariant: every track must belong to a real group; file any orphan into main.
     for (const track of this.tracks) {
-      if (!track.parentId || !this.getGroup(track.parentId)) {
-        const family = track.kind === "audio" ? AUDIO_FAMILY : instrumentFamily(track.instrumentType);
-        track.parentId = this.ensureFamilyGroup(family).id;
-      }
+      if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;
     }
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;
