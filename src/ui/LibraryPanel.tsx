@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
 import type { VersionStore } from "../audio/commands/history";
-import { instrumentInfos } from "../audio/instruments/catalog";
+import { EMPTY_INSTRUMENT, pickableInstrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
 import { assetRef } from "../audio/samples/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
@@ -163,6 +163,13 @@ export function LibraryPanel({
       })),
     });
 
+  // Acting on a search result clears the query, which returns to the view that was
+  // open before searching (or stays on Search if it was opened directly - see AppShell).
+  const pickResult = (act: () => void) => {
+    act();
+    onSearch("");
+  };
+
   const addInstrument = (type: string) => dispatch({ type: "createTrack", instrumentType: type, id: newTrackId() });
   const addEffect = (type: string) => {
     const hostId = projectStore.selectedId;
@@ -203,7 +210,7 @@ export function LibraryPanel({
 
   const query = search.trim().toLowerCase();
   const matches = (label: string) => label.toLowerCase().includes(query);
-  const instruments = instrumentInfos().filter((def) => matches(def.label));
+  const instruments = pickableInstrumentInfos().filter((def) => matches(def.label));
   const effects = effectInfos().filter((def) => matches(def.label));
   const matchedPatches = patches.filter((patch) => matches(patch.name));
   const matchedSamples = project.samples.filter((sample) => matches(sample.name));
@@ -226,7 +233,7 @@ export function LibraryPanel({
                 <button
                   key={track.id}
                   type="button"
-                  onClick={() => projectStore.selectTrack(track.id)}
+                  onClick={() => pickResult(() => projectStore.selectTrack(track.id))}
                   title={`Select "${track.name}"`}
                   className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
                 >
@@ -236,7 +243,11 @@ export function LibraryPanel({
                   />
                   <span className="truncate">{track.name}</span>
                   <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">
-                    {track.kind === "audio" ? "audio" : track.instrumentType}
+                    {track.kind === "audio"
+                      ? "audio"
+                      : track.instrumentType === EMPTY_INSTRUMENT
+                        ? "empty"
+                        : track.instrumentType}
                   </span>
                 </button>
               ))}
@@ -246,7 +257,7 @@ export function LibraryPanel({
             <>
               <SectionLabel>Instruments</SectionLabel>
               {instruments.map((def) => (
-                <Leaf key={def.type} label={def.label} onClick={() => addInstrument(def.type)} />
+                <Leaf key={def.type} label={def.label} onClick={() => pickResult(() => addInstrument(def.type))} />
               ))}
             </>
           )}
@@ -254,7 +265,7 @@ export function LibraryPanel({
             <>
               <SectionLabel>Effects</SectionLabel>
               {effects.map((def) => (
-                <Leaf key={def.type} label={def.label} fx onClick={() => addEffect(def.type)} />
+                <Leaf key={def.type} label={def.label} fx onClick={() => pickResult(() => addEffect(def.type))} />
               ))}
             </>
           )}
@@ -265,7 +276,7 @@ export function LibraryPanel({
                 <PatchLeaf
                   key={patch.id}
                   patch={patch}
-                  onAdd={() => addFromPatch(patch)}
+                  onAdd={() => pickResult(() => addFromPatch(patch))}
                   onDelete={() => removePatch(patch.id)}
                 />
               ))}
@@ -278,7 +289,7 @@ export function LibraryPanel({
                 <SampleLeaf
                   key={sample.id}
                   name={sample.name}
-                  onAdd={() => addSamplerTrack(sample.id)}
+                  onAdd={() => pickResult(() => addSamplerTrack(sample.id))}
                   onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
                 />
               ))}
@@ -290,7 +301,7 @@ export function LibraryPanel({
     activity: () => <ActivityView editLog={editLog} versionStore={versionStore} />,
     instruments: () => (
       <div className="py-1">
-        {instrumentInfos().map((def) => (
+        {pickableInstrumentInfos().map((def) => (
           <Leaf key={def.type} label={def.label} onClick={() => addInstrument(def.type)} />
         ))}
       </div>
@@ -358,7 +369,7 @@ export function LibraryPanel({
   };
 
   return (
-    <div className="flex-1 min-w-0 bg-rail border-r border-line flex flex-col min-h-0">
+    <div className="[grid-area:library] min-w-0 bg-rail border-r border-line flex flex-col min-h-0">
       {/* Search sits above the view title; typing jumps to the Search results view. */}
       <div className="shrink-0 p-2 border-b border-line">
         <input

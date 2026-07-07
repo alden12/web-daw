@@ -29,6 +29,8 @@ import { loadWorklets } from "../worklets";
 
 interface TrackNode {
   instrument: Instrument;
+  /** The instrument type this node was built for, so a `setInstrument` swap rebuilds it. */
+  instrumentType: string;
   gain: GainNode;
   /** Effect instances by id; chain order comes from the track's effect list. */
   effects: Map<string, Effect>;
@@ -187,8 +189,14 @@ export class AudioEngine {
         if (!node) {
           const gain = ctx.createGain();
           const instrument = createInstrument(track.instrumentType, ctx, track.params);
-          node = { instrument, gain, effects: new Map() };
+          node = { instrument, instrumentType: track.instrumentType, gain, effects: new Map() };
           this.nodes.set(track.id, node);
+        } else if (node.instrumentType !== track.instrumentType) {
+          // The track's instrument was swapped (setInstrument, e.g. assigning one to an
+          // empty track): dispose the old node and build the new one over the same gain.
+          node.instrument.dispose();
+          node.instrument = createInstrument(track.instrumentType, ctx, track.params);
+          node.instrumentType = track.instrumentType;
         }
         this.reconcileEffects(node.effects, track.effects);
         this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);

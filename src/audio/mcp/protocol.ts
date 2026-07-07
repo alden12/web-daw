@@ -43,6 +43,8 @@ export type ServerToBrowser =
   | { type: "removeTrack"; trackId: string }
   | { type: "selectTrack"; trackId: string }
   | { type: "setTrack"; trackId: string; muted?: boolean; solo?: boolean; volume?: number; name?: string }
+  // Assign (or swap) the instrument on an existing track - e.g. an empty track picks one.
+  | { type: "setInstrument"; trackId: string; instrumentType: string }
   // Group structure (bus tree; id assigned by the creator so both ends agree)
   | { type: "createGroup"; id: string; name?: string; parentId?: string | null }
   | { type: "removeGroup"; groupId: string }

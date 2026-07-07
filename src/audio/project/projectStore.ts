@@ -24,7 +24,13 @@ import {
   audioClipPool,
 } from "./projectSerialization";
 import { buildStructure } from "./projectStructure";
-import { hasInstrument, catalogEntry, instrumentSchema, DEFAULT_INSTRUMENT } from "../instruments/catalog";
+import {
+  hasInstrument,
+  catalogEntry,
+  instrumentSchema,
+  DEFAULT_INSTRUMENT,
+  EMPTY_INSTRUMENT,
+} from "../instruments/catalog";
 import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import type { SampleAsset } from "../samples/catalog";
@@ -364,7 +370,7 @@ export class ProjectStore {
     const track: InstrumentTrack = {
       kind: "instrument",
       id: trackId,
-      name: opts.name ?? `${catalogEntry(type).label} ${this.tracks.length + 1}`,
+      name: opts.name ?? `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`,
       instrumentType: type,
       parentId,
       muted: false,
@@ -382,6 +388,25 @@ export class ProjectStore {
     this.selectedTrackId = trackId;
     this.emit();
     return track;
+  }
+
+  /**
+   * Assign (or swap) the instrument on an existing instrument track - e.g. an empty
+   * track (`none`) picks one. Rebuilds the ParamStore from the new schema (shared
+   * param ids carry over; unknown ones are dropped) and keeps the track's clips,
+   * placements, effects, name, and mix. A pure function of (trackId, type), so delta
+   * replay is deterministic; the engine swaps the node on the next reconcile.
+   */
+  setInstrument(trackId: string, instrumentType: string): void {
+    const track = this.getTrack(trackId);
+    if (!track || track.kind !== "instrument") return;
+    const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
+    if (track.instrumentType === type) return;
+    const carried = track.params.snapshot();
+    track.params = new ParamStore(instrumentSchema(type));
+    track.params.load(carried); // load ignores ids not in the new schema
+    track.instrumentType = type;
+    this.emit();
   }
 
   /**

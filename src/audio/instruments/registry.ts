@@ -16,7 +16,8 @@ import { SupersawInstrument } from "./Supersaw";
 import { OrganInstrument } from "./Organ";
 import { WorkletInstrument } from "./WorkletInstrument";
 import { SamplerInstrument } from "./Sampler";
-import { DEFAULT_INSTRUMENT } from "./catalog";
+import { SilentInstrument } from "./Silent";
+import { DEFAULT_INSTRUMENT, EMPTY_INSTRUMENT } from "./catalog";
 
 type InstrumentFactory = (ctx: AudioContext, store: ParamStore) => Instrument;
 
@@ -39,5 +40,6 @@ registerInstrumentFactory("supersaw", (ctx, store) => new SupersawInstrument(ctx
 registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, store));
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));
 registerInstrumentFactory("sampler", (ctx, store) => new SamplerInstrument(ctx, store));
+registerInstrumentFactory(EMPTY_INSTRUMENT, (ctx) => new SilentInstrument(ctx));
 
 export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from "./catalog";

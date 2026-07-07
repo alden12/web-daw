@@ -97,7 +97,7 @@ export function ActivityRail({
   return (
     <nav
       aria-label="Library views"
-      className="shrink-0 w-12 h-full bg-rail border-r border-line flex flex-col items-center py-1.5"
+      className="[grid-area:rail] h-full bg-rail border-r border-line flex flex-col items-center py-1.5"
     >
       {RAIL_ITEMS.map((item) => {
         const selected = item.view === active && !collapsed;

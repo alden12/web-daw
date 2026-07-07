@@ -45,6 +45,8 @@ const DESCRIBE: DescribeMap = {
     if (command.solo !== undefined) return `${command.solo ? "Soloed" : "Unsoloed"} track${name}`;
     return `Set volume${name}`;
   },
+  setInstrument: (command, ctx) =>
+    `Set instrument to ${instLabel(command.instrumentType)}${on(ctx, command.trackId, "")}`,
   setAudioClip: () => "Edited audio clip",
   addAudioClip: (command) => `Recorded ${command.name ? `"${command.name}"` : "a take"}`,
   addNoteClip: (command) =>

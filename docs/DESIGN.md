@@ -457,15 +457,22 @@ via the File System Access API (+ optional git export), **15E** remote sync / co
   the previous view. Grouping changed from per-instrument-family groups (the old "librarian") to a
   **single default `main` group** every new track files into; manual grouping is the follow-on below.
 
-- **Grouping + track roadmap (follow-ons).** (a) **Drag tracks into groups** (and reorder) in the
+- **Empty tracks + full-height rail - DONE (slice 55).** A track can now be created with **no
+  instrument yet** and assigned one later. The engine gained a hidden **`none` sentinel instrument**
+  (`Silent.ts` - empty schema, silent factory, excluded from the library/search/MCP palette via a
+  `hidden` flag + `pickableInstrumentInfos`). A new **`setInstrument` command** (protocol + applyEdit
+  + describe + `ProjectStore.setInstrument`) rebuilds the track's ParamStore from the new schema
+  (shared param ids carry over) while keeping clips/placements/effects; the engine reconcile now
+  diffs `TrackNode.instrumentType` and swaps the node when it changes. Create an empty track from the
+  project-tree group **+**, or the timeline's **New track in** / group **Add empty track** menus
+  (these no longer default to a subtractive). The workbench device rack shows a **"choose an
+  instrument" picker** when the selected track is empty; the kind chip reads `empty`. Also: the
+  **activity rail became its own full-height column** (spans both grid rows, reserving the
+  bottom-left), and **acting on a search result returns to the view open before searching**.
+
+- **Grouping roadmap (follow-ons).** (a) **Drag tracks into groups** (and reorder) in the
   tree/timeline - needs DnD wiring over the existing `moveTrack`/`moveGroup`. (b) **Right-click add**
-  menus (add group / add track) in the timeline and the project tree. (c) **Empty tracks** - create a
-  track with no instrument yet and assign one later: needs a silent/"none" instrument in the
-  catalog+registry (or an engine skip for an empty `instrumentType`), a `setInstrument` command
-  (protocol + applyEdit + a ProjectStore method that rebuilds the track's ParamStore from the new
-  schema, keeping clips/effects, with the engine reconciling the swapped node), and a "choose an
-  instrument" state in the workbench device rack. Deterministic replay: params reset to schema
-  defaults is a pure function of the chosen type.
+  menus (add group / add track) in the timeline and the project tree.
 
 **Extension SDK - third-party instruments & effects (ecosystem + ownership)**
 

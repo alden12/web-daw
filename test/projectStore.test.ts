@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
-import { instrumentInfos } from "../src/audio/instruments/catalog";
+import { instrumentInfos, pickableInstrumentInfos } from "../src/audio/instruments/catalog";
 
 describe("ProjectStore", () => {
   it("seeds one subtractive track by default and selects it", () => {
@@ -455,8 +455,8 @@ describe("addNoteClip (recorded MIDI take)", () => {
 });
 
 describe("instrument catalog", () => {
-  it("exposes a label and a valid schema for every instrument type", () => {
-    for (const def of instrumentInfos()) {
+  it("exposes a label and a valid schema for every pickable instrument type", () => {
+    for (const def of pickableInstrumentInfos()) {
       expect(def.label).toBeTruthy();
       expect(def.schema.length).toBeGreaterThan(0);
       for (const spec of def.schema) {
@@ -465,5 +465,35 @@ describe("instrument catalog", () => {
       }
       expect(def.type).toBeTruthy();
     }
+  });
+});
+
+describe("ProjectStore setInstrument (empty tracks)", () => {
+  it("creates an empty track (none) and assigns an instrument, keeping its clips", () => {
+    const p = new ProjectStore(false);
+    const empty = p.addTrack("none", { name: "Track 1" });
+    expect(empty.instrumentType).toBe("none");
+    expect(empty.kind).toBe("instrument");
+    if (empty.kind === "instrument") expect(empty.params.snapshot()).toEqual({}); // empty schema
+    const clipCount = empty.clips.length;
+
+    p.setInstrument(empty.id, "subtractive");
+    const t = p.getTrack(empty.id)!;
+    expect(t.kind).toBe("instrument");
+    if (t.kind === "instrument") {
+      expect(t.instrumentType).toBe("subtractive");
+      expect(t.clips.length).toBe(clipCount); // clips/placements preserved across the swap
+      expect(Object.keys(t.params.snapshot()).length).toBeGreaterThan(0); // params rebuilt from the new schema
+    }
+  });
+
+  it("setInstrument is a no-op for the same type or a non-instrument track", () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack("subtractive");
+    const before = t.params.snapshot();
+    p.setInstrument(t.id, "subtractive"); // same type
+    expect(p.getTrack(t.id)!.kind === "instrument" && p.getTrack(t.id)).toBeTruthy();
+    expect((p.getTrack(t.id) as typeof t).params.snapshot()).toEqual(before);
+    p.setInstrument("nope", "fm"); // missing track -> no throw
   });
 });

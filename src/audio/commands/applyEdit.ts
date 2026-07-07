@@ -40,6 +40,7 @@ const APPLY: ApplyMap = {
     if (command.volume !== undefined) project.setVolume(command.trackId, command.volume);
     if (command.name !== undefined) project.renameTrack(command.trackId, command.name);
   },
+  setInstrument: (project, command) => project.setInstrument(command.trackId, command.instrumentType),
   setAudioClip: (project, command) => project.setAudioClip(command.trackId, command.clipId, command.patch),
   addAudioClip: (project, command) => project.addAudioClip(command),
   // A recorded MIDI take: create the clip (with its notes), punch it in over the

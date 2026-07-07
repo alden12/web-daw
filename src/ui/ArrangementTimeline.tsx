@@ -26,7 +26,7 @@ import type { Recorder } from "../audio/recording/recorder";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
-import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
+import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
 import { GROOVES } from "../audio/grooves/catalog";
 import { useProject } from "../audio/project/useProject";
@@ -348,7 +348,7 @@ export function ArrangementTimeline({
                   onClick: () =>
                     dispatch({
                       type: "createTrack",
-                      instrumentType: DEFAULT_INSTRUMENT,
+                      instrumentType: EMPTY_INSTRUMENT,
                       id: newTrackId(),
                       groupId: group.id,
                     }),
@@ -360,7 +360,7 @@ export function ArrangementTimeline({
                     dispatch({ type: "createGroup", id: groupId });
                     dispatch({
                       type: "createTrack",
-                      instrumentType: DEFAULT_INSTRUMENT,
+                      instrumentType: EMPTY_INSTRUMENT,
                       id: newTrackId(),
                       groupId,
                     });

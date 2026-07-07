@@ -225,13 +225,17 @@ export interface InstrumentInfo {
   type: string;
   label: string;
   schema: ParamSchema;
-  /**
-   * Default group family a new track of this instrument is filed into (the
-   * "Claude is the librarian" rule - organization is maintained as music is
-   * built, not patched up later). Just a sensible default; tracks can be moved.
-   */
+  /** A default group name (kept for the catalog shape; grouping is now a single "main"). */
   family: string;
+  /**
+   * Hidden from the library palette + search (still registered so its schema/factory
+   * resolve). Used by the "none" sentinel - an empty track with no instrument yet.
+   */
+  hidden?: boolean;
 }
+
+/** The sentinel instrument type for an empty track (no instrument chosen yet). */
+export const EMPTY_INSTRUMENT = "none";
 
 /** The instrument data registry (insertion order = catalog/palette order). */
 const REGISTRY = new Map<string, InstrumentInfo>();
@@ -245,6 +249,11 @@ export function registerInstrument(info: InstrumentInfo): void {
 /** Every registered instrument, in registration order (iterate this, never hardcode). */
 export function instrumentInfos(): InstrumentInfo[] {
   return [...REGISTRY.values()];
+}
+
+/** Registered instruments a user can pick (excludes hidden sentinels like "none"). */
+export function pickableInstrumentInfos(): InstrumentInfo[] {
+  return [...REGISTRY.values()].filter((info) => !info.hidden);
 }
 
 /** Whether an instrument type is registered. */
@@ -275,3 +284,5 @@ registerInstrument({ type: "supersaw", label: "Supersaw", schema: supersawSchema
 registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family: "Keys" });
 registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
 registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });
+// The empty-track sentinel: no params, hidden from the palette, silent factory (registry.ts).
+registerInstrument({ type: EMPTY_INSTRUMENT, label: "No instrument", schema: [], family: "main", hidden: true });

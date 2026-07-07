@@ -47,11 +47,11 @@
    grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
 .app-body {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 320px;
+  grid-template-columns: 48px 200px minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 244px;
   grid-template-areas:
-    "library center agent"
-    "timeline timeline timeline";
+    "rail library center agent"
+    "rail timeline timeline timeline";
   transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

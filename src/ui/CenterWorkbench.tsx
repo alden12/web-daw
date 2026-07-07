@@ -16,6 +16,7 @@ import { beatsPerSecond } from "../audio/timing";
 import { useAnimationFrame } from "./useAnimationFrame";
 import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
+import { EMPTY_INSTRUMENT, pickableInstrumentInfos } from "../audio/instruments/catalog";
 import { InstrumentPanel } from "./InstrumentPanel";
 import { EffectChain } from "./EffectChain";
 import { Fader } from "./MixerControls";
@@ -102,6 +103,27 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
         Save
       </button>
     </span>
+  );
+}
+
+/** Shown in the device rack for an empty track (no instrument yet): pick one to assign. */
+function InstrumentPicker({ trackId, dispatch }: { trackId: string; dispatch: Dispatch }) {
+  return (
+    <div className="w-full p-1">
+      <p className="text-[11.5px] text-muted mb-2">This track has no instrument yet. Choose one:</p>
+      <div className="flex flex-wrap gap-1.5">
+        {pickableInstrumentInfos().map((info) => (
+          <button
+            key={info.type}
+            type="button"
+            onClick={() => dispatch({ type: "setInstrument", trackId, instrumentType: info.type })}
+            className="px-2.5 py-1 rounded-md border border-line text-[12px] text-ink hover:text-bright hover:border-you cursor-pointer"
+          >
+            {info.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -394,7 +416,12 @@ export function CenterWorkbench({
     );
   }
 
-  const kindLabel = selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType;
+  const kindLabel =
+    selectedTrack.kind === "audio"
+      ? "audio"
+      : selectedTrack.instrumentType === EMPTY_INSTRUMENT
+        ? "empty"
+        : selectedTrack.instrumentType;
 
   return (
     <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
@@ -496,7 +523,7 @@ export function CenterWorkbench({
         />
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line shrink-0">
           <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Devices</span>
-          {selectedTrack.kind === "instrument" && (
+          {selectedTrack.kind === "instrument" && selectedTrack.instrumentType !== EMPTY_INSTRUMENT && (
             <span className="ml-auto">
               <SavePatchControl track={selectedTrack} />
             </span>
@@ -504,16 +531,19 @@ export function CenterWorkbench({
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
-            {selectedTrack.kind === "instrument" && (
-              <InstrumentPanel
-                params={selectedTrack.params}
-                instrumentType={selectedTrack.instrumentType}
-                trackId={selectedTrack.id}
-                dispatch={dispatch}
-                samples={project.samples}
-                onRevealSamples={onRevealSamples}
-              />
-            )}
+            {selectedTrack.kind === "instrument" &&
+              (selectedTrack.instrumentType === EMPTY_INSTRUMENT ? (
+                <InstrumentPicker trackId={selectedTrack.id} dispatch={dispatch} />
+              ) : (
+                <InstrumentPanel
+                  params={selectedTrack.params}
+                  instrumentType={selectedTrack.instrumentType}
+                  trackId={selectedTrack.id}
+                  dispatch={dispatch}
+                  samples={project.samples}
+                  onRevealSamples={onRevealSamples}
+                />
+              ))}
             <EffectChain
               projectStore={projectStore}
               trackId={selectedTrack.id}
