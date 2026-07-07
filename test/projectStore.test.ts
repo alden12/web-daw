@@ -265,6 +265,35 @@ describe("ProjectStore audio tracks", () => {
     expect(group.parentId).toBeNull();
   });
 
+  it("creates an empty audio track (no clip/placement) filed into the main group", () => {
+    const p = new ProjectStore(false);
+    const t = p.addEmptyAudioTrack();
+    expect(t.kind).toBe("audio");
+    expect(t.clips).toEqual([]);
+    expect(t.placements).toEqual([]);
+    expect(t.activeClipId).toBe("");
+    expect(p.getGroup(t.parentId)!.name).toBe("main");
+    expect(p.selectedId).toBe(t.id);
+  });
+
+  it("records a take into an empty audio track created up front", () => {
+    const p = new ProjectStore(false);
+    const t = p.addEmptyAudioTrack({ name: "Vox" });
+    p.setTempo(120);
+    p.addAudioClip({
+      trackId: t.id,
+      id: "c-take",
+      placementId: "p-take",
+      fileId: "au-1",
+      durationSec: 2,
+      startBeat: 0,
+    });
+    const got = p.getTrack(t.id)!;
+    expect(got.clips.map((c) => c.id)).toEqual(["c-take"]);
+    expect(got.activeClipId).toBe("c-take");
+    expect(got.placements.map((pl) => pl.id)).toEqual(["p-take"]);
+  });
+
   it("records a take into an existing audio track (clip pool + placement, active)", () => {
     const p = new ProjectStore(false);
     const t = p.addAudioTrack({ fileId: "au-1", name: "Vox", durationSec: 1 });

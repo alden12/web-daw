@@ -10,7 +10,7 @@
  * selection) or a `submenu` that opens as a hover flyout to the side - the flyout side
  * follows `align`, so a right-aligned menu flies its submenus left (toward the viewport).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const VIEWPORT_MARGIN = 8; // keep the popover this far inside the viewport edges
@@ -125,11 +125,14 @@ export function Menu({
   label = "More actions",
   align = "right",
   triggerClassName = "shrink-0 px-1 text-[15px] leading-none text-muted hover:text-ink cursor-pointer",
+  trigger = "⋮",
 }: {
   items: MenuItem[];
   label?: string;
   align?: "left" | "right";
   triggerClassName?: string;
+  /** The trigger glyph/content (defaults to the kebab ⋮). */
+  trigger?: ReactNode;
 }) {
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -210,7 +213,7 @@ export function Menu({
         }}
         className={triggerClassName}
       >
-        ⋮
+        {trigger}
       </button>
       {open &&
         coords &&

@@ -691,8 +691,31 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `set_groove`/`list_grooves` MCP tools; persisted (project schema 8). Offsets are in beats (no PPQ).
   *Follow-ups:* **per-track override** (pairs with the drum machine, where "swing the hats not the
   kick" matters) and groove **extraction** (analyze a clip's deviations into a template).
-- **Musical editing (remaining):** a project key with the roll showing note intervals/scale relative
-  to it (pairs with the autotune scale-snap layer under "Audio pitch & time").
+- **Key & tonic-relative intervals - roadmap (pairs with the flagship synth as its test-bed).** Make
+  **key** (a `{ tonic: 0-11, scale/mode }`) a first-class musical unit that the roll display and the
+  computer-keyboard input are both projections of. The two halves of this reinforce each other: a
+  tonic-relative model is precisely what lets the QWERTY keyboard span **4 octaves**, because diatonic
+  degrees pack ~7 per octave (one keyboard row) where chromatic needs 12 (which doesn't fit a 10-key
+  row). Design:
+  - *Data model unchanged.* `NoteEvent.pitch` stays **absolute MIDI** (transposition-safe, interop-
+    friendly, and the scheduler/engine never learn about keys). Key is an **input/display layer**:
+    display maps absolute -> degree; the keyboard maps degree -> absolute. A pure projection, no
+    persistence change - which is the same "everything is a projection of the schema" discipline the
+    rest of the app follows. Key lives at **project level** first; per-clip / per-section overrides are
+    a clean follow-on.
+  - *Keyboard = diatonic by default.* Replace the hardcoded single-octave `KEY_MAP`
+    ([AppShell.tsx](src/ui/AppShell.tsx)) with a map **generated from the current key**: the four
+    letter/number rows become four octaves of the scale, so playing is always "in key". A modifier
+    (e.g. Shift) raises a semitone for accidentals; the layout mode (diatonic vs a chromatic /
+    isomorphic option) can be a setting.
+  - *Display = scale highlighting first, note color last.* Hue is reserved for the two-voice authorship
+    coding, so degree must **not** ride on hue. First cut: **scale highlighting on the piano-roll lane
+    backgrounds** (in-key rows lit, the tonic row accented - the pattern many DAWs use) plus optional
+    **degree labels** on notes (`1 b3 5`...). Note *fill* stays authorship color. A later opt-in can
+    encode degree on a non-hue channel (brightness / saturation within the authorship hue) so both
+    codings coexist.
+  - *MCP payoff:* exposing key in project state lets the agent compose diatonically ("add a ii-V-I in
+    the project key"). Pairs with the autotune scale-snap layer under "Audio pitch & time".
 - **Timeline & arrangement interactions - DONE (slice 13 + follow-ups), the third "real DAW"
   piece.** The bottom timeline is editable: zoom + scroll (reusing the piano-roll's
   beats<->px+ruler primitive), move / resize / split / delete placements, drag empty lane to
@@ -936,6 +959,36 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   attack/release envelopes, a one-pole tone control, and the sample-accurate dispatch). Same
   three-touch extension as any instrument (catalog + registry + the worklet module URL), so it
   shows up in the library, the InstrumentPanel knobs, and the MCP palette for free.
+- **Flagship synth + patch bank - roadmap (the next arc, built before the tonic-relative display so
+  there's a great voice to test it on).** Turn web-daw into a serious composition platform with one
+  genuinely good analog-style synth and a bank of professional patches, built on the worklet-instrument
+  framework (slice 39).
+  - *Licensing posture.* Cloning a classic's **architecture and sound** is fine - signal topology is
+    not copyrightable and the classic analog patents (e.g. the Moog transistor-ladder filter, ~1969)
+    are long expired. Off-limits: **brand names and logos** (Minimoog, Juno, Prophet, TB-303,
+    Moog/Roland/Korg), **slavish copies of the exact panel artwork** (possible trade dress - our param-
+    schema UI sidesteps this anyway), and **copied preset names**. So: an **original instrument name**,
+    our own UI, and **inspired-by** patches with original names. Parameter values themselves are
+    functional data, not protected.
+  - *Which to clone - a Juno-106-style poly synth first.* Polyphonic (pads/keys/strings - the broadest
+    composition value, complementing the existing voices); a **small param set** (1 DCO + sub + noise,
+    one filter, one envelope, an LFO, chorus) that maps cleanly to the schema, is easy for both humans
+    and the agent to program, and is the shortest path to a patch bank that actually sounds pro. Its
+    signature lushness is mostly the **chorus**, which also ships as a standalone effect. Voice #2 later:
+    a **Minimoog-style mono** built around a proper ladder filter for bass/leads.
+  - *The real work is DSP, not topology.* "Really good" is ~20% topology, ~80% details our current
+    instruments lack: (1) **the filter is the sound** - a zero-delay-feedback / Moog-ladder model with
+    musical resonance, self-oscillation, and drive (an AudioWorklet, not `BiquadFilterNode`), and it is
+    **reusable across every synth**; (2) **band-limited oscillators** (the wavetable worklet is a good
+    foundation) to avoid aliasing, plus **analog drift/detune** and **exponential envelope curves**; (3)
+    a good **chorus/ensemble**.
+  - *Arc (a few slices):* (1) **DSP foundation** - a shared ladder/ZDF filter worklet in `dsp/` + a
+    chorus (also added to the effects catalog); (2) the **flagship poly synth** built on them (same
+    three-touch catalog + registry + worklet-URL extension, so it appears in the library / knobs / MCP
+    palette for free); (3) a **patch bank** (~20-40 categorized presets - bass / lead / pad / keys /
+    pluck - original names, inspired by classic patch *types*, slotting straight into the existing
+    patches library); (4) later, the **mono lead/bass voice**. This voice becomes the test-bed for the
+    tonic-relative display above.
 - **Adopt Prettier - DONE (slice 41).** A repo-wide Prettier config (double quotes, `printWidth:
   120`) + `yarn format` / `yarn format:check` + a CI format-check step, to end the editor
   quote-churn noted in CLAUDE.md. One-time whole-tree reformat in its own PR; double quotes match

@@ -318,6 +318,23 @@ export function ArrangementTimeline({
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
+  // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
+  // caller supplies how to create the track (MIDI vs audio) given a destination group.
+  const newTrackSubmenu = (createTrack: (groupId: string) => void) => [
+    ...project.groups.map((group) => ({ label: group.name, onClick: () => createTrack(group.id) })),
+    {
+      label: "New group",
+      onClick: () => {
+        const groupId = newGroupId();
+        dispatch({ type: "createGroup", id: groupId });
+        createTrack(groupId);
+      },
+    },
+  ];
+  const createMidiTrack = (groupId: string) =>
+    dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
+  const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
+
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
       <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
@@ -339,35 +356,9 @@ export function ArrangementTimeline({
               onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
             },
             // Every track lives in a group, so adding one picks the destination group
-            // (or a fresh group). Nested as a submenu so the menu stays short.
-            {
-              label: "New track in",
-              submenu: [
-                ...project.groups.map((group) => ({
-                  label: group.name,
-                  onClick: () =>
-                    dispatch({
-                      type: "createTrack",
-                      instrumentType: EMPTY_INSTRUMENT,
-                      id: newTrackId(),
-                      groupId: group.id,
-                    }),
-                })),
-                {
-                  label: "New group",
-                  onClick: () => {
-                    const groupId = newGroupId();
-                    dispatch({ type: "createGroup", id: groupId });
-                    dispatch({
-                      type: "createTrack",
-                      instrumentType: EMPTY_INSTRUMENT,
-                      id: newTrackId(),
-                      groupId,
-                    });
-                  },
-                },
-              ],
-            },
+            // (or a fresh group). Nested as submenus so the menu stays short.
+            { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
+            { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
             { separator: true },
             // Recording settings live here too (one toolbar menu, not a second kebab).
             {

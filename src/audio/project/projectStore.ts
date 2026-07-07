@@ -439,6 +439,36 @@ export class ProjectStore {
     return track;
   }
 
+  /**
+   * Create an empty audio track (no clips/placements yet) - the audio peer of an
+   * empty instrument track. It renders an empty lane and an empty workbench until a
+   * take is recorded into it (`addAudioClip`) or a clip is dropped onto it. Files into
+   * the main group by default. `activeClipId` is "" (no clip selected) until then.
+   */
+  addEmptyAudioTrack(opts: { name?: string; id?: string; groupId?: string } = {}): AudioTrack {
+    if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
+    const trackId = opts.id ?? this.nextId();
+    const track: AudioTrack = {
+      kind: "audio",
+      id: trackId,
+      name: opts.name ?? `Audio ${this.tracks.length + 1}`,
+      parentId,
+      muted: false,
+      solo: false,
+      volume: 0.8,
+      effects: [],
+      clips: [],
+      activeClipId: "",
+      placements: [],
+      launchedClipId: null,
+    };
+    this.tracks.push(track);
+    this.selectedTrackId = trackId;
+    this.emit();
+    return track;
+  }
+
   /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
   addAudioTrack(
     clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },

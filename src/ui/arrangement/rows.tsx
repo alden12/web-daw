@@ -63,7 +63,7 @@ export function GroupHeader({
         label="Group actions"
         items={[
           {
-            label: "Add empty track",
+            label: "Add MIDI track",
             onClick: () =>
               dispatch({
                 type: "createTrack",
@@ -71,6 +71,10 @@ export function GroupHeader({
                 id: newTrackId(),
                 groupId: group.id,
               }),
+          },
+          {
+            label: "Add audio track",
+            onClick: () => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId: group.id }),
           },
           {
             label: "Delete group and its contents",

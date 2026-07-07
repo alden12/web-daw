@@ -17,6 +17,7 @@ import { useProject } from "../audio/project/useProject";
 import { newTrackId } from "../audio/commands/ids";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Fader, MuteSolo } from "./MixerControls";
+import { Menu } from "./Menu";
 
 /** One flattened tree row: a group header or a track, tagged with its depth. */
 type Row = { kind: "group"; group: GroupMeta; depth: number } | { kind: "track"; track: TrackMeta; depth: number };
@@ -108,22 +109,30 @@ export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectS
                 <span className="w-2.5 text-center text-[16px] text-muted">{open ? "▾" : "▸"}</span>
                 <span className="truncate uppercase tracking-wide">{row.group.name}</span>
               </button>
-              <button
-                type="button"
-                title={`Add an empty track to ${row.group.name}`}
-                aria-label={`Add a track to ${row.group.name}`}
-                onClick={() =>
-                  dispatch({
-                    type: "createTrack",
-                    instrumentType: EMPTY_INSTRUMENT,
-                    id: newTrackId(),
-                    groupId: row.group.id,
-                  })
-                }
-                className="shrink-0 w-5 text-center text-[14px] leading-none text-faint hover:text-bright cursor-pointer opacity-60 group-hover/grp:opacity-100"
-              >
-                +
-              </button>
+              <div className="shrink-0 opacity-60 group-hover/grp:opacity-100">
+                <Menu
+                  align="left"
+                  trigger="+"
+                  label={`Add a track to ${row.group.name}`}
+                  triggerClassName="w-5 text-center text-[14px] leading-none text-faint hover:text-bright cursor-pointer"
+                  items={[
+                    {
+                      label: "New MIDI track",
+                      onClick: () =>
+                        dispatch({
+                          type: "createTrack",
+                          instrumentType: EMPTY_INSTRUMENT,
+                          id: newTrackId(),
+                          groupId: row.group.id,
+                        }),
+                    },
+                    {
+                      label: "New audio track",
+                      onClick: () => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId: row.group.id }),
+                    },
+                  ]}
+                />
+              </div>
             </div>
           );
         }

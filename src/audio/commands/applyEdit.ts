@@ -22,6 +22,8 @@ const APPLY: ApplyMap = {
   createTrack: (project, command) =>
     void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
   createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
+  createAudioTrack: (project, command) =>
+    void project.addEmptyAudioTrack({ id: command.id, name: command.name, groupId: command.groupId }),
   addAudioTrack: (project, command) =>
     void project.addAudioTrack(
       {
