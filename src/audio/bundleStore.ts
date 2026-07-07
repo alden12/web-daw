@@ -5,6 +5,10 @@
  * `projectRepository.ts`; this seam only knows how to read/write paths, so the
  * same repository logic runs over OPFS today and a real disk folder or a remote
  * later (see docs/DESIGN.md sections 8, 10). Everything is async, because OPFS is.
+ *
+ * Multi-project: every project is its own bundle under `projects/<id>/`. A
+ * `ProjectStorage` hands out a rooted `BundleStore` per project id and can
+ * enumerate/delete them; the repository singleton points at the current project.
  */
 
 export interface BundleStore {
@@ -15,23 +19,21 @@ export interface BundleStore {
   exists(path: string): Promise<boolean>;
 }
 
-/** The single bundle's root directory name within OPFS. Multi-project is later. */
-const BUNDLE_DIR = "project.daw";
+/** The parent directory (under the OPFS root) that holds every project bundle. */
+const PROJECTS_DIR = "projects";
 
-/** OPFS when available (browser), else an in-memory store (Node tests / no OPFS). */
-export function createBundleStore(): BundleStore {
-  if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) return new OpfsBundleStore();
-  return new MemoryBundleStore();
-}
-
-/** Origin Private File System backend: the bundle is a real directory tree. */
+/** Origin Private File System backend: the bundle is a real directory tree rooted at `root`. */
 export class OpfsBundleStore implements BundleStore {
+  private readonly root: string[];
+  constructor(root: string[]) {
+    this.root = root;
+  }
+
   /** Walk (optionally creating) the directory chain for `parts` under the bundle root. */
   private async dirFor(parts: string[], create: boolean): Promise<FileSystemDirectoryHandle | null> {
     try {
       let dir = await navigator.storage.getDirectory();
-      dir = await dir.getDirectoryHandle(BUNDLE_DIR, { create });
-      for (const part of parts) dir = await dir.getDirectoryHandle(part, { create });
+      for (const part of [...this.root, ...parts]) dir = await dir.getDirectoryHandle(part, { create });
       return dir;
     } catch {
       return null; // a missing dir on a read is "not there", not an error
@@ -111,4 +113,118 @@ export class MemoryBundleStore implements BundleStore {
   async exists(path: string): Promise<boolean> {
     return this.text.has(path) || this.blob.has(path);
   }
+}
+
+/**
+ * The multi-project root: hands out a per-project bundle store and can list/delete
+ * projects. One instance backs the whole app (OPFS in the browser, shared in-memory
+ * for tests / no-OPFS).
+ */
+export interface ProjectStorage {
+  bundle(projectId: string): BundleStore;
+  listProjectIds(): Promise<string[]>;
+  deleteProject(projectId: string): Promise<void>;
+}
+
+class OpfsProjectStorage implements ProjectStorage {
+  bundle(projectId: string): BundleStore {
+    return new OpfsBundleStore([PROJECTS_DIR, projectId]);
+  }
+  async listProjectIds(): Promise<string[]> {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle(PROJECTS_DIR, { create: false });
+      const ids: string[] = [];
+      // `entries()` is an async iterator on the directory handle (FileSystem Access API);
+      // the DOM lib doesn't type it, so reach it through a narrow cast.
+      const entries = (dir as unknown as { entries(): AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
+      for await (const [name, handle] of entries) {
+        if (handle.kind === "directory") ids.push(name);
+      }
+      return ids;
+    } catch {
+      return [];
+    }
+  }
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dir = await root.getDirectoryHandle(PROJECTS_DIR, { create: false });
+      await dir.removeEntry(projectId, { recursive: true });
+    } catch {
+      // nothing to delete
+    }
+  }
+}
+
+/** A rooted view over shared in-memory maps, so many project bundles share one FS. */
+class RootedMemoryStore implements BundleStore {
+  private readonly text: Map<string, string>;
+  private readonly blob: Map<string, ArrayBuffer>;
+  private readonly prefix: string;
+  constructor(text: Map<string, string>, blob: Map<string, ArrayBuffer>, prefix: string) {
+    this.text = text;
+    this.blob = blob;
+    this.prefix = prefix;
+  }
+  private key(path: string) {
+    return this.prefix + path;
+  }
+  async readText(path: string) {
+    return this.text.get(this.key(path)) ?? null;
+  }
+  async writeText(path: string, text: string) {
+    this.text.set(this.key(path), text);
+  }
+  async readBlob(path: string) {
+    return this.blob.get(this.key(path)) ?? null;
+  }
+  async writeBlob(path: string, blob: Blob) {
+    this.blob.set(this.key(path), await blob.arrayBuffer());
+  }
+  async exists(path: string) {
+    return this.text.has(this.key(path)) || this.blob.has(this.key(path));
+  }
+}
+
+export class MemoryProjectStorage implements ProjectStorage {
+  private readonly text = new Map<string, string>();
+  private readonly blob = new Map<string, ArrayBuffer>();
+  private prefix(projectId: string) {
+    return `${PROJECTS_DIR}/${projectId}/`;
+  }
+  bundle(projectId: string): BundleStore {
+    return new RootedMemoryStore(this.text, this.blob, this.prefix(projectId));
+  }
+  async listProjectIds(): Promise<string[]> {
+    const ids = new Set<string>();
+    const head = `${PROJECTS_DIR}/`;
+    for (const key of [...this.text.keys(), ...this.blob.keys()]) {
+      if (key.startsWith(head)) ids.add(key.slice(head.length).split("/")[0]);
+    }
+    return [...ids];
+  }
+  async deleteProject(projectId: string): Promise<void> {
+    const head = this.prefix(projectId);
+    for (const key of [...this.text.keys()]) if (key.startsWith(head)) this.text.delete(key);
+    for (const key of [...this.blob.keys()]) if (key.startsWith(head)) this.blob.delete(key);
+  }
+}
+
+let storageSingleton: ProjectStorage | null = null;
+
+/** The app-wide project storage (OPFS in the browser, shared in-memory otherwise). */
+export function getProjectStorage(): ProjectStorage {
+  if (!storageSingleton) {
+    storageSingleton =
+      typeof navigator !== "undefined" && !!navigator.storage?.getDirectory
+        ? new OpfsProjectStorage()
+        : new MemoryProjectStorage();
+  }
+  return storageSingleton;
+}
+
+/** Replace the app-wide project storage. For tests (swap in a fresh in-memory store). */
+export function setProjectStorage(storage: ProjectStorage): void {
+  storageSingleton = storage;
 }

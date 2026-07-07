@@ -8,6 +8,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
+import type { VersionStore } from "../audio/commands/history";
+import { type ProjectMeta, listProjects, subscribeProjects } from "../audio/projects/library";
+import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
+import { currentProjectId } from "../audio/projectRepository";
 import { instrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
@@ -163,10 +167,12 @@ function SampleLeaf({
 export function LibraryPanel({
   projectStore,
   editLog,
+  versionStore,
   dispatch,
 }: {
   projectStore: ProjectStore;
   editLog: EditLog;
+  versionStore: VersionStore;
   dispatch: Dispatch;
 }) {
   const project = useProject(projectStore);
@@ -174,16 +180,25 @@ export function LibraryPanel({
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
+  const [projects, setProjects] = useState<ProjectMeta[]>(() => listProjects());
   const menuRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
+  const projectDeps = { projectStore, editLog, versionStore };
 
   // The patch library is global (cross-project); mirror it into React state.
   useEffect(() => {
     const sync = () => setPatches(listPatches());
     sync();
     return subscribePatches(sync);
+  }, []);
+
+  // Mirror the project library (populated at boot by initProjects).
+  useEffect(() => {
+    const sync = () => setProjects(listProjects());
+    sync();
+    return subscribeProjects(sync);
   }, []);
 
   // Apply a saved patch as one authored edit. Effect ids are minted here and carried
@@ -319,6 +334,60 @@ export function LibraryPanel({
                   className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
                 >
                   Import project…
+                </button>
+                <div className="my-1 border-t border-line" />
+                <div className="px-3 py-1 text-[10.5px] uppercase tracking-wide text-faint">Projects</div>
+                {projects.map((meta) => (
+                  <div key={meta.id} className="group flex items-center pr-2 hover:bg-you/10">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        if (meta.id !== currentProjectId()) void switchProject(projectDeps, meta.id);
+                      }}
+                      className="flex items-center gap-2 flex-1 min-w-0 text-left px-3 py-1.5 cursor-pointer"
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.id === currentProjectId() ? "bg-you" : "bg-transparent"}`}
+                      />
+                      <span className="truncate">{meta.name}</span>
+                    </button>
+                    <Menu
+                      label={`Project actions: ${meta.name}`}
+                      triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+                      items={[
+                        {
+                          label: "Rename…",
+                          onClick: () => {
+                            const name = window.prompt("Rename project", meta.name)?.trim();
+                            if (name) void renameProject(meta.id, name);
+                          },
+                        },
+                        {
+                          label: "Delete",
+                          danger: true,
+                          disabled: projects.length <= 1,
+                          onClick: () => {
+                            if (window.confirm(`Delete project "${meta.name}"? This cannot be undone.`)) {
+                              setMenuOpen(false);
+                              void deleteProject(projectDeps, meta.id);
+                            }
+                          },
+                        },
+                      ]}
+                    />
+                  </div>
+                ))}
+                <button
+                  role="menuitem"
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void createProject(projectDeps);
+                  }}
+                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer text-muted"
+                >
+                  + New project
                 </button>
               </div>
             )}

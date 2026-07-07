@@ -411,6 +411,20 @@ The follow-on slices (not in this push): **15C** branches + revert + cherry-pick
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
 via the File System Access API (+ optional git export), **15E** remote sync / collaboration.
 
+- **15F - multi-project library + switcher - DONE (slice 52).** The single hardcoded OPFS bundle
+  became a **keyed multi-bundle store**: every project is its own bundle under `projects/<id>/`,
+  `ProjectStorage` (in `bundleStore.ts`) enumerates/deletes them, and the `ProjectRepository`
+  singleton is **retargetable by project id** (current id in localStorage, shared with the library).
+  A `ProjectLibrary` store (`projects/library.ts`) caches the enumerated `{id, name, modifiedAt}`
+  list + a subscribe seam; `projects/operations.ts` owns init/switch/create/rename/delete. A
+  **switch is the import-in-place flow** (flush -> repoint repo -> `projectStore.load` +
+  `editLog.restore` + `versionStore.reload`); the engine, MCP mirror, and autosave re-derive via
+  subscriptions and the AudioContext is preserved. History + samples are per-project (they already
+  live in the bundle). On first run an empty store seeds one project (the old single bundle is
+  discarded per the no-legacy rule). The switcher UI lands with the activity rail (next slice);
+  an interim project list sits in the library menu. Enumeration uses the OPFS directory handle, so
+  this needed no disk access - 15D (a user-visible disk folder) remains the durable follow-on.
+
 **Extension SDK - third-party instruments & effects (ecosystem + ownership)**
 
 The project is licensed **AGPL-3.0** (strong copyleft so a modified core can't be closed and
