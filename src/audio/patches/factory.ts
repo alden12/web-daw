@@ -89,7 +89,17 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
       "lfo.delay": 500,
       "amp.level": 0.75,
     },
-    [chorusI],
+    // A lush lead chain dialed in on the synth: chorus -> reverb -> a resonant filter
+    // sweep -> a light tremolo.
+    [
+      { type: "chorus", params: { "chorus.rate": 0.7, "chorus.depth": 0.15, mix: 0.43 } },
+      { type: "reverb", params: { "reverb.decay": 1.8, mix: 0.24 } },
+      {
+        type: "filter",
+        params: { "filter.cutoff": 5600, "filter.resonance": 6, "lfo.rate": 0.68, "lfo.depth": 0, mix: 1 },
+      },
+      { type: "tremolo", params: { "tremolo.rate": 9.6, "tremolo.depth": 0.09, mix: 1 } },
+    ],
   ),
   nimbus(
     "Lead",
