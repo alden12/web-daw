@@ -913,7 +913,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   **Worker** (the AudioWorklet can't touch OPFS, `crypto.subtle.digest` is one-shot, `decodeAudioData`
   detaches its buffer); and `navigator.storage.persist()` + a quota meter (OPFS is evicted LRU). The
   **drum rack** + the deferred **per-track groove override** is the next slice (pads reference the
-  same library).
+  same library). Also: the left **Samples view lists only the project's imported assets** - the
+  bundled CC0 built-ins (`BUILTIN_SAMPLES`, offered in the sample picker's "Built-in" group) don't
+  appear there. *Follow-on:* surface the built-in kit as a "Built-in" group in the Samples view too
+  (and make library entries drag-able onto a pad / the Sampler, folding into the `sampleDnd` follow-on).
 - **Drum machine (drum-kit instrument + step grid) - DONE (slice 58).** A **`drumkit`** instrument
   ([instruments/Drumkit.ts](src/audio/instruments/Drumkit.ts)): a bank of one-shot sample players (up to
   `DRUMKIT_PADS`) where a played MIDI note *selects a pad* rather than pitching one sample. **Which note
