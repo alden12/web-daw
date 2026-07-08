@@ -440,6 +440,49 @@ export class ProjectStore {
   }
 
   /**
+   * Apply a patch to an existing instrument track (auditioning a patch on the current
+   * track): replace its instrument, parameter values, and effect chain, keeping the
+   * track's clips, name, and mix. A pure function of its argument (effect ids carried
+   * in), so delta replay is deterministic. No-op on a non-instrument track.
+   *
+   * The instrument is handled two ways so the engine keeps making sound: on a *type
+   * change* the ParamStore is replaced and the engine swaps the instrument node and
+   * rebinds to the new store; on the *same* instrument the existing store is mutated in
+   * place, because the engine's live param bindings are subscribed to that object.
+   */
+  applyPatchToTrack(spec: {
+    trackId: string;
+    instrumentType: string;
+    params: PatchValues;
+    effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+  }): void {
+    const track = this.getTrack(spec.trackId);
+    if (!track || track.kind !== "instrument") return;
+    const type = hasInstrument(spec.instrumentType) ? spec.instrumentType : DEFAULT_INSTRUMENT;
+    const schema = instrumentSchema(type);
+    // The patch may set only some params; fill the rest from schema defaults so the
+    // applied sound is the patch's, not a blend with whatever the track held before.
+    const values = {
+      ...Object.fromEntries(schema.map((paramSpec) => [paramSpec.id, paramSpec.default])),
+      ...spec.params,
+    };
+    if (track.instrumentType !== type) {
+      track.instrumentType = type;
+      track.params = new ParamStore(schema);
+    }
+    track.params.load(values);
+    // Replace the effect chain (the engine reconciles effect add/remove by id).
+    for (const effect of [...track.effects]) this.removeEffect(track.id, effect.id);
+    for (const fx of spec.effects) {
+      const effect = this.addEffect(track.id, fx.type, fx.id);
+      if (!effect) continue;
+      effect.params.load(fx.params);
+      if (fx.bypassed) this.setEffectBypass(track.id, fx.id, true);
+    }
+    this.emit();
+  }
+
+  /**
    * Create an empty audio track (no clips/placements yet) - the audio peer of an
    * empty instrument track. It renders an empty lane and an empty workbench until a
    * take is recorded into it (`addAudioClip`) or a clip is dropped onto it. Files into

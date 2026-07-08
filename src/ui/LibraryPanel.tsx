@@ -20,6 +20,7 @@ import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
 import { type Patch, listPatches, removePatch, subscribePatches } from "../audio/patches/library";
+import { FACTORY_PATCHES } from "../audio/patches/factory";
 import type { LibraryView } from "./ActivityRail";
 import { ActivityView } from "./ActivityView";
 import { ProjectView } from "./ProjectView";
@@ -44,6 +45,25 @@ function audioDuration(file: Blob): Promise<number> {
   });
 }
 
+/** The "+" affordance on a library row: add the instrument/patch as a new track (as
+ *  opposed to the row's primary click, which applies it to the current track). */
+function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="shrink-0 w-6 text-center text-[16px] leading-none text-faint hover:text-bright cursor-pointer opacity-0 group-hover:opacity-100"
+    >
+      +
+    </button>
+  );
+}
+
 /** A catalog leaf: click to add an instrument track (or attach an effect to the selection). */
 function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: () => void }) {
   return (
@@ -59,27 +79,44 @@ function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: ()
   );
 }
 
-/** A saved-patch row: click the name to add a track, the kebab to delete the patch. */
-function PatchLeaf({ patch, onAdd, onDelete }: { patch: Patch; onAdd: () => void; onDelete: () => void }) {
+/** A patch row: click the name to add a track, the kebab to delete it. Factory presets
+ *  are read-only (no `onDelete`), marked with a neutral dot instead of an author color. */
+function PatchLeaf({
+  patch,
+  onApply,
+  onNew,
+  onDelete,
+  indent = false,
+}: {
+  patch: Patch;
+  /** Primary click: apply to the current track (audition). */
+  onApply: () => void;
+  /** The "+" button: add as a new track. */
+  onNew?: () => void;
+  onDelete?: () => void;
+  /** Extra left padding when nested under an instrument in the tree. */
+  indent?: boolean;
+}) {
+  const dot = patch.builtin ? "bg-line" : patch.author === "claude" ? "bg-claude" : "bg-you";
   return (
-    <div className="group flex items-center w-full pl-3.5 pr-2 hover:bg-you/10">
+    <div className={`group flex items-center w-full ${indent ? "pl-9" : "pl-3.5"} pr-2 hover:bg-you/10`}>
       <button
         type="button"
-        onClick={onAdd}
+        onClick={onApply}
+        title={`Apply "${patch.name}" to the selected track`}
         className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
       >
-        <span
-          aria-hidden="true"
-          title={`Saved by ${patch.author === "claude" ? "Claude" : "you"}`}
-          className={`w-1.75 h-1.75 rounded-sm shrink-0 ${patch.author === "claude" ? "bg-claude" : "bg-you"}`}
-        />
+        <span aria-hidden="true" className={`w-1.75 h-1.75 rounded-sm shrink-0 ${dot}`} />
         <span className="truncate">{patch.name}</span>
       </button>
-      <Menu
-        label={`Patch actions: ${patch.name}`}
-        triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
-        items={[{ label: "Delete patch", danger: true, onClick: onDelete }]}
-      />
+      {onNew && <AddButton label={`Add "${patch.name}" as a new track`} onClick={onNew} />}
+      {onDelete && (
+        <Menu
+          label={`Patch actions: ${patch.name}`}
+          triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+          items={[{ label: "Delete patch", danger: true, onClick: onDelete }]}
+        />
+      )}
     </div>
   );
 }
@@ -135,6 +172,7 @@ export function LibraryPanel({
 }) {
   const project = useProject(projectStore);
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
+  const [expandedInstruments, setExpandedInstruments] = useState<Set<string>>(() => new Set());
   const [importError, setImportError] = useState<string | null>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -171,6 +209,36 @@ export function LibraryPanel({
   };
 
   const addInstrument = (type: string) => dispatch({ type: "createTrack", instrumentType: type, id: newTrackId() });
+
+  // Auditioning: clicking an instrument/patch applies it to the selected instrument
+  // track (so you can play it on your part); the "+" on each row adds it as a new track
+  // instead. With no instrument track selected (none yet, or an audio track is), both
+  // fall back to adding a new track.
+  const selectedInstrumentTrack = project.tracks.find(
+    (track) => track.id === project.selectedTrackId && track.kind === "instrument",
+  );
+  const applyInstrument = (type: string) => {
+    if (selectedInstrumentTrack)
+      dispatch({ type: "setInstrument", trackId: selectedInstrumentTrack.id, instrumentType: type });
+    else addInstrument(type);
+  };
+  const applyPatchHere = (patch: Patch) => {
+    if (!selectedInstrumentTrack) return addFromPatch(patch);
+    dispatch({
+      type: "applyPatch",
+      trackId: selectedInstrumentTrack.id,
+      name: patch.name,
+      instrumentType: patch.instrumentType,
+      params: patch.params,
+      effects: patch.effects.map((fx) => ({
+        id: newEffectId(),
+        type: fx.type,
+        bypassed: fx.bypassed,
+        params: fx.params,
+      })),
+    });
+  };
+
   const addEffect = (type: string) => {
     const hostId = projectStore.selectedId;
     if (hostId) dispatch({ type: "addEffect", hostId, effectType: type, id: newEffectId() });
@@ -208,11 +276,17 @@ export function LibraryPanel({
     }
   };
 
+  // Factory presets (shipped, read-only) sit alongside the user's saved patches
+  // everywhere patches appear: the flat Patches view, search, and nested under their
+  // instrument in the Instruments view.
+  const allPatches = [...FACTORY_PATCHES, ...patches];
+  const patchesFor = (instrumentType: string) => allPatches.filter((patch) => patch.instrumentType === instrumentType);
+
   const query = search.trim().toLowerCase();
   const matches = (label: string) => label.toLowerCase().includes(query);
   const instruments = pickableInstrumentInfos().filter((def) => matches(def.label));
   const effects = effectInfos().filter((def) => matches(def.label));
-  const matchedPatches = patches.filter((patch) => matches(patch.name));
+  const matchedPatches = allPatches.filter((patch) => matches(patch.name));
   const matchedSamples = project.samples.filter((sample) => matches(sample.name));
   const matchedTracks = project.tracks.filter((track) => matches(track.name));
 
@@ -257,7 +331,7 @@ export function LibraryPanel({
             <>
               <SectionLabel>Instruments</SectionLabel>
               {instruments.map((def) => (
-                <Leaf key={def.type} label={def.label} onClick={() => pickResult(() => addInstrument(def.type))} />
+                <Leaf key={def.type} label={def.label} onClick={() => pickResult(() => applyInstrument(def.type))} />
               ))}
             </>
           )}
@@ -276,8 +350,9 @@ export function LibraryPanel({
                 <PatchLeaf
                   key={patch.id}
                   patch={patch}
-                  onAdd={() => pickResult(() => addFromPatch(patch))}
-                  onDelete={() => removePatch(patch.id)}
+                  onApply={() => pickResult(() => applyPatchHere(patch))}
+                  onNew={() => pickResult(() => addFromPatch(patch))}
+                  onDelete={patch.builtin ? undefined : () => removePatch(patch.id)}
                 />
               ))}
             </>
@@ -301,9 +376,61 @@ export function LibraryPanel({
     activity: () => <ActivityView editLog={editLog} versionStore={versionStore} />,
     instruments: () => (
       <div className="py-1">
-        {pickableInstrumentInfos().map((def) => (
-          <Leaf key={def.type} label={def.label} onClick={() => addInstrument(def.type)} />
-        ))}
+        {pickableInstrumentInfos().map((def) => {
+          const defPatches = patchesFor(def.type);
+          const expanded = expandedInstruments.has(def.type);
+          return (
+            <div key={def.type}>
+              <div className="group flex items-center w-full hover:bg-you/10">
+                {/* Disclosure appears only for instruments that actually have patches,
+                    so the list stays flat until there's something to expand. */}
+                {defPatches.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedInstruments((set) => {
+                        const next = new Set(set);
+                        if (next.has(def.type)) next.delete(def.type);
+                        else next.add(def.type);
+                        return next;
+                      })
+                    }
+                    aria-label={expanded ? `Collapse ${def.label} presets` : `Expand ${def.label} presets`}
+                    className="shrink-0 w-7 pl-2 text-left text-[18px] leading-none text-faint hover:text-ink py-1 cursor-pointer"
+                  >
+                    {expanded ? "▾" : "▸"}
+                  </button>
+                ) : (
+                  <span className="shrink-0 w-7 pl-2" />
+                )}
+                <button
+                  type="button"
+                  onClick={() => applyInstrument(def.type)}
+                  title={`Set the selected track to ${def.label}`}
+                  className="flex items-center gap-2.5 flex-1 min-w-0 text-left pr-2 py-1.5 text-[12.5px] text-ink cursor-pointer"
+                >
+                  <span aria-hidden="true" className="w-1.75 h-1.75 rounded-sm shrink-0 bg-line" />
+                  <span className="truncate">{def.label}</span>
+                  {defPatches.length > 0 && (
+                    <span className="ml-auto shrink-0 font-mono text-[9px] text-faint">{defPatches.length}</span>
+                  )}
+                </button>
+                <AddButton label={`Add a ${def.label} track`} onClick={() => addInstrument(def.type)} />
+              </div>
+              {expanded &&
+                defPatches.map((patch) => (
+                  <PatchLeaf
+                    key={patch.id}
+                    patch={patch}
+                    indent
+                    onApply={() => applyPatchHere(patch)}
+                    onNew={() => addFromPatch(patch)}
+                    onDelete={patch.builtin ? undefined : () => removePatch(patch.id)}
+                  />
+                ))}
+            </div>
+          );
+        })}
       </div>
     ),
     effects: () => (
@@ -315,6 +442,21 @@ export function LibraryPanel({
     ),
     patches: () => (
       <div className="py-1">
+        {/* Factory presets first, grouped by category; then the user's saved patches. */}
+        {[...new Set(FACTORY_PATCHES.map((patch) => patch.category))].map((category) => (
+          <div key={category}>
+            <SectionLabel>{category}</SectionLabel>
+            {FACTORY_PATCHES.filter((patch) => patch.category === category).map((patch) => (
+              <PatchLeaf
+                key={patch.id}
+                patch={patch}
+                onApply={() => applyPatchHere(patch)}
+                onNew={() => addFromPatch(patch)}
+              />
+            ))}
+          </div>
+        ))}
+        <SectionLabel>Saved</SectionLabel>
         {patches.length === 0 ? (
           <Hint>Save an instrument as a patch (in the workbench) to reuse it here.</Hint>
         ) : (
@@ -322,7 +464,8 @@ export function LibraryPanel({
             <PatchLeaf
               key={patch.id}
               patch={patch}
-              onAdd={() => addFromPatch(patch)}
+              onApply={() => applyPatchHere(patch)}
+              onNew={() => addFromPatch(patch)}
               onDelete={() => removePatch(patch.id)}
             />
           ))

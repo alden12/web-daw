@@ -39,9 +39,10 @@ test("selecting a track in the tree selects it in the workbench", async ({ page 
   await page.goto("/");
   await dismissStart(page);
 
-  // Instruments is the default view; add a Sampler track (it becomes selected, so the
-  // workbench tab's kind chip = sampler).
-  await page.getByRole("button", { name: "Sampler", exact: true }).click();
+  // Instruments is the default view; add a Sampler as a NEW track via its "+" (the row's
+  // primary click would instead apply it to the selected seed track). It becomes
+  // selected, so the workbench tab's kind chip = sampler.
+  await page.getByRole("button", { name: "Add a Sampler track", exact: true }).click();
   await expect(page.getByRole("tablist").getByText("sampler", { exact: true })).toBeVisible();
 
   // In the project tree, select the seed (subtractive) track -> the workbench follows.

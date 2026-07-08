@@ -30,6 +30,10 @@ export interface Patch {
   params: PatchValues;
   effects: PatchEffect[];
   createdAt: number;
+  /** True for a shipped factory preset (read-only, not in localStorage - see factory.ts). */
+  builtin?: boolean;
+  /** Optional grouping label for the library (factory presets set this, e.g. "Bass"). */
+  category?: string;
 }
 
 const STORAGE_KEY = "web-daw:patches:v1";

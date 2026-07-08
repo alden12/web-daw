@@ -969,12 +969,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   switches) keep every param a *number*, so `WorkletInstrument` binds them all generically - the synth
   appears in the library, the knob panel, and the MCP palette with no per-param code. Continuous
   modulation (pitch/PWM/cutoff) refreshes per block; the VCA envelope runs per sample. Its signature
-  lushness comes from the existing **Chorus effect** (bundled into the patches, next). Remaining in the
-  arc: the **patch bank** below, then (later) a **Minimoog-style mono** lead/bass voice reusing the
-  ladder filter. Nimbus is the test-bed for the tonic-relative display (see "Key & tonic-relative
-  intervals").
-  - *Patch bank (next slice):* ~20-40 categorized "inspired-by" presets (bass / lead / pad / keys /
-    pluck) with original names, each bundling the chorus effect, via the existing patches library.
+  lushness comes from the existing **Chorus effect** (bundled into the patches). Remaining in the arc:
+  (later) a **Minimoog-style mono** lead/bass voice reusing the ladder filter. Nimbus is the test-bed
+  for the tonic-relative display (see "Key & tonic-relative intervals").
+  - *Patch bank + auditioning - DONE (slice 57).* A shipped **factory patch bank** for Nimbus
+    (`patches/factory.ts`, pure read-only data reusing the `Patch` shape) - categorized "inspired-by"
+    presets (bass / lead / pad / keys / pluck / brass / fx) with original names, chorus bundled where
+    apt; a unit test validates the whole bank against the schemas. Factory + saved patches appear in
+    the Patches view, search, and **nested under their instrument** in the Instruments view (a
+    collapsed-by-default disclosure with a count, so no clutter). **Clicking** an instrument/patch now
+    **applies it to the selected track** (audition/play in place) via a new `applyPatch` edit - which
+    mutates the existing ParamStore on a same-instrument apply so the engine's live bindings keep
+    working, and replaces it on an instrument change - while a per-row **"+"** adds it as a new track.
+    Follow-on: **drag** an instrument/patch onto a track / device rack (a `sampleDnd`-style DnD).
 - **The flagship-synth arc, as originally scoped** (kept for the licensing rationale + design notes;
   the synth itself landed above). Turn web-daw into a serious composition platform with one
   genuinely good analog-style synth and a bank of professional patches, built on the worklet-instrument

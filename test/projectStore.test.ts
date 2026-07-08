@@ -526,3 +526,46 @@ describe("ProjectStore setInstrument (empty tracks)", () => {
     p.setInstrument("nope", "fm"); // missing track -> no throw
   });
 });
+
+describe("ProjectStore applyPatchToTrack (audition a patch on an existing track)", () => {
+  it("replaces instrument, params, and effect chain, keeping the track's clips", () => {
+    const p = new ProjectStore(false);
+    const track = p.addTrack("subtractive");
+    p.getClipStore(track.id)!.addNote({ pitch: 60, start: 0 });
+    p.addEffect(track.id, "reverb");
+
+    p.applyPatchToTrack({
+      trackId: track.id,
+      instrumentType: "fm",
+      params: { "fm.ratio": 3 },
+      effects: [{ id: "fx-delay", type: "delay", params: { "delay.feedback": 0.5 } }],
+    });
+
+    const got = p.getTrack(track.id)!;
+    expect(got.kind).toBe("instrument");
+    if (got.kind !== "instrument") return;
+    expect(got.instrumentType).toBe("fm");
+    expect(got.params.get("fm.ratio")).toBe(3);
+    expect(got.effects.map((effect) => effect.type)).toEqual(["delay"]); // reverb replaced
+    expect(got.effects[0].params.get("delay.feedback")).toBe(0.5);
+    expect(p.getClipStore(track.id)!.getClip().notes).toHaveLength(1); // clips preserved
+  });
+
+  it("fills params the patch omits from the new instrument's defaults", () => {
+    const p = new ProjectStore(false);
+    const track = p.addTrack("fm");
+    track.params.set("fm.ratio", 9);
+    p.applyPatchToTrack({ trackId: track.id, instrumentType: "fm", params: {}, effects: [] });
+    const got = p.getTrack(track.id)!;
+    // Same instrument, empty patch -> every param reset to its schema default (not left at 9).
+    if (got.kind === "instrument") expect(got.params.get("fm.ratio")).toBe(2);
+  });
+
+  it("no-ops on an audio track or a missing track", () => {
+    const p = new ProjectStore(false);
+    const audio = p.addEmptyAudioTrack();
+    p.applyPatchToTrack({ trackId: audio.id, instrumentType: "fm", params: {}, effects: [] });
+    expect(p.getTrack(audio.id)!.kind).toBe("audio");
+    p.applyPatchToTrack({ trackId: "nope", instrumentType: "fm", params: {}, effects: [] }); // no throw
+  });
+});
