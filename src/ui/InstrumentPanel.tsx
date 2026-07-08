@@ -8,49 +8,12 @@
  * the same treatment for free; unknown namespaces just get a title-cased section.
  */
 import type { ParamStore } from "../audio/params/store";
-import type { ParamSpec } from "../audio/params/types";
 import { instrumentSchema, catalogEntry } from "../audio/instruments/catalog";
 import type { Dispatch } from "../audio/commands/types";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
 import { Knob, type SampleContext } from "./Knob";
-
-/** Friendly titles + display order for known id namespaces (the part before the dot). */
-const SECTION_LABELS: Record<string, string> = {
-  lfo: "LFO",
-  osc: "Oscillator",
-  fm: "FM",
-  super: "Unison",
-  organ: "Tone",
-  wt: "Wavetable",
-  sampler: "Sampler",
-  filter: "Filter",
-  env: "Envelope",
-  amp: "Amp",
-};
-const SECTION_ORDER = Object.keys(SECTION_LABELS);
-
-const namespaceOf = (id: string) => (id.includes(".") ? id.slice(0, id.indexOf(".")) : id);
-const sectionTitle = (namespace: string) =>
-  SECTION_LABELS[namespace] ?? namespace.charAt(0).toUpperCase() + namespace.slice(1);
-
-/** Group a schema into ordered sections by id namespace, preserving in-section order. */
-function toSections(schema: readonly ParamSpec[]): { namespace: string; specs: ParamSpec[] }[] {
-  const groups = new Map<string, ParamSpec[]>();
-  for (const spec of schema) {
-    const namespace = namespaceOf(spec.id);
-    const specs = groups.get(namespace) ?? [];
-    specs.push(spec);
-    groups.set(namespace, specs);
-  }
-  return [...groups.keys()]
-    .sort((a, b) => {
-      const ia = SECTION_ORDER.indexOf(a);
-      const ib = SECTION_ORDER.indexOf(b);
-      return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
-    })
-    .map((namespace) => ({ namespace, specs: groups.get(namespace)! }));
-}
+import { toSections, sectionTitle } from "./paramSections";
 
 export function InstrumentPanel({
   params,

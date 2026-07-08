@@ -5,6 +5,7 @@ import type { NumberSpec, ParamSchema } from "../src/audio/params/types";
 
 const schema: ParamSchema = [
   { id: "num", label: "Num", kind: "number", min: 0, max: 10, default: 5 },
+  { id: "stepped", label: "Stepped", kind: "number", min: -24, max: 24, default: 0, step: 1 },
   { id: "choice", label: "Choice", kind: "enum", options: ["a", "b", "c"], default: "a" },
   { id: "flag", label: "Flag", kind: "boolean", default: false },
 ];
@@ -23,6 +24,16 @@ describe("ParamStore", () => {
     expect(store.get("num")).toBe(10);
     store.set("num", -50);
     expect(store.get("num")).toBe(0);
+  });
+
+  it("snaps a stepped number to its increment (and still clamps)", () => {
+    const store = new ParamStore(schema);
+    store.set("stepped", 3.4);
+    expect(store.get("stepped")).toBe(3);
+    store.set("stepped", -2.6);
+    expect(store.get("stepped")).toBe(-3);
+    store.set("stepped", 999);
+    expect(store.get("stepped")).toBe(24);
   });
 
   it("rejects invalid enum values by falling back to the default", () => {

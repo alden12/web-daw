@@ -11,6 +11,7 @@ import { useParam } from "../audio/params/useParam";
 import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
+import { pitchName } from "./noteNames";
 
 /** Extra context the `sample` control needs (the project library + import action);
  *  optional, since only instrument panels with a sample param supply it. */
@@ -28,9 +29,97 @@ const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
 type OnChange = (id: string, value: ParamValue) => void;
 
 function formatValue(spec: NumberSpec, value: number): string {
+  if (spec.format === "note") return pitchName(value);
   const decimals = Math.abs(value) < 10 && !Number.isInteger(value) ? 2 : 0;
   const text = value.toFixed(decimals);
   return spec.unit ? `${text} ${spec.unit}` : text;
+}
+
+/** A note-name dropdown for a `format: "note"` number param - the value stays a MIDI
+ *  note number, but it reads as C2/C#2/... to match the piano roll. */
+function NoteSelect({
+  spec,
+  store,
+  onChange,
+  hideLabel,
+}: {
+  spec: NumberSpec;
+  store: ParamStore;
+  onChange: OnChange;
+  hideLabel?: boolean;
+}) {
+  const [value] = useParam(store, spec.id);
+  const notes = Array.from({ length: spec.max - spec.min + 1 }, (_unused, index) => spec.min + index);
+  return (
+    <label className={hideLabel ? "flex items-center" : "flex flex-col items-center gap-1.5"}>
+      {!hideLabel && <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>}
+      <select
+        value={String(value)}
+        aria-label={spec.label}
+        onChange={(e) => onChange(spec.id, Number(e.target.value))}
+        className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
+      >
+        {notes.map((note) => (
+          <option key={note} value={note}>
+            {pitchName(note)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** A horizontal fader for a number param - label on the left, value on the right, track
+ *  stretching between. Used in the compact drum-pad layout. Snaps to `spec.step` via the
+ *  store's coercion. */
+function NumberHSlider({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+  const [value] = useParam(store, spec.id);
+  const drag = useRef<{ startX: number; width: number; startNorm: number } | null>(null);
+  const norm = toNormalized(spec, value as number);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startX: e.clientX, width: e.currentTarget.getBoundingClientRect().width, startNorm: norm };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const nextNorm = Math.min(
+      1,
+      Math.max(0, drag.current.startNorm + (e.clientX - drag.current.startX) / drag.current.width),
+    );
+    onChange(spec.id, fromNormalized(spec, nextNorm));
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    drag.current = null;
+  };
+
+  return (
+    <label className="flex items-center gap-2 w-full">
+      <span className="w-10 shrink-0 text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
+      <div
+        className="relative flex-1 h-2 rounded-full bg-ground border border-line cursor-ew-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
+        role="slider"
+        aria-label={spec.label}
+        aria-valuemin={spec.min}
+        aria-valuemax={spec.max}
+        aria-valuenow={value as number}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <span className="absolute left-0 top-0 bottom-0 rounded-full bg-you/70" style={{ width: `${norm * 100}%` }} />
+        <span
+          className="absolute top-1/2 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
+          style={{ left: `${norm * 100}%` }}
+        />
+      </div>
+      <span className="w-11 shrink-0 text-right font-mono text-[10px] text-ink">
+        {formatValue(spec, value as number)}
+      </span>
+    </label>
+  );
 }
 
 function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
@@ -136,14 +225,18 @@ export function Knob({
   onChange,
   sampleContext,
   variant = "knob",
+  hideLabel,
 }: {
   spec: ParamSpec;
   store: ParamStore;
   onChange: OnChange;
   /** Supplied by instrument panels so a `sample` param can browse/import; omitted elsewhere. */
   sampleContext?: SampleContext;
-  /** How a number param is drawn: a rotary knob (default) or a vertical fader. */
-  variant?: "knob" | "slider";
+  /** How a number param is drawn: a rotary knob (default), a vertical fader, or a
+   *  horizontal fader row (label left, value right). */
+  variant?: "knob" | "slider" | "row";
+  /** Drop the control's own label (the surrounding layout supplies it). */
+  hideLabel?: boolean;
 }) {
   const [value] = useParam(store, spec.id);
 
@@ -151,7 +244,11 @@ export function Knob({
   // hook order is stable regardless of which renderer is picked.
   const renderers: Record<ParamSpec["kind"], () => ReactElement> = {
     number: () =>
-      variant === "slider" ? (
+      (spec as NumberSpec).format === "note" ? (
+        <NoteSelect spec={spec as NumberSpec} store={store} onChange={onChange} hideLabel={hideLabel} />
+      ) : variant === "row" ? (
+        <NumberHSlider spec={spec as NumberSpec} store={store} onChange={onChange} />
+      ) : variant === "slider" ? (
         <NumberSlider spec={spec as NumberSpec} store={store} onChange={onChange} />
       ) : (
         <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />

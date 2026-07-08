@@ -21,8 +21,16 @@ export interface NumberSpec extends BaseSpec {
   unit?: string;
   /** How a UI control maps its position to a value. Defaults to "linear". */
   taper?: "linear" | "exponential";
+  /** If set, values snap to this increment (e.g. 1 for whole semitones). */
+  step?: number;
   /** If set, value changes are smoothed/ramped over this many milliseconds. */
   smoothMs?: number;
+  /**
+   * How the value is displayed/edited. Defaults to a plain number control.
+   * "note" renders a note-name selector (C2, C#2, ...) matching the piano roll -
+   * still just a MIDI-note number under the hood.
+   */
+  format?: "note";
 }
 
 export interface EnumSpec extends BaseSpec {
