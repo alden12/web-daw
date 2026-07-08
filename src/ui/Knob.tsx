@@ -79,24 +79,83 @@ function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamS
   );
 }
 
+/** A vertical fader for a number param - the same drag logic as the knob, drawn as a
+ *  slider so sectioned instrument panels read like a hardware synth. */
+function NumberSlider({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+  const [value] = useParam(store, spec.id);
+  const drag = useRef<{ startY: number; startNorm: number } | null>(null);
+  const norm = toNormalized(spec, value as number);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startY: e.clientY, startNorm: norm };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const dy = e.clientY - drag.current.startY;
+    const nextNorm = Math.min(1, Math.max(0, drag.current.startNorm - dy * DRAG_SENSITIVITY));
+    onChange(spec.id, fromNormalized(spec, nextNorm));
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    drag.current = null;
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-1.5 w-12">
+      <div
+        className="relative w-2 h-16 rounded-full bg-ground border border-line cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
+        role="slider"
+        aria-label={spec.label}
+        aria-valuemin={spec.min}
+        aria-valuemax={spec.max}
+        aria-valuenow={value as number}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <span
+          className="absolute left-0 right-0 bottom-0 rounded-full bg-you/70"
+          style={{ height: `${norm * 100}%` }}
+        />
+        <span
+          className="absolute left-1/2 h-1.5 w-4 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
+          style={{ bottom: `${norm * 100}%` }}
+        />
+      </div>
+      <span className="text-[9px] uppercase tracking-wide text-muted text-center leading-tight">{spec.label}</span>
+      <span className="font-mono text-[10px] text-ink">{formatValue(spec, value as number)}</span>
+    </div>
+  );
+}
+
 export function Knob({
   spec,
   store,
   onChange,
   sampleContext,
+  variant = "knob",
 }: {
   spec: ParamSpec;
   store: ParamStore;
   onChange: OnChange;
   /** Supplied by instrument panels so a `sample` param can browse/import; omitted elsewhere. */
   sampleContext?: SampleContext;
+  /** How a number param is drawn: a rotary knob (default) or a vertical fader. */
+  variant?: "knob" | "slider";
 }) {
   const [value] = useParam(store, spec.id);
 
   // One renderer per kind (map dispatch). useParam runs above unconditionally, so
   // hook order is stable regardless of which renderer is picked.
   const renderers: Record<ParamSpec["kind"], () => ReactElement> = {
-    number: () => <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />,
+    number: () =>
+      variant === "slider" ? (
+        <NumberSlider spec={spec as NumberSpec} store={store} onChange={onChange} />
+      ) : (
+        <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />
+      ),
     enum: () => (
       <label className="flex flex-col items-center gap-1.5 w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>

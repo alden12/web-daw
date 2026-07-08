@@ -959,8 +959,24 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   attack/release envelopes, a one-pole tone control, and the sample-accurate dispatch). Same
   three-touch extension as any instrument (catalog + registry + the worklet module URL), so it
   shows up in the library, the InstrumentPanel knobs, and the MCP palette for free.
-- **Flagship synth + patch bank - roadmap (the next arc, built before the tonic-relative display so
-  there's a great voice to test it on).** Turn web-daw into a serious composition platform with one
+- **Flagship synth (Nimbus) - DONE (slice 56); patch bank next.** A warm, Juno-inspired **polyphonic
+  subtractive synth** built on the worklet-instrument framework (slice 39). Each of 16 voices mixes
+  band-limited **saw + pulse (PWM) + sub + noise** (PolyBLEP, pure `dsp/oscillators.ts`) through a
+  four-pole **resonant Moog-style ladder filter** (pure, unit-tested `dsp/ladder.ts` - the "the filter
+  is the sound" investment, reusable by future synths), shaped by a **full ADSR** (the amp env also
+  modulates the filter by an amount) with **key-track**, one global **LFO** (rate + delay/fade-in, to
+  pitch / filter / PWM), and subtle per-voice **drift**. Continuous osc-level knobs (rather than on/off
+  switches) keep every param a *number*, so `WorkletInstrument` binds them all generically - the synth
+  appears in the library, the knob panel, and the MCP palette with no per-param code. Continuous
+  modulation (pitch/PWM/cutoff) refreshes per block; the VCA envelope runs per sample. Its signature
+  lushness comes from the existing **Chorus effect** (bundled into the patches, next). Remaining in the
+  arc: the **patch bank** below, then (later) a **Minimoog-style mono** lead/bass voice reusing the
+  ladder filter. Nimbus is the test-bed for the tonic-relative display (see "Key & tonic-relative
+  intervals").
+  - *Patch bank (next slice):* ~20-40 categorized "inspired-by" presets (bass / lead / pad / keys /
+    pluck) with original names, each bundling the chorus effect, via the existing patches library.
+- **The flagship-synth arc, as originally scoped** (kept for the licensing rationale + design notes;
+  the synth itself landed above). Turn web-daw into a serious composition platform with one
   genuinely good analog-style synth and a bank of professional patches, built on the worklet-instrument
   framework (slice 39).
   - *Licensing posture.* Cloning a classic's **architecture and sound** is fine - signal topology is

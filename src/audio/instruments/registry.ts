@@ -39,6 +39,7 @@ registerInstrumentFactory("fm", (ctx, store) => new FmInstrument(ctx, store));
 registerInstrumentFactory("supersaw", (ctx, store) => new SupersawInstrument(ctx, store));
 registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, store));
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));
+registerInstrumentFactory("nimbus", (ctx, store) => new WorkletInstrument(ctx, store, "nimbus-processor"));
 registerInstrumentFactory("sampler", (ctx, store) => new SamplerInstrument(ctx, store));
 registerInstrumentFactory(EMPTY_INSTRUMENT, (ctx) => new SilentInstrument(ctx));
 

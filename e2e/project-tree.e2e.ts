@@ -67,6 +67,20 @@ test("add an empty track from a group, then assign it an instrument", async ({ p
   await expect(page.getByRole("tablist").getByText("fm", { exact: true })).toBeVisible();
 });
 
+test("assign the Nimbus synth to a track and see its controls", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await openProjects(page);
+
+  await page.getByRole("button", { name: /Add a track to main/i }).click();
+  await page.getByRole("menuitem", { name: "New MIDI track" }).click();
+  await page.getByRole("button", { name: "Nimbus", exact: true }).click();
+
+  // The tab's kind chip becomes the instrument, and its schema-driven controls render.
+  await expect(page.getByRole("tablist").getByText("nimbus", { exact: true })).toBeVisible();
+  await expect(page.getByText("Pulse Width", { exact: true })).toBeVisible();
+});
+
 test("add an empty audio track from a group's + menu", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);

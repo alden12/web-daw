@@ -44,7 +44,7 @@
      translucent handle. The transparent border + padding-box clip slims the
      visible thumb and insets it from the edges. */
   * {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
     scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
   }
   *::-webkit-scrollbar {
