@@ -11,7 +11,8 @@ import type { EditLog } from "../commands/editLog";
 import type { EditCommand } from "../commands/types";
 import type { VersionStore } from "../commands/history";
 import { newEffectId, newTrackId } from "../commands/ids";
-import { listPatches, savePatch, newPatchId } from "../patches/library";
+import { savePatch, newPatchId } from "../patches/library";
+import { allPatches, findPatch } from "../patches/factory";
 import { DEFAULT_WS_PORT } from "./protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "./protocol";
 
@@ -109,13 +110,32 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // replayable - effect ids minted here and carried in the command).
   const patchMethods: { [K in PatchMethod]: (params: Record<string, unknown>) => unknown } = {
     list: () =>
-      listPatches().map((pt) => ({
+      allPatches().map((pt) => ({
         id: pt.id,
         name: pt.name,
         author: pt.author,
         instrument: pt.instrumentType,
+        builtin: pt.builtin ?? false,
+        category: pt.category,
         effects: pt.effects.map((fx) => fx.type),
       })),
+    // Full specifics of one patch (param values + per-effect params), for inspecting or
+    // promoting a user patch into the factory bank. Searches factory + user by id/name.
+    get: (params) => {
+      const query = String(params.patch ?? "").trim();
+      const patch = findPatch(query);
+      if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
+      return {
+        id: patch.id,
+        name: patch.name,
+        author: patch.author,
+        instrument: patch.instrumentType,
+        builtin: patch.builtin ?? false,
+        category: patch.category,
+        params: patch.params,
+        effects: patch.effects.map((fx) => ({ type: fx.type, bypassed: fx.bypassed ?? false, params: fx.params })),
+      };
+    },
     save: (params) => {
       const trackId = (params.trackId as string | undefined) ?? projectStore.selectedId ?? undefined;
       const track = trackId ? projectStore.getTrack(trackId) : undefined;
@@ -136,9 +156,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     },
     apply: (params) => {
       const query = String(params.patch ?? "").trim();
-      const all = listPatches();
-      const patch =
-        all.find((pt) => pt.id === query) ?? all.find((pt) => pt.name.toLowerCase() === query.toLowerCase());
+      const patch = findPatch(query);
       if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
       const command: EditCommand = {
         type: "createTrackFromPatch",

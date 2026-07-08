@@ -981,7 +981,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     **applies it to the selected track** (audition/play in place) via a new `applyPatch` edit - which
     mutates the existing ParamStore on a same-instrument apply so the engine's live bindings keep
     working, and replaces it on an instrument change - while a per-row **"+"** adds it as a new track.
-    Follow-on: **drag** an instrument/patch onto a track / device rack (a `sampleDnd`-style DnD).
+    MCP sees the same content over the patch RPC: `list_patches` / `apply_patch` cover **factory +
+    user** patches, and a new **`get_patch`** returns one patch's full params + effect chain (so the
+    agent can inspect a sound or promote a user patch into the factory bank). Follow-on: **drag** an
+    instrument/patch onto a track / device rack (a `sampleDnd`-style DnD).
 - **The flagship-synth arc, as originally scoped** (kept for the licensing rationale + design notes;
   the synth itself landed above). Turn web-daw into a serious composition platform with one
   genuinely good analog-style synth and a bank of professional patches, built on the worklet-instrument

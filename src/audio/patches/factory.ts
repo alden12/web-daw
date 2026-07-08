@@ -11,7 +11,7 @@
  * ear-knowledge to Nimbus's schema, with the chorus effect bundled where the sound
  * wants that lush ensemble shimmer. Names are our own.
  */
-import type { Patch, PatchEffect } from "./library";
+import { listPatches, type Patch, type PatchEffect } from "./library";
 
 /** Juno-style chorus settings for the lush presets (bundled as the one effect). */
 const chorusI: PatchEffect = { type: "chorus", params: { "chorus.rate": 0.7, "chorus.depth": 0.35, mix: 0.5 } };
@@ -237,3 +237,16 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
     "amp.level": 0.7,
   }),
 ];
+
+/** Every patch the library can offer: the shipped factory presets plus the user's
+ *  saved patches. Used by the MCP patch RPC (list / apply / get) and the UI. */
+export function allPatches(): Patch[] {
+  return [...FACTORY_PATCHES, ...listPatches()];
+}
+
+/** Resolve a patch by exact id, else by case-insensitive name, across factory + user. */
+export function findPatch(query: string): Patch | undefined {
+  const q = query.trim();
+  const all = allPatches();
+  return all.find((patch) => patch.id === q) ?? all.find((patch) => patch.name.toLowerCase() === q.toLowerCase());
+}

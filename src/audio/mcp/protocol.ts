@@ -24,7 +24,7 @@ export type HistoryMethod = "commit" | "revert" | "history" | "diff" | "state";
  * the matching `patchReply` (correlated by `id`), the same shape as the history RPC.
  * `list` reads the library, `save` captures a track's sound, `apply` adds a track.
  */
-export type PatchMethod = "list" | "save" | "apply";
+export type PatchMethod = "list" | "save" | "apply" | "get";
 
 /** Sent by the browser tab to the server (state sync + RPC replies). */
 export type BrowserToServer =
