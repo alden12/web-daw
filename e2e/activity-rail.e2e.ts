@@ -69,8 +69,10 @@ test("typing in search jumps to the Search view with grouped results", async ({ 
 test("the workbench tab bar shows MCP; the header menu has undo/redo", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
-  // MCP status moved to the workbench tab bar's indicator area.
-  await expect(page.getByText("MCP")).toBeVisible();
+  // MCP status moved to the workbench tab bar's indicator area. The label only shows
+  // when connected (no server in e2e), but the indicator is always present via its
+  // tooltip - and never a warning, since the built-in agent does not need MCP.
+  await expect(page.locator('span[title^="MCP"]')).toBeVisible();
   // Undo/redo live in the library header's main (Project) menu.
   await page.getByRole("button", { name: "Project menu" }).click();
   await expect(page.getByRole("menuitem", { name: "Undo" })).toBeVisible();

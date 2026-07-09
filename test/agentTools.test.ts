@@ -92,4 +92,51 @@ describe("createAgentTools - writes go through dispatch", () => {
     await tool("rename_track").run({ track: trackId, name: "new name" });
     expect(store.getTrack(trackId)?.name).toBe("new name");
   });
+
+  it("mix_track sets volume through dispatch", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "subtractive" })) as { trackId: string };
+    await tool("mix_track").run({ track: trackId, volume: 0.5, muted: true });
+    const track = store.getTrack(trackId)!;
+    expect(track.volume).toBeCloseTo(0.5);
+    expect(track.muted).toBe(true);
+  });
+});
+
+describe("createAgentTools - effects", () => {
+  it("add_effect appends to the chain and list_effects reads it back", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "subtractive" })) as { trackId: string };
+    const added = (await tool("add_effect").run({ track: trackId, effect: "reverb" })) as { effectId: string };
+
+    const listed = (await tool("list_effects").run({ track: trackId })) as {
+      palette: { type: string }[];
+      effects: { id: string; type: string }[];
+    };
+    expect(listed.palette.map((entry) => entry.type)).toContain("reverb");
+    expect(listed.effects).toEqual([{ id: added.effectId, type: "reverb", bypassed: false }]);
+  });
+
+  it("rejects an unknown effect type", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "subtractive" })) as { trackId: string };
+    await expect(tool("add_effect").run({ track: trackId, effect: "bogus" })).rejects.toThrow(/Unknown effect/);
+  });
+
+  it("set_effect_parameter validates against the effect schema", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "subtractive" })) as { trackId: string };
+    const { effectId } = (await tool("add_effect").run({ track: trackId, effect: "reverb" })) as { effectId: string };
+
+    // Every effect has a `mix` param in 0..1.
+    await expect(
+      tool("set_effect_parameter").run({ track: trackId, effect_id: effectId, id: "mix", value: 0.25 }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      tool("set_effect_parameter").run({ track: trackId, effect_id: effectId, id: "nope", value: 1 }),
+    ).rejects.toThrow(/Unknown parameter/);
+  });
+
+  it("bypass_effect toggles bypass", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "subtractive" })) as { trackId: string };
+    const { effectId } = (await tool("add_effect").run({ track: trackId, effect: "delay" })) as { effectId: string };
+    await tool("bypass_effect").run({ track: trackId, effect_id: effectId, bypassed: true });
+    expect(store.getEffect(trackId, effectId)?.bypassed).toBe(true);
+  });
 });

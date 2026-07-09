@@ -12,12 +12,13 @@
  */
 import { z } from "zod";
 import type { AgentTool } from "./types";
-import type { ProjectStore, InstrumentTrack, Track } from "../project/projectStore";
+import type { ProjectStore, InstrumentTrack, Track, EffectInstance } from "../project/projectStore";
 import type { Dispatch } from "../commands/types";
 import type { NoteEvent } from "../sequencer/types";
 import type { ParamSpec, ParamValue } from "../params/types";
-import { newNoteId, newTrackId } from "../commands/ids";
+import { newEffectId, newNoteId, newTrackId } from "../commands/ids";
 import { hasInstrument, instrumentSchema, pickableInstrumentInfos } from "../instruments/catalog";
+import { effectInfos, effectSchema, hasEffect } from "../effects/catalog";
 import { validateParam } from "../params/validate";
 
 export interface AgentToolDeps {
@@ -73,6 +74,13 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
     const track = resolveTrack(trackId);
     if (track.kind !== "instrument") throw new Error(`Track "${track.id}" is an audio track, not an instrument track.`);
     return track;
+  };
+  const resolveEffect = (trackId: string | undefined, effectId: string): { track: Track; effect: EffectInstance } => {
+    const track = resolveTrack(trackId);
+    const effect = projectStore.getEffect(track.id, effectId);
+    if (!effect)
+      throw new Error(`No effect "${effectId}" on track "${track.id}". Call list_effects for its effect chain.`);
+    return { track, effect };
   };
 
   return [
@@ -227,6 +235,120 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
         const resolved = resolveTrack(track);
         dispatch({ type: "setTrack", trackId: resolved.id, name }, "claude");
         return { ok: true, trackId: resolved.id, name };
+      },
+    }),
+
+    defineTool({
+      name: "mix_track",
+      description:
+        "Adjust a track's mix: volume (0..1), mute, or solo (defaults to the selected track). Omit a field to leave it unchanged.",
+      schema: z.object({
+        track: z.string().optional(),
+        volume: z.number().min(0).max(1).optional(),
+        muted: z.boolean().optional(),
+        solo: z.boolean().optional(),
+      }),
+      run: ({ track, volume, muted, solo }) => {
+        const resolved = resolveTrack(track);
+        dispatch({ type: "setTrack", trackId: resolved.id, volume, muted, solo }, "claude");
+        return { ok: true, trackId: resolved.id, volume, muted, solo };
+      },
+    }),
+
+    defineTool({
+      name: "list_effects",
+      description:
+        "List a track's effect chain (id, type, bypassed) plus the effect palette you can add (defaults to the selected track).",
+      schema: z.object({ track: z.string().optional() }),
+      run: ({ track }) => {
+        const resolved = resolveTrack(track);
+        return {
+          trackId: resolved.id,
+          palette: effectInfos().map((info) => ({ type: info.type, label: info.label })),
+          effects: resolved.effects.map((effect) => ({ id: effect.id, type: effect.type, bypassed: effect.bypassed })),
+        };
+      },
+    }),
+
+    defineTool({
+      name: "list_effect_parameters",
+      description: "List an effect's parameters with current values and ranges (get effect ids from list_effects).",
+      schema: z.object({ track: z.string().optional(), effect_id: z.string() }),
+      run: ({ track, effect_id }) => {
+        const { track: resolved, effect } = resolveEffect(track, effect_id);
+        return {
+          trackId: resolved.id,
+          effectId: effect.id,
+          type: effect.type,
+          bypassed: effect.bypassed,
+          parameters: effectSchema(effect.type).map((spec) => describeParam(spec, effect.params.get(spec.id))),
+        };
+      },
+    }),
+
+    defineTool({
+      name: "add_effect",
+      description: "Add an effect to a track's chain. `effect` must be one of the palette types from list_effects.",
+      schema: z.object({ track: z.string().optional(), effect: z.string() }),
+      run: ({ track, effect }) => {
+        if (!hasEffect(effect)) {
+          throw new Error(
+            `Unknown effect "${effect}". Valid: ${effectInfos()
+              .map((info) => info.type)
+              .join(", ")}.`,
+          );
+        }
+        const resolved = resolveTrack(track);
+        const id = newEffectId();
+        dispatch({ type: "addEffect", hostId: resolved.id, effectType: effect, id }, "claude");
+        return { ok: true, trackId: resolved.id, effectId: id, effect };
+      },
+    }),
+
+    defineTool({
+      name: "remove_effect",
+      description: "Remove an effect from a track's chain by id (get ids from list_effects).",
+      schema: z.object({ track: z.string().optional(), effect_id: z.string() }),
+      run: ({ track, effect_id }) => {
+        const { track: resolved, effect } = resolveEffect(track, effect_id);
+        dispatch({ type: "removeEffect", hostId: resolved.id, effectId: effect.id }, "claude");
+        return { ok: true, trackId: resolved.id, effectId: effect.id };
+      },
+    }),
+
+    defineTool({
+      name: "set_effect_parameter",
+      description:
+        "Set an effect parameter by id (get ids/ranges from list_effect_parameters). Every effect has a `mix` (0..1).",
+      schema: z.object({
+        track: z.string().optional(),
+        effect_id: z.string(),
+        id: z.string(),
+        value: z.union([z.number(), z.string(), z.boolean()]),
+      }),
+      run: ({ track, effect_id, id, value }) => {
+        const { track: resolved, effect } = resolveEffect(track, effect_id);
+        let spec: ParamSpec;
+        try {
+          spec = effect.params.spec(id);
+        } catch {
+          throw new Error(`Unknown parameter "${id}" on ${effect.type}. Call list_effect_parameters for valid ids.`);
+        }
+        const error = validateParam(spec, value);
+        if (error) throw new Error(error);
+        dispatch({ type: "setEffectParam", hostId: resolved.id, effectId: effect.id, id, value }, "claude");
+        return { ok: true, trackId: resolved.id, effectId: effect.id, id, value };
+      },
+    }),
+
+    defineTool({
+      name: "bypass_effect",
+      description: "Enable or disable (bypass) an effect without removing it.",
+      schema: z.object({ track: z.string().optional(), effect_id: z.string(), bypassed: z.boolean() }),
+      run: ({ track, effect_id, bypassed }) => {
+        const { track: resolved, effect } = resolveEffect(track, effect_id);
+        dispatch({ type: "bypassEffect", hostId: resolved.id, effectId: effect.id, bypassed }, "claude");
+        return { ok: true, trackId: resolved.id, effectId: effect.id, bypassed };
       },
     }),
 
