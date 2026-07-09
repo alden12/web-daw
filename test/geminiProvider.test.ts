@@ -1,19 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { parseAssistantText, providerErrorMessage } from "../src/audio/agent/geminiProvider";
+import { parseReply, providerErrorMessage } from "../src/audio/agent/geminiProvider";
 
-describe("parseAssistantText", () => {
-  it("pulls the assistant content from an OpenAI-shaped response", () => {
-    const raw = JSON.stringify({ choices: [{ message: { role: "assistant", content: "four on the floor it is" } }] });
-    expect(parseAssistantText(raw)).toBe("four on the floor it is");
+describe("parseReply", () => {
+  it("pulls assistant text from an OpenAI-shaped response", () => {
+    const raw = JSON.stringify({ choices: [{ message: { role: "assistant", content: "four on the floor" } }] });
+    expect(parseReply(raw)).toEqual({ text: "four on the floor" });
+  });
+
+  it("pulls tool calls (with empty content) from the response", () => {
+    const raw = JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{ id: "c1", type: "function", function: { name: "set_tempo", arguments: '{"bpm":128}' } }],
+          },
+        },
+      ],
+    });
+    const reply = parseReply(raw);
+    expect(reply.text).toBe("");
+    expect(reply.toolCalls).toEqual([{ id: "c1", name: "set_tempo", arguments: '{"bpm":128}' }]);
   });
 
   it("throws on non-JSON", () => {
-    expect(() => parseAssistantText("<html>gateway error</html>")).toThrow(/not valid JSON/);
+    expect(() => parseReply("<html>gateway error</html>")).toThrow(/not valid JSON/);
   });
 
-  it("throws when there is no assistant text", () => {
-    expect(() => parseAssistantText(JSON.stringify({ choices: [] }))).toThrow(/no assistant text/);
-    expect(() => parseAssistantText(JSON.stringify({ choices: [{ message: {} }] }))).toThrow(/no assistant text/);
+  it("throws when there are no choices", () => {
+    expect(() => parseReply(JSON.stringify({ choices: [] }))).toThrow(/no choices/);
+  });
+
+  it("throws when a choice has neither text nor tool calls", () => {
+    expect(() => parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }))).toThrow(
+      /no assistant text or tool calls/,
+    );
   });
 });
 

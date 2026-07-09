@@ -172,6 +172,19 @@ iterates** - `instrumentSchema()`, `effectSchema()`, `pickableInstrumentInfos()`
 the catalog and it appears to *both* Claude Code and the in-app agent. No second
 catalog to maintain.
 
+> **Built** (tools + loop): [tools.ts](../src/audio/agent/tools.ts) defines the starter
+> set via a `defineTool` factory - each tool's one zod schema both validates the model's
+> arguments and generates the provider JSON Schema (`z.toJSONSchema`). Read tools
+> (`list_tracks`, `list_notes`, `list_parameters`) query `projectStore`; edit tools
+> (`create_track`, `add_notes`, `remove_notes`, `set_parameter`, `rename_track`,
+> `set_tempo`) go through `dispatch(command, "claude")` - so the agent's edits appear
+> live in the arrangement and the activity feed, with undo/history for free.
+> `set_parameter` validates against the catalog schema with `validateParam` before
+> dispatching. The [loop.ts](../src/audio/agent/loop.ts) `runAgent` executes tool calls,
+> feeds results back, and iterates to a step cap. More tools = more `defineTool` entries.
+> Verified against the live model (Gemini accepts the schemas, incl. the value union, and
+> emits tool calls).
+
 **2. The provider abstraction** - one narrow interface, so the model is swappable and
 the loop never learns a vendor's JSON dialect.
 
@@ -320,7 +333,7 @@ queue is needed to make them look alike.
 
 | Phase | What | Status |
 |------|------|--------|
-| 1 | Provider interface + `GeminiProvider` + key-proxy; `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | in progress: key-proxy + provider + bare chat done; tools/loop next |
+| 1 | Provider interface + `GeminiProvider` + key-proxy; `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
 | - | Streaming replies, richer tool-result rendering, cross-session memory, model-agnostic `Author` | polish / follow-on |

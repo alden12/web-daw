@@ -1,15 +1,27 @@
 /**
- * The agent panel (right): the in-app AI collaborator. For now it is a plain chat with
- * the model (via the key-proxy) - a first, visible end of the pipeline. Wiring it up to
- * actually read and edit the session (tools + the reason-act loop) is the next section;
- * see docs/AGENT.md. It is collapsed by default and mounts only when expanded; the
- * expand control lives in the workbench tab bar, so there is no idle rail.
+ * The agent panel (right): the in-app AI collaborator. It chats with the model (via the
+ * key-proxy) and can inspect and edit the session by calling tools - the reason-act loop
+ * runs its tools through the same `dispatch` the UI uses, so its edits show up live in
+ * the arrangement and in the activity feed. See docs/AGENT.md. Collapsed by default,
+ * mounts only when expanded; the expand control lives in the workbench tab bar.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
+import { createAgentTools } from "../audio/agent/tools";
+import type { ProjectStore } from "../audio/project/projectStore";
+import type { Dispatch } from "../audio/commands/types";
 
-export function AgentPanel({ onCollapse }: { onCollapse: () => void }) {
-  const { turns, pending, error, send } = useAgentChat();
+export function AgentPanel({
+  onCollapse,
+  projectStore,
+  dispatch,
+}: {
+  onCollapse: () => void;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
+}) {
+  const tools = useMemo(() => createAgentTools({ projectStore, dispatch }), [projectStore, dispatch]);
+  const { turns, pending, error, send } = useAgentChat(tools);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -63,7 +75,23 @@ export function AgentPanel({ onCollapse }: { onCollapse: () => void }) {
             >
               {turn.role === "user" ? "You" : "Agent"}
             </div>
-            <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+            {turn.activity && turn.activity.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1">
+                {turn.activity.map((step, stepIndex) => (
+                  <span
+                    key={stepIndex}
+                    className={`font-mono text-[9px] rounded px-1.5 py-0.5 border ${
+                      step.ok ? "border-you/40 text-you" : "border-warn/50 text-warn"
+                    }`}
+                  >
+                    {step.ok ? "✓" : "✕"} {step.name}
+                  </span>
+                ))}
+              </div>
+            )}
+            {turn.content && (
+              <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+            )}
           </div>
         ))}
         {pending && <div className="self-start font-mono text-[11px] text-faint">Agent is thinking...</div>}
