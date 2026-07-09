@@ -274,7 +274,12 @@ export function AppShell() {
           onExpandAgent={() => setAgentCollapsed(false)}
         />
         {!agentCollapsed && (
-          <AgentPanel onCollapse={() => setAgentCollapsed(true)} projectStore={projectStore} dispatch={dispatch} />
+          <AgentPanel
+            onCollapse={() => setAgentCollapsed(true)}
+            projectStore={projectStore}
+            dispatch={dispatch}
+            scheduler={scheduler}
+          />
         )}
         <ArrangementTimeline
           projectStore={projectStore}

@@ -172,20 +172,20 @@ iterates** - `instrumentSchema()`, `effectSchema()`, `pickableInstrumentInfos()`
 the catalog and it appears to *both* Claude Code and the in-app agent. No second
 catalog to maintain.
 
-> **Built** (tools + loop): [tools.ts](../src/audio/agent/tools.ts) defines the tool set
-> via a `defineTool` factory - each tool's one zod schema both validates the model's
-> arguments and generates the provider JSON Schema (`z.toJSONSchema`). Read tools query
-> `projectStore` (`list_tracks`, `list_notes`, `list_parameters`, `list_effects`,
-> `list_effect_parameters`); edit tools go through `dispatch(command, "claude")` -
-> tracks/notes (`create_track`, `add_notes`, `remove_notes`, `set_parameter`,
-> `rename_track`, `mix_track`), effects (`add_effect`, `remove_effect`,
-> `set_effect_parameter`, `bypass_effect`), and `set_tempo` - so the agent's edits appear
-> live in the arrangement and the activity feed, with undo/history for free. Parameter
-> writes validate against the catalog schema with `validateParam` before dispatching. The
-> [loop.ts](../src/audio/agent/loop.ts) `runAgent` executes tool calls, feeds results
-> back, and iterates to a step cap. More tools = more `defineTool` entries (next:
-> clips/placements for arrangement, patches). Verified against the live model (Gemini
-> accepts the schemas, incl. the value union, and emits tool calls).
+> **Built** (tools + loop): the [tools/](../src/audio/agent/tools/) module defines the
+> set via a `defineTool` factory - each tool's one zod schema both validates the model's
+> arguments and generates the provider JSON Schema (`z.toJSONSchema`). It is grouped by
+> domain (`structure` = tracks + groups + selection, `clips` = notes + clip pool +
+> placements, `sound` = params + effects + patches, `project` = tempo/length/loop +
+> grooves + samples + transport), roughly at parity with the MCP tool surface. Read
+> tools query `projectStore`; edit tools go through `dispatch(command, "agent")` (the
+> agent's own voice) - the same path the UI and MCP use - so edits appear live in the
+> arrangement and the activity feed, with undo/history for free. Parameter writes
+> validate against the catalog schema (`validateParam`); selection + transport are live
+> calls (not durable edits). The [loop.ts](../src/audio/agent/loop.ts) `runAgent`
+> executes tool calls, feeds results back, and iterates to a step cap. More tools = one
+> more `defineTool` entry. Verified against the live model (Gemini accepts the generated
+> schemas, incl. the value union, and emits tool calls).
 
 **2. The provider abstraction** - one narrow interface, so the model is swappable and
 the loop never learns a vendor's JSON dialect.

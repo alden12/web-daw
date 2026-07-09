@@ -9,18 +9,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
 import { createAgentTools } from "../audio/agent/tools";
 import type { ProjectStore } from "../audio/project/projectStore";
+import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
 
 export function AgentPanel({
   onCollapse,
   projectStore,
   dispatch,
+  scheduler,
 }: {
   onCollapse: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
+  scheduler: Scheduler;
 }) {
-  const tools = useMemo(() => createAgentTools({ projectStore, dispatch }), [projectStore, dispatch]);
+  const tools = useMemo(
+    () => createAgentTools({ projectStore, dispatch, scheduler }),
+    [projectStore, dispatch, scheduler],
+  );
   const { turns, pending, error, send } = useAgentChat(tools);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
