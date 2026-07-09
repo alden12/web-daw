@@ -6,13 +6,18 @@
  * sessions (persisted). See docs/AGENT.md. Collapsed by default, mounts only when
  * expanded; the expand control lives in the workbench tab bar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
 import { useAgentSessions } from "./agentSessions";
 import { createAgentTools } from "../audio/agent/tools";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
+
+// Markdown rendering (react-markdown + highlight.js) is a few hundred KB, and only
+// assistant replies need it, so load it lazily - the panel shows the raw text first, then
+// upgrades to rendered markdown once the chunk arrives (and stays cached after).
+const Markdown = lazy(() => import("./Markdown").then((module) => ({ default: module.Markdown })));
 
 /** HH:MM in local time, for a message timestamp. */
 function formatClock(ms: number): string {
@@ -148,7 +153,7 @@ export function AgentPanel({
         {turns.length === 0 && !pending && !hasApiKey && (
           <div className="m-auto max-w-[16rem] text-center flex flex-col items-center gap-2.5">
             <p className="text-faint font-mono text-[11.5px] leading-relaxed">
-              Add your own Gemini API key to start chatting - it stays in this browser.
+              Add your own API key to start chatting - it stays in this browser.
             </p>
             <button
               type="button"
@@ -165,15 +170,8 @@ export function AgentPanel({
           </p>
         )}
         {turns.map((turn, index) => (
-          <div
-            key={index}
-            className={
-              turn.role === "user"
-                ? "self-end max-w-[85%] rounded-lg border border-you/40 bg-you/10 px-3 py-2"
-                : "self-start max-w-[85%] rounded-lg border border-line bg-card px-3 py-2"
-            }
-          >
-            <div className="mb-0.5 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
+          <div key={index} className={`w-full border-l-2 pl-3 ${turn.role === "user" ? "border-you" : "border-agent"}`}>
+            <div className="mb-1 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
               <span className={turn.role === "user" ? "text-you" : "text-agent"}>
                 {turn.role === "user" ? "You" : "Agent"}
               </span>
@@ -200,9 +198,18 @@ export function AgentPanel({
                 ))}
               </div>
             )}
-            {turn.content && (
-              <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
-            )}
+            {turn.content &&
+              (turn.role === "user" ? (
+                <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+              ) : (
+                <Suspense
+                  fallback={
+                    <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+                  }
+                >
+                  <Markdown>{turn.content}</Markdown>
+                </Suspense>
+              ))}
             {index === turns.length - 1 && canRetry && (
               <button
                 type="button"

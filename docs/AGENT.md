@@ -353,11 +353,13 @@ queue is needed to make them look alike.
 | 1 | Provider interface + one generic BYOK provider (Gemini / OpenAI / Anthropic, direct-to-provider, user's key); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
-| - | Streaming replies, richer tool-result rendering, per-project session scoping | polish / follow-on |
+| - | Streaming replies, richer tool-result rendering, per-project session scoping, a native Anthropic `/v1/messages` provider | polish / follow-on |
 
 Done alongside phase 1: a distinct **`agent` authorship voice** (violet) for the built-in
-agent, separate from `claude` (the MCP driver); and **switchable chat sessions**
-persisted to localStorage ([agentSessions.ts](../src/ui/agentSessions.ts)).
+agent, separate from `claude` (the MCP driver); **switchable chat sessions** persisted to
+localStorage ([agentSessions.ts](../src/ui/agentSessions.ts)); and full-width chat turns
+with **Markdown rendering** of replies (GFM + highlighted code via react-markdown, lazily
+loaded - see [Markdown.tsx](../src/ui/Markdown.tsx)).
 
 Each phase is its own stacked slice. Phase 1 is the only one with a concrete build; the
 rest are captured here so the direction is legible, not because they are next.

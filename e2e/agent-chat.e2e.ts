@@ -75,6 +75,28 @@ test("renders the assistant reply from the provider", async ({ page }) => {
   await expect(page.getByText("Try a syncopated hat.", { exact: true })).toBeVisible();
 });
 
+test("renders the assistant reply as markdown, not raw text", async ({ page }) => {
+  const markdown = '## Plan\n\nUse a **punchy** kick.\n\n```json\n{"note":60}\n```';
+  await page.route("**/chat/completions", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ choices: [{ message: { role: "assistant", content: markdown } }] }),
+    }),
+  );
+
+  await seedKey(page);
+  await openAgent(page);
+  await page.getByRole("textbox", { name: /message the agent/i }).fill("plan a beat");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  // Markdown structures render as elements (a heading, bold, a fenced code block), not as
+  // literal "##"/"**"/backticks.
+  await expect(page.getByRole("heading", { name: "Plan" })).toBeVisible();
+  await expect(page.locator(".md strong", { hasText: "punchy" })).toBeVisible();
+  await expect(page.locator(".md pre code")).toContainText('{"note":60}');
+});
+
 test("surfaces a provider error", async ({ page }) => {
   await page.route("**/chat/completions", (route) =>
     route.fulfill({
