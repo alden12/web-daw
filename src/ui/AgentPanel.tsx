@@ -6,7 +6,7 @@
  * sessions (persisted). See docs/AGENT.md. Collapsed by default, mounts only when
  * expanded; the expand control lives in the workbench tab bar.
  */
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
 import { useAgentSessions } from "./agentSessions";
 import { createAgentTools } from "../audio/agent/tools";
@@ -31,6 +31,21 @@ function formatTokens(count: number): string {
   return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
 }
 
+/** A one-line description of the user's current selection, prepended to each turn so the
+ *  agent knows what "this track"/"here"/"this clip" refer to without a tool call. */
+function selectionContext(projectStore: ProjectStore): string {
+  const id = projectStore.selectedId;
+  const track = id ? projectStore.getTrack(id) : undefined;
+  if (!track) return "Current selection: no track selected.";
+  const instrument = track.kind === "instrument" ? `, ${track.instrumentType}` : "";
+  const clip = track.clips.find((entry) => entry.id === track.activeClipId);
+  const clipPart = clip ? `; active clip "${clip.name}" (id ${clip.id})` : "; no clip open";
+  return (
+    `Current selection: track "${track.name}" (id ${track.id}${instrument})${clipPart}. ` +
+    `When the user says "this track", "here", "this clip" or similar, they mean this unless they say otherwise.`
+  );
+}
+
 export function AgentPanel({
   onCollapse,
   projectStore,
@@ -52,7 +67,8 @@ export function AgentPanel({
     [projectStore, dispatch, scheduler],
   );
   const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
-  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns);
+  const getContext = useCallback(() => selectionContext(projectStore), [projectStore]);
+  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns, { getContext });
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);

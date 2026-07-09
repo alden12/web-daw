@@ -7,6 +7,7 @@ import {
   instrumentSchema,
   hasInstrument,
 } from "../src/audio/instruments/catalog";
+import { BUILTIN_SAMPLES } from "../src/audio/samples/catalog";
 
 describe("drumkit catalog", () => {
   it("is a registered instrument", () => {
@@ -28,13 +29,19 @@ describe("drumkit catalog", () => {
     expect(drumkitSchema.find((spec) => spec.id === "amp.level")).toBeTruthy();
   });
 
-  it("defaults each pad's note to the contiguous layout from the base note", () => {
-    for (let pad = 1; pad <= DRUMKIT_PADS; pad++) {
-      const note = drumkitSchema.find((spec) => spec.id === `pad${pad}.note`);
-      expect(note?.kind === "number" && note.default, `pad${pad}.note default`).toBe(noteForPad(pad - 1));
-    }
+  it("defaults built-in pads to the General MIDI drum note, extra pads to the contiguous fallback", () => {
+    // The built-in kit follows the GM map (kick = 36, snare = 38, ...).
+    BUILTIN_SAMPLES.forEach((sample, index) => {
+      const note = drumkitSchema.find((spec) => spec.id === `pad${index + 1}.note`);
+      expect(note?.kind === "number" && note.default, `pad${index + 1}.note default`).toBe(sample.gmNote);
+    });
+    expect(BUILTIN_SAMPLES[0].gmNote).toBe(36); // kick
+    expect(BUILTIN_SAMPLES[1].gmNote).toBe(38); // snare (not a contiguous 37)
+
+    // Pads past the built-in kit fall back to a contiguous layout from the base note.
+    const firstExtra = drumkitSchema.find((spec) => spec.id === `pad${BUILTIN_SAMPLES.length + 1}.note`);
+    expect(firstExtra?.kind === "number" && firstExtra.default).toBe(noteForPad(BUILTIN_SAMPLES.length));
     expect(noteForPad(0)).toBe(DRUMKIT_BASE_NOTE);
-    expect(noteForPad(3)).toBe(DRUMKIT_BASE_NOTE + 3);
   });
 
   it("seeds the first pads with the built-in kit and leaves the rest empty", () => {

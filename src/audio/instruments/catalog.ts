@@ -322,8 +322,9 @@ export const samplerSchema: ParamSchema = [
 
 // Drum kit: a multi-pad sample player. A played MIDI note *selects a pad* (it does not
 // pitch the sample); which note fires a pad is a per-pad param (`pad{n}.note`), defaulting
-// to a contiguous low octave from DRUMKIT_BASE_NOTE - so the mapping is data (visible in
-// the panel, settable over MCP, remappable to a GM/hardware layout) rather than hardcoded.
+// to the built-in sound's General MIDI drum note (kick = 36, snare = 38, ...) so the kit
+// follows the GM standard - the mapping is data (visible in the panel, settable over MCP,
+// freely remappable) rather than hardcoded.
 // Each pad is a `sample` ref + note + level + tune, so the whole kit is schema-driven (no
 // per-pad code) - the sectioned instrument panel renders one section per pad, and
 // MCP/persistence come for free. Defaults load the built-in CC0 kit into the first pads.
@@ -331,9 +332,10 @@ export const samplerSchema: ParamSchema = [
 // The schema declares the maximum pad slots; the drum panel shows only the pads in use
 // (loaded, plus one you're adding) so a fresh kit isn't a wall of blanks.
 export const DRUMKIT_PADS = 32;
-export const DRUMKIT_BASE_NOTE = 60; // middle C (C4); pad n's default note is 60 + (n - 1), counting up
+export const DRUMKIT_BASE_NOTE = 36; // GM note 36 (kick), where the General MIDI drum map begins
 
-/** The default MIDI note for a 0-based pad index (the contiguous layout). */
+/** Fallback default note for a 0-based pad index, for pads past the built-in kit (which
+ *  seed their note from the sample's General MIDI note). Contiguous from the GM base. */
 export const noteForPad = (padIndex: number): number => DRUMKIT_BASE_NOTE + padIndex;
 
 const drumPadSpecs = (): ParamSpec[] =>
@@ -348,7 +350,9 @@ const drumPadSpecs = (): ParamSpec[] =>
         kind: "number",
         min: 0,
         max: 127,
-        default: noteForPad(index),
+        // Follow the General MIDI drum map for the built-in kit (kick = 36, snare = 38,
+        // ...); fall back to a contiguous layout for any extra pads.
+        default: builtin?.gmNote ?? noteForPad(index),
         taper: "linear",
         format: "note", // shown as a note-name selector (C2, ...), matching the piano roll
       },
