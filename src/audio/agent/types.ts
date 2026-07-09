@@ -1,12 +1,8 @@
 /**
  * Shared contract for the in-app agent (see docs/AGENT.md). Provider-agnostic and
- * OpenAI-shaped, so any OpenAI-compatible backend fits behind the key-proxy. This module
- * is DOM-free and is the one place the browser and the server-side proxy agree on the
- * endpoint path (mirrors how `mcp/protocol.ts` is shared with the Node MCP server).
+ * OpenAI-shaped, so any OpenAI-compatible backend fits behind the `AgentProvider` seam.
+ * DOM-free: pure types the loop, the provider, and the UI all agree on.
  */
-
-/** Where the browser posts a chat request; the key-proxy relays it to the provider. */
-export const AGENT_CHAT_PATH = "/api/agent/chat";
 
 /** A tool call the model wants run, as returned by the provider (OpenAI shape). */
 export interface ProviderToolCall {

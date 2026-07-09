@@ -1,12 +1,25 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * The in-app agent chat (phase 1). The provider call is stubbed at the network
- * (`/api/agent/chat`) so these are deterministic regardless of whether a key is set:
- * one asserts a rendered assistant reply, one asserts a surfaced proxy error. The real
- * browser -> proxy -> Gemini path is verified manually with a key in `.env`.
+ * The in-app agent chat (phase 1). The agent calls the provider (Gemini's OpenAI-compatible
+ * endpoint) directly from the browser with the user's own key (BYOK), so these stub the
+ * provider at the network (`**\/chat/completions`) and seed a dummy key in localStorage.
+ * One asserts a rendered reply, one the no-key prompt, one a surfaced provider error, one
+ * retry. The real browser -> Gemini path is verified manually with a real key in Settings.
  */
 test.use({ viewport: { width: 1320, height: 900 } });
+
+const AGENT_CONFIG_KEY = "web-daw:agent-config:v1";
+
+/** Seed a BYOK key so the provider actually calls out (and the route stub is hit). */
+async function seedKey(page: Page) {
+  await page.addInitScript(
+    ([storageKey]) => {
+      localStorage.setItem(storageKey, JSON.stringify({ apiKey: "test-key", model: "" }));
+    },
+    [AGENT_CONFIG_KEY],
+  );
+}
 
 async function dismissStart(page: Page) {
   const start = page.getByRole("button", { name: /start audio/i });
@@ -24,12 +37,23 @@ async function openAgent(page: Page) {
 }
 
 test("expands the panel and shows the chat composer", async ({ page }) => {
+  await seedKey(page);
   await openAgent(page);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
 });
 
+test("prompts for an API key when none is set", async ({ page }) => {
+  // No key seeded: the empty state offers Settings, and sending surfaces the no-key error.
+  await openAgent(page);
+  await expect(page.getByRole("button", { name: /open settings/i })).toBeVisible();
+
+  await page.getByRole("textbox", { name: /message the agent/i }).fill("hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText(/no api key set/i)).toBeVisible();
+});
+
 test("renders the assistant reply from the provider", async ({ page }) => {
-  await page.route("**/api/agent/chat", (route) =>
+  await page.route("**/chat/completions", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -37,6 +61,7 @@ test("renders the assistant reply from the provider", async ({ page }) => {
     }),
   );
 
+  await seedKey(page);
   await openAgent(page);
   await page.getByRole("textbox", { name: /message the agent/i }).fill("give me a groove idea");
   await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -46,26 +71,27 @@ test("renders the assistant reply from the provider", async ({ page }) => {
   await expect(page.getByText("Try a syncopated hat.", { exact: true })).toBeVisible();
 });
 
-test("surfaces a proxy error (e.g. the missing-key notice)", async ({ page }) => {
-  await page.route("**/api/agent/chat", (route) =>
+test("surfaces a provider error", async ({ page }) => {
+  await page.route("**/chat/completions", (route) =>
     route.fulfill({
       status: 503,
       contentType: "application/json",
-      body: JSON.stringify({ error: "AGENT_API_KEY is not set. Add it to .env (see .env.example)." }),
+      body: JSON.stringify({ error: { message: "The model is overloaded. Please try again later." } }),
     }),
   );
 
+  await seedKey(page);
   await openAgent(page);
   await page.getByRole("textbox", { name: /message the agent/i }).fill("hello there");
   await page.getByRole("button", { name: "Send", exact: true }).click();
 
   await expect(page.getByText("hello there", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/AGENT_API_KEY/i)).toBeVisible();
+  await expect(page.getByText(/model is overloaded/i)).toBeVisible();
 });
 
 test("a failed message can be retried and succeeds", async ({ page }) => {
   let calls = 0;
-  await page.route("**/api/agent/chat", (route) => {
+  await page.route("**/chat/completions", (route) => {
     calls += 1;
     if (calls === 1) {
       route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "upstream boom" }) });
@@ -78,6 +104,7 @@ test("a failed message can be retried and succeeds", async ({ page }) => {
     }
   });
 
+  await seedKey(page);
   await openAgent(page);
   await page.getByRole("textbox", { name: /message the agent/i }).fill("do it");
   await page.getByRole("button", { name: "Send", exact: true }).click();

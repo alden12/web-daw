@@ -216,22 +216,30 @@ We start with `GeminiProvider` (free tier, native function-calling). Its request
 shape differs slightly from Claude's/OpenAI's; that difference is absorbed *inside*
 `GeminiProvider` so `agentLoop` stays clean.
 
-**3. The key-proxy.** A model key in browser JS is exposed to anyone with devtools, so
-the provider never calls Gemini directly from the tab - it calls a tiny proxy endpoint
-that holds the key server-side and forwards the request. Building this from day one
-means the browser never sees a secret and swapping providers is a proxy config change.
+**3. The key: bring-your-own-key (BYOK).** The app is local-first and, hosted, has no
+server we run - so there is nowhere to keep a shared secret, and we do not want to pay for
+or police everyone's inference in v1. Instead the user brings their **own** provider key.
+Gemini's endpoint allows CORS from the browser (verified: it reflects the origin and
+allows `Authorization` + POST), so the provider calls it **directly** from the tab with
+that key. This makes local == deployed: there is no proxy to run.
 
-> **Built** ([server/agentProxy.ts](../server/agentProxy.ts)): a Vite dev middleware at
-> `/api/agent/chat`, configured by `AGENT_API_KEY` / `AGENT_BASE_URL` / `AGENT_MODEL` in
-> a gitignored `.env` (copy from [.env.example](../.env.example)). It is provider-agnostic
-> via the OpenAI-compatible base URL (Gemini by default), owns the model server-side, and
-> relays the upstream reply. `buildUpstreamRequest` is a pure, unit-tested helper. A real
-> deployment needs a hosted endpoint with auth + rate limiting (follow-on).
+> **Built** ([config.ts](../src/audio/agent/config.ts)): the key + model live in
+> `localStorage` (`web-daw:agent-config:v1`), set in a Settings dialog
+> ([AgentSettings.tsx](../src/ui/AgentSettings.tsx)) opened from the gear at the bottom of
+> the activity rail. [geminiProvider.ts](../src/audio/agent/geminiProvider.ts) reads the
+> key and POSTs to Gemini's OpenAI-compatible `/chat/completions` with a `Bearer` header;
+> with no key it returns a friendly "open Settings" error. The key is sent only to the
+> provider, never to any server we run. (An earlier dev-only Vite key-proxy has been
+> removed in favour of this.)
+>
+> Tradeoff, named honestly: a key in `localStorage` is exposed to any XSS on our origin -
+> the standard local-first risk. It is the user's own key (scoped + revocable), the
+> Settings copy says where it is stored, and we never log it. A hosted "our key, metered +
+> billed" option is a much larger follow-on (accounts, quotas, Stripe), not v1.
 
 ```mermaid
 flowchart LR
-    GEM["GeminiProvider<br/>(browser)"] -->|"POST /api/agent/chat"| PROXY["key-proxy<br/>(holds GEMINI_API_KEY)"]
-    PROXY -->|"with key"| GAPI["Gemini API"]
+    GEM["GeminiProvider<br/>(browser)"] -->|"Bearer &lt;user key&gt; from localStorage"| GAPI["Gemini API<br/>(CORS-enabled)"]
 ```
 
 **4. The panel.** `AgentPanel` ([ui/AgentPanel.tsx](../src/ui/AgentPanel.tsx)) is a
@@ -247,7 +255,7 @@ same way, and builds the `ToolRegistry` from them.
 > [geminiProvider.ts](../src/audio/agent/geminiProvider.ts) - the first visible end of
 > the pipeline. No tools yet, so it does not receive `dispatch`/`projectStore`; those
 > arrive with the `ToolRegistry`. The shared contract (`ChatMessage`, `AgentProvider`,
-> the endpoint path) lives in [agent/types.ts](../src/audio/agent/types.ts).
+> `ProviderReply`) lives in [agent/types.ts](../src/audio/agent/types.ts).
 
 ---
 
@@ -310,7 +318,10 @@ These are the promises phase 1 must keep so phase 2 is additive, not a rewrite:
    inherits undo, history, autosave, and engine reconciliation for free.
 5. **Tool schemas are derived from the catalogs, never hand-listed.** One action space;
    adding a cataloged instrument/effect extends the agent automatically.
-6. **Secrets stay server-side** behind the key-proxy. The browser never holds a key.
+6. **The model key is the user's own (BYOK), held only in the browser.** It is sent only
+   to the provider, never to a server we run, and never committed. Provider access still
+   goes through the one `AgentProvider` seam, so a future hosted/metered key path is a
+   provider swap, not a loop change.
 7. **Tool arguments and results are plain, serializable data** - structured-clone-safe:
    no functions, no live `AudioBuffer`, no store handles. This is the one actor
    restriction we adopt on day one: it is free in-process, and it is exactly what
@@ -335,7 +346,7 @@ queue is needed to make them look alike.
 
 | Phase | What | Status |
 |------|------|--------|
-| 1 | Provider interface + `GeminiProvider` + key-proxy; `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
+| 1 | Provider interface + `GeminiProvider` (BYOK, direct-to-provider); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
 | - | Streaming replies, richer tool-result rendering, per-project session scoping | polish / follow-on |

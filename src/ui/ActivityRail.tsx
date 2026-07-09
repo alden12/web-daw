@@ -87,12 +87,15 @@ export function ActivityRail({
   collapsed,
   onSelect,
   onToggleCollapse,
+  onOpenSettings,
 }: {
   active: LibraryView;
   collapsed: boolean;
   onSelect: (view: LibraryView) => void;
   /** Fired when the *active* icon is clicked: collapse the panel to the rail (or reopen). */
   onToggleCollapse: () => void;
+  /** Fired by the gear at the bottom: open the agent settings dialog. */
+  onOpenSettings: () => void;
 }) {
   return (
     <nav
@@ -123,6 +126,22 @@ export function ActivityRail({
           </button>
         );
       })}
+
+      {/* Agent settings (BYOK key) - pinned to the bottom, separate from the views. */}
+      <button
+        type="button"
+        title="Settings"
+        aria-label="Settings"
+        onClick={onOpenSettings}
+        className="mt-auto flex items-center justify-center w-full h-11 cursor-pointer text-faint hover:text-ink"
+      >
+        {svg(
+          <>
+            <circle cx="8" cy="8" r="2.1" />
+            <path d="M8 1.5v1.8M8 12.7v1.8M14.5 8h-1.8M3.3 8H1.5M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3M12.6 12.6l-1.3-1.3M4.7 4.7 3.4 3.4" />
+          </>,
+        )}
+      </button>
     </nav>
   );
 }

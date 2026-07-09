@@ -1,18 +1,12 @@
 /**
- * The default AgentProvider: talks to an OpenAI-compatible chat-completions API through
- * the key-proxy (`/api/agent/chat`), so the browser never holds the model key. Despite
- * the name it is provider-agnostic - the proxy decides the actual backend (Gemini by
- * default) via env; this side only speaks the OpenAI request/response shape, including
- * function-calling (tools in, `tool_calls` out). See docs/AGENT.md (phase 1).
+ * The default AgentProvider: talks to an OpenAI-compatible chat-completions API directly
+ * from the browser, authenticated with the user's own key (BYOK - see config.ts). Despite
+ * the name it is provider-agnostic: it speaks only the OpenAI request/response shape,
+ * including function-calling (tools in, `tool_calls` out), so any OpenAI-compatible
+ * backend fits by changing the base URL. See docs/AGENT.md (phase 1).
  */
-import {
-  AGENT_CHAT_PATH,
-  type AgentProvider,
-  type ChatMessage,
-  type ProviderReply,
-  type ProviderToolCall,
-  type ToolSpec,
-} from "./types";
+import { GEMINI_BASE_URL, readAgentConfig, resolveModel } from "./config";
+import type { AgentProvider, ChatMessage, ProviderReply, ProviderToolCall, ToolSpec } from "./types";
 
 /** Parse an OpenAI-shaped chat-completions response body into a provider reply. */
 export function parseReply(raw: string): ProviderReply {
@@ -68,27 +62,21 @@ function readToolCalls(message: { tool_calls?: unknown }): ProviderToolCall[] | 
   return calls.length > 0 ? calls : undefined;
 }
 
-/** How long to sit out a rate limit when the body gives no explicit hint (Gemini's free
- *  tier resets per minute). */
-const DEFAULT_COOLDOWN_SECONDS = 30;
-
-/** An error from the provider/proxy. Carries a cooldown (seconds) for rate limits, so the
- *  UI can offer retry with a live countdown. */
+/** An error from the provider, surfaced to the user in the chat. */
 export class ProviderError extends Error {
-  readonly retryAfterSeconds?: number;
-  constructor(message: string, retryAfterSeconds?: number) {
+  constructor(message: string) {
     super(message);
     this.name = "ProviderError";
-    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
-/** Turn a proxy/upstream error body into a message worth showing the user. Handles the
- *  proxy's `{ error: string }`, an upstream OpenAI-style `{ error: { message } }`, and
- *  gives rate limiting (429) a friendly note instead of the verbose quota dump. */
+/** Turn a provider error body into a message worth showing the user. Handles a plain
+ *  `{ error: string }`, an OpenAI-style `{ error: { message } }`, and gives rate limiting
+ *  (429) a friendly note instead of the verbose quota dump. Gemini's free tier caps
+ *  requests both per minute and (much lower) per day, so the note names both. */
 export function providerErrorMessage(raw: string, status: number): string {
   if (status === 429) {
-    return "Rate limited - too many requests in a short time. Gemini's free tier allows only a few a minute.";
+    return "Rate limited - Gemini's free tier has per-minute and per-day request limits. Wait a bit and try again; if it is the daily cap, it resets the next day.";
   }
   try {
     const error = (JSON.parse(raw) as { error?: unknown }).error;
@@ -102,17 +90,14 @@ export function providerErrorMessage(raw: string, status: number): string {
   return `The agent request failed (HTTP ${status}).`;
 }
 
-/** Pull a retry hint (seconds) out of a 429 body: Gemini includes "Please retry in 33.2s"
- *  and a RetryInfo "retryDelay: 33s". Falls back to a default cooldown. */
-export function retryAfterSeconds(raw: string): number {
-  const match = raw.match(/retry\s*(?:in|Delay['":\s]*)\s*([0-9]+(?:\.[0-9]+)?)\s*s/i);
-  return match ? Math.ceil(Number(match[1])) : DEFAULT_COOLDOWN_SECONDS;
-}
-
 export function createGeminiProvider(): AgentProvider {
   return {
     async chat(messages: ChatMessage[], tools?: ToolSpec[]): Promise<ProviderReply> {
-      const body: Record<string, unknown> = { messages };
+      const config = readAgentConfig();
+      if (!config.apiKey) {
+        throw new ProviderError("No API key set. Open Settings (the gear at the bottom of the left rail) and add one.");
+      }
+      const body: Record<string, unknown> = { messages, model: resolveModel(config), stream: false };
       if (tools && tools.length > 0) {
         body.tools = tools.map((tool) => ({
           type: "function",
@@ -120,15 +105,14 @@ export function createGeminiProvider(): AgentProvider {
         }));
         body.tool_choice = "auto";
       }
-      const response = await fetch(AGENT_CHAT_PATH, {
+      const response = await fetch(`${GEMINI_BASE_URL}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
         body: JSON.stringify(body),
       });
       const raw = await response.text();
       if (!response.ok) {
-        const cooldown = response.status === 429 ? retryAfterSeconds(raw) : undefined;
-        throw new ProviderError(providerErrorMessage(raw, response.status), cooldown);
+        throw new ProviderError(providerErrorMessage(raw, response.status));
       }
       return parseReply(raw);
     },

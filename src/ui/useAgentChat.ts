@@ -6,7 +6,7 @@
  * tools ran (for the activity chips). See docs/AGENT.md.
  */
 import { useCallback, useMemo, useState } from "react";
-import { createGeminiProvider, ProviderError } from "../audio/agent/geminiProvider";
+import { createGeminiProvider } from "../audio/agent/geminiProvider";
 import { runAgent } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
@@ -32,8 +32,6 @@ export interface ChatTurn {
 
 export interface ChatError {
   message: string;
-  /** When a retry is allowed again (epoch ms), from a rate-limit cooldown. */
-  retryAt?: number;
 }
 
 export function useAgentChat(
@@ -98,7 +96,5 @@ export function useAgentChat(
 }
 
 function toChatError(err: unknown): ChatError {
-  const message = err instanceof Error ? err.message : "Something went wrong talking to the agent.";
-  const cooldown = err instanceof ProviderError ? err.retryAfterSeconds : undefined;
-  return { message, retryAt: cooldown ? Date.now() + cooldown * 1000 : undefined };
+  return { message: err instanceof Error ? err.message : "Something went wrong talking to the agent." };
 }

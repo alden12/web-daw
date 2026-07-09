@@ -21,6 +21,8 @@ import { LibraryPanel } from "./LibraryPanel";
 import { ActivityRail, type LibraryView } from "./ActivityRail";
 import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
+import { AgentSettings } from "./AgentSettings";
+import { useAgentConfig } from "./useAgentConfig";
 import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
 import { StartDialog } from "./StartDialog";
@@ -75,6 +77,8 @@ export function AppShell() {
   const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const agentConfig = useAgentConfig();
 
   // Rail interaction: a non-active icon selects its view (opening the panel if
   // collapsed); the active icon toggles the panel collapsed.
@@ -250,6 +254,7 @@ export function AppShell() {
           collapsed={libCollapsed}
           onSelect={selectView}
           onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         {!libCollapsed && (
           <LibraryPanel
@@ -279,6 +284,8 @@ export function AppShell() {
             projectStore={projectStore}
             dispatch={dispatch}
             scheduler={scheduler}
+            hasApiKey={agentConfig.apiKey !== ""}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
         )}
         <ArrangementTimeline
@@ -320,6 +327,7 @@ export function AppShell() {
           style={{ left: RAIL_WIDTH, right: 0, bottom: effTimelineH }}
         />
       </div>
+      {settingsOpen && <AgentSettings config={agentConfig} onClose={() => setSettingsOpen(false)} />}
       {!started && <StartDialog onStart={handleStart} />}
     </div>
   );
