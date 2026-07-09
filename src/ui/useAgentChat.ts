@@ -6,7 +6,7 @@
  * tools ran (for the activity chips). See docs/AGENT.md.
  */
 import { useCallback, useMemo, useState } from "react";
-import { createGeminiProvider } from "../audio/agent/geminiProvider";
+import { createProvider } from "../audio/agent/provider";
 import { runAgent } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
@@ -40,7 +40,7 @@ export function useAgentChat(
   setTurns: (turns: ChatTurn[]) => void,
   provider?: AgentProvider,
 ) {
-  const agent = useMemo(() => provider ?? createGeminiProvider(), [provider]);
+  const agent = useMemo(() => provider ?? createProvider(), [provider]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
 

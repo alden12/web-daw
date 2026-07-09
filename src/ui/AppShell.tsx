@@ -23,6 +23,7 @@ import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
 import { AgentSettings } from "./AgentSettings";
 import { useAgentConfig } from "./useAgentConfig";
+import { activeKey } from "../audio/agent/config";
 import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
 import { StartDialog } from "./StartDialog";
@@ -284,7 +285,7 @@ export function AppShell() {
             projectStore={projectStore}
             dispatch={dispatch}
             scheduler={scheduler}
-            hasApiKey={agentConfig.apiKey !== ""}
+            hasApiKey={activeKey(agentConfig) !== ""}
             onOpenSettings={() => setSettingsOpen(true)}
           />
         )}

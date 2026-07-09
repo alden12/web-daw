@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReply, providerErrorMessage } from "../src/audio/agent/geminiProvider";
+import { parseReply, providerErrorMessage } from "../src/audio/agent/provider";
 
 describe("parseReply", () => {
   it("pulls assistant text from an OpenAI-shaped response", () => {

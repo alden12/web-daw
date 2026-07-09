@@ -1,11 +1,13 @@
 /**
- * The default AgentProvider: talks to an OpenAI-compatible chat-completions API directly
- * from the browser, authenticated with the user's own key (BYOK - see config.ts). Despite
- * the name it is provider-agnostic: it speaks only the OpenAI request/response shape,
- * including function-calling (tools in, `tool_calls` out), so any OpenAI-compatible
- * backend fits by changing the base URL. See docs/AGENT.md (phase 1).
+ * The AgentProvider: talks to an OpenAI-compatible chat-completions API directly from the
+ * browser, authenticated with the user's own key (BYOK - see config.ts). It is
+ * provider-agnostic - it speaks only the OpenAI request/response shape, including
+ * function-calling (tools in, `tool_calls` out) - so Gemini, OpenAI, and Anthropic all
+ * fit; the active provider only changes the base URL, model, and headers (see
+ * providers.ts). See docs/AGENT.md (phase 1).
  */
-import { GEMINI_BASE_URL, readAgentConfig, resolveModel } from "./config";
+import { activeKey, readAgentConfig, resolveModel } from "./config";
+import { PROVIDERS } from "./providers";
 import type { AgentProvider, ChatMessage, ProviderReply, ProviderToolCall, ToolSpec } from "./types";
 
 /** Parse an OpenAI-shaped chat-completions response body into a provider reply. */
@@ -72,11 +74,11 @@ export class ProviderError extends Error {
 
 /** Turn a provider error body into a message worth showing the user. Handles a plain
  *  `{ error: string }`, an OpenAI-style `{ error: { message } }`, and gives rate limiting
- *  (429) a friendly note instead of the verbose quota dump. Gemini's free tier caps
- *  requests both per minute and (much lower) per day, so the note names both. */
+ *  (429) a friendly note instead of the verbose quota dump. Free tiers often enforce a low
+ *  daily request cap (not just per-minute), so the note names it. */
 export function providerErrorMessage(raw: string, status: number): string {
   if (status === 429) {
-    return "Rate limited - Gemini's free tier has per-minute and per-day request limits. Wait a bit and try again; if it is the daily cap, it resets the next day.";
+    return "Rate limited - you've hit the provider's request limit. Wait a bit and try again; note that free tiers often enforce a low daily limit as well.";
   }
   try {
     const error = (JSON.parse(raw) as { error?: unknown }).error;
@@ -90,12 +92,16 @@ export function providerErrorMessage(raw: string, status: number): string {
   return `The agent request failed (HTTP ${status}).`;
 }
 
-export function createGeminiProvider(): AgentProvider {
+export function createProvider(): AgentProvider {
   return {
     async chat(messages: ChatMessage[], tools?: ToolSpec[]): Promise<ProviderReply> {
       const config = readAgentConfig();
-      if (!config.apiKey) {
-        throw new ProviderError("No API key set. Open Settings (the gear at the bottom of the left rail) and add one.");
+      const info = PROVIDERS[config.provider];
+      const apiKey = activeKey(config);
+      if (!apiKey) {
+        throw new ProviderError(
+          `No API key set for ${info.label}. Open Settings (the gear at the bottom of the left rail) and add one.`,
+        );
       }
       const body: Record<string, unknown> = { messages, model: resolveModel(config), stream: false };
       if (tools && tools.length > 0) {
@@ -105,9 +111,13 @@ export function createGeminiProvider(): AgentProvider {
         }));
         body.tool_choice = "auto";
       }
-      const response = await fetch(`${GEMINI_BASE_URL}/chat/completions`, {
+      const response = await fetch(`${info.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+          ...(info.extraHeaders ?? {}),
+        },
         body: JSON.stringify(body),
       });
       const raw = await response.text();

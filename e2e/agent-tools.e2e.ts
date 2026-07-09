@@ -9,12 +9,15 @@ import { test, expect, type Page } from "@playwright/test";
  */
 test.use({ viewport: { width: 1320, height: 900 } });
 
-const AGENT_CONFIG_KEY = "web-daw:agent-config:v1";
+const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
 
 async function seedKey(page: Page) {
   await page.addInitScript(
     ([storageKey]) => {
-      localStorage.setItem(storageKey, JSON.stringify({ apiKey: "test-key", model: "" }));
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ provider: "gemini", keys: { gemini: "test-key" }, models: {} }),
+      );
     },
     [AGENT_CONFIG_KEY],
   );

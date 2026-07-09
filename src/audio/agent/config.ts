@@ -1,34 +1,28 @@
 /**
  * The agent's model access, held in the browser (BYOK - bring your own key). The user
- * pastes their own provider API key in Settings; it lives only in this browser's
- * localStorage and is sent only to the provider (Google Gemini by default), never to any
- * server we run. This is what replaced the old dev-only key-proxy: with CORS open on the
- * provider, the browser can call it directly, so local == deployed and there is no server
- * secret to hold. See docs/AGENT.md (phase 1).
+ * picks a provider and pastes their own key for it in Settings; keys and per-provider
+ * model choices live only in this browser's localStorage and are sent only to the chosen
+ * provider, never to any server we run. With CORS open on every provider, the browser
+ * calls them directly, so local == deployed and there is no server secret to hold. See
+ * [providers.ts](./providers.ts) and docs/AGENT.md.
  *
  * Pure data + localStorage + a subscribe seam (no DOM, no React), mirroring the patch
  * library store. A cached snapshot keeps `readAgentConfig` referentially stable between
  * writes, so it is safe as a `useSyncExternalStore` getSnapshot.
  */
-
-/** Gemini's OpenAI-compatible base URL (no trailing slash). */
-export const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
-
-/** Default model: gemini-2.5-flash has free-tier quota (gemini-2.0-flash can report 0). */
-export const DEFAULT_MODEL = "gemini-2.5-flash";
-
-/** Where to get a key, shown in the settings panel. */
-export const GET_KEY_URL = "https://aistudio.google.com/apikey";
+import { PROVIDERS, toProviderId, type ProviderId } from "./providers";
 
 export interface AgentConfig {
-  /** The user's provider API key (Bearer token). Empty until they set one. */
-  apiKey: string;
-  /** Model id; blank falls back to DEFAULT_MODEL. */
-  model: string;
+  /** The provider currently driving the agent. */
+  provider: ProviderId;
+  /** API key per provider (so several can be saved at once). */
+  keys: Partial<Record<ProviderId, string>>;
+  /** Model override per provider; blank falls back to that provider's default. */
+  models: Partial<Record<ProviderId, string>>;
 }
 
-const STORAGE_KEY = "web-daw:agent-config:v1";
-const EMPTY: AgentConfig = { apiKey: "", model: "" };
+const STORAGE_KEY = "web-daw:agent-config:v2";
+const EMPTY: AgentConfig = { provider: "gemini", keys: {}, models: {} };
 const listeners = new Set<() => void>();
 
 function store(): Storage | null {
@@ -39,14 +33,23 @@ function store(): Storage | null {
   }
 }
 
+/** Keep only string values keyed by a known provider id. */
+function cleanMap(value: unknown): Partial<Record<ProviderId, string>> {
+  if (typeof value !== "object" || value === null) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(([key, entry]) => key in PROVIDERS && typeof entry === "string"),
+  ) as Partial<Record<ProviderId, string>>;
+}
+
 function readFromStorage(): AgentConfig {
   const raw = store()?.getItem(STORAGE_KEY);
   if (!raw) return EMPTY;
   try {
     const parsed = JSON.parse(raw) as Partial<AgentConfig>;
     return {
-      apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
-      model: typeof parsed.model === "string" ? parsed.model : "",
+      provider: toProviderId(parsed.provider),
+      keys: cleanMap(parsed.keys),
+      models: cleanMap(parsed.models),
     };
   } catch {
     return EMPTY;
@@ -62,14 +65,19 @@ export function readAgentConfig(): AgentConfig {
 
 /** Replace the config and notify subscribers. */
 export function writeAgentConfig(config: AgentConfig): void {
-  cached = { apiKey: config.apiKey, model: config.model };
+  cached = { provider: config.provider, keys: { ...config.keys }, models: { ...config.models } };
   store()?.setItem(STORAGE_KEY, JSON.stringify(cached));
   for (const listener of listeners) listener();
 }
 
-/** The model to actually use (the configured one, or the default). */
+/** The active provider's API key (trimmed), or "" if none is set. */
+export function activeKey(config: AgentConfig): string {
+  return (config.keys[config.provider] ?? "").trim();
+}
+
+/** The model to use for the active provider (its override, or the provider default). */
 export function resolveModel(config: AgentConfig): string {
-  return config.model.trim() || DEFAULT_MODEL;
+  return (config.models[config.provider] ?? "").trim() || PROVIDERS[config.provider].defaultModel;
 }
 
 /** Subscribe to config changes. Returns an unsubscribe fn. */

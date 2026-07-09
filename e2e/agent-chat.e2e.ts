@@ -1,21 +1,25 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * The in-app agent chat (phase 1). The agent calls the provider (Gemini's OpenAI-compatible
- * endpoint) directly from the browser with the user's own key (BYOK), so these stub the
- * provider at the network (`**\/chat/completions`) and seed a dummy key in localStorage.
- * One asserts a rendered reply, one the no-key prompt, one a surfaced provider error, one
- * retry. The real browser -> Gemini path is verified manually with a real key in Settings.
+ * The in-app agent chat (phase 1). The agent calls the selected provider's
+ * OpenAI-compatible endpoint directly from the browser with the user's own key (BYOK), so
+ * these stub the provider at the network (`**\/chat/completions`) and seed a dummy key in
+ * localStorage. They cover a rendered reply, the no-key prompt, a surfaced provider error,
+ * switching provider in Settings (routes to OpenAI), and retry. The real browser ->
+ * provider path is verified manually with a real key in Settings.
  */
 test.use({ viewport: { width: 1320, height: 900 } });
 
-const AGENT_CONFIG_KEY = "web-daw:agent-config:v1";
+const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
 
 /** Seed a BYOK key so the provider actually calls out (and the route stub is hit). */
 async function seedKey(page: Page) {
   await page.addInitScript(
     ([storageKey]) => {
-      localStorage.setItem(storageKey, JSON.stringify({ apiKey: "test-key", model: "" }));
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ provider: "gemini", keys: { gemini: "test-key" }, models: {} }),
+      );
     },
     [AGENT_CONFIG_KEY],
   );
@@ -87,6 +91,34 @@ test("surfaces a provider error", async ({ page }) => {
 
   await expect(page.getByText("hello there", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/model is overloaded/i)).toBeVisible();
+});
+
+test("selecting a provider in settings routes the request to it", async ({ page }) => {
+  let hitUrl = "";
+  await page.route("**/chat/completions", (route) => {
+    hitUrl = route.request().url();
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ choices: [{ message: { role: "assistant", content: "Hi from OpenAI." } }] }),
+    });
+  });
+
+  await page.goto("/");
+  await dismissStart(page);
+
+  // Configure OpenAI through the Settings UI (no key seeded - we set it here).
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Provider").selectOption("openai");
+  await page.getByLabel("API key").fill("sk-test-openai");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  // The next request must go to OpenAI's endpoint, not the default (Gemini).
+  await page.getByRole("button", { name: /expand agent panel/i }).click();
+  await page.getByRole("textbox", { name: /message the agent/i }).fill("hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Hi from OpenAI.")).toBeVisible();
+  expect(hitUrl).toContain("api.openai.com");
 });
 
 test("a failed message can be retried and succeeds", async ({ page }) => {

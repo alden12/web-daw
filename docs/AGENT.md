@@ -126,7 +126,7 @@ flowchart TB
     subgraph brain["Brain (src/audio/agent)"]
         LOOP["agentLoop()<br/>the ReAct loop, ~80 lines"]
         PROV["AgentProvider interface<br/>chat(messages, tools) -> text | toolCalls"]
-        GEM["GeminiProvider"]
+        GEM["Provider<br/>(Gemini / OpenAI / Anthropic)"]
     end
     subgraph toollayer["Tool layer (src/audio/agent/tools)"]
         REG["ToolRegistry<br/>AgentTool[] built from the catalogs"]
@@ -196,10 +196,7 @@ classDiagram
         <<interface>>
         +chat(messages, tools) Promise~ProviderReply~
     }
-    class GeminiProvider {
-        +chat(...) 
-    }
-    class ClaudeProvider {
+    class Provider {
         +chat(...)
     }
     class ProviderReply {
@@ -207,30 +204,37 @@ classDiagram
         +string text
         +ToolCall toolCalls
     }
-    AgentProvider <|.. GeminiProvider
-    AgentProvider <|.. ClaudeProvider : later
+    AgentProvider <|.. Provider
     AgentProvider ..> ProviderReply
 ```
 
-We start with `GeminiProvider` (free tier, native function-calling). Its request/response
-shape differs slightly from Claude's/OpenAI's; that difference is absorbed *inside*
-`GeminiProvider` so `agentLoop` stays clean.
+One generic `Provider` covers Gemini, OpenAI, and Anthropic: all three expose an
+OpenAI-compatible `/chat/completions` endpoint, so the only per-vendor differences (base
+URL, default model, and Anthropic's browser-access header) are **data** in a small
+registry, not code. If a future vendor needs a genuinely different dialect, it becomes its
+own `AgentProvider` implementation behind the same `chat(messages, tools)` seam and the
+loop never notices.
 
-**3. The key: bring-your-own-key (BYOK).** The app is local-first and, hosted, has no
-server we run - so there is nowhere to keep a shared secret, and we do not want to pay for
-or police everyone's inference in v1. Instead the user brings their **own** provider key.
-Gemini's endpoint allows CORS from the browser (verified: it reflects the origin and
-allows `Authorization` + POST), so the provider calls it **directly** from the tab with
-that key. This makes local == deployed: there is no proxy to run.
+**3. The key: bring-your-own-key (BYOK), multi-provider.** The app is local-first and,
+hosted, has no server we run - so there is nowhere to keep a shared secret, and we do not
+want to pay for or police everyone's inference in v1. Instead the user brings their **own**
+provider key. Every supported provider's endpoint allows CORS from the browser (verified:
+Gemini and OpenAI reflect the origin; Anthropic allows it with the
+`anthropic-dangerous-direct-browser-access` header), so the provider calls it **directly**
+from the tab. This makes local == deployed: there is no proxy to run.
 
-> **Built** ([config.ts](../src/audio/agent/config.ts)): the key + model live in
-> `localStorage` (`web-daw:agent-config:v1`), set in a Settings dialog
-> ([AgentSettings.tsx](../src/ui/AgentSettings.tsx)) opened from the gear at the bottom of
-> the activity rail. [geminiProvider.ts](../src/audio/agent/geminiProvider.ts) reads the
-> key and POSTs to Gemini's OpenAI-compatible `/chat/completions` with a `Bearer` header;
-> with no key it returns a friendly "open Settings" error. The key is sent only to the
-> provider, never to any server we run. (An earlier dev-only Vite key-proxy has been
-> removed in favour of this.)
+> **Built** ([providers.ts](../src/audio/agent/providers.ts) + [config.ts](../src/audio/agent/config.ts)):
+> a data-driven registry of providers (id, label, base URL, default + suggested models,
+> key URL, extra headers). Config in `localStorage` (`web-daw:agent-config:v2`) holds the
+> selected provider plus a **key and model per provider**, so several can be saved at once
+> and switched between. A Settings dialog ([AgentSettings.tsx](../src/ui/AgentSettings.tsx),
+> opened from the gear at the bottom of the activity rail) has the provider selector, the
+> key field, and a free-text model field (suggestions via `datalist`).
+> [provider.ts](../src/audio/agent/provider.ts) reads the active provider + key and POSTs
+> to its `/chat/completions` with a `Bearer` header (plus any extra headers); with no key
+> it returns a friendly "open Settings" error. Keys are sent only to the chosen provider,
+> never to any server we run. (An earlier dev-only Vite key-proxy has been removed in
+> favour of this.)
 >
 > Tradeoff, named honestly: a key in `localStorage` is exposed to any XSS on our origin -
 > the standard local-first risk. It is the user's own key (scoped + revocable), the
@@ -239,7 +243,7 @@ that key. This makes local == deployed: there is no proxy to run.
 
 ```mermaid
 flowchart LR
-    GEM["GeminiProvider<br/>(browser)"] -->|"Bearer &lt;user key&gt; from localStorage"| GAPI["Gemini API<br/>(CORS-enabled)"]
+    P["Provider<br/>(browser)"] -->|"Bearer &lt;user key&gt; from localStorage"| API["Gemini / OpenAI / Anthropic<br/>OpenAI-compatible, CORS-enabled"]
 ```
 
 **4. The panel.** `AgentPanel` ([ui/AgentPanel.tsx](../src/ui/AgentPanel.tsx)) is a
@@ -252,7 +256,7 @@ same way, and builds the `ToolRegistry` from them.
 
 > **Built** (bare chat): [AgentPanel.tsx](../src/ui/AgentPanel.tsx) now hosts a plain
 > chat driven by [useAgentChat.ts](../src/ui/useAgentChat.ts) over
-> [geminiProvider.ts](../src/audio/agent/geminiProvider.ts) - the first visible end of
+> [provider.ts](../src/audio/agent/provider.ts) - the first visible end of
 > the pipeline. No tools yet, so it does not receive `dispatch`/`projectStore`; those
 > arrive with the `ToolRegistry`. The shared contract (`ChatMessage`, `AgentProvider`,
 > `ProviderReply`) lives in [agent/types.ts](../src/audio/agent/types.ts).
@@ -346,7 +350,7 @@ queue is needed to make them look alike.
 
 | Phase | What | Status |
 |------|------|--------|
-| 1 | Provider interface + `GeminiProvider` (BYOK, direct-to-provider); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
+| 1 | Provider interface + one generic BYOK provider (Gemini / OpenAI / Anthropic, direct-to-provider, user's key); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
 | - | Streaming replies, richer tool-result rendering, per-project session scoping | polish / follow-on |
