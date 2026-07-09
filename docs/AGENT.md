@@ -353,7 +353,7 @@ queue is needed to make them look alike.
 | 1 | Provider interface + one generic BYOK provider (Gemini / OpenAI / Anthropic, direct-to-provider, user's key); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
-| - | Streaming replies, richer tool-result rendering, per-project session scoping, a native Anthropic `/v1/messages` provider | polish / follow-on |
+| - | Streaming replies, richer tool-result rendering, per-project session scoping, a native Anthropic `/v1/messages` provider, Mermaid diagrams (lazy-load `mermaid`, render `mermaid` code blocks) | polish / follow-on |
 
 Done alongside phase 1: a distinct **`agent` authorship voice** (violet) for the built-in
 agent, separate from `claude` (the MCP driver); **switchable chat sessions** persisted to

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReply, providerErrorMessage } from "../src/audio/agent/provider";
+import { EmptyReplyError, parseReply, providerErrorMessage } from "../src/audio/agent/provider";
 
 describe("parseReply", () => {
   it("pulls assistant text from an OpenAI-shaped response", () => {
@@ -40,10 +40,24 @@ describe("parseReply", () => {
     expect(() => parseReply(JSON.stringify({ choices: [] }))).toThrow(/no choices/);
   });
 
-  it("throws when a choice has neither text nor tool calls", () => {
-    expect(() => parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }))).toThrow(
-      /no assistant text or tool calls/,
-    );
+  it("throws a retryable EmptyReplyError when a choice has neither text nor tool calls", () => {
+    try {
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmptyReplyError);
+      expect((error as Error).message).toMatch(/empty response/i);
+    }
+  });
+
+  it("maps a finish_reason to a specific empty-reply message", () => {
+    const lengthCase = () =>
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "length" }] }));
+    expect(lengthCase).toThrow(/output tokens/i);
+
+    const malformed = () =>
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "MALFORMED_FUNCTION_CALL" }] }));
+    expect(malformed).toThrow(/malformed tool call/i);
   });
 });
 

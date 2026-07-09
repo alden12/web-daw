@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runAgent } from "../src/audio/agent/loop";
+import { EmptyReplyError } from "../src/audio/agent/provider";
 import type { AgentProvider, AgentTool, ChatMessage, ProviderReply, ToolSpec } from "../src/audio/agent/types";
 
 /** A provider that replays a script of replies and records what it was asked. */
@@ -99,6 +100,29 @@ describe("runAgent", () => {
     ]);
     const result = await runAgent({ messages: seed, provider, tools: [echoTool] });
     expect(result.usage).toEqual({ inputTokens: 18, outputTokens: 8 });
+  });
+
+  it("retries an empty-reply (non-deterministic) round and then settles", async () => {
+    let calls = 0;
+    const provider: AgentProvider = {
+      async chat() {
+        calls += 1;
+        if (calls < 3) throw new EmptyReplyError("MALFORMED_FUNCTION_CALL");
+        return { text: "got there on the third try" };
+      },
+    };
+    const result = await runAgent({ messages: seed, provider, tools: [echoTool] });
+    expect(calls).toBe(3);
+    expect(result.text).toBe("got there on the third try");
+  });
+
+  it("gives up (propagates) if every attempt returns an empty reply", async () => {
+    const provider: AgentProvider = {
+      async chat() {
+        throw new EmptyReplyError();
+      },
+    };
+    await expect(runAgent({ messages: seed, provider, tools: [echoTool] })).rejects.toBeInstanceOf(EmptyReplyError);
   });
 
   it("fires onToolStart before running each tool", async () => {

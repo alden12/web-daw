@@ -5,7 +5,13 @@
  * boundary - it never reaches past a tool into a store or a worker - so tools can later
  * be backed by actors with no change here (see docs/AGENT.md invariants).
  */
-import type { AgentProvider, AgentTool, ChatMessage, TokenUsage } from "./types";
+import { EmptyReplyError } from "./provider";
+import type { AgentProvider, ChatMessage, ProviderReply, ToolSpec, AgentTool, TokenUsage } from "./types";
+
+/** Total attempts per provider round when the model returns an empty candidate (no text,
+ *  no tool call). These are non-deterministic - a plain reroll almost always succeeds - so
+ *  the loop retries rather than surfacing the error on the first miss. */
+const EMPTY_REPLY_ATTEMPTS = 3;
 
 /** A record of one tool the loop ran, for display + tests. */
 export interface ToolInvocation {
@@ -48,7 +54,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let step = 0; step < maxSteps; step++) {
-    const reply = await provider.chat(conversation, toolSpecs);
+    const reply = await chatWithRetry(provider, conversation, toolSpecs);
     if (reply.usage) {
       usage.inputTokens += reply.usage.inputTokens;
       usage.outputTokens += reply.usage.outputTokens;
@@ -82,6 +88,25 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     invocations,
     usage,
   };
+}
+
+/** One provider round, retrying only the non-deterministic empty-candidate case. Any
+ *  other error (auth, rate limit, malformed body) propagates immediately. */
+async function chatWithRetry(
+  provider: AgentProvider,
+  conversation: ChatMessage[],
+  toolSpecs: ToolSpec[],
+): Promise<ProviderReply> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < EMPTY_REPLY_ATTEMPTS; attempt++) {
+    try {
+      return await provider.chat(conversation, toolSpecs);
+    } catch (error) {
+      if (!(error instanceof EmptyReplyError)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 function safeParseArgs(raw: string): unknown {

@@ -22,9 +22,45 @@ export function parseReply(raw: string): ProviderReply {
   if (message === null) throw new Error("The model response contained no choices.");
   const text = typeof message.content === "string" ? message.content : "";
   const toolCalls = readToolCalls(message);
-  if (text === "" && !toolCalls) throw new Error("The model response contained no assistant text or tool calls.");
+  if (text === "" && !toolCalls) throw new EmptyReplyError(readFinishReason(data));
   const usage = readUsage(data);
   return { text, ...(toolCalls ? { toolCalls } : {}), ...(usage ? { usage } : {}) };
+}
+
+/** The model returned a candidate with no text and no tool call. This is usually
+ *  non-deterministic (a truncated/malformed generation), so the loop retries it before
+ *  giving up; `finishReason` (when the provider gives one) says why. */
+export class EmptyReplyError extends Error {
+  readonly finishReason?: string;
+  constructor(finishReason?: string) {
+    super(emptyReplyMessage(finishReason));
+    this.name = "EmptyReplyError";
+    this.finishReason = finishReason;
+  }
+}
+
+/** A user-facing note for an empty candidate, specific to the finish reason when known.
+ *  Gemini in particular returns these intermittently on complex tool calls. */
+function emptyReplyMessage(finishReason?: string): string {
+  const byReason: Record<string, string> = {
+    length:
+      "The model ran out of output tokens before replying (it may have spent them reasoning). Try again, or ask for a smaller change.",
+    max_tokens:
+      "The model ran out of output tokens before replying (it may have spent them reasoning). Try again, or ask for a smaller change.",
+    content_filter: "The model blocked its own response (a safety filter). Try rephrasing the request.",
+    safety: "The model blocked its own response (a safety filter). Try rephrasing the request.",
+    malformed_function_call:
+      "The model produced a malformed tool call - a known hiccup on complex edits. Retrying usually fixes it.",
+  };
+  const message = finishReason ? byReason[finishReason.toLowerCase()] : undefined;
+  return message ?? "The model returned an empty response. This can happen intermittently; retrying usually fixes it.";
+}
+
+function readFinishReason(data: unknown): string | undefined {
+  const choices = (data as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return undefined;
+  const reason = (choices[0] as { finish_reason?: unknown }).finish_reason;
+  return typeof reason === "string" ? reason : undefined;
 }
 
 function readUsage(data: unknown): { inputTokens: number; outputTokens: number } | undefined {
