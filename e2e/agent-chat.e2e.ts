@@ -62,3 +62,32 @@ test("surfaces a proxy error (e.g. the missing-key notice)", async ({ page }) =>
   await expect(page.getByText("hello there", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/AGENT_API_KEY/i)).toBeVisible();
 });
+
+test("a failed message can be retried and succeeds", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/agent/chat", (route) => {
+    calls += 1;
+    if (calls === 1) {
+      route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "upstream boom" }) });
+    } else {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ choices: [{ message: { role: "assistant", content: "Recovered!" } }] }),
+      });
+    }
+  });
+
+  await openAgent(page);
+  await page.getByRole("textbox", { name: /message the agent/i }).fill("do it");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  // The failure surfaces with a retry affordance on the message.
+  await expect(page.getByText("upstream boom")).toBeVisible();
+  const retryButton = page.getByRole("button", { name: /retry/i });
+  await expect(retryButton).toBeVisible();
+
+  // Retrying re-runs the same message and this time it lands.
+  await retryButton.click();
+  await expect(page.getByText("Recovered!")).toBeVisible();
+});

@@ -6,7 +6,7 @@
  * tools ran (for the activity chips). See docs/AGENT.md.
  */
 import { useCallback, useMemo, useState } from "react";
-import { createGeminiProvider } from "../audio/agent/geminiProvider";
+import { createGeminiProvider, ProviderError } from "../audio/agent/geminiProvider";
 import { runAgent } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
@@ -30,6 +30,12 @@ export interface ChatTurn {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+export interface ChatError {
+  message: string;
+  /** When a retry is allowed again (epoch ms), from a rate-limit cooldown. */
+  retryAt?: number;
+}
+
 export function useAgentChat(
   tools: AgentTool[],
   turns: ChatTurn[],
@@ -38,16 +44,14 @@ export function useAgentChat(
 ) {
   const agent = useMemo(() => provider ?? createGeminiProvider(), [provider]);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
 
-  const send = useCallback(
-    async (text: string) => {
-      const content = text.trim();
-      if (!content || pending) return;
+  // Run the loop over a conversation ending in the message to answer, appending the
+  // assistant turn on success. Shared by send (new message) and retry (re-run the last).
+  const run = useCallback(
+    async (history: ChatTurn[]) => {
       setError(null);
       setPending(true);
-      const history: ChatTurn[] = [...turns, { role: "user", content, at: Date.now() }];
-      setTurns(history);
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },
         ...history.map((turn): ChatMessage => ({ role: turn.role, content: turn.content })),
@@ -65,13 +69,36 @@ export function useAgentChat(
           },
         ]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong talking to the agent.");
+        setError(toChatError(err));
       } finally {
         setPending(false);
       }
     },
-    [agent, pending, turns, setTurns, tools],
+    [agent, tools, setTurns],
   );
 
-  return { pending, error, send };
+  const send = useCallback(
+    (text: string) => {
+      const content = text.trim();
+      if (!content || pending) return;
+      const history: ChatTurn[] = [...turns, { role: "user", content, at: Date.now() }];
+      setTurns(history);
+      void run(history);
+    },
+    [pending, turns, setTurns, run],
+  );
+
+  // Re-answer the last (failed) user message, without adding a new one.
+  const retry = useCallback(() => {
+    if (pending || turns.length === 0 || turns[turns.length - 1].role !== "user") return;
+    void run(turns);
+  }, [pending, turns, run]);
+
+  return { pending, error, send, retry };
+}
+
+function toChatError(err: unknown): ChatError {
+  const message = err instanceof Error ? err.message : "Something went wrong talking to the agent.";
+  const cooldown = err instanceof ProviderError ? err.retryAfterSeconds : undefined;
+  return { message, retryAt: cooldown ? Date.now() + cooldown * 1000 : undefined };
 }

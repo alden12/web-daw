@@ -68,14 +68,27 @@ function readToolCalls(message: { tool_calls?: unknown }): ProviderToolCall[] | 
   return calls.length > 0 ? calls : undefined;
 }
 
+/** How long to sit out a rate limit when the body gives no explicit hint (Gemini's free
+ *  tier resets per minute). */
+const DEFAULT_COOLDOWN_SECONDS = 30;
+
+/** An error from the provider/proxy. Carries a cooldown (seconds) for rate limits, so the
+ *  UI can offer retry with a live countdown. */
+export class ProviderError extends Error {
+  readonly retryAfterSeconds?: number;
+  constructor(message: string, retryAfterSeconds?: number) {
+    super(message);
+    this.name = "ProviderError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 /** Turn a proxy/upstream error body into a message worth showing the user. Handles the
  *  proxy's `{ error: string }`, an upstream OpenAI-style `{ error: { message } }`, and
  *  gives rate limiting (429) a friendly note instead of the verbose quota dump. */
 export function providerErrorMessage(raw: string, status: number): string {
   if (status === 429) {
-    const seconds = retryAfterSeconds(raw);
-    const wait = seconds ? `about ${seconds}s` : "a few seconds";
-    return `Rate limited - too many requests in a short time (the free tier allows only a few per minute). Wait ${wait} and try again.`;
+    return "Rate limited - too many requests in a short time. Gemini's free tier allows only a few a minute.";
   }
   try {
     const error = (JSON.parse(raw) as { error?: unknown }).error;
@@ -89,11 +102,11 @@ export function providerErrorMessage(raw: string, status: number): string {
   return `The agent request failed (HTTP ${status}).`;
 }
 
-/** Pull a retry hint out of a 429 body (Gemini includes "Please retry in 33.2s" / a
- *  RetryInfo "33s"), so we can tell the user roughly how long to wait. */
-function retryAfterSeconds(raw: string): number | null {
+/** Pull a retry hint (seconds) out of a 429 body: Gemini includes "Please retry in 33.2s"
+ *  and a RetryInfo "retryDelay: 33s". Falls back to a default cooldown. */
+export function retryAfterSeconds(raw: string): number {
   const match = raw.match(/retry\s*(?:in|Delay['":\s]*)\s*([0-9]+(?:\.[0-9]+)?)\s*s/i);
-  return match ? Math.ceil(Number(match[1])) : null;
+  return match ? Math.ceil(Number(match[1])) : DEFAULT_COOLDOWN_SECONDS;
 }
 
 export function createGeminiProvider(): AgentProvider {
@@ -113,7 +126,10 @@ export function createGeminiProvider(): AgentProvider {
         body: JSON.stringify(body),
       });
       const raw = await response.text();
-      if (!response.ok) throw new Error(providerErrorMessage(raw, response.status));
+      if (!response.ok) {
+        const cooldown = response.status === 429 ? retryAfterSeconds(raw) : undefined;
+        throw new ProviderError(providerErrorMessage(raw, response.status), cooldown);
+      }
       return parseReply(raw);
     },
   };

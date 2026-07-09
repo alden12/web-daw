@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReply, providerErrorMessage } from "../src/audio/agent/geminiProvider";
+import { parseReply, providerErrorMessage, retryAfterSeconds } from "../src/audio/agent/geminiProvider";
 
 describe("parseReply", () => {
   it("pulls assistant text from an OpenAI-shaped response", () => {
@@ -69,10 +69,9 @@ describe("providerErrorMessage", () => {
     expect(message).not.toMatch(/quota/i);
   });
 
-  it("extracts a retry hint from a 429 body when present", () => {
-    expect(providerErrorMessage("Please retry in 33.2s", 429)).toMatch(/about 34s/);
-    expect(
-      providerErrorMessage(JSON.stringify({ error: { message: "x", details: [{ retryDelay: "12s" }] } }), 429),
-    ).toMatch(/about 12s/);
+  it("extracts a retry cooldown (seconds) from a 429 body, or falls back to a default", () => {
+    expect(retryAfterSeconds("Please retry in 33.2s")).toBe(34);
+    expect(retryAfterSeconds(JSON.stringify({ error: { details: [{ retryDelay: "12s" }] } }))).toBe(12);
+    expect(retryAfterSeconds("no hint here")).toBe(30);
   });
 });

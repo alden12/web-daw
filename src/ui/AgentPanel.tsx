@@ -42,12 +42,33 @@ export function AgentPanel({
     [projectStore, dispatch, scheduler],
   );
   const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
-  const { pending, error, send } = useAgentChat(tools, turns, setTurns);
+  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns);
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const currentTitle = sessions.find((session) => session.id === currentId)?.title ?? "New chat";
+
+  // Live rate-limit cooldown: tick each second while a retry-at is in the future.
+  const [now, setNow] = useState(() => Date.now());
+  const retryAt = error?.retryAt;
+  useEffect(() => {
+    if (!retryAt) return;
+    const tick = () => setNow(Date.now());
+    const immediate = setTimeout(tick, 0); // refresh now without a synchronous setState in the effect body
+    const interval = setInterval(tick, 500);
+    return () => {
+      clearTimeout(immediate);
+      clearInterval(interval);
+    };
+  }, [retryAt]);
+  const cooldownLeft = retryAt ? Math.max(0, Math.ceil((retryAt - now) / 1000)) : 0;
+  const coolingDown = cooldownLeft > 0;
+
+  // A failed message is a user turn with no assistant reply after it (only the last turn
+  // can dangle); offer a retry on it.
+  const lastTurn = turns[turns.length - 1];
+  const canRetry = !pending && lastTurn?.role === "user";
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -56,7 +77,7 @@ export function AgentPanel({
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || pending) return;
+    if (!text || pending || coolingDown) return;
     setDraft("");
     void send(text);
   };
@@ -179,6 +200,17 @@ export function AgentPanel({
             {turn.content && (
               <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
             )}
+            {index === turns.length - 1 && canRetry && (
+              <button
+                type="button"
+                onClick={retry}
+                disabled={coolingDown}
+                title={coolingDown ? `Wait ${cooldownLeft}s before retrying` : "Retry this message"}
+                className="mt-1.5 font-mono text-[10px] rounded border border-line px-1.5 py-0.5 text-muted hover:text-ink hover:border-agent/55 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                ↻ {coolingDown ? `Retry in ${cooldownLeft}s` : "Retry"}
+              </button>
+            )}
           </div>
         ))}
         {pending && <div className="self-start font-mono text-[11px] text-faint">Agent is thinking...</div>}
@@ -186,7 +218,8 @@ export function AgentPanel({
 
       {error && (
         <div className="mx-4 mb-2 shrink-0 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
-          {error}
+          {error.message}
+          {coolingDown && <span className="block mt-0.5 text-warn/80">You can try again in {cooldownLeft}s.</span>}
         </div>
       )}
 
@@ -208,7 +241,7 @@ export function AgentPanel({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || draft.trim() === ""}
+          disabled={pending || draft.trim() === "" || coolingDown}
           className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           Send
