@@ -24,6 +24,14 @@ describe("parseReply", () => {
     expect(reply.toolCalls).toEqual([{ id: "c1", name: "set_tempo", arguments: '{"bpm":128}' }]);
   });
 
+  it("reads token usage when the response includes it", () => {
+    const raw = JSON.stringify({
+      choices: [{ message: { content: "hi" } }],
+      usage: { prompt_tokens: 100, completion_tokens: 20 },
+    });
+    expect(parseReply(raw).usage).toEqual({ inputTokens: 100, outputTokens: 20 });
+  });
+
   it("throws on non-JSON", () => {
     expect(() => parseReply("<html>gateway error</html>")).toThrow(/not valid JSON/);
   });
@@ -46,11 +54,25 @@ describe("providerErrorMessage", () => {
   });
 
   it("surfaces an upstream OpenAI-style { error: { message } }", () => {
-    const raw = JSON.stringify({ error: { message: "quota exceeded", code: 429 } });
-    expect(providerErrorMessage(raw, 429)).toBe("quota exceeded");
+    const raw = JSON.stringify({ error: { message: "model not found", code: 404 } });
+    expect(providerErrorMessage(raw, 404)).toBe("model not found");
   });
 
   it("falls back to a generic message when the body is not JSON", () => {
     expect(providerErrorMessage("boom", 502)).toBe("The agent request failed (HTTP 502).");
+  });
+
+  it("gives 429 a friendly rate-limit message instead of the quota dump", () => {
+    const raw = JSON.stringify({ error: { code: 429, message: "You exceeded your current quota, blah blah" } });
+    const message = providerErrorMessage(raw, 429);
+    expect(message).toMatch(/rate limited/i);
+    expect(message).not.toMatch(/quota/i);
+  });
+
+  it("extracts a retry hint from a 429 body when present", () => {
+    expect(providerErrorMessage("Please retry in 33.2s", 429)).toMatch(/about 34s/);
+    expect(
+      providerErrorMessage(JSON.stringify({ error: { message: "x", details: [{ retryDelay: "12s" }] } }), 429),
+    ).toMatch(/about 12s/);
   });
 });

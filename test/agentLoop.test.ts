@@ -88,6 +88,19 @@ describe("runAgent", () => {
     expect(result.text).toMatch(/step limit/i);
   });
 
+  it("accumulates token usage across rounds", async () => {
+    const { provider } = scriptedProvider([
+      {
+        text: "",
+        toolCalls: [{ id: "c1", name: "echo", arguments: "{}" }],
+        usage: { inputTokens: 10, outputTokens: 5 },
+      },
+      { text: "done", usage: { inputTokens: 8, outputTokens: 3 } },
+    ]);
+    const result = await runAgent({ messages: seed, provider, tools: [echoTool] });
+    expect(result.usage).toEqual({ inputTokens: 18, outputTokens: 8 });
+  });
+
   it("fires onToolStart before running each tool", async () => {
     const { provider } = scriptedProvider([
       { text: "", toolCalls: [{ id: "c1", name: "echo", arguments: '{"a":2}' }] },

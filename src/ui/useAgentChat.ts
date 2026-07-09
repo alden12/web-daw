@@ -1,9 +1,9 @@
 /**
- * Conversation state for the agent panel: holds the visible turns and runs the
- * reason-act loop (which may call tools) for each user message, tracking pending/error.
- * Kept apart from the panel so the view stays declarative. The loop seeds from the
- * visible turns; its own tool rounds stay internal, and each assistant turn records
- * which tools ran (for the activity chips). See docs/AGENT.md.
+ * The reason-act loop for one user message, tracking ephemeral pending/error. The
+ * conversation turns are owned by the caller (the session store), passed in with a
+ * setter, so switching sessions swaps the history transparently. The loop seeds from the
+ * visible turns; its own tool rounds stay internal, and each assistant turn records which
+ * tools ran (for the activity chips). See docs/AGENT.md.
  */
 import { useCallback, useMemo, useState } from "react";
 import { createGeminiProvider } from "../audio/agent/geminiProvider";
@@ -22,13 +22,21 @@ const SYSTEM_PROMPT = [
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  /** When the turn was created (epoch ms), for the timestamp. */
+  at?: number;
   /** Tools the agent ran to produce this turn (assistant turns only). */
   activity?: { name: string; ok: boolean }[];
+  /** Tokens the exchange cost (assistant turns only). */
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
-export function useAgentChat(tools: AgentTool[], provider?: AgentProvider) {
+export function useAgentChat(
+  tools: AgentTool[],
+  turns: ChatTurn[],
+  setTurns: (turns: ChatTurn[]) => void,
+  provider?: AgentProvider,
+) {
   const agent = useMemo(() => provider ?? createGeminiProvider(), [provider]);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +46,7 @@ export function useAgentChat(tools: AgentTool[], provider?: AgentProvider) {
       if (!content || pending) return;
       setError(null);
       setPending(true);
-      const history: ChatTurn[] = [...turns, { role: "user", content }];
+      const history: ChatTurn[] = [...turns, { role: "user", content, at: Date.now() }];
       setTurns(history);
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },
@@ -46,12 +54,14 @@ export function useAgentChat(tools: AgentTool[], provider?: AgentProvider) {
       ];
       try {
         const result = await runAgent({ messages, provider: agent, tools });
-        setTurns((prev) => [
-          ...prev,
+        setTurns([
+          ...history,
           {
             role: "assistant",
             content: result.text,
+            at: Date.now(),
             activity: result.invocations.map((invocation) => ({ name: invocation.name, ok: invocation.ok })),
+            usage: result.usage,
           },
         ]);
       } catch (err) {
@@ -60,8 +70,8 @@ export function useAgentChat(tools: AgentTool[], provider?: AgentProvider) {
         setPending(false);
       }
     },
-    [agent, pending, turns, tools],
+    [agent, pending, turns, setTurns, tools],
   );
 
-  return { turns, pending, error, send };
+  return { pending, error, send };
 }

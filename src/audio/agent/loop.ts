@@ -5,7 +5,7 @@
  * boundary - it never reaches past a tool into a store or a worker - so tools can later
  * be backed by actors with no change here (see docs/AGENT.md invariants).
  */
-import type { AgentProvider, AgentTool, ChatMessage } from "./types";
+import type { AgentProvider, AgentTool, ChatMessage, TokenUsage } from "./types";
 
 /** A record of one tool the loop ran, for display + tests. */
 export interface ToolInvocation {
@@ -19,6 +19,8 @@ export interface ToolInvocation {
 export interface AgentRunResult {
   text: string;
   invocations: ToolInvocation[];
+  /** Tokens summed across every provider round-trip this run made. */
+  usage: TokenUsage;
 }
 
 export interface RunAgentOptions {
@@ -43,11 +45,16 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
   const conversation = [...messages];
   const invocations: ToolInvocation[] = [];
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
 
   for (let step = 0; step < maxSteps; step++) {
     const reply = await provider.chat(conversation, toolSpecs);
+    if (reply.usage) {
+      usage.inputTokens += reply.usage.inputTokens;
+      usage.outputTokens += reply.usage.outputTokens;
+    }
     if (!reply.toolCalls || reply.toolCalls.length === 0) {
-      return { text: reply.text, invocations };
+      return { text: reply.text, invocations, usage };
     }
 
     // Record the assistant turn that requested the calls, then answer each one.
@@ -73,6 +80,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   return {
     text: "I hit the step limit while working on that. Tell me to keep going and I will continue.",
     invocations,
+    usage,
   };
 }
 

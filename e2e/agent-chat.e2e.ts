@@ -41,7 +41,8 @@ test("renders the assistant reply from the provider", async ({ page }) => {
   await page.getByRole("textbox", { name: /message the agent/i }).fill("give me a groove idea");
   await page.getByRole("button", { name: "Send", exact: true }).click();
 
-  await expect(page.getByText("give me a groove idea", { exact: true })).toBeVisible();
+  // The message echoes (in the transcript; it also titles the session, hence .first()).
+  await expect(page.getByText("give me a groove idea", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Try a syncopated hat.", { exact: true })).toBeVisible();
 });
 
@@ -58,6 +59,6 @@ test("surfaces a proxy error (e.g. the missing-key notice)", async ({ page }) =>
   await page.getByRole("textbox", { name: /message the agent/i }).fill("hello there");
   await page.getByRole("button", { name: "Send", exact: true }).click();
 
-  await expect(page.getByText("hello there", { exact: true })).toBeVisible();
+  await expect(page.getByText("hello there", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/AGENT_API_KEY/i)).toBeVisible();
 });

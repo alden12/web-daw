@@ -28,10 +28,17 @@ export interface ChatMessage {
   tool_call_id?: string;
 }
 
+/** Token counts for one exchange (from the provider's `usage`), for display. */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 /** What a provider returns for one `chat` call: assistant text and/or tool calls. */
 export interface ProviderReply {
   text: string;
   toolCalls?: ProviderToolCall[];
+  usage?: TokenUsage;
 }
 
 /** The minimal tool description a provider needs to offer function-calling (no `run`). */
