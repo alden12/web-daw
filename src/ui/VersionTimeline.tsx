@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import type { EditLog, FeedNote } from "../audio/commands/editLog";
 import type { CommitSummary, VersionStore } from "../audio/commands/history";
+import { voiceBorder, voiceDot } from "./authorVoice";
 
 function timeAgo(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
@@ -111,18 +112,13 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
           {commits.map((commit) => {
             const open = openId === commit.id;
             return (
-              <li
-                key={commit.id}
-                className={`rounded-md bg-card/60 border-l-2 ${commit.author === "claude" ? "border-claude" : "border-you"}`}
-              >
+              <li key={commit.id} className={`rounded-md bg-card/60 border-l-2 ${voiceBorder(commit.author)}`}>
                 <button
                   type="button"
                   onClick={() => toggle(commit)}
                   className="flex items-center gap-2 w-full text-left px-2.5 py-1.5 cursor-pointer"
                 >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${commit.author === "claude" ? "bg-claude" : "bg-you"}`}
-                  />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${voiceDot(commit.author)}`} />
                   <span className="font-mono text-[11.5px] truncate text-ink">{commit.message}</span>
                   {commit.auto && (
                     <span className="font-mono text-[9px] uppercase tracking-wide text-faint shrink-0">auto</span>

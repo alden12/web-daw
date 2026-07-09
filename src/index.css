@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 /* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
-   center workbench reads brightest. Two-voice accents: you = teal, claude = coral. */
+   center workbench reads brightest. Voices: you = teal, agent (built-in AI) =
+   violet, claude (the MCP / Claude Code driver) = coral. */
 @theme {
   --color-ground: #101216;
   --color-rail: #14171c;
@@ -17,6 +18,7 @@
   --color-faint: #5c626e;
 
   --color-you: #56c7c2;
+  --color-agent: #a884f3;
   --color-claude: #d9775a;
 
   --color-good: #2ecc71;
@@ -42,10 +44,17 @@
 
   /* Low-profile scrollbars app-wide: no track background, just a light, slightly
      translucent handle. The transparent border + padding-box clip slims the
-     visible thumb and insets it from the edges. */
-  * {
-    scrollbar-width: auto;
-    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+     visible thumb and insets it from the edges. They stay visible whenever content
+     overflows - never the macOS overlay auto-hide. In Chrome the standard scrollbar-*
+     properties make it defer to the OS (auto-hiding) scrollbars and ignore
+     ::-webkit-scrollbar, so we give the standard props to Firefox only (via a feature
+     query it matches and Chrome does not) and style Chrome/WebKit through the
+     pseudo-elements, which render always-on. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+    }
   }
   *::-webkit-scrollbar {
     width: 10px;

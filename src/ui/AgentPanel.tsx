@@ -40,7 +40,7 @@ export function AgentPanel({
   return (
     <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
       <div className="flex items-center gap-2 h-11 px-4 border-b border-line shrink-0">
-        <span className="w-2 h-2 rounded-full bg-claude" />
+        <span className="w-2 h-2 rounded-full bg-agent" />
         <span className="font-semibold text-[13px] text-bright">Agent</span>
         <button
           type="button"
@@ -70,7 +70,7 @@ export function AgentPanel({
           >
             <div
               className={`mb-0.5 font-mono text-[9px] uppercase tracking-wider ${
-                turn.role === "user" ? "text-you" : "text-claude"
+                turn.role === "user" ? "text-you" : "text-agent"
               }`}
             >
               {turn.role === "user" ? "You" : "Agent"}
@@ -122,7 +122,7 @@ export function AgentPanel({
           type="button"
           onClick={submit}
           disabled={pending || draft.trim() === ""}
-          className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-claude/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           Send
         </button>

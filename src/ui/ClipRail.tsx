@@ -2,8 +2,8 @@
  * The clip pool for the selected track: a chip per clip (a note pattern), plus
  * "+ Clip" to add a new empty one. Clicking a chip makes it the active clip
  * (shown/edited in the roll); double-click renames; drag a chip onto this track's
- * lane in the arrangement to place that clip there. Two-voice colour tags who
- * authored each clip - you (teal) vs Claude (coral). Selecting is navigation
+ * lane in the arrangement to place that clip there. Voice colour tags who
+ * authored each clip - you (teal), the agent (violet), or Claude/MCP (coral). Selecting is navigation
  * (direct on the store); add / remove / rename go through dispatch, so undo/redo +
  * the activity feed cover them.
  */
@@ -17,6 +17,7 @@ import { newClipId } from "../audio/commands/ids";
 import { InlineRename } from "./InlineRename";
 import { CLIP_DND_TYPE, clipDndKindType, clearDraggedClip, setDraggedClip } from "./clipDnd";
 import { getClipClipboard, setClipClipboard } from "./clipClipboard";
+import { voiceDot, voiceLabel } from "./authorVoice";
 
 export function ClipRail({
   projectStore,
@@ -114,7 +115,7 @@ export function ClipRail({
       <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1">Clips</span>
       {clips.map((clip) => {
         const active = clip.id === activeClipId;
-        const voice = clip.author === "claude" ? "bg-claude" : "bg-you";
+        const voice = voiceDot(clip.author);
         return (
           <div
             key={clip.id}
@@ -132,7 +133,7 @@ export function ClipRail({
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
-            title={`${clip.author === "claude" ? "Claude" : "You"} - drag onto the lane to place`}
+            title={`${voiceLabel(clip.author)} - drag onto the lane to place`}
           >
             <button
               type="button"

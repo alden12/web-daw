@@ -12,7 +12,9 @@ import type { ServerToBrowser } from "../mcp/protocol";
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
 
-export type Author = "you" | "claude";
+// "agent" = the built-in in-app agent (model-agnostic); "claude" = the MCP / Claude Code
+// driver. Two distinct AI voices, plus the local user.
+export type Author = "you" | "claude" | "agent";
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */
 type NonEditType =

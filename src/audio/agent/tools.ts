@@ -1,6 +1,6 @@
 /**
  * The agent's tools - the whole of what it can do to a project. Read tools query the
- * live `projectStore`; edit tools go through `dispatch(command, "claude")`, the exact
+ * live `projectStore`; edit tools go through `dispatch(command, "agent")`, the exact
  * path the UI and MCP use, so the agent inherits undo, the activity feed, history, and
  * engine reconciliation for free. Tool argument sets that reference instruments or
  * parameters are validated against the catalogs (never a hardcoded list), matching how
@@ -162,7 +162,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
           );
         }
         const id = newTrackId();
-        dispatch({ type: "createTrack", instrumentType: instrument, name, id }, "claude");
+        dispatch({ type: "createTrack", instrumentType: instrument, name, id }, "agent");
         return { ok: true, trackId: id, instrument, name: name ?? null };
       },
     }),
@@ -185,7 +185,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
           length: note.length ?? 1,
           velocity: note.velocity ?? 0.8,
         }));
-        dispatch({ type: "addNotes", trackId: instrumentTrack.id, clipId: clip, notes: built }, "claude");
+        dispatch({ type: "addNotes", trackId: instrumentTrack.id, clipId: clip, notes: built }, "agent");
         return { ok: true, added: built.length, trackId: instrumentTrack.id };
       },
     }),
@@ -196,7 +196,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip: z.string().optional(), ids: z.array(z.string()).min(1) }),
       run: ({ track, clip, ids }) => {
         const instrumentTrack = resolveInstrumentTrack(track);
-        dispatch({ type: "removeNotes", trackId: instrumentTrack.id, clipId: clip, ids }, "claude");
+        dispatch({ type: "removeNotes", trackId: instrumentTrack.id, clipId: clip, ids }, "agent");
         return { ok: true, removed: ids.length, trackId: instrumentTrack.id };
       },
     }),
@@ -222,7 +222,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
         }
         const error = validateParam(spec, value);
         if (error) throw new Error(error);
-        dispatch({ type: "setParam", trackId: instrumentTrack.id, id, value }, "claude");
+        dispatch({ type: "setParam", trackId: instrumentTrack.id, id, value }, "agent");
         return { ok: true, trackId: instrumentTrack.id, id, value };
       },
     }),
@@ -233,7 +233,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       schema: z.object({ track: z.string().optional(), name: z.string().min(1) }),
       run: ({ track, name }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "setTrack", trackId: resolved.id, name }, "claude");
+        dispatch({ type: "setTrack", trackId: resolved.id, name }, "agent");
         return { ok: true, trackId: resolved.id, name };
       },
     }),
@@ -250,7 +250,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       }),
       run: ({ track, volume, muted, solo }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "setTrack", trackId: resolved.id, volume, muted, solo }, "claude");
+        dispatch({ type: "setTrack", trackId: resolved.id, volume, muted, solo }, "agent");
         return { ok: true, trackId: resolved.id, volume, muted, solo };
       },
     }),
@@ -300,7 +300,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
         }
         const resolved = resolveTrack(track);
         const id = newEffectId();
-        dispatch({ type: "addEffect", hostId: resolved.id, effectType: effect, id }, "claude");
+        dispatch({ type: "addEffect", hostId: resolved.id, effectType: effect, id }, "agent");
         return { ok: true, trackId: resolved.id, effectId: id, effect };
       },
     }),
@@ -311,7 +311,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       schema: z.object({ track: z.string().optional(), effect_id: z.string() }),
       run: ({ track, effect_id }) => {
         const { track: resolved, effect } = resolveEffect(track, effect_id);
-        dispatch({ type: "removeEffect", hostId: resolved.id, effectId: effect.id }, "claude");
+        dispatch({ type: "removeEffect", hostId: resolved.id, effectId: effect.id }, "agent");
         return { ok: true, trackId: resolved.id, effectId: effect.id };
       },
     }),
@@ -336,7 +336,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
         }
         const error = validateParam(spec, value);
         if (error) throw new Error(error);
-        dispatch({ type: "setEffectParam", hostId: resolved.id, effectId: effect.id, id, value }, "claude");
+        dispatch({ type: "setEffectParam", hostId: resolved.id, effectId: effect.id, id, value }, "agent");
         return { ok: true, trackId: resolved.id, effectId: effect.id, id, value };
       },
     }),
@@ -347,7 +347,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       schema: z.object({ track: z.string().optional(), effect_id: z.string(), bypassed: z.boolean() }),
       run: ({ track, effect_id, bypassed }) => {
         const { track: resolved, effect } = resolveEffect(track, effect_id);
-        dispatch({ type: "bypassEffect", hostId: resolved.id, effectId: effect.id, bypassed }, "claude");
+        dispatch({ type: "bypassEffect", hostId: resolved.id, effectId: effect.id, bypassed }, "agent");
         return { ok: true, trackId: resolved.id, effectId: effect.id, bypassed };
       },
     }),
@@ -357,7 +357,7 @@ export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
       description: "Set the project tempo in BPM.",
       schema: z.object({ bpm: z.number().min(20).max(300) }),
       run: ({ bpm }) => {
-        dispatch({ type: "setTempo", bpm }, "claude");
+        dispatch({ type: "setTempo", bpm }, "agent");
         return { ok: true, bpm };
       },
     }),

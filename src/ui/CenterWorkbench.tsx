@@ -44,7 +44,7 @@ const MCP_DOT: Record<McpStatus, string> = {
 const MCP_TITLE: Record<McpStatus, string> = {
   connected: "MCP connected",
   connecting: "MCP connecting…",
-  disconnected: "MCP disconnected (only needed to drive the DAW from Claude Code)",
+  disconnected: "MCP disconnected",
 };
 
 /**
