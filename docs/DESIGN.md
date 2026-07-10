@@ -1107,6 +1107,121 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
   reusing the exact shapes already flowing through `dispatch`/MCP.
 
+**Collaboration & multi-user (options, not a decided direction)**
+
+These are candidate approaches for the 15E "remote sync / collaboration" follow-on, captured
+so the tradeoffs are on record. Nothing here is committed; presence and shared editing may
+land in either order, or not at all if the local-first single-user shape stays the priority.
+
+- **Authorship colour model - a projection of the log, not a stored field.** The keystone
+  already stamps every edit with its author (that is how the two-voice colouring works), so
+  "who last touched this clip/track/param" is a *query over the command log* and the colour is a
+  *view*, never a property saved on the object. This composes with versioning for free (the
+  overlay at any commit is just the log up to that point) and needs no format change. Two modes
+  worth separating because they answer different questions: (1) **live presence** - ephemeral,
+  per-person hue on a cursor / selection, showing what someone is touching *now* (the Figma /
+  Google-Docs experience, where most of the "easy to follow who's doing what" value lives); (2)
+  **historical blame** - a toggleable git-blame overlay tinting objects by last author, off by
+  default (a permanent border on everything is noise), decaying or on-demand so the arrangement
+  stays readable. Open question: **role vs identity are two axes.** Today's colours encode
+  *role* (you / agent / claude); multi-user adds an *identity* axis (an open set of people). An
+  option is to keep the teal/violet/coral accents for role and assign each human a stable hue
+  (hashed id into a curated palette) for presence/blame, defaulting the overlay to track/clip
+  granularity and drilling to note/param on demand so a busy piano roll does not turn to confetti.
+- **Concurrency model - keep the diff log, add a sequencer (leaning option).** A CRDT (Yjs/Automerge)
+  is all-or-nothing: its value is *owning* the document and merging at that level, so adopting one
+  means the store becomes a projection of its types and our authored command log stops being the
+  source of truth. We want to **keep the diff model**, so the natural partner is not a CRDT but
+  **server-authoritative event sourcing**: clients apply a command optimistically (instant local
+  feedback, as today), a **sequencer** stamps it with a global order and rebroadcasts, and clients
+  that had an in-flight optimistic op **rebase** it on top of the authoritative sequence. This is the
+  smallest departure from what exists - the log just gains a server-assigned order plus a reconcile
+  step - and it keeps one replayable, auditable log driving undo, history, and the two-voice feed
+  (adopting a CRDT would split the source of truth). The architecture already has the two hardest
+  prerequisites: **client-minted stable ids** (so concurrent inserts into a list never collide -
+  the classic hard case, already handled) and coarse, intent-carrying commands. The cost we take on
+  is owning the conflict *policy*: same-field edits resolve last-writer-by-sequence (intuitive), and
+  the one genuinely hard case is an op referencing something another user just deleted (needs an
+  explicit drop-or-resurrect rule - a small, enumerable set of command-vs-command interactions, not
+  open-ended). Escalate to **OT** (Operational Transformation - keep our commands, add transform
+  functions so concurrent same-object edits converge without clobbering) only if last-writer proves
+  too lossy; correct OT transforms are notoriously hard to build and test, so it is a later
+  escalation, not a starting point. Phasing unchanged: **presence-only first** (broadcast
+  cursor/selection/identity, render the live colour model - ephemeral, cannot corrupt a project),
+  then sequenced shared editing.
+- **The one thing this trades away.** Sequencing gives *consistency* (everyone converges to the same
+  state) but not the *automatic, offline-tolerant merge* a CRDT gives for free. For a DAW - where
+  edits mostly land on different tracks/clips and live/online collaboration is the target - that is a
+  good trade. The single scenario that would justify revisiting the store-as-CRDT fork is if
+  **long-offline divergent editing that must merge cleanly** ever becomes a core requirement.
+- **Libraries + the lock-in question.** Because we already own the command log (the expensive part),
+  the sequencer itself is small - receive command, assign a monotonic seq, persist, fan out - so the
+  honest ranking is by how much data-model lock-in each option imposes, which is a separate axis from
+  the transport/hosting choice (transport is swappable; the framework is where lock-in lives).
+  - *Least lock-in (leaning): own the protocol on a thin OSS layer.* Write the sequencer over a bare
+    Node WebSocket server (`ws`), or **PartyKit** (MIT; a thin stateful-room framework), or Cloudflare
+    **Durable Objects** directly. One room = one project maps perfectly and hibernates when idle. The
+    room handler is a standard socket handler, so the platform is *hosting we can re-point*, not a
+    data-model we are married to. We own the protocol and the log; nothing proprietary touches the
+    document shape.
+  - *Middle - an OSS sync library that keeps ops: **ShareDB** (MIT).* It is the mature
+    keep-your-own-operations + OT server, self-hostable with pluggable pub/sub and storage. Downside:
+    we adopt its JSON-OT type system and map commands onto it, and it is less actively maintained.
+  - *Most turnkey, most lock-in - managed sync BaaS.* **Replicache/Zero** (Rocicorp) is the textbook
+    optimistic-mutators + server-authoritative-rebase pattern and conceptually the closest match, but
+    it is source-available/proprietary (free now) from one small vendor that has already moved to a
+    successor - a real dependency risk. **Liveblocks**, **Convex**, **InstantDB** ship presence +
+    storage fastest but each imposes its own data model (mostly a CRDT/store we do not need since we
+    own our diffs) and, for the proprietary ones, its platform.
+  - *Transport/hosting cost, once a framework is chosen:* a self-hosted `ws` process is cheapest if we
+    run one small box; Durable Objects/PartyKit scale to zero (near-free at rest) at the cost of some
+    Cloudflare hosting tie (not code tie). Avoid **raw AWS Lambda + API Gateway WebSockets** (room
+    state lives nowhere; fan-out via DynamoDB + per-message billing is fiddly) and **WebRTC/`y-webrtc`**
+    (needs a signaling server + TURN, no natural persistence, does not scale past tiny rooms).
+  - *Presence*, note, needs none of this: who-is-online + cursors is a small ephemeral broadcast we can
+    run over the same channel without any CRDT or sync framework.
+- **First steps (if pursued), ordered by risk.** Do the irreversible, foundational work first while it
+  is cheap, prove each layer with no network risk before adding the next, and defer the one piece that
+  can corrupt data until last:
+  1. **Real identity on the log.** Replace the role-based author stamp (you / agent / claude) with a
+     stable per-person `authorId` + name + hue on every log entry and commit. This is the keystone
+     everything reads, it is the expensive-to-retrofit bit (backfilling authorship you never stamped is
+     painful), and per the no-legacy rule we just bump the format and stamp going forward. Delivers
+     value single-user immediately (it is what the blame overlay needs).
+  2. **Blame overlay (local) + `dispatch` seam audit.** Render "last author" from the log with no
+     network. The real payoff beyond the feature: building it forces an audit that *every* mutation
+     flows through `dispatch` - anything poking `ProjectStore` directly is invisible to the log and
+     would be invisible to any future sync. Finding those holes now, offline, is far cheaper than
+     debugging them later as merge desyncs. Highest-value de-risking step, zero infrastructure.
+  3. **Presence only (first networked step).** An ephemeral broadcast of cursor / selection / identity
+     over the chosen thin transport; render the live colour model. Carries no document state, so a bug
+     can flicker a cursor but never corrupt a project. Biggest legibility win for the least risk, and it
+     validates the transport + identity plumbing before any data rides on them.
+  4. **Sequenced shared editing (the hard phase).** Add the sequencer: optimistic local apply +
+     server-assigned order + rebase. Start with a small spike proving the rebase loop and the
+     edit-vs-delete policy against our real command set, then wire per-user undo (undo *my* edits, not
+     everyone's). Room = project maps onto the per-project bundles from slice 52, so persistence largely
+     falls out.
+- **How well it scales.** The model scales *on the axis that matters* and is naturally bounded on the
+  risky one. **Total projects** is embarrassingly parallel: rooms are shared-nothing (a room never talks
+  to another room), so they shard across processes / Durable Objects and scale to zero when idle - this
+  is the axis a hosted product grows along, and it is the easy one. **Users per room** is the fan-out
+  axis, and for a DAW it is naturally small (a band / session, single-digit to low-tens, not a
+  hundreds-in-one-file livestream), so broadcasting each command to every peer is trivial and the
+  single-threaded per-room sequencer (a Durable Object is literally one-threaded per object) is a
+  feature, not a bottleneck - it is what buys a clean total order cheaply. **Per-room write rate** is
+  low because commands are coarse and intent-carrying (a 64-note fill is *one* `add_notes`, not 64 ops)
+  and human/agent editing is bursty-but-slow; continuous gestures (a knob drag) coalesce before they
+  hit the wire. The one genuine scaling concern is **unbounded log growth per project**, and the
+  mitigation already exists in the codebase: **snapshot checkpoints + keyframe/delta commit storage**
+  (slices 15B / the undo checkpoints) mean a late joiner loads the latest snapshot and replays only the
+  tail since it, never the whole history - so catch-up bandwidth and memory are bounded by snapshot
+  cadence, not project age. The ceiling to name honestly: if a *single* project ever needed hundreds of
+  simultaneous editors, the one-sequencer-per-room design would bottleneck and want something fancier -
+  but that is not the DAW use case. Net: the primitives that make it scale (shared-nothing rooms,
+  snapshot + replay-the-tail) are ones we already have for versioning, so concurrency reuses them rather
+  than inventing them.
+
 **Platform & form factor**
 
 - **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
