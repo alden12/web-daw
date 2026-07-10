@@ -424,6 +424,32 @@ export class AudioEngine {
       .map((device) => ({ deviceId: device.deviceId, label: device.label }));
   }
 
+  /** Enumerate audio output devices (labels require a prior media-permission grant). */
+  async listOutputDevices(): Promise<{ deviceId: string; label: string }[]> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === "audiooutput")
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  }
+
+  /** Whether output-device routing (AudioContext.setSinkId) is available in this browser. */
+  get canSelectOutput(): boolean {
+    return typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
+  }
+
+  /** Route master output to a device by id ("" / null = system default). Chrome-only; a
+   *  bad id is ignored so playback stays on the current sink. */
+  async setOutputDevice(deviceId: string | null): Promise<void> {
+    const ctx = this.ctx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!ctx?.setSinkId) return;
+    try {
+      await ctx.setSinkId(deviceId ?? "");
+    } catch {
+      // invalid/unavailable device - keep the current output
+    }
+  }
+
   /**
    * Open a mic input and wire it for capture: `MediaStreamSource -> captureNode ->
    * silent sink`. The voice DSP is disabled (or Chrome mangles the signal). The

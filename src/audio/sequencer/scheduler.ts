@@ -152,9 +152,14 @@ export class Scheduler {
     this.metronomeEnabled = on;
   }
 
-  play(): void {
+  /**
+   * Start the transport. `atTime` anchors beat 0 to a specific AudioContext time
+   * (defaults to now); the recorder passes the count-in's downbeat so the transport
+   * metronome continues the count-in grid exactly in phase, free of setTimeout jitter.
+   */
+  play(atTime?: number): void {
     if (this.timer !== null || !this.engine.started) return;
-    this.anchorTime = this.engine.currentTime;
+    this.anchorTime = atTime ?? this.engine.currentTime;
     this.anchorBeat = 0;
     this.scheduledUntilBeats = 0;
     this.lastBps = this.project.tempo / 60;

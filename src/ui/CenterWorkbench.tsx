@@ -27,7 +27,8 @@ import { DrumRoll } from "./DrumRoll";
 import { ClipRail } from "./ClipRail";
 import { Waveform } from "./Waveform";
 import { Ruler } from "./timeline/Ruler";
-import { beatToX } from "./timeline/timeGrid";
+import { beatToX, DEFAULT_BEATS_PER_BAR } from "./timeline/timeGrid";
+import { beginPointerDrag } from "./pointerDrag";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber, usePersistentString } from "./usePersistent";
@@ -165,7 +166,6 @@ function AudioClipPanel({
   // Measure the preview width so the clip fills it: px-per-beat = width / clip-beats.
   const previewRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
-  const slideRef = useRef<{ x: number; base: number } | null>(null);
   const [previewW, setPreviewW] = useState(0);
   const pxPerBeat = previewW > 0 ? previewW / durBeats : 0;
   useEffect(() => {
@@ -223,20 +223,17 @@ function AudioClipPanel({
       patch,
     });
 
-  // Drag the waveform body horizontally to slide the audio under the fixed grid.
+  // Drag the waveform body horizontally to slide the audio under the fixed grid. Uses
+  // the shared window-listener drag (like the lanes and roll), so the gesture is not
+  // sensitive to pointer-capture / button-state quirks.
   const onSlideDown = (e: React.PointerEvent) => {
-    if (pxPerBeat <= 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    slideRef.current = { x: e.clientX, base: gridOffsetSec };
-  };
-  const onSlideMove = (e: React.PointerEvent) => {
-    const d = slideRef.current;
-    if (!d || !e.buttons || pxPerBeat <= 0) return;
-    const dxBeats = (e.clientX - d.x) / pxPerBeat;
-    setClip({ gridOffsetSec: d.base + dxBeats / bps });
-  };
-  const endSlide = () => {
-    slideRef.current = null;
+    if (e.button !== 0 || pxPerBeat <= 0) return;
+    const startX = e.clientX;
+    const base = gridOffsetSec;
+    beginPointerDrag((ev) => {
+      const dxBeats = (ev.clientX - startX) / pxPerBeat;
+      setClip({ gridOffsetSec: base + dxBeats / bps });
+    });
   };
 
   return (
@@ -264,8 +261,6 @@ function AudioClipPanel({
             )}
             <div
               onPointerDown={onSlideDown}
-              onPointerMove={onSlideMove}
-              onPointerUp={endSlide}
               onDoubleClick={() => setClip({ gridOffsetSec: 0 })}
               title="Drag to slide the audio under the grid (double-click to reset)"
               className="relative flex-1 min-h-0 rounded-b bg-ground border border-line border-t-0 overflow-hidden cursor-ew-resize touch-none"
@@ -283,6 +278,21 @@ function AudioClipPanel({
                   width: previewW || "100%",
                 }}
               />
+              {/* Beat grid over the waveform (bar lines + beat lines), fixed to the
+                  grid so you can align a transient by sliding the audio under it. */}
+              {pxPerBeat > 0 && (
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    backgroundImage: [
+                      `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${
+                        pxPerBeat * DEFAULT_BEATS_PER_BAR
+                      }px)`,
+                      `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${pxPerBeat}px)`,
+                    ].join(", "),
+                  }}
+                />
+              )}
               {pxPerBeat > 0 && loopStartSec > 0 && (
                 <div
                   className="absolute inset-y-0 left-0 bg-ground/65 pointer-events-none"

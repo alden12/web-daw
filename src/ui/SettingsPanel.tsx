@@ -1,28 +1,41 @@
 /**
  * The settings modal: a small tabbed panel opened from the gear at the bottom of the activity
  * rail. "Agent" holds the BYOK provider/key/model config; "Authors" holds the per-voice colour
- * swatches. Each tab renders its own section (AgentSettingsSection / AuthorColorSettings); Agent
- * is the default so the BYOK flow opens straight to it.
+ * swatches; "MIDI" holds hardware MIDI input. Each tab renders its own section; Agent is the
+ * default so the BYOK flow opens straight to it.
  */
 import { useState } from "react";
 import { AgentSettingsSection } from "./AgentSettings";
 import { AuthorColorSettings } from "./AuthorColorSettings";
+import { MidiSettings } from "./MidiSettings";
+import { RecordingSettings } from "./RecordingSettings";
 import type { AgentConfig } from "../audio/agent/config";
 import type { AuthorColorConfig } from "./authorColors";
+import type { MidiInput } from "../audio/midi/midiInput";
+import type { Recorder } from "../audio/recording/recorder";
+import type { AudioEngine } from "../audio/engine/AudioEngine";
 
-type Tab = "agent" | "authors";
+type Tab = "agent" | "authors" | "midi" | "recording";
 const TABS: { id: Tab; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "authors", label: "Authors" },
+  { id: "midi", label: "MIDI" },
+  { id: "recording", label: "Recording" },
 ];
 
 export function SettingsPanel({
   agentConfig,
   authorColors,
+  midiInput,
+  recorder,
+  engine,
   onClose,
 }: {
   agentConfig: AgentConfig;
   authorColors: AuthorColorConfig;
+  midiInput: MidiInput;
+  recorder: Recorder;
+  engine: AudioEngine;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("agent");
@@ -71,11 +84,10 @@ export function SettingsPanel({
           ))}
         </div>
 
-        {tab === "agent" ? (
-          <AgentSettingsSection config={agentConfig} onClose={onClose} />
-        ) : (
-          <AuthorColorSettings config={authorColors} />
-        )}
+        {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
+        {tab === "authors" && <AuthorColorSettings config={authorColors} />}
+        {tab === "midi" && <MidiSettings midiInput={midiInput} />}
+        {tab === "recording" && <RecordingSettings recorder={recorder} engine={engine} />}
       </div>
     </div>
   );
