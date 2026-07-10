@@ -4,13 +4,14 @@ import { collectParamIds, resolveLinear } from "../src/audio/graph/build";
 import { SHAPER_CURVES } from "../src/audio/graph/nodes";
 import { subtractive } from "../src/audio/instruments/graph/subtractive";
 import { fm } from "../src/audio/instruments/graph/fm";
+import { mellotronFlute } from "../src/audio/instruments/graph/mellotronFlute";
 import { delay } from "../src/audio/effects/graph/delay";
 import { distortion } from "../src/audio/effects/graph/distortion";
 import { tremolo } from "../src/audio/effects/graph/tremolo";
 
 describe("validateGraph", () => {
   it("passes for every shipped instrument definition", () => {
-    for (const def of [subtractive, fm]) {
+    for (const def of [subtractive, fm, mellotronFlute]) {
       expect(validateGraph(def.schema, def.voice, INSTRUMENT_RESERVED)).toEqual([]);
     }
   });

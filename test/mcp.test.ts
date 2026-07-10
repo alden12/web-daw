@@ -65,6 +65,41 @@ describe("MCP server (tracks)", () => {
     await daw.close();
   });
 
+  it("describe_device_format lists the node vocabulary", async () => {
+    const doc = parse(await call("describe_device_format"));
+    const kinds = doc.nodeKinds.map((entry: { kind: string }) => entry.kind);
+    expect(kinds).toContain("osc");
+    expect(kinds).toContain("biquad");
+    expect(doc.reserved.instrument).toContain("amp");
+  });
+
+  it("create_instrument rejects a malformed def at the boundary", async () => {
+    const res = await call("create_instrument", {
+      schema: [],
+      voice: { nodes: [{ id: "osc", kind: "osc" }], connections: [["osc", "ghost"]] },
+    });
+    expect(res.isError).toBe(true);
+  });
+
+  it("create_instrument stores a valid device, forwards it, and lists it", async () => {
+    const messages = await connectTab();
+    const res = await call("create_instrument", {
+      label: "Test Synth",
+      schema: [{ id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 }],
+      voice: { nodes: [{ id: "osc", kind: "osc", waveform: "sawtooth" }], connections: [["osc", "amp"]] },
+    });
+    expect(res.isError).toBeFalsy();
+    const created = /type (ci-\w+)/.exec(res.content[0].text)?.[1];
+    expect(created).toBeTruthy();
+
+    await waitFor(() => typesOf(messages).includes("addCustomInstrument"));
+    const list = parse(await call("list_custom_devices"));
+    expect(list.instruments).toHaveLength(1);
+    expect(list.instruments[0].label).toBe("Test Synth");
+
+    await call("remove_custom_device", { deviceType: created }); // cleanup (global catalog)
+  });
+
   it("list_tracks reports the instrument palette and starts with no tracks", async () => {
     const data = parse(await call("list_tracks"));
     expect(data.connected).toBe(false);
@@ -72,6 +107,7 @@ describe("MCP server (tracks)", () => {
     expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual([
       "drumkit",
       "fm",
+      "mellotron",
       "nimbus",
       "organ",
       "sampler",

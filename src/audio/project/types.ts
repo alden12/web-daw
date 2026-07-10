@@ -18,6 +18,7 @@
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
 import type { SampleAsset } from "../samples/catalog";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export interface EffectMeta {
@@ -207,6 +208,15 @@ export interface ProjectData {
   grooveAmount?: number;
   /** The imported-sample library (referenced by Sampler params). Optional: defaults to []. */
   samples?: SampleAsset[];
+  /**
+   * User-authored instruments/effects, declared as data (graph + schema) and embedded in
+   * the project so they travel with it - opening/sharing a project makes them available
+   * with no separate library. Validated at load (graph/zod parseCustomDevices); invalid
+   * defs are dropped. `deviceFormatVersion` gates the shape. Optional: default to none.
+   */
+  customInstruments?: GraphInstrumentDef[];
+  customEffects?: GraphEffectDef[];
+  deviceFormatVersion?: number;
   /**
    * Who last edited each object, for the last-editor colour tint: an object key -> author map
    * with keys like `track:<id>`, `note:<id>`, `param:<trackId>:<paramId>`. Derived at the single

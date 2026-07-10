@@ -46,6 +46,11 @@ export class ParamStore {
     return spec;
   }
 
+  /** Whether the schema declares this parameter. */
+  has(id: string): boolean {
+    return this.specs.has(id);
+  }
+
   /** Every param spec, in schema order (for generic, schema-driven binding). */
   allSpecs(): ParamSpec[] {
     return [...this.specs.values()];

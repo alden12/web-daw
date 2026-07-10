@@ -13,6 +13,7 @@ import type { Instrument } from "./types";
 import { GraphInstrument } from "../graph/GraphInstrument";
 import { subtractive } from "./graph/subtractive";
 import { fm } from "./graph/fm";
+import { mellotronFlute } from "./graph/mellotronFlute";
 import { SupersawInstrument } from "./Supersaw";
 import { OrganInstrument } from "./Organ";
 import { WorkletInstrument } from "./WorkletInstrument";
@@ -40,6 +41,7 @@ export function createInstrument(type: string, ctx: AudioContext, store: ParamSt
 // still class-based. See src/audio/graph and DESIGN.md 16.
 registerInstrumentFactory(subtractive.type, (ctx, store) => new GraphInstrument(ctx, store, subtractive));
 registerInstrumentFactory(fm.type, (ctx, store) => new GraphInstrument(ctx, store, fm));
+registerInstrumentFactory(mellotronFlute.type, (ctx, store) => new GraphInstrument(ctx, store, mellotronFlute));
 registerInstrumentFactory("supersaw", (ctx, store) => new SupersawInstrument(ctx, store));
 registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, store));
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));

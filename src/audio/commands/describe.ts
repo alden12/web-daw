@@ -49,6 +49,10 @@ const DESCRIBE: DescribeMap = {
   },
   setInstrument: (command, ctx) =>
     `Set instrument to ${instLabel(command.instrumentType)}${on(ctx, command.trackId, "")}`,
+  addCustomInstrument: (command) => `Added instrument "${command.def.label ?? command.def.type}"`,
+  removeCustomInstrument: () => "Removed a custom instrument",
+  addCustomEffect: (command) => `Added effect "${command.def.label ?? command.def.type}"`,
+  removeCustomEffect: () => "Removed a custom effect",
   setAudioClip: () => "Edited audio clip",
   addAudioClip: (command) => `Recorded ${command.name ? `"${command.name}"` : "a take"}`,
   addNoteClip: (command) =>
