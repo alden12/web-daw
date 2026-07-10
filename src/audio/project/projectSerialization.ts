@@ -45,6 +45,8 @@ export interface TransportState {
   grooveId: string;
   grooveAmount: number;
   samples: SampleAsset[];
+  /** Last-editor map; only the persistable snapshot carries it (the reactive structure omits it). */
+  authorship?: Record<string, ClipAuthor>;
 }
 
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
@@ -109,6 +111,8 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     grooveId: transport.grooveId,
     grooveAmount: transport.grooveAmount,
     samples: transport.samples.map((sample) => ({ ...sample })),
+    // Copy so undo checkpoints don't alias the live map (stamping mutates it in place).
+    authorship: { ...(transport.authorship ?? {}) },
   };
 }
 

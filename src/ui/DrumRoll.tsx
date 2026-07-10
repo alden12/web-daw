@@ -12,6 +12,7 @@ import type { ParamStore } from "../audio/params/store";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
+import type { ProjectStore } from "../audio/project/projectStore";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { DRUMKIT_BASE_NOTE, DRUMKIT_PADS } from "../audio/instruments/catalog";
 import { refLabel } from "../audio/samples/catalog";
@@ -27,6 +28,7 @@ export function DrumRoll({
   scheduler,
   recorder,
   dispatch,
+  projectStore,
 }: {
   clipStore: ClipStore;
   params: ParamStore;
@@ -35,6 +37,7 @@ export function DrumRoll({
   scheduler: Scheduler;
   recorder: Recorder;
   dispatch: Dispatch;
+  projectStore?: ProjectStore;
 }) {
   const pads = usePads(params);
   const rows = useMemo<RollRows>(() => {
@@ -71,6 +74,7 @@ export function DrumRoll({
       recorder={recorder}
       trackId={trackId}
       dispatch={dispatch}
+      projectStore={projectStore}
       rows={rows}
     />
   );

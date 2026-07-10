@@ -155,6 +155,10 @@ export class ProjectStore {
   private grooveId = DEFAULT_GROOVE_ID;
   private grooveAmount = 1;
   private samples: SampleAsset[] = [];
+  /** Who last edited each object (key -> author), for the last-editor colour tint. Mutated in
+   *  place at the applyEdit seam via setAuthor; snapshot() copies it out and load() restores it,
+   *  so it rides undo/redo/reload like the rest of the project. */
+  private authorship: Record<string, ClipAuthor> = {};
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: ProjectStructure;
@@ -1126,7 +1130,29 @@ export class ProjectStore {
       grooveId: this.grooveId,
       grooveAmount: this.grooveAmount,
       samples: this.samples,
+      authorship: this.authorship,
     });
+  }
+
+  /** The author who last edited a given object key (`track:<id>`, `note:<id>`, ...), or undefined. */
+  authorOf(key: string): ClipAuthor | undefined {
+    return this.authorship[key];
+  }
+
+  /** Record who last edited an object key. Called from the applyEdit seam; the caller emits. */
+  setAuthor(key: string, author: ClipAuthor): void {
+    this.authorship[key] = author;
+  }
+
+  /** Forget authorship for removed objects, by exact key or by `prefix:` (drops every key under it). */
+  dropAuthors(keysOrPrefixes: string[]): void {
+    for (const entry of keysOrPrefixes) {
+      if (entry.endsWith(":")) {
+        for (const key of Object.keys(this.authorship)) if (key.startsWith(entry)) delete this.authorship[key];
+      } else {
+        delete this.authorship[entry];
+      }
+    }
   }
 
   load(data: ProjectData): void {
@@ -1201,6 +1227,7 @@ export class ProjectStore {
     this.grooveId = data.grooveId ?? DEFAULT_GROOVE_ID;
     this.grooveAmount = clamp(data.grooveAmount ?? 1, 0, 1);
     this.samples = (data.samples ?? []).map((sample) => ({ ...sample }));
+    this.authorship = { ...(data.authorship ?? {}) };
     this.selectedTrackId =
       data.selectedTrackId && this.getTrack(data.selectedTrackId) ? data.selectedTrackId : (this.tracks[0]?.id ?? null);
     this.emit();

@@ -8,6 +8,8 @@ import type { GroupMeta, TrackMeta, Placement } from "../../audio/project/types"
 import type { ProjectStore } from "../../audio/project/projectStore";
 import type { Dispatch } from "../../audio/commands/types";
 import { newTrackId } from "../../audio/commands/ids";
+import { trackKey } from "../../audio/commands/authorship";
+import { voiceOf } from "../authorVoice";
 import { EMPTY_INSTRUMENT } from "../../audio/instruments/catalog";
 import { Menu } from "../Menu";
 import { InlineRename } from "../InlineRename";
@@ -105,15 +107,16 @@ function TrackHeader({
   projectStore: ProjectStore;
   dispatch: Dispatch;
 }) {
+  // Always-on left accent in the track's last-editor colour (a live CSS var, so it recolours with
+  // the swatch). Selection is carried by the background tint, so the two cues don't fight one edge.
+  const accent = `var(--color-${voiceOf(projectStore.authorOf(trackKey(track.id)) ?? "you")})`;
   return (
     <div
       onClick={() => projectStore.selectTrack(track.id)}
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
-        selected
-          ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))] shadow-[inset_2px_0_0_var(--color-you)]"
-          : "bg-panel"
+        selected ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))]" : "bg-panel"
       }`}
-      style={{ paddingLeft: GUTTER_PAD + depth * INDENT }}
+      style={{ paddingLeft: GUTTER_PAD + depth * INDENT, boxShadow: `inset 3px 0 0 ${accent}` }}
     >
       {/* Leading gutter (same slot as a group's collapse arrow): the audio
           record-enable lives here so mute/solo align with group rows. */}
@@ -236,6 +239,7 @@ export function TrackRow({
           onMark={onMark}
           onHover={onHover}
           dispatch={dispatch}
+          projectStore={projectStore}
         />
       ) : (
         <div className={`${ROW} border-b border-line-soft`} style={{ width: laneWidth }} />

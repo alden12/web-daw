@@ -12,6 +12,8 @@ import { useState } from "react";
 import type { ParamStore } from "../audio/params/store";
 import type { ParamSpec } from "../audio/params/types";
 import type { Dispatch } from "../audio/commands/types";
+import type { ProjectStore } from "../audio/project/projectStore";
+import { paramKey } from "../audio/commands/authorship";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { instrumentSchema } from "../audio/instruments/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
@@ -26,12 +28,15 @@ export function DrumkitPanel({
   dispatch,
   samples,
   onRevealSamples,
+  projectStore,
 }: {
   params: ParamStore;
   trackId: string;
   dispatch: Dispatch;
   samples: SampleAsset[];
   onRevealSamples?: () => void;
+  /** Supplies per-param last-editor authorship for the knob tint. */
+  projectStore: ProjectStore;
 }) {
   const pads = usePads(params);
   const sections = toSections(instrumentSchema("drumkit"));
@@ -54,7 +59,15 @@ export function DrumkitPanel({
     onReveal: onRevealSamples,
   };
   const rowControl = (spec: ParamSpec) => (
-    <Knob key={spec.id} spec={spec} store={params} variant="row" onChange={setParam} sampleContext={sampleContext} />
+    <Knob
+      key={spec.id}
+      spec={spec}
+      store={params}
+      variant="row"
+      onChange={setParam}
+      sampleContext={sampleContext}
+      author={projectStore.authorOf(paramKey(trackId, spec.id))}
+    />
   );
 
   return (
@@ -95,7 +108,16 @@ export function DrumkitPanel({
                   <span className="font-mono text-[9px] tracking-[0.16em] uppercase text-faint">
                     {sectionTitle(section.namespace)}
                   </span>
-                  {noteSpec && <Knob spec={noteSpec} store={params} variant="row" hideLabel onChange={setParam} />}
+                  {noteSpec && (
+                    <Knob
+                      spec={noteSpec}
+                      store={params}
+                      variant="row"
+                      hideLabel
+                      onChange={setParam}
+                      author={projectStore.authorOf(paramKey(trackId, noteSpec.id))}
+                    />
+                  )}
                 </div>
                 {sampleSpec && (
                   <SamplePicker

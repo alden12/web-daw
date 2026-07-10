@@ -20,6 +20,9 @@
  * end so you can scroll there and drag the end out.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ProjectStore } from "../audio/project/projectStore";
+import { noteKey } from "../audio/commands/authorship";
+import { voiceNoteClass } from "./authorVoice";
 import type { ClipStore } from "../audio/sequencer/clipStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -110,6 +113,7 @@ export function PianoRoll({
   recorder,
   trackId,
   dispatch,
+  projectStore,
   rows = CHROMATIC_ROWS,
 }: {
   clipStore: ClipStore;
@@ -117,6 +121,8 @@ export function PianoRoll({
   recorder: Recorder;
   trackId: string;
   dispatch: Dispatch;
+  /** Supplies per-note last-editor authorship for the voice tint; omit to leave notes untinted. */
+  projectStore?: ProjectStore;
   /** Row labelling/tinting/framing; defaults to the chromatic keyboard. */
   rows?: RollRows;
 }) {
@@ -601,16 +607,14 @@ export function PianoRoll({
 
               {clip.notes.map((note) => {
                 const selected = selection.has(note.id);
+                // Tint the note by its last editor (voice). Falls back to "you" when unstamped.
+                const author = projectStore?.authorOf(noteKey(note.id)) ?? "you";
                 return (
                   <div
                     key={note.id}
                     data-testid="note"
                     onPointerDown={(e) => onNoteDown(note, e)}
-                    className={`absolute rounded-sm box-border cursor-grab ${
-                      selected
-                        ? "bg-bright border border-you ring-1 ring-you"
-                        : "bg-you border border-you/40 hover:brightness-125"
-                    }`}
+                    className={`absolute rounded-sm box-border cursor-grab ${voiceNoteClass(author, selected)}`}
                     style={{
                       left: beatToX(note.start, pxPerBeat),
                       width: Math.max(2, beatToX(note.length, pxPerBeat) - 1),

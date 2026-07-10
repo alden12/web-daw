@@ -6,12 +6,14 @@
  * rendering, kept here since nothing else uses them.
  */
 import { useRef, useState } from "react";
-import type { Track } from "../../audio/project/projectStore";
+import type { ProjectStore, Track } from "../../audio/project/projectStore";
 import type { ClipStore } from "../../audio/sequencer/clipStore";
 import type { Placement } from "../../audio/project/types";
 import type { Dispatch } from "../../audio/commands/types";
 import { GRID } from "../../audio/sequencer/types";
 import { useClip } from "../../audio/sequencer/useClip";
+import { clipKey, noteKey } from "../../audio/commands/authorship";
+import { voiceBlockClass, voiceBlockTint, voiceMiniClass } from "../authorVoice";
 import { newClipId, newPlacementId } from "../../audio/commands/ids";
 import { beginPointerDrag } from "../pointerDrag";
 import { Waveform } from "../Waveform";
@@ -19,9 +21,11 @@ import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "../clipDnd";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "../timeline/timeGrid";
 import { ROW, RESIZE_PX, DRAG_THRESH, type Selection } from "./shared";
 
-/** A placement block: pixel-positioned region with a label, shared by both kinds. */
+/** A placement block: pixel-positioned region with a label, shared by both kinds. Tinted by the
+ *  clip's last editor (its `author` voice). */
 function Block({
   name,
+  author,
   left,
   width,
   selected,
@@ -30,6 +34,7 @@ function Block({
   children,
 }: {
   name?: string;
+  author: string;
   left: number;
   width: number;
   selected: boolean;
@@ -42,15 +47,11 @@ function Block({
       data-testid="placement"
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
-      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${
-        selected
-          ? "border-you bg-you/25 ring-1 ring-you"
-          : "border-line border-t-2 border-t-you bg-card hover:bg-card/70"
-      }`}
+      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${voiceBlockClass(author, selected)}`}
       style={{ left, width: Math.max(3, width) }}
       title={name}
     >
-      <div className="absolute inset-0 bg-you/10" />
+      <div className={`absolute inset-0 ${voiceBlockTint(author)}`} />
       {children}
       <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{name}</span>
       {/* right-edge resize affordance */}
@@ -64,7 +65,20 @@ function Block({
  * looped clip (a window longer than the clip) shows its repeats, with a faint
  * divider at each loop boundary. Mirrors the scheduler's `tileClipNotes` math.
  */
-function NoteMinis({ store, placement, pxPerBeat }: { store: ClipStore; placement: Placement; pxPerBeat: number }) {
+function NoteMinis({
+  store,
+  placement,
+  pxPerBeat,
+  projectStore,
+  fallbackAuthor,
+}: {
+  store: ClipStore;
+  placement: Placement;
+  pxPerBeat: number;
+  projectStore: ProjectStore;
+  /** Voice for notes with no recorded editor yet (matches the block's clip author). */
+  fallbackAuthor: string;
+}) {
   const clip = useClip(store);
   const clipLen = clip.lengthBeats;
   if (clipLen <= 0) return null;
@@ -98,7 +112,9 @@ function NoteMinis({ store, placement, pxPerBeat }: { store: ClipStore; placemen
       {tiles.map(({ key, tau, note }) => (
         <div
           key={key}
-          className="absolute h-0.5 rounded-[1px] bg-you/85 pointer-events-none"
+          className={`absolute h-0.5 rounded-[1px] pointer-events-none ${voiceMiniClass(
+            projectStore.authorOf(noteKey(note.id)) ?? fallbackAuthor,
+          )}`}
           style={{
             left: beatToX(tau, pxPerBeat),
             width: Math.max(2, beatToX(note.length, pxPerBeat)),
@@ -130,6 +146,7 @@ export function Lane({
   onMark,
   onHover,
   dispatch,
+  projectStore,
 }: {
   track: Track;
   width: number;
@@ -144,6 +161,7 @@ export function Lane({
   onMark: (trackId: string, beat: number) => void;
   onHover: (beat: number | null) => void;
   dispatch: Dispatch;
+  projectStore: ProjectStore;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
@@ -327,10 +345,14 @@ export function Lane({
       {track.placements.map((placement) => {
         const clip = track.clips.find((candidate) => candidate.id === placement.clipId);
         const selected = selection?.trackId === track.id && selection.id === placement.id;
+        // The block follows the clip's last editor (content author): its `clip:<id>` authorship,
+        // falling back to the clip's creation author for clips edited before this was tracked.
+        const clipAuthor = (clip && projectStore.authorOf(clipKey(clip.id))) ?? clip?.author ?? "you";
         return (
           <Block
             key={placement.id}
             name={clip?.name}
+            author={clipAuthor}
             left={beatToX(placement.startBeat, pxPerBeat)}
             width={beatToX(placement.length, pxPerBeat)}
             selected={selected}
@@ -338,7 +360,13 @@ export function Lane({
             onDoubleClick={(e) => onBlockDouble(placement, e)}
           >
             {clip && "store" in clip ? (
-              <NoteMinis store={clip.store} placement={placement} pxPerBeat={pxPerBeat} />
+              <NoteMinis
+                store={clip.store}
+                placement={placement}
+                pxPerBeat={pxPerBeat}
+                projectStore={projectStore}
+                fallbackAuthor={clipAuthor}
+              />
             ) : clip && "fileId" in clip ? (
               <Waveform fileId={clip.fileId} gain={clip.gain} className="absolute inset-0 w-full h-full opacity-80" />
             ) : null}

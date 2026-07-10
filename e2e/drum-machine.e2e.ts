@@ -56,8 +56,9 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await expect(grid).toBeVisible();
   await expect(page.getByTestId("note")).toHaveCount(1);
   // The reserved left gutter (a column beside the notes, not over them) labels the row
-  // with its assigned note + drum name ("C4 Kick"), so you can see and play the mapping.
-  await expect(page.getByText("C4 Kick", { exact: true })).toBeVisible();
+  // with its assigned note + drum name ("C2 Kick" - the GM kick note 36), so you can see
+  // and play the mapping.
+  await expect(page.getByText("C2 Kick", { exact: true })).toBeVisible();
 
   // Back to Pads: the step grid returns with the hit still lit.
   await page.getByRole("button", { name: "Pads", exact: true }).click();

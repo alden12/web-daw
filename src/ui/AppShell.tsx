@@ -21,8 +21,9 @@ import { LibraryPanel } from "./LibraryPanel";
 import { ActivityRail, type LibraryView } from "./ActivityRail";
 import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
-import { AgentSettings } from "./AgentSettings";
+import { SettingsPanel } from "./SettingsPanel";
 import { useAgentConfig } from "./useAgentConfig";
+import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
 import { activeKey } from "../audio/agent/config";
 import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
@@ -80,6 +81,8 @@ export function AppShell() {
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const agentConfig = useAgentConfig();
+  const authorColors = useAuthorColors();
+  useSyncAuthorColorVars(authorColors);
 
   // Rail interaction: a non-active icon selects its view (opening the panel if
   // collapsed); the active icon toggles the panel collapsed.
@@ -328,7 +331,9 @@ export function AppShell() {
           style={{ left: RAIL_WIDTH, right: 0, bottom: effTimelineH }}
         />
       </div>
-      {settingsOpen && <AgentSettings config={agentConfig} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsPanel agentConfig={agentConfig} authorColors={authorColors} onClose={() => setSettingsOpen(false)} />
+      )}
       {!started && <StartDialog onStart={handleStart} />}
     </div>
   );

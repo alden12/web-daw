@@ -8,6 +8,7 @@
  * replaces - only the entry point changes.
  */
 import type { ProjectStore } from "../project/projectStore";
+import { authorshipEffect, clipKey, noteEditClipTarget } from "./authorship";
 import type { Author, EditCommand } from "./types";
 
 type ApplyMap = {
@@ -147,4 +148,15 @@ export function applyEdit(project: ProjectStore, command: EditCommand, author: A
     command,
     author,
   );
+  // Stamp who last edited each object this command touched (and forget any it removed), so the
+  // last-editor colour tint reads it. One seam for UI + MCP + replay keeps authorship exact.
+  const effect = authorshipEffect(command);
+  if (effect.removed) project.dropAuthors(effect.removed);
+  if (effect.touched) for (const key of effect.touched) project.setAuthor(key, author);
+  // Note edits also stamp their (possibly active) clip, so its timeline block tracks note authorship.
+  const noteTarget = noteEditClipTarget(command);
+  if (noteTarget) {
+    const clipId = noteTarget.clipId ?? project.getTrack(noteTarget.trackId)?.activeClipId ?? undefined;
+    if (clipId) project.setAuthor(clipKey(clipId), author);
+  }
 }
