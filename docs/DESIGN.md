@@ -728,6 +728,37 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   drag-and-drop** - dragging an instrument/effect from the library onto the track edit panel
   (the add-effect menu covers the quick path; full DnD, incl. instrument-on-track semantics, is
   the larger item).
+- **Timeline & clip-editing usability (batch, follow-ons).** A set of arrangement / piano-roll
+  interaction gaps and small features. Several are touch-shaped by design (see the touch-first note
+  under Platform & form factor): every new action wants a right-click menu *and* a tap-reachable
+  equivalent.
+  - *Drag placements between tracks.* Today `movePlacement` only changes `startBeat`, so a placed
+    clip can move along its lane but not onto another track. Extend it (or add a cross-track move) so
+    a MIDI / audio placement drags onto any same-kind track's lane, mirroring the existing rail-drop
+    copy path.
+  - *Split from a lane context menu.* Splitting is double-click-only today. Add a "Split here" item to
+    a lane's right-click (and touch three-dots) menu, acting at the lane's selection marker. This
+    needs **clicking a track to also drop the selection marker on it** (today a click only selects the
+    track), so the marker is where the split lands.
+  - *Clip layering / stacking (promote the overlap).* Overlapping placements on one lane already
+    "just work"; make it an intended feature - MIDI / audio clips may stack on the same track, drawn
+    **semi-transparent** so lower clips / notes / audio read through. Needs: a **replace-vs-stack
+    prompt on clip drop**; **multi-select of tracks** (shift-click, plus a multi-select mode in the
+    timeline-options menu for touch); and a **merge / combine-tracks** action (right-click /
+    three-dots) that flattens the selected tracks' clips into one.
+  - *Bug: note-drag snapping.* Dragging a note in the piano roll doesn't always land its start on a
+    grid line - the onset can end up off-grid. The snap should apply to the note onset consistently
+    (audit the `snapBeat` / drag-origin math in the roll).
+  - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
+    length in one gesture (today a click adds a fixed-length note).
+  - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
+    a placement's `offset` (where the clip starts) can't be moved off 0 from the UI. Add a start
+    handle so the clip's start point is draggable.
+  - *Don't auto-place a blank clip.* Creating a track / instrument should not drop an empty clip on
+    the timeline; the pool clip exists, and the user drags it onto a lane intentionally.
+  - *Context menus on clips + tracks.* Both the timeline and the panel give clips and tracks a
+    right-click context menu, plus a **persistent three-dots (⋮) affordance** (not hover-only) so the
+    same actions are reachable by touch.
 - **Activity feed at scale.** The feed already caps the rendered list at 100; for very long
   sessions, **virtualize / paginate** the history (and consider truncating or chunking the
   persisted log) so it stays smooth.
@@ -1224,6 +1255,14 @@ land in either order, or not at all if the local-first single-user shape stays t
 
 **Platform & form factor**
 
+- **Touch-first affordances (design principle, apply now - not just for mobile).** Even before a full
+  responsive layout, build interactions so they also work by touch, because retrofitting hover- and
+  right-click-only UI later is expensive. Concretely: prefer **persistent ⋮ menus over hover-only
+  kebabs**; always pair a **right-click context menu with a tap-reachable equivalent** (a ⋮ button, a
+  long-press, or a mode); keep **hit targets generous** (glyph icons sized up, not tiny). This is the
+  cheap groundwork that keeps the longer-term tablet / mobile goal (the Mobile / responsive bullet
+  below) reachable without a rewrite, and it is why the timeline-usability batch above specifies a
+  touch path for each new action.
 - **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
   + timeline) assumes a wide screen; small screens need a different shape - collapse to a
   single focused region with a bottom tab/drawer bar to switch between library, the selected
