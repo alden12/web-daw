@@ -20,6 +20,7 @@ import { EMPTY_INSTRUMENT, pickableInstrumentInfos } from "../audio/instruments/
 import { InstrumentPanel } from "./InstrumentPanel";
 import { DrumkitPanel } from "./DrumkitPanel";
 import { EffectChain, FlowArrow } from "./EffectChain";
+import { MidiDeviceChain } from "./MidiDeviceChain";
 import { StepGrid } from "./StepGrid";
 import { Fader } from "./MixerControls";
 import { PianoRoll } from "./PianoRoll";
@@ -64,6 +65,11 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
       author: "you",
       instrumentType: track.instrumentType,
       params: track.params.snapshot(),
+      midiDevices: track.midiDevices.map((device) => ({
+        type: device.type,
+        bypassed: device.bypassed,
+        params: device.params.snapshot(),
+      })),
       effects: track.effects.map((fx) => ({
         type: fx.type,
         bypassed: fx.bypassed,
@@ -631,6 +637,8 @@ export function CenterWorkbench({
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
+            {/* MIDI devices transform notes before the instrument, so they lead the chain. */}
+            <MidiDeviceChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
             {selectedTrack.kind === "instrument" &&
               (selectedTrack.instrumentType === EMPTY_INSTRUMENT ? (
                 <InstrumentPicker trackId={selectedTrack.id} dispatch={dispatch} />

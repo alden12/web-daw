@@ -40,7 +40,7 @@ describe("LiveNotes", () => {
     inst = fakeInstrument();
     rec = fakeRecorder();
     project = { selectedId: "track-1" };
-    engine = { getInstrument: (id) => (id === "track-1" ? inst.target : undefined) };
+    engine = { getNoteTarget: (id) => (id === "track-1" ? inst.target : undefined) };
     live = new LiveNotes(engine, project, rec.recorder);
   });
 

@@ -9,7 +9,7 @@ import type { ParamSpec } from "../../params/types";
 import type { ParamStore } from "../../params/store";
 import type { ProjectStore } from "../../project/projectStore";
 import { defineTool, describeParam, type ToolContext } from "./factory";
-import { newEffectId, newTrackId } from "../../commands/ids";
+import { newEffectId, newMidiDeviceId, newTrackId } from "../../commands/ids";
 import { effectInfos, effectSchema, hasEffect } from "../../effects/catalog";
 import { instrumentSchema } from "../../instruments/catalog";
 import { validateParam } from "../../params/validate";
@@ -210,6 +210,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
           name: found.name,
           instrument: found.instrumentType,
           params: found.params,
+          midiDevices: found.midiDevices ?? [],
           effects: found.effects,
         };
       },
@@ -231,6 +232,12 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
             name: name ?? found.name,
             instrumentType: found.instrumentType,
             params: found.params,
+            midiDevices: (found.midiDevices ?? []).map((device) => ({
+              id: newMidiDeviceId(),
+              type: device.type,
+              bypassed: device.bypassed,
+              params: device.params,
+            })),
             effects: found.effects.map((effect) => ({
               id: newEffectId(),
               type: effect.type,
@@ -258,6 +265,11 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
           author: "agent",
           instrumentType: instrumentTrack.instrumentType,
           params: instrumentTrack.params.snapshot(),
+          midiDevices: instrumentTrack.midiDevices.map((device) => ({
+            type: device.type,
+            bypassed: device.bypassed,
+            params: device.params.snapshot(),
+          })),
           effects: instrumentTrack.effects.map((effect) => ({
             type: effect.type,
             bypassed: effect.bypassed,

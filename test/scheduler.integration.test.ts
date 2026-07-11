@@ -18,7 +18,7 @@ describe("Scheduler integration (mocked clock)", () => {
       get currentTime() {
         return clock;
       },
-      getInstrument(id: string) {
+      getNoteTarget(id: string) {
         if (!instByTrack.has(id)) instByTrack.set(id, { id });
         return {
           playNote: (midi: number, _dur: number, _vel: number, when: number) => calls.push({ trackId: id, midi, when }),

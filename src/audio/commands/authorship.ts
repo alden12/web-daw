@@ -17,6 +17,9 @@ export const paramKey = (trackId: string, id: string): string => `param:${trackI
 export const effectKey = (id: string): string => `effect:${id}`;
 export const effectParamKey = (hostId: string, effectId: string, id: string): string =>
   `effectParam:${hostId}:${effectId}:${id}`;
+export const midiDeviceKey = (id: string): string => `midiDevice:${id}`;
+export const midiDeviceParamKey = (trackId: string, deviceId: string, id: string): string =>
+  `midiDeviceParam:${trackId}:${deviceId}:${id}`;
 export const clipKey = (id: string): string => `clip:${id}`;
 export const placementKey = (id: string): string => `placement:${id}`;
 export const groupKey = (id: string): string => `group:${id}`;
@@ -81,6 +84,20 @@ const EFFECTS: EffectMap = {
       trackKey(command.hostId),
       effectKey(command.effectId),
       effectParamKey(command.hostId, command.effectId, command.id),
+    ],
+  }),
+  addMidiDevice: (command) => ({ touched: [trackKey(command.trackId), midiDeviceKey(command.id)] }),
+  removeMidiDevice: (command) => ({
+    touched: [trackKey(command.trackId)],
+    removed: [midiDeviceKey(command.deviceId), `midiDeviceParam:${command.trackId}:${command.deviceId}:`],
+  }),
+  moveMidiDevice: (command) => ({ touched: [trackKey(command.trackId), midiDeviceKey(command.deviceId)] }),
+  bypassMidiDevice: (command) => ({ touched: [trackKey(command.trackId), midiDeviceKey(command.deviceId)] }),
+  setMidiDeviceParam: (command) => ({
+    touched: [
+      trackKey(command.trackId),
+      midiDeviceKey(command.deviceId),
+      midiDeviceParamKey(command.trackId, command.deviceId, command.id),
     ],
   }),
   addNote: (command) => ({ touched: [trackKey(command.trackId), noteKey(command.note.id)] }),

@@ -10,7 +10,7 @@ import { useProject } from "../audio/project/useProject";
 import { effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
 import { effectParamKey } from "../audio/commands/authorship";
-import { Knob } from "./Knob";
+import { DeviceParams } from "./DeviceParams";
 
 /** The signal-flow arrow. Placed to the RIGHT of an outputting device (and kept in the
  *  same flex group as that device) so it trails cleanly instead of leading a wrapped row. */
@@ -114,25 +114,14 @@ export function EffectChain({
                   ×
                 </button>
               </div>
-              <div className="flex gap-3 px-3 py-3">
-                {effectSchema(fx.type).map((spec) => (
-                  <Knob
-                    key={spec.id}
-                    spec={spec}
-                    store={store}
-                    onChange={(id, value) =>
-                      dispatch({
-                        type: "setEffectParam",
-                        hostId: trackId,
-                        effectId: fx.id,
-                        id,
-                        value,
-                      })
-                    }
-                    author={projectStore.authorOf(effectParamKey(trackId, fx.id, spec.id))}
-                  />
-                ))}
-              </div>
+              <DeviceParams
+                schema={effectSchema(fx.type)}
+                store={store}
+                onChange={(id, value) =>
+                  dispatch({ type: "setEffectParam", hostId: trackId, effectId: fx.id, id, value })
+                }
+                authorOf={(paramId) => projectStore.authorOf(effectParamKey(trackId, fx.id, paramId))}
+              />
             </div>
             {i < effects.length - 1 ? <FlowArrow /> : null}
           </div>

@@ -175,7 +175,7 @@ export class Scheduler {
     this.timer = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
-    for (const track of this.project.getTracks()) this.engine.getInstrument(track.id)?.allNotesOff();
+    for (const track of this.project.getTracks()) this.engine.getNoteTarget(track.id)?.allNotesOff();
     this.engine.stopAllAudio();
     this.onStateChange?.(false);
   }
@@ -244,8 +244,9 @@ export class Scheduler {
         ? [{ id: "__launch", clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
         : track.placements;
       if (track.kind === "instrument") {
-        const instrument = this.engine.getInstrument(track.id);
-        if (!instrument) continue;
+        // Route through the note pipeline (MIDI devices -> instrument), not the raw instrument.
+        const noteTarget = this.engine.getNoteTarget(track.id);
+        if (!noteTarget) continue;
         // Flatten the arrangement: each placement contributes its clip's notes,
         // tiled across its window (looping a clip whose window outruns it) and
         // shifted to the placement's start on the arrangement.
@@ -263,7 +264,7 @@ export class Scheduler {
           const shift = grooveAt(groove, atBeat, grooveAmount);
           const when = Math.max(now, this.anchorTime + (atBeat - this.anchorBeat) / bps + shift.offsetBeats / bps);
           const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
-          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, when);
+          noteTarget.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, when);
         }
       } else {
         // Each audio placement triggers the clip's loop region at its start,

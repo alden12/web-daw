@@ -21,7 +21,8 @@ export interface InstrumentTarget {
   noteOff(midi: number): void;
 }
 export interface EngineLike {
-  getInstrument(trackId: string): InstrumentTarget | undefined;
+  /** Head of the track's note pipeline (MIDI devices -> instrument). See AudioEngine.getNoteTarget. */
+  getNoteTarget(trackId: string): InstrumentTarget | undefined;
 }
 export interface ProjectLike {
   readonly selectedId: string | null;
@@ -54,7 +55,7 @@ export class LiveNotes {
     // recording keeps both), then start the new press fresh.
     if (this.sustained.has(midi)) this.release(midi);
     this.held.set(midi, trackId);
-    this.engine.getInstrument(trackId)?.noteOn(midi, velocity);
+    this.engine.getNoteTarget(trackId)?.noteOn(midi, velocity);
     this.recorder.noteOn(midi, velocity);
   }
 
@@ -86,7 +87,7 @@ export class LiveNotes {
     this.held.delete(midi);
     this.sustained.delete(midi);
     if (!trackId) return;
-    this.engine.getInstrument(trackId)?.noteOff(midi);
+    this.engine.getNoteTarget(trackId)?.noteOff(midi);
     this.recorder.noteOff(midi);
   }
 }

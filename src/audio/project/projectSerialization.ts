@@ -20,10 +20,11 @@ import type {
   Placement,
   ClipAuthor,
   EffectData,
+  MidiDeviceData,
   InstrumentTrackData,
   AudioTrackData,
 } from "./types";
-import type { Track, Group, NoteClip, EffectInstance, EffectHost } from "./projectStore";
+import type { Track, Group, NoteClip, EffectInstance, EffectHost, MidiDeviceInstance } from "./projectStore";
 import type { SampleAsset } from "../samples/catalog";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { DEVICE_FORMAT_VERSION } from "../graph/zod";
@@ -35,6 +36,16 @@ function snapshotEffects(host: EffectHost): EffectData[] {
     type: effect.type,
     bypassed: effect.bypassed,
     params: effect.params.snapshot(),
+  }));
+}
+
+/** Serialize a MIDI-device chain (its params snapshotted) for persistence. */
+function snapshotMidiDevices(devices: MidiDeviceInstance[]): MidiDeviceData[] {
+  return devices.map((device) => ({
+    id: device.id,
+    type: device.type,
+    bypassed: device.bypassed,
+    params: device.params.snapshot(),
   }));
 }
 
@@ -96,6 +107,7 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
         instrumentType: track.instrumentType,
         params: track.params.snapshot(),
         effects: snapshotEffects(track),
+        midiDevices: snapshotMidiDevices(track.midiDevices),
         clips: track.clips.map((clip) => {
           const data = clip.store.snapshot();
           return {

@@ -34,6 +34,7 @@ export type BrowserToServer =
   | { type: "paramChanged"; trackId: string; id: string; value: ParamValue }
   | { type: "clipSnapshot"; trackId: string; clipId: string; clip: ClipData }
   | { type: "effectParamChanged"; hostId: string; effectId: string; id: string; value: ParamValue }
+  | { type: "midiDeviceParamChanged"; trackId: string; deviceId: string; id: string; value: ParamValue }
   | { type: "historyReply"; id: string; ok: boolean; result?: unknown; error?: string }
   | { type: "patchReply"; id: string; ok: boolean; result?: unknown; error?: string };
 
@@ -74,6 +75,12 @@ export type ServerToBrowser =
   | { type: "moveEffect"; hostId: string; effectId: string; toIndex: number }
   | { type: "bypassEffect"; hostId: string; effectId: string; bypassed: boolean }
   | { type: "setEffectParam"; hostId: string; effectId: string; id: string; value: ParamValue }
+  // MIDI-device chain on an instrument track (device id assigned by the creator)
+  | { type: "addMidiDevice"; trackId: string; deviceType: string; id: string }
+  | { type: "removeMidiDevice"; trackId: string; deviceId: string }
+  | { type: "moveMidiDevice"; trackId: string; deviceId: string; toIndex: number }
+  | { type: "bypassMidiDevice"; trackId: string; deviceId: string; bypassed: boolean }
+  | { type: "setMidiDeviceParam"; trackId: string; deviceId: string; id: string; value: ParamValue }
   // Clip note editing. `clipId` is optional - omit it to target the track's active
   // clip. Plural forms (addNotes / editNotes / removeNotes) are one atomic edit
   // each - one feed entry, one undo step - so writing a part or a multi-note
