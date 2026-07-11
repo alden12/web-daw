@@ -16,6 +16,19 @@ export const octavatorSchema: ParamSchema = [
   { id: "level", label: "Level", kind: "number", min: 0, max: 1, default: 0.7, taper: "linear" },
 ] as const;
 
+export const arpeggiatorSchema: ParamSchema = [
+  {
+    id: "rate",
+    label: "Rate",
+    kind: "enum",
+    options: ["1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"],
+    default: "1/8",
+  },
+  { id: "pattern", label: "Pattern", kind: "enum", options: ["up", "down", "updown", "random"], default: "up" },
+  { id: "octaves", label: "Octaves", kind: "number", min: 1, max: 4, default: 1, step: 1, taper: "linear" },
+  { id: "gate", label: "Gate", kind: "number", min: 0.05, max: 1, default: 0.5, taper: "linear" },
+] as const;
+
 export interface MidiDeviceInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -54,3 +67,4 @@ export function midiDeviceSchema(type: string): ParamSchema {
 
 // --- built-in MIDI devices (self-registered) ------------------------------
 registerMidiDevice({ type: "octavator", label: "Octavator", schema: octavatorSchema });
+registerMidiDevice({ type: "arpeggiator", label: "Arpeggiator", schema: arpeggiatorSchema });

@@ -80,6 +80,9 @@ export function AppShell() {
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
+  // MIDI devices read the transport (tempo/beat grid/playing) through the scheduler. Wire it before
+  // any device is built (engine.start happens on a later user gesture, so this effect runs first).
+  useEffect(() => engine.setTransportClock(scheduler), [engine, scheduler]);
   const [recorder] = useState(
     () => new Recorder(engine, scheduler, projectStore, editLog.dispatch, readAutoQuantize, readRecordOffsetMs),
   );
