@@ -26,7 +26,7 @@ describe("RemoteBundleStore / RemoteProjectStorage", () => {
     expect(await bundle.readText("project.json")).toBeNull();
     expect(await bundle.exists("project.json")).toBe(false);
 
-    const project = JSON.stringify({ groups: [], tracks: [], tempoBpm: 120, lengthBeats: 16 });
+    const project = JSON.stringify({ groups: [], tracks: [], tempoBpm: 120, lengthBeats: 16, selectedTrackId: null });
     await bundle.writeText("project.json", project);
     // jsonb may reorder keys server-side, so compare parsed values.
     expect(JSON.parse((await bundle.readText("project.json"))!)).toEqual(JSON.parse(project));
@@ -46,7 +46,17 @@ describe("RemoteBundleStore / RemoteProjectStorage", () => {
 
   it("treats a repeated commit write as idempotent (409 swallowed, no throw)", async () => {
     const bundle = new RemoteProjectStorage("http://localhost").bundle("p1");
-    const c1 = JSON.stringify({ id: "c1", parent: null, entries: [] });
+    const c1 = JSON.stringify({
+      id: "c1",
+      parent: null,
+      author: "you",
+      message: "",
+      time: 0,
+      auto: true,
+      entryCount: 0,
+      entries: [],
+      lastSeq: 0,
+    });
     await bundle.writeText("history/commits/c1.json", c1);
     await expect(bundle.writeText("history/commits/c1.json", c1)).resolves.toBeUndefined();
   });

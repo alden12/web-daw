@@ -1661,18 +1661,52 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 - **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
   samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
   for true multiplayer) - all fit behind the current seams.
-- **Canonical shared project schema (next slice after the security fixes).** Replace today's shallow,
-  hand-written structural guard with a single pure-`zod` schema module (e.g. `src/audio/project/
-  schema.ts`) that is the source of truth for the document types: the client derives its TS types via
-  `z.infer` (superseding the hand-written `ProjectData` interfaces), and the server validates writes
-  against the same schema - fully typed *and* deeply validated, with no drift. Keep the generic
-  file-store endpoints (route types are already shared via `hc`); make the *validation* deep, not the
-  endpoints per-type. Compose the existing `specToZod` (params/zod.ts) and `graph/zod` for the param
-  and device blobs rather than duplicating them, and cooperate with the `documentMigration` upcasters
-  (upcast an old-version doc, then validate at the current version). This accepts coupling the
-  server's validation to the app model - a deliberate integrity/zero-trust choice - and the same
-  schema then also hardens the MCP/agent boundary and user-authored content. Build incrementally
-  (outer-in), not big-bang.
+- **Canonical shared project schema - _done_ (slice 63, Phase 1).** The shallow, hand-written
+  structural guard is replaced by a single pure-`zod` module, `src/audio/project/schema.ts`, that is
+  the source of truth for the document types: the client derives its TS types via `z.infer` (the old
+  hand-written `ProjectData` interfaces are gone, re-exported from the schema through
+  `project/types.ts` so the ~14 importers are unchanged), and the sync server validates writes against
+  the *same* `validateBundleFile` - `project.json` is now deep-validated down the tree, with no drift.
+  It composes `graph/zod`'s device schemas for embedded custom devices and cooperates with the
+  `documentMigration` upcasters (upcast an old-version doc, then validate at the current version). The
+  `EditCommand` union stays structural for now (a ~50-variant wire-coupled union); deep per-param and
+  per-command validation are deferred (below).
+- **Contract-first API (in progress, slice 64) - the chosen architecture, superseding `hc`.** The
+  server's destination is a WebSocket realtime multi-user service, not fixed HTTP endpoints, so we are
+  moving from Hono RPC (`hc` + a `type AppType` import) to a **plain-data `zod` contract** in
+  `src/contract/`: route descriptors (`http.ts`) + WS message discriminated-unions (`ws.ts`) + shared
+  param/error schemas (`errors.ts`), all referencing the canonical schema. Both client and server
+  import it normally (no type-import-through-the-server-graph, so the DOM-free-boundary hack for
+  `AppType` goes away). The server *mounts and validates from* the contract; the client *derives a
+  typed callable API from it* (`createApiClient`); the OpenAPI doc (`GET /openapi.json`) is *generated
+  from it* - one definition, many consumers, no drift (so no route drift-guard test is needed). This
+  is what makes every message fully typed and validated server-side, with the API self-documenting.
+  The file routes stay a raw byte-transfer descriptor (json/binary + a path-dependent body schema),
+  keeping the generic `BundleStore` seam one format. Reason `hc` was dropped: it types HTTP routes but
+  not bidirectional WS payloads (the actual destination), and contract-first also removes the
+  type-import coupling. ts-rest does contract-first for HTTP but has no WS; tRPC has WS but is
+  inference-shaped/heavy - so the thin contract layer is ours (small: `zod` unions + `z.infer` give
+  most of it).
+- **Deepening validation is gated on catalog versioning (sequence).** Deep per-param and built-in-device
+  validation are deliberately deferred: built-in instrument/effect schemas live in the client catalogs
+  (not the document), and the client is coercion-tolerant and versionless by design, so strict
+  server-side param validation would risk rejecting data the client considers valid. The safe path is
+  a **`catalogVersion`** stamped in the manifest on write; the server ships the catalogs + its version
+  and deep-validates params only when versions align, else falls back to structural (skew becomes
+  detectable and handled, never a silent wrong rejection). This has independent value (reproducibility;
+  a "your app version lacks this sound" UX). Order: **custom-device params** (zero coupling - the schema
+  is embedded in the document) -> **catalog versioning** -> **built-in params** -> deep `EditCommand`.
+  Full declarative conversion of built-ins is the separate gated declarative-DSP initiative (section
+  16), not a validation lever (built-ins would still be referenced by id from a shared catalog).
+- **Realtime multiplayer: the contract is the easy part, concurrency is the hard part.** Live
+  multi-user editing needs conflict resolution (CRDT/OT) and an ephemeral-vs-durable split (presence +
+  live MIDI are never persisted; an edit is both broadcast *and* committed) - a state-sync toolbox
+  (yjs / liveblocks / partykit / automerge), separate from the message contract. Design principle:
+  **transport edits as semantic `EditCommand`s, not document snapshots** - the codebase already models
+  edits as a command layer (the union behind `commands/diff.ts|history.ts|editLog.ts` and the
+  semantic-edit commit DAG), and that same command is the natural unit for local apply, WS broadcast,
+  persisted commit, and later the CRDT op. That convergence is when `editCommandSchema` graduates from
+  structural to first-class typed. Keep WS messages small and intent-based so this door stays open.
 
 **Security hardening (from a review of the sync service):**
 
@@ -1680,7 +1714,8 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   1. **Validation is bypassable via `Content-Type`.** The PUT decides JSON-vs-binary from the
      client-supplied header, so `Content-Type: application/octet-stream` stores any path (even
      `project.json`) as raw `bytea`, skipping `validateBundleFile`. Fix: decide by **path**
-     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out.
+     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out. Lands naturally with
+     the contract-first server rewrite (the file-route descriptor drives json-vs-binary by path).
   2. **No request body size limit** - PUT buffers the whole body in memory (`arrayBuffer`/`text`)
      with no cap: a large upload is a memory/storage DoS. Fix: cap body size (a higher cap for
      `samples/*` than for JSON docs).

@@ -18,7 +18,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { Db } from "../db/types";
 import { listProjectIds, readFile, fileExists, writeFile, softDeleteProject, type FilePayload } from "../db/store";
-import { validateBundleFile } from "./bundleSchemas";
+import { validateBundleFile } from "../../src/audio/project/schema";
 
 type Env = { Variables: { ownerId: string } };
 

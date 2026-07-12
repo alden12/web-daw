@@ -15,61 +15,51 @@
  * played back as a buffer). Both share the base fields and the effect chain, so
  * they route identically; only the source differs.
  */
-import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
-import type { SampleAsset } from "../samples/catalog";
-import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+
+// The persisted document types (`ProjectData` and its tree) are inferred from the canonical
+// zod schema in ./schema.ts (the single source of truth shared with the sync server) and
+// re-exported here so the ~14 importers of project/types are unchanged. The `*Meta` types
+// below - the no-payload structural view the UI consumes - are DERIVED from them (via `Omit`),
+// so the field lists live in exactly one place: the schema. (The track `*Meta` types are the
+// deliberate exception - see the note above them.)
+import type {
+  ClipAuthor,
+  Placement,
+  AudioClipData,
+  EffectData,
+  MidiDeviceData,
+  GroupData,
+  NoteClipData,
+  InstrumentTrackData,
+  AudioTrackData,
+} from "./schema";
+
+export type {
+  ClipAuthor,
+  Placement,
+  AudioClipData,
+  EffectData,
+  MidiDeviceData,
+  GroupData,
+  NoteClipData,
+  InstrumentTrackData,
+  AudioTrackData,
+};
+export type { ProjectData, TrackData } from "./schema";
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
-export interface EffectMeta {
-  id: string;
-  type: string;
-  bypassed: boolean;
-}
+export type EffectMeta = Omit<EffectData, "params">;
 
 /** A MIDI device in an instrument track's note chain (structural view, no param values). */
-export interface MidiDeviceMeta {
-  id: string;
-  type: string;
-  bypassed: boolean;
-}
+export type MidiDeviceMeta = Omit<MidiDeviceData, "params">;
 
-/** A group bus (structural view). `parentId` null means top-level (sums to master). */
-export interface GroupMeta {
-  id: string;
-  name: string;
-  /** Parent group id, or null for a top-level group routed to master. */
-  parentId: string | null;
-  collapsed: boolean;
-  muted: boolean;
-  /** Solo: if anything is soloed, only solo-active buses sound. */
-  solo: boolean;
-  /** 0..1 group bus output gain. */
-  volume: number;
-  /** Insert effects on the group bus, between its children's sum and its gain. */
-  effects: EffectMeta[];
-}
+/** A group bus (structural view, no effect param values). `parentId` null = top-level (master). */
+export type GroupMeta = Omit<GroupData, "effects"> & { effects: EffectMeta[] };
 
 export type TrackKind = "instrument" | "audio";
 
-/** Who authored a piece of durable state (voice presence). Mirrors commands/types Author. */
-export type ClipAuthor = "you" | "claude" | "agent";
-
-/**
- * A placement of a clip on a track's arrangement timeline. The same clip can be
- * placed multiple times. `offset`/`length` window into the clip (beats) so a
- * placement can be split or trimmed without touching the underlying clip.
- */
-export interface Placement {
-  id: string;
-  clipId: string;
-  /** Onset on the arrangement, in beats. */
-  startBeat: number;
-  /** Start of the window into the clip, in beats. */
-  offset: number;
-  /** Length of the window into the clip, in beats. */
-  length: number;
-}
+// `ClipAuthor` and `Placement` are re-exported from ./schema (above).
 
 /**
  * A clip's portable content for copy/paste (no ids). Kind-tagged so a paste can
@@ -79,166 +69,41 @@ export type ClipContent =
   | { kind: "instrument"; name: string; notes: NoteEvent[]; lengthBeats: number }
   | { kind: "audio"; name: string; fileId: string; gain: number; durationSec: number };
 
-/** A note clip (pattern) in an instrument track's pool. */
-export interface NoteClipData {
-  id: string;
-  name: string;
-  author: ClipAuthor;
-  notes: NoteEvent[];
-  lengthBeats: number;
-}
-
 /** Structural view of a note clip for the UI (no notes payload). */
-export interface NoteClipMeta {
-  id: string;
-  name: string;
-  author: ClipAuthor;
-  lengthBeats: number;
-}
+export type NoteClipMeta = Omit<NoteClipData, "notes">;
 
-/**
- * An audio clip in an audio track's pool: a reference to an OPFS-stored file. It
- * is light (no buffer), so the same shape serves as both data and structural view.
- */
-export interface AudioClipData {
-  id: string;
-  name: string;
-  author: ClipAuthor;
-  /** Handle id of the audio file in the OPFS audio store. */
-  fileId: string;
-  /** Clip gain (0..MAX_AUDIO_GAIN; >1 boosts a quiet recording). */
-  gain: number;
-  /** Cached natural duration in seconds (region sizing before/without decode). */
-  durationSec: number;
-  /**
-   * The slice of the buffer that plays, in seconds. The scheduler tiles this slice
-   * across a placement, so a placement longer than the slice repeats it (looping).
-   * Omitted = the whole clip (0 .. durationSec).
-   */
-  loopStartSec?: number;
-  loopEndSec?: number;
-  /**
-   * Slide of the audio under the beat grid, in seconds (the clip's content offset).
-   * The grid and the loop window stay fixed; this moves the buffer underneath them,
-   * so a different part of the recording sits under the window and plays. Positive =
-   * the audio is slid later/right (silence appears under the window's head); negative
-   * = slid earlier/left (a later part of the buffer plays). Omitted = 0 (no slide).
-   * See `audioPlayWindow` for how it resolves to a buffer slice.
-   */
-  gridOffsetSec?: number;
-}
+// `AudioClipData` is re-exported from ./schema (above); it doubles as the audio-track
+// clip data and its structural view (it is light - a file reference, no buffer).
 
-interface BaseTrackMeta {
-  id: string;
-  name: string;
-  /** Id of the group this track lives in (always set). */
-  parentId: string;
-  muted: boolean;
-  /** Solo: if anything is soloed, only solo-active tracks sound. */
-  solo: boolean;
-  /** 0..1 track output gain. */
-  volume: number;
-  /** Ordered insert effects between the source and the track gain. */
+// The track `*Meta` types are the payload-free runtime view: the same identity/base fields as
+// the persisted `*Data` types (single-sourced via `Omit`), but with the chain/arrangement fields
+// REQUIRED (the live view is always fully populated, unlike the tolerant persisted shape) and
+// their element types swapped to the no-payload `*Meta` views. The `params` blob is dropped.
+export type InstrumentTrackMeta = Omit<
+  InstrumentTrackData,
+  "params" | "effects" | "midiDevices" | "clips" | "placements" | "activeClipId" | "launchedClipId"
+> & {
   effects: EffectMeta[];
-}
-
-export interface InstrumentTrackMeta extends BaseTrackMeta {
-  kind: "instrument";
-  instrumentType: string;
-  /** Note-transform devices between the note source (live + playback) and the instrument. */
   midiDevices: MidiDeviceMeta[];
-  /** The track's clip pool (note patterns). The active clip is shown in the roll. */
   clips: NoteClipMeta[];
   activeClipId: string;
-  /** Arrangement: placements of clips along time. */
   placements: Placement[];
-  /** Launched clip looping over the transport, overriding placements; null = arrangement. */
   launchedClipId: string | null;
-}
+};
 
-export interface AudioTrackMeta extends BaseTrackMeta {
-  kind: "audio";
+export type AudioTrackMeta = Omit<
+  AudioTrackData,
+  "effects" | "clips" | "placements" | "activeClipId" | "launchedClipId"
+> & {
+  effects: EffectMeta[];
   clips: AudioClipData[];
   activeClipId: string;
   placements: Placement[];
-  /** Launched clip looping over the transport, overriding placements; null = arrangement. */
   launchedClipId: string | null;
-}
+};
 
 export type TrackMeta = InstrumentTrackMeta | AudioTrackMeta;
 
-/** An effect with its persisted param values. */
-export interface EffectData extends EffectMeta {
-  params: PatchValues;
-}
-
-/** A MIDI device with its persisted param values. */
-export interface MidiDeviceData extends MidiDeviceMeta {
-  params: PatchValues;
-}
-
-export interface GroupData extends Omit<GroupMeta, "effects"> {
-  effects: EffectData[];
-}
-
-export interface InstrumentTrackData extends Omit<
-  InstrumentTrackMeta,
-  "effects" | "midiDevices" | "clips" | "placements" | "activeClipId" | "launchedClipId"
-> {
-  /** Track-level sound (synth patch). Optional in the snapshot; defaulted on load. */
-  params?: PatchValues;
-  effects?: EffectData[];
-  /** Note-transform devices (optional; defaults to none on load). */
-  midiDevices?: MidiDeviceData[];
-  clips?: NoteClipData[];
-  placements?: Placement[];
-  activeClipId?: string;
-  /** Launched clip id (optional; defaults to null = arrangement). */
-  launchedClipId?: string | null;
-}
-
-export interface AudioTrackData extends Omit<
-  AudioTrackMeta,
-  "effects" | "clips" | "placements" | "activeClipId" | "launchedClipId"
-> {
-  effects?: EffectData[];
-  clips?: AudioClipData[];
-  placements?: Placement[];
-  activeClipId?: string;
-  /** Launched clip id (optional; defaults to null = arrangement). */
-  launchedClipId?: string | null;
-}
-
-export type TrackData = InstrumentTrackData | AudioTrackData;
-
-export interface ProjectData {
-  groups: GroupData[];
-  tracks: TrackData[];
-  tempoBpm: number;
-  lengthBeats: number;
-  /** Loop start in beats (loop region is [loopStart, lengthBeats]). Optional: older snapshots default to 0. */
-  loopStart?: number;
-  /** Project-wide groove template id (see grooves/catalog). Optional: defaults to "straight". */
-  grooveId?: string;
-  /** How strongly the groove applies, 0..1. Optional: defaults to 1. */
-  grooveAmount?: number;
-  /** The imported-sample library (referenced by Sampler params). Optional: defaults to []. */
-  samples?: SampleAsset[];
-  /**
-   * User-authored instruments/effects, declared as data (graph + schema) and embedded in
-   * the project so they travel with it - opening/sharing a project makes them available
-   * with no separate library. Validated at load (graph/zod parseCustomDevices); invalid
-   * defs are dropped. `deviceFormatVersion` gates the shape. Optional: default to none.
-   */
-  customInstruments?: GraphInstrumentDef[];
-  customEffects?: GraphEffectDef[];
-  deviceFormatVersion?: number;
-  /**
-   * Who last edited each object, for the last-editor colour tint: an object key -> author map
-   * with keys like `track:<id>`, `note:<id>`, `param:<trackId>:<paramId>`. Derived at the single
-   * applyEdit seam and carried in the snapshot, so it survives undo/redo/reload the same way the
-   * rest of the project does. Optional: absent snapshots start empty.
-   */
-  authorship?: Record<string, ClipAuthor>;
-  selectedTrackId: string | null;
-}
+// All the persisted data types (`EffectData`, `MidiDeviceData`, `GroupData`, the track `*Data`
+// types, `TrackData`, and the `ProjectData` root) are inferred from ./schema.ts and re-exported
+// at the top of this file; every `*Meta` view is derived from them there and above.
