@@ -1617,3 +1617,81 @@ Direction and options, not committed scope; deferred until the hosted platform a
 exist. The near-term, no-regret move is the principle above (reusable pure DSP modules; general
 primitives), and - when the declarative graph is built - making tier 2 the format first-party
 instruments are themselves expressed in, so local and online authoring converge on one artifact.
+
+## Sync service (server + database)
+
+Motivation: browser storage (OPFS/localStorage) was evicted by Chrome and wiped projects. We
+graduated to **web-app-primary**: a server + Postgres is the durable source of truth, OPFS is the
+offline fallback, and bundle export/import (`.daw.zip`) stays as the portability escape hatch.
+
+- **Server + DB behind the `BundleStore` seam - DONE (slice sync-service).** A Hono + Drizzle +
+  Postgres service (`server/api`, `server/db`) is a thin, owner-scoped `(projectId, path) ->
+  content` store; the client's `RemoteBundleStore`/`RemoteProjectStorage`
+  ([src/audio/remoteStore.ts](src/audio/remoteStore.ts)) plug in via `getProjectStorage()` when
+  `VITE_DAW_API_URL` is set, so nothing above the seam (repository, library, autosave) changed.
+  The client gets typed endpoints from the server's Hono RPC type (`hc<AppType>`, a runtime-erased
+  type import) - the JSON control routes; file bytes go over plain `fetch`. Sync timing is the
+  existing autosave: a ~300 ms debounce after any edit, plus commits, sample imports, and renames;
+  reads on load and project switch. Last-write-wins, no conflict engine.
+- **Trust & durability guarantees.** Projects **soft-delete** (a `deletedAt` stamp, never a hard
+  `DELETE`) so an accidental delete is recoverable; `history/commits/*` is **write-once**
+  (append-only). Auth is stubbed for now: a shared bearer token + a single hardcoded owner, with
+  every query owner-scoped so real accounts are a change of principal, not of schema.
+- **Typed storage + a "don't trust the client" boundary - DONE.** JSON bundle files are stored as
+  Postgres **`jsonb`** (readable and queryable in Drizzle Studio / psql, not opaque bytes; samples
+  stay `bytea`, a CHECK enforces exactly one). Every JSON write is **shape-validated** against a
+  per-path zod schema (`server/api/bundleSchemas.ts`) before it reaches the DB - malformed JSON is
+  400, wrong shape is 422. The validation is deliberately **structural** (top-level type + always-
+  present fields, with zod's default key-stripping so evolving fields don't break saves); deep
+  per-parameter validation stays at the client/MCP boundary where the param schema lives. A test
+  runs a real project snapshot through the schemas to guard against over-strictness.
+- **Migrations (the rule changed).** The old "discard old data on a format change" shortcut was
+  scoped to disposable local-only data; hosted data can't be discarded, so migration is now
+  required and forward-only: DB schema via `drizzle-kit` (versioned SQL in `drizzle/`), and the
+  project document via upcasters in `src/audio/project/documentMigration.ts` (empty registry today;
+  `ProjectRepository.load` chains them and heals the bundle).
+
+**Roadmap (deferred):**
+
+- **Offline-first / PWA.** Today it is remote-*or*-local; a set `VITE_DAW_API_URL` with the server
+  down means writes fail. The next step is a **local cache + queued writes**: keep OPFS as the
+  working copy, queue mutations while offline, and flush to the server on reconnect (last-write-wins
+  per file, with the commit DAG as the reconciliation story). That plus a service worker + manifest
+  makes it an installable **PWA** that works offline and syncs when back online.
+- **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
+  samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
+  for true multiplayer) - all fit behind the current seams.
+- **Canonical shared project schema (next slice after the security fixes).** Replace today's shallow,
+  hand-written structural guard with a single pure-`zod` schema module (e.g. `src/audio/project/
+  schema.ts`) that is the source of truth for the document types: the client derives its TS types via
+  `z.infer` (superseding the hand-written `ProjectData` interfaces), and the server validates writes
+  against the same schema - fully typed *and* deeply validated, with no drift. Keep the generic
+  file-store endpoints (route types are already shared via `hc`); make the *validation* deep, not the
+  endpoints per-type. Compose the existing `specToZod` (params/zod.ts) and `graph/zod` for the param
+  and device blobs rather than duplicating them, and cooperate with the `documentMigration` upcasters
+  (upcast an old-version doc, then validate at the current version). This accepts coupling the
+  server's validation to the app model - a deliberate integrity/zero-trust choice - and the same
+  schema then also hardens the MCP/agent boundary and user-authored content. Build incrementally
+  (outer-in), not big-bang.
+
+**Security hardening (from a review of the sync service):**
+
+- **Close the three code-level gaps** (small, worth doing regardless of deploy):
+  1. **Validation is bypassable via `Content-Type`.** The PUT decides JSON-vs-binary from the
+     client-supplied header, so `Content-Type: application/octet-stream` stores any path (even
+     `project.json`) as raw `bytea`, skipping `validateBundleFile`. Fix: decide by **path**
+     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out.
+  2. **No request body size limit** - PUT buffers the whole body in memory (`arrayBuffer`/`text`)
+     with no cap: a large upload is a memory/storage DoS. Fix: cap body size (a higher cap for
+     `samples/*` than for JSON docs).
+  3. **Write-once history is not race-safe** - the commit guard is `fileExists` then an
+     `onConflictDoUpdate` upsert, so concurrent writes to a new commit path can overwrite an
+     "immutable" commit. Fix: `onConflictDoNothing` for commit paths (never update).
+- **Before any deploy / multi-user (a coherent "harden for hosting" slice):** the token **defaults
+  to open** (empty = no auth), is a single shared secret with **no rate-limiting / brute-force
+  protection** and a timing-unsafe compare, and the owner is a hardcoded `"local"` (any caller can
+  touch every project) - all need real per-user accounts + auth. Plus **per-owner quotas** (projects
+  / files / bytes) against storage abuse, and narrowing **CORS** from `*` to the app origin.
+- **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
+  untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
+  key is a prototype-pollution vector only if the client merges it carelessly).

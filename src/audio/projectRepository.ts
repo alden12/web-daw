@@ -20,6 +20,7 @@ import type { ProjectData } from "./project/types";
 import type { Author, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
+import { migrateDocument } from "./project/documentMigration";
 
 const FORMAT_VERSION = 1;
 /** Schema version of `project.json`. We do not support older shapes (single-user app). */
@@ -107,7 +108,7 @@ export class ProjectRepository {
     this.projectId = manifest.projectId;
     const projectRaw = await this.store.readText("project.json");
     if (!projectRaw) return null;
-    const project = JSON.parse(projectRaw) as ProjectData;
+    const project = await this.upcast(JSON.parse(projectRaw), manifest);
     const metaRaw = await this.store.readText("meta.json");
     if (metaRaw) {
       try {
@@ -123,6 +124,23 @@ export class ProjectRepository {
       log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
       notes: notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [],
     };
+  }
+
+  /**
+   * Bring a just-read document up to the current schema. If the manifest's version is
+   * behind, chain the registered upcasters, then heal the bundle in place (rewrite
+   * project.json + manifest at the version reached) so we upcast at most once. A no-op
+   * when the bundle is already current (the common case; the registry is empty today).
+   */
+  private async upcast(rawDocument: unknown, manifest: Manifest): Promise<ProjectData> {
+    const fromVersion = manifest.projectSchema ?? 0;
+    if (fromVersion >= PROJECT_SCHEMA) return rawDocument as ProjectData;
+    const { data, version } = migrateDocument(rawDocument, fromVersion, PROJECT_SCHEMA);
+    if (version > fromVersion) {
+      await this.store.writeText("project.json", JSON.stringify(data));
+      await this.store.writeText("manifest.json", JSON.stringify({ ...manifest, projectSchema: version }));
+    }
+    return data as ProjectData;
   }
 
   /** Persist the working snapshot + log + feed notes. Writes are serialized so they never overlap. */
