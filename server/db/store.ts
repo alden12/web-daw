@@ -114,9 +114,9 @@ export async function writeFile(
 }
 
 /**
- * Append authored edits to the project's log (append-only). Creates the project on first write
- * and enforces owner. Each `seq` is immutable: a re-sent entry (same `seq`) is an idempotent
- * no-op via `onConflictDoNothing`, never an overwrite. Returns the project's current max seq.
+ * Append authored edits to the project's log. Creates the project on first write and enforces
+ * owner. Upserts by `seq` so a coalescing edit re-sent with the same `seq` updates in place (the
+ * working log is mutable; see the schema). Returns the project's current max seq.
  */
 export async function appendEdits(
   db: Db,
@@ -130,6 +130,10 @@ export async function appendEdits(
     if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
 
     if (entries.length > 0) {
+      // Upsert by (projectId, seq): the working edit log is MUTABLE - a coalescing edit (a knob
+      // drag) folds into its entry in place without a new seq, so a re-send must update it. This
+      // is distinct from the write-once *commit* history (which stays append-only). Owner-scoped,
+      // so a client can only ever rewrite its own working log.
       await tx
         .insert(edits)
         .values(
@@ -143,7 +147,16 @@ export async function appendEdits(
             label: entry.label ?? null,
           })),
         )
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: [edits.projectId, edits.seq],
+          set: {
+            command: sql`excluded."command"`,
+            author: sql`excluded."author"`,
+            time: sql`excluded."time"`,
+            kind: sql`excluded."kind"`,
+            label: sql`excluded."label"`,
+          },
+        });
     }
 
     const rows = await tx

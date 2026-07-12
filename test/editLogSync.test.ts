@@ -35,13 +35,27 @@ describe("edit log endpoints (server delta stream)", () => {
     expect(await readEntries(app, "p1")).toHaveLength(2);
   });
 
-  it("a stored seq is immutable: a differing re-append does not overwrite", async () => {
+  it("upserts by seq: a re-appended entry updates in place (coalescing re-sync)", async () => {
     const { app } = await makeSyncEnv();
     await append(app, "p1", [entry(0, "addNote")]);
-    await append(app, "p1", [entry(0, "removeNote")]); // same seq, different command
+    await append(app, "p1", [entry(0, "removeNote")]); // same seq, coalesced to a new command
     const entries = await readEntries(app, "p1");
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.command).toEqual({ type: "addNote" }); // first write wins
+    expect(entries).toHaveLength(1); // still one row - upsert, not a second insert
+    expect(entries[0]?.command).toEqual({ type: "removeNote" }); // the latest value wins
+  });
+
+  it("preserves the full command payload (not just its type)", async () => {
+    const { app } = await makeSyncEnv();
+    const note = {
+      seq: 0,
+      command: { type: "addNote", clipId: "c1", pitch: 60, start: 0, length: 1 },
+      author: "you",
+      time: 1,
+    };
+    await append(app, "p1", [note]);
+    const entries = await readEntries(app, "p1");
+    // The whole command must survive - otherwise replay reconstructs payload-less edits.
+    expect(entries[0]?.command).toEqual({ type: "addNote", clipId: "c1", pitch: 60, start: 0, length: 1 });
   });
 
   it("?since= returns only the tail", async () => {

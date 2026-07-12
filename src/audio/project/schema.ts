@@ -194,9 +194,12 @@ export const refsSchema = z.object({
   branches: z.record(z.string(), z.string().nullable()),
 });
 
-/** Edit commands stay STRUCTURAL: a ~50-variant wire-coupled union, only asserted to be
- *  an object with a string `type`. Extra keys are accepted (validation is a gate). */
-export const editCommandSchema = z.object({ type: z.string() });
+/** Edit commands stay STRUCTURAL: a ~50-variant wire-coupled union, only asserted to be an object
+ *  with a string `type`. `catchall(unknown)` PRESERVES the rest of the payload (note data, patch
+ *  values, ...) - unlike a plain object, which strips unknown keys, so a validated command kept only
+ *  its `type`. The edit-log append relies on the parsed output, so preserving the payload is required
+ *  for replay to reconstruct HEAD. */
+export const editCommandSchema = z.object({ type: z.string() }).catchall(z.unknown());
 
 export const editEntrySchema = z.object({
   seq: z.number(),

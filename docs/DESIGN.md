@@ -1661,6 +1661,19 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 - **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
   samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
   for true multiplayer) - all fit behind the current seams.
+- **Delta sync - _done_ (slices 66-67).** Autosave no longer re-uploads the whole `project.json` on
+  every edit; it **appends the delta** to a durable, append-only edit log and rewrites `project.json`
+  only as a throttled **keyframe** (recording, via a `headSeq` marker, the seq it reflects). Load
+  reconstructs HEAD by replaying the log tail after the keyframe through `applyEdit` (the same
+  keyframe+delta shape the commit DAG uses). The edit log is exposed through the storage seam
+  (`BundleStore.appendEdits`/`readEdits`): local backends back it with an `edits.json` file, the sync
+  server with an `edits` table (`POST`/`GET /projects/:id/edits`), so per-edit network cost is
+  proportional to the edit, not the document - parity with local saving. The log is a MUTABLE working
+  stream (append upserts by `seq`) so a coalescing edit (a knob drag) re-syncs; undo/redo force a
+  keyframe so the replayed tail is always pure-forward. The **append core is exactly what the future
+  WS `edit` message reuses** (HTTP now, WS with multiplayer). Known limit: a coalescing edit still in
+  the un-keyframed tail may reload at an intermediate value after a hard crash mid-drag; the next
+  keyframe heals it.
 - **Canonical shared project schema - _done_ (slice 63, Phase 1).** The shallow, hand-written
   structural guard is replaced by a single pure-`zod` module, `src/audio/project/schema.ts`, that is
   the source of truth for the document types: the client derives its TS types via `z.infer` (the old
