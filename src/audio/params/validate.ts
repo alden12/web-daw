@@ -13,6 +13,7 @@ const MESSAGE: { [K in ParamSpec["kind"]]: (spec: ByKind<K>) => string } = {
   number: (spec) => `"${spec.id}" must be a number in ${spec.min}..${spec.max}${spec.unit ? ` ${spec.unit}` : ""}.`,
   enum: (spec) => `"${spec.id}" must be one of: ${spec.options.join(", ")}.`,
   boolean: (spec) => `"${spec.id}" expects a boolean.`,
+  sample: (spec) => `"${spec.id}" must be a sample reference ("builtin:<id>" or "file:<fileId>"), or "" for none.`,
 };
 
 export function validateParam(spec: ParamSpec, value: ParamValue): string | null {

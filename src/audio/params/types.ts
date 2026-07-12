@@ -36,7 +36,19 @@ export interface BooleanSpec extends BaseSpec {
   default: boolean;
 }
 
-export type ParamSpec = NumberSpec | EnumSpec | BooleanSpec;
+/**
+ * A reference to an audio asset (a sample). The value is a tagged string ref:
+ * "builtin:<id>" for a sample shipped with the app, "file:<fileId>" for an
+ * imported one, or "" for an empty slot. The choices are not fixed in the spec
+ * (they come from the sample catalog / the project's imported samples), so the
+ * same kind serves both the built-in kit and unbounded user imports.
+ */
+export interface SampleSpec extends BaseSpec {
+  kind: "sample";
+  default: string;
+}
+
+export type ParamSpec = NumberSpec | EnumSpec | BooleanSpec | SampleSpec;
 
 export type ParamSchema = readonly ParamSpec[];
 
