@@ -20,7 +20,7 @@ import type { ProjectData } from "./project/types";
 import type { Author, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
-import { migrateDocument } from "./project/documentMigration";
+import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
 import { applyEdit } from "./commands/applyEdit";
 
@@ -34,8 +34,6 @@ const highWaterSeq = (log: { seq: number }[], notes: { seq: number }[]): number 
   Math.max(-1, ...log.map((entry) => entry.seq), ...notes.map((note) => note.seq));
 
 const FORMAT_VERSION = 1;
-/** Schema version of `project.json`. We do not support older shapes (single-user app). */
-const PROJECT_SCHEMA = 9;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
 const MAX_PERSISTED_ENTRIES = 2000;
 

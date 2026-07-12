@@ -7,7 +7,7 @@
  *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
  *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
  */
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "./types";
 import { edits, files, projects } from "./schema";
 
@@ -27,6 +27,24 @@ export type EditEntryInput = {
 };
 
 const isCommitPath = (path: string) => path.startsWith("history/commits/");
+
+/** A project whose stored document version trails the current schema (needs upcasting). */
+export type StaleProject = { id: string; name: string; projectSchema: number };
+
+/**
+ * Non-deleted projects whose `projectSchema` (backfilled from manifest.json on every write)
+ * is below `currentVersion`. Spans all owners on purpose: this is an operator/health view of
+ * document drift, not a user-facing listing. Lets a document-schema bump be *detected* - the
+ * jsonb blobs are opaque to drizzle-kit's DDL migrations, so this queryable version column is
+ * how stale stored data surfaces instead of drifting silently.
+ */
+export async function findStaleProjects(db: Db, currentVersion: number): Promise<StaleProject[]> {
+  return db
+    .select({ id: projects.id, name: projects.name, projectSchema: projects.projectSchema })
+    .from(projects)
+    .where(and(isNull(projects.deletedAt), lt(projects.projectSchema, currentVersion)))
+    .orderBy(projects.projectSchema);
+}
 
 /** Ids of the owner's non-deleted projects (newest first). */
 export async function listProjectIds(db: Db, ownerId: string): Promise<string[]> {
