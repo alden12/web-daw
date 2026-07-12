@@ -1674,6 +1674,46 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   WS `edit` message reuses** (HTTP now, WS with multiplayer). Known limit: a coalescing edit still in
   the un-keyframed tail may reload at an intermediate value after a hard crash mid-drag; the next
   keyframe heals it.
+  - **Keyframe cadence - follow-on (planned).** The initial cadence fires a full-bundle keyframe
+    ~1.5s after edits stop (idle-triggered), which re-introduces whole-bundle writes after nearly
+    every editing pause. The fix rests on one insight: **keyframes are not a durability mechanism**
+    (the delta append is already the durable write) - their *only* job is bounding load-time replay.
+    Since replaying is cheap (each edit is one in-memory store mutation), the crossover between
+    "assemble from deltas" and "write+store a keyframe" sits far out, so the cadence should be
+    **count-primary**: keyframe every ~N edits (start N=50, conservative for snappy loads; expected
+    to rise toward 100-200 once large-project testing reveals the real crossover - a single tunable
+    constant), plus the existing undo/redo-forces-keyframe, plus a **page-hide flush**
+    (`visibilitychange`/`beforeunload`) replacing the periodic idle timer. Caveat that shapes the
+    design: `meta.json` (modifiedAt), `notes.json` (feed notes), and `undo.json` currently persist
+    *only* via the keyframe, not the delta path - so a session of <N edits then leaving would strand
+    the modified-time and lose feed notes. The page-hide flush covers the leave case; the durable fix
+    is to make **feed notes append durably too** (they already share the monotonic `seq` counter with
+    edits, so they can ride the same append path), after which the small files no longer need a
+    periodic flush at all.
+  - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
+    materializes and uploads keyframes. A server could instead build them by replaying the `edits`
+    table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that
+    drives `ProjectStore` mutators and could run in Node) but **breaks the deliberately-dumb
+    `(projectId, path) -> content` blob store**: the server would have to own the command/reducer
+    layer *and* the document upcasters (to replay a versioned command stream), i.e. project semantics
+    and versioning both move server-side. It is not worth that coupling for single-user autosave -
+    the cheaper win is simply keyframing rarely on the client (above). It becomes worth it exactly
+    with **realtime multiplayer**, where an authoritative server must replay and merge edits to
+    broadcast `editApplied` anyway - the replay engine stops being extra coupling and becomes core.
+    So server-side keyframing (and edit-log compaction) is best built *with* the multiplayer slice,
+    not before it. The `BundleStore` seam already permits a "smart backend" variant when that lands.
+- **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
+  covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
+  command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
+  documents drift below the current version silently. Two cheap guards close that (upcasting stays
+  lazy-on-load in `documentMigration.ts`, which also serves OPFS/local + `.daw.zip` import, so the
+  logic deliberately stays in shared TS rather than server-only SQL): (a) **detectability** -
+  `findStaleProjects(db, currentVersion)` reads the `projects.project_schema` column (backfilled from
+  `manifest.json` on every write) and the API logs a startup warning listing any below the current
+  version; (b) **build-time honesty** - `firstMissingUpcaster` asserts the upcaster registry chains
+  contiguously up to `PROJECT_SCHEMA`, so bumping the schema without the matching upcaster fails in
+  CI instead of stranding old data. Deferred until the first actual bump: an **eager data-migration**
+  that heals stored blobs by reusing the same upcasters (there is nothing to heal until then).
 - **Canonical shared project schema - _done_ (slice 63, Phase 1).** The shallow, hand-written
   structural guard is replaced by a single pure-`zod` module, `src/audio/project/schema.ts`, that is
   the source of truth for the document types: the client derives its TS types via `z.infer` (the old

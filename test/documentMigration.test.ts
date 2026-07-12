@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { migrateDocument } from "../src/audio/project/documentMigration";
+import {
+  DOCUMENT_UPCASTERS,
+  PROJECT_SCHEMA,
+  firstMissingUpcaster,
+  migrateDocument,
+} from "../src/audio/project/documentMigration";
 
 describe("migrateDocument", () => {
   it("chains upcasters from the bundle version to the current schema", () => {
@@ -34,5 +39,29 @@ describe("migrateDocument", () => {
     const { data, version } = migrateDocument({}, 8, 11, upcasters);
     expect(version).toBe(9);
     expect(data).toEqual({ step: 9 });
+  });
+});
+
+describe("firstMissingUpcaster (no-gaps guard)", () => {
+  const noop = (data: unknown) => data;
+
+  it("passes vacuously for an empty registry (nothing registered yet)", () => {
+    expect(firstMissingUpcaster(9, {})).toBeNull();
+  });
+
+  it("passes when the registry chains contiguously up to the target", () => {
+    expect(firstMissingUpcaster(11, { 8: noop, 9: noop, 10: noop })).toBeNull();
+  });
+
+  it("reports the first hole in the chain", () => {
+    // 9 -> 10 is missing, so a v9 document would strand at v9.
+    expect(firstMissingUpcaster(11, { 8: noop, 10: noop })).toBe(9);
+  });
+
+  it("guards the real registry against a PROJECT_SCHEMA bump with no matching upcaster", () => {
+    // The invariant that keeps versioning honest: every version below the current schema
+    // must be reachable. Fails in CI the moment someone bumps PROJECT_SCHEMA and forgets
+    // the upcaster.
+    expect(firstMissingUpcaster(PROJECT_SCHEMA, DOCUMENT_UPCASTERS)).toBeNull();
   });
 });
