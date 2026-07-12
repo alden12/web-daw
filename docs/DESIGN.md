@@ -1671,22 +1671,29 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   `documentMigration` upcasters (upcast an old-version doc, then validate at the current version). The
   `EditCommand` union stays structural for now (a ~50-variant wire-coupled union); deep per-param and
   per-command validation are deferred (below).
-- **Contract-first API (in progress, slice 64) - the chosen architecture, superseding `hc`.** The
-  server's destination is a WebSocket realtime multi-user service, not fixed HTTP endpoints, so we are
-  moving from Hono RPC (`hc` + a `type AppType` import) to a **plain-data `zod` contract** in
+- **Contract-first API - _done_ (slice 64), the chosen architecture superseding `hc`.** The server's
+  destination is a WebSocket realtime multi-user service, not fixed HTTP endpoints, so the API type
+  story moved from Hono RPC (`hc` + a `type AppType` import) to a **plain-data `zod` contract** in
   `src/contract/`: route descriptors (`http.ts`) + WS message discriminated-unions (`ws.ts`) + shared
-  param/error schemas (`errors.ts`), all referencing the canonical schema. Both client and server
-  import it normally (no type-import-through-the-server-graph, so the DOM-free-boundary hack for
-  `AppType` goes away). The server *mounts and validates from* the contract; the client *derives a
-  typed callable API from it* (`createApiClient`); the OpenAPI doc (`GET /openapi.json`) is *generated
-  from it* - one definition, many consumers, no drift (so no route drift-guard test is needed). This
-  is what makes every message fully typed and validated server-side, with the API self-documenting.
-  The file routes stay a raw byte-transfer descriptor (json/binary + a path-dependent body schema),
-  keeping the generic `BundleStore` seam one format. Reason `hc` was dropped: it types HTTP routes but
-  not bidirectional WS payloads (the actual destination), and contract-first also removes the
-  type-import coupling. ts-rest does contract-first for HTTP but has no WS; tRPC has WS but is
-  inference-shaped/heavy - so the thin contract layer is ours (small: `zod` unions + `z.infer` give
-  most of it).
+  param/error schemas (`errors.ts`), all referencing the canonical schema, plus a browser client
+  (`client.ts`: `createApiClient` + a typed `createWsClient`). Both client and server import the
+  definition normally (no type-import-through-the-server-graph, so the DOM-free-boundary hack for
+  `AppType` is gone). The server *mounts and validates from* the contract (`app.ts` sources its paths +
+  param schemas from `routes`); the client's `RemoteProjectStorage`/`RemoteBundleStore` are thin
+  adapters over `createApiClient`. One definition, many consumers, no drift. The file routes stay a raw
+  byte-transfer descriptor (json/binary by path), keeping the generic `BundleStore` seam one format.
+  Reason `hc` was dropped: it types HTTP routes but not bidirectional WS payloads (the actual
+  destination), and contract-first also removes the type-import coupling. ts-rest does contract-first
+  for HTTP but has no WS; tRPC has WS but is inference-shaped/heavy - so the thin contract layer is ours
+  (small: `zod` unions + `z.infer` give most of it).
+  - **Deferred deliberately (not built, to avoid speculative work for absent consumers):** (a) a
+    **generated OpenAPI doc** - the shared contract already gives TypeScript consumers types +
+    validation + a readable accept/reject spec, so OpenAPI only earns its place for a *non-TS* consumer
+    (a future mobile app, a partner, a public API); it is a ~10-line generator (`z.toJSONSchema` over
+    `routes`) to add when one appears. (b) the **live WS socket server + message dispatcher** - the WS
+    *contract* (message unions, parse helpers, typed `createWsClient`) ships now, but standing up an
+    actual socket listener is transport plumbing tied to multiplayer (and needs a WS adapter dep), so
+    it lands with the conflict-resolution work, built on this contract.
 - **Deepening validation is gated on catalog versioning (sequence).** Deep per-param and built-in-device
   validation are deliberately deferred: built-in instrument/effect schemas live in the client catalogs
   (not the document), and the client is coercion-tolerant and versionless by design, so strict
@@ -1714,8 +1721,9 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   1. **Validation is bypassable via `Content-Type`.** The PUT decides JSON-vs-binary from the
      client-supplied header, so `Content-Type: application/octet-stream` stores any path (even
      `project.json`) as raw `bytea`, skipping `validateBundleFile`. Fix: decide by **path**
-     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out. Lands naturally with
-     the contract-first server rewrite (the file-route descriptor drives json-vs-binary by path).
+     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out. Still open after the
+     contract-first rewrite (which preserved the Content-Type dispatch); the file-route descriptor is
+     the natural home to make the json-vs-binary decision by path.
   2. **No request body size limit** - PUT buffers the whole body in memory (`arrayBuffer`/`text`)
      with no cap: a large upload is a memory/storage DoS. Fix: cap body size (a higher cap for
      `samples/*` than for JSON docs).
