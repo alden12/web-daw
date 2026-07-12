@@ -28,6 +28,7 @@ import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
+import { GROOVES } from "../audio/grooves/catalog";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { clamp } from "../util";
@@ -393,6 +394,24 @@ export function ArrangementTimeline({
                   onClick: () => recorder.setDevice(device.deviceId),
                 })),
               ],
+            },
+            { separator: true },
+            // Groove: project-wide swing/feel applied at playback (non-destructive).
+            {
+              label: "Groove",
+              submenu: GROOVES.map((groove) => ({
+                label: groove.name,
+                checked: project.grooveId === groove.id,
+                onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
+              })),
+            },
+            {
+              label: "Groove amount",
+              submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
+                label: `${Math.round(value * 100)}%`,
+                checked: project.grooveAmount === value,
+                onClick: () => dispatch({ type: "setGroove", amount: value }),
+              })),
             },
           ]}
         />

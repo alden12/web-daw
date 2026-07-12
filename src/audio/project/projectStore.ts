@@ -32,6 +32,7 @@ import {
   DEFAULT_INSTRUMENT,
 } from "../instruments/catalog";
 import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
+import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import type { PatchValues } from "../params/types";
 import type {
   ProjectData,
@@ -135,6 +136,9 @@ export interface ProjectStructure {
   lengthBeats: number;
   /** Loop start in beats; the playback loop region is [loopStart, lengthBeats]. */
   loopStart: number;
+  /** Project-wide groove template id (see grooves/catalog) + how strongly it applies. */
+  grooveId: string;
+  grooveAmount: number;
   selectedTrackId: string | null;
 }
 
@@ -144,6 +148,8 @@ export class ProjectStore {
   private tempoBpm = 120;
   private lengthBeats = 16;
   private loopStartBeats = 0;
+  private grooveId = DEFAULT_GROOVE_ID;
+  private grooveAmount = 1;
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: ProjectStructure;
@@ -176,6 +182,8 @@ export class ProjectStore {
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
+      grooveId: this.grooveId,
+      grooveAmount: this.grooveAmount,
     });
   }
 
@@ -653,6 +661,21 @@ export class ProjectStore {
     this.emit();
   }
 
+  /** The project-wide groove: which template, and how strongly it applies (0..1). */
+  getGroove(): { id: string; amount: number } {
+    return { id: this.grooveId, amount: this.grooveAmount };
+  }
+
+  /** Set the project groove template and/or amount; omitted fields stay unchanged. */
+  setGroove(id?: string, amount?: number): void {
+    const nextId = id ?? this.grooveId;
+    const nextAmount = amount === undefined ? this.grooveAmount : clamp(amount, 0, 1);
+    if (nextId === this.grooveId && nextAmount === this.grooveAmount) return;
+    this.grooveId = nextId;
+    this.grooveAmount = nextAmount;
+    this.emit();
+  }
+
   /**
    * Set the arrangement loop length (beats): the scheduler loops the region
    * [loopStart, lengthBeats]. Clip lengths are independent (set per clip in the
@@ -986,6 +1009,8 @@ export class ProjectStore {
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
+      grooveId: this.grooveId,
+      grooveAmount: this.grooveAmount,
     });
   }
 
@@ -1062,6 +1087,8 @@ export class ProjectStore {
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;
     this.loopStartBeats = clamp(data.loopStart ?? 0, 0, this.lengthBeats - MIN_LOOP);
+    this.grooveId = data.grooveId ?? DEFAULT_GROOVE_ID;
+    this.grooveAmount = clamp(data.grooveAmount ?? 1, 0, 1);
     this.selectedTrackId =
       data.selectedTrackId && this.getTrack(data.selectedTrackId) ? data.selectedTrackId : (this.tracks[0]?.id ?? null);
     this.emit();

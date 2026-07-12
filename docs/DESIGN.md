@@ -618,15 +618,18 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   toggle (lights up; snaps takes as they record), and a **⋯ settings** menu (strength, snap-ends).
   An MCP `quantize` tool mirrors it. *Forward-compat for grooves/time-signature:* every grid calc
   reads `GRID_DIVISIONS`/the snap division (no hardcoded 16ths), so those later slices drop in.
-- **Musical editing:** grooves (strength, swing, groove templates), and a
-  project key with the roll showing note intervals/scale relative to it. *Groove model:* a
-  groove is a small template `{ grid, swing, slots: [{ offsetTicks, velocityScale }], strength }`
-  applied **at schedule time** by the scheduler (nudge each note's `when` + scale velocity by the
-  slot it lands in) over **untouched** stored notes - so it is non-destructive, instantly
-  toggleable, and auditionable. swing/strength are schema params, so the knob/automation/MCP/persist
-  dividends come for free; the only new infra is a groove library + the scheduler slot-offset step.
-  Open questions: scope (per-clip vs per-track vs project default; lean per-track) and whether
-  groove *extraction* (analyze a clip's deviations into a template) is v1 or a follow-up.
+- **Grooves - DONE (v1, global).** A groove nudges note timing (swing) + scales velocity **at
+  schedule time** by the slot each note lands in, over **untouched** stored notes - non-destructive
+  and instantly toggleable (the un-snap work made it possible). v1 is a **project-wide** groove: a
+  preset catalog (`src/audio/grooves/catalog.ts` - Straight + 8th/16th swing + an accent feel,
+  iterated by the timeline-options ⋯ menu and MCP) plus an **amount** (25/50/75/100%), resolved once
+  per tick and applied in the scheduler (`src/audio/sequencer/groove.ts`, pure/shared). A groove tiles by its own
+  period (no `BEATS_PER_BAR` dependency), so it is meter-agnostic. Wired as a `setGroove` command +
+  `set_groove`/`list_grooves` MCP tools; persisted (project schema 8). Offsets are in beats (no PPQ).
+  *Follow-ups:* **per-track override** (pairs with the drum machine, where "swing the hats not the
+  kick" matters) and groove **extraction** (analyze a clip's deviations into a template).
+- **Musical editing (remaining):** a project key with the roll showing note intervals/scale relative
+  to it (pairs with the autotune scale-snap layer under "Audio pitch & time").
 - **Timeline & arrangement interactions - DONE (slice 13 + follow-ups), the third "real DAW"
   piece.** The bottom timeline is editable: zoom + scroll (reusing the piano-roll's
   beats<->px+ruler primitive), move / resize / split / delete placements, drag empty lane to

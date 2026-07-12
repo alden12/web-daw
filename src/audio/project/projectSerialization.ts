@@ -41,6 +41,8 @@ export interface TransportState {
   lengthBeats: number;
   loopStartBeats: number;
   selectedTrackId: string | null;
+  grooveId: string;
+  grooveAmount: number;
 }
 
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
@@ -102,6 +104,8 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     lengthBeats: transport.lengthBeats,
     loopStart: transport.loopStartBeats,
     selectedTrackId: transport.selectedTrackId,
+    grooveId: transport.grooveId,
+    grooveAmount: transport.grooveAmount,
   };
 }
 

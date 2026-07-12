@@ -10,6 +10,7 @@
 import type { EditCommand } from "./types";
 import { catalogEntry, hasInstrument } from "../instruments/catalog";
 import { effectCatalogEntry, hasEffect } from "../effects/catalog";
+import { grooveById } from "../grooves/catalog";
 
 /** Resolves a track/group/effect-host id to its current name (for richer labels). */
 export interface DescribeContext {
@@ -85,6 +86,10 @@ const DESCRIBE: DescribeMap = {
   launchClip: (command) => (command.clipId ? "Launched clip" : "Stopped clip"),
   stopAllClips: () => "Back to timeline",
   setTempo: (command) => `Set tempo ${command.bpm}`,
+  setGroove: (command) =>
+    command.grooveId !== undefined
+      ? `Set groove to ${grooveById(command.grooveId).name}`
+      : `Set groove amount ${Math.round((command.amount ?? 0) * 100)}%`,
   setLength: (command) => `Set loop length ${command.lengthBeats}`,
   setLoopStart: (command) => `Set loop start ${command.beats}`,
 };

@@ -11,6 +11,9 @@
 import type { AudioEngine } from "../engine/AudioEngine";
 import type { ProjectStore } from "../project/projectStore";
 import { GRID, type NoteEvent } from "./types";
+import { grooveById } from "../grooves/catalog";
+import { grooveAt } from "./groove";
+import { clamp } from "../../util";
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.1;
@@ -210,6 +213,11 @@ export class Scheduler {
     const fromBeats = this.scheduledUntilBeats;
     if (horizonBeats <= fromBeats) return;
 
+    // Resolve the project groove once per tick (cheap; the per-note math is in the
+    // instrument loop). amount 0 / Straight makes grooveAt a no-op, so no branch needed.
+    const { id: grooveId, amount: grooveAmount } = this.project.getGroove();
+    const groove = grooveById(grooveId);
+
     if (this.metronomeEnabled) {
       for (const { atBeat, accent } of metronomeClicksInBeatRange(
         fromBeats,
@@ -246,8 +254,11 @@ export class Scheduler {
           }
         }
         for (const { note, atBeat } of notesStartingInBeatRange(events, fromBeats, horizonBeats, loopLen, loopStart)) {
-          const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
+          // Groove nudges the onset + scales velocity at schedule time (notes untouched).
+          const shift = grooveAt(groove, atBeat, grooveAmount);
+          const when = Math.max(now, this.anchorTime + (atBeat - this.anchorBeat) / bps + shift.offsetBeats / bps);
+          const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
+          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, when);
         }
       } else {
         // Each audio placement triggers the clip's loop region at its start,
