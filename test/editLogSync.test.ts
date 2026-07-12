@@ -44,6 +44,20 @@ describe("edit log endpoints (server delta stream)", () => {
     expect(entries[0]?.command).toEqual({ type: "removeNote" }); // the latest value wins
   });
 
+  it("preserves the full command payload (not just its type)", async () => {
+    const { app } = await makeSyncEnv();
+    const note = {
+      seq: 0,
+      command: { type: "addNote", clipId: "c1", pitch: 60, start: 0, length: 1 },
+      author: "you",
+      time: 1,
+    };
+    await append(app, "p1", [note]);
+    const entries = await readEntries(app, "p1");
+    // The whole command must survive - otherwise replay reconstructs payload-less edits.
+    expect(entries[0]?.command).toEqual({ type: "addNote", clipId: "c1", pitch: 60, start: 0, length: 1 });
+  });
+
   it("?since= returns only the tail", async () => {
     const { app } = await makeSyncEnv();
     await append(app, "p1", [entry(0), entry(1), entry(2), entry(3)]);
