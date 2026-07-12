@@ -19,7 +19,7 @@
 import type { ProjectData } from "./project/types";
 import type { Author, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
-import { type BundleStore, createBundleStore } from "./bundleStore";
+import { type BundleStore, getProjectStorage } from "./bundleStore";
 
 const FORMAT_VERSION = 1;
 /** Schema version of `project.json`. We do not support older shapes (single-user app). */
@@ -79,11 +79,24 @@ interface Manifest {
 
 export class ProjectRepository {
   private projectId: string | null = null;
+  private name = "Untitled";
   private saveChain: Promise<void> = Promise.resolve();
   private readonly store: BundleStore;
 
-  constructor(store: BundleStore) {
+  constructor(store: BundleStore, projectId: string | null = null) {
     this.store = store;
+    this.projectId = projectId;
+  }
+
+  /** The project's display name (from meta.json; "Untitled" until loaded/renamed). */
+  getName(): string {
+    return this.name;
+  }
+
+  /** Rename the project: update the in-memory name and persist meta.json immediately. */
+  async setName(name: string): Promise<void> {
+    this.name = name;
+    await this.store.writeText("meta.json", JSON.stringify({ name, modifiedAt: new Date().toISOString() }));
   }
 
   /** Load the working snapshot + log; null if no bundle has been written yet. */
@@ -95,6 +108,14 @@ export class ProjectRepository {
     const projectRaw = await this.store.readText("project.json");
     if (!projectRaw) return null;
     const project = JSON.parse(projectRaw) as ProjectData;
+    const metaRaw = await this.store.readText("meta.json");
+    if (metaRaw) {
+      try {
+        this.name = (JSON.parse(metaRaw) as { name?: string }).name ?? this.name;
+      } catch {
+        // keep the default name
+      }
+    }
     const logRaw = await this.store.readText("log.json");
     const notesRaw = await this.store.readText("notes.json");
     return {
@@ -122,7 +143,7 @@ export class ProjectRepository {
     await this.store.writeText("project.json", JSON.stringify(project));
     await this.store.writeText("log.json", JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
     await this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
-    await this.store.writeText("meta.json", JSON.stringify({ name: "Untitled", modifiedAt: new Date().toISOString() }));
+    await this.store.writeText("meta.json", JSON.stringify({ name: this.name, modifiedAt: new Date().toISOString() }));
   }
 
   /** Store an audio sample, returning its content hash (its `fileId`). Dedups. */
@@ -163,7 +184,7 @@ export class ProjectRepository {
       "project.json": json(project),
       "log.json": json(log),
       "notes.json": json(notes),
-      "meta.json": json({ name: "Untitled", modifiedAt: new Date().toISOString() }),
+      "meta.json": json({ name: this.name, modifiedAt: new Date().toISOString() }),
     };
     for (const id of referencedSampleIds(project)) {
       const buf = await this.store.readBlob(`samples/${id}`);
@@ -188,6 +209,11 @@ export class ProjectRepository {
       this.projectId = (JSON.parse(text(files["manifest.json"])) as Manifest).projectId;
     } catch {
       this.projectId = null;
+    }
+    try {
+      this.name = (JSON.parse(text(files["meta.json"])) as { name?: string }).name ?? this.name;
+    } catch {
+      // keep the current name
     }
     await this.save(project, log, notes);
     return { project, log, notes };
@@ -251,10 +277,32 @@ async function sha256hex(buf: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-let singleton: ProjectRepository | null = null;
+/** localStorage key holding the current project id (shared source of truth with the library). */
+const CURRENT_PROJECT_KEY = "web-daw:current-project";
 
-/** The app-wide repository (OPFS-backed in the browser). Samples + project share it. */
+let current: { id: string; repo: ProjectRepository } | null = null;
+
+function readCurrentId(): string {
+  const stored = typeof localStorage !== "undefined" ? localStorage.getItem(CURRENT_PROJECT_KEY) : null;
+  return stored || "default";
+}
+
+/** Point the app-wide repository at project `id` (rebuilds it over that bundle). */
+export function setCurrentProject(id: string): void {
+  if (typeof localStorage !== "undefined") localStorage.setItem(CURRENT_PROJECT_KEY, id);
+  current = { id, repo: new ProjectRepository(getProjectStorage().bundle(id), id) };
+}
+
+/** The id of the project the app is currently working on. */
+export function currentProjectId(): string {
+  return current?.id ?? readCurrentId();
+}
+
+/**
+ * The repository for the current project. Samples, history, and the working snapshot
+ * all live in that project's bundle; a project switch repoints this (setCurrentProject).
+ */
 export function getRepository(): ProjectRepository {
-  if (!singleton) singleton = new ProjectRepository(createBundleStore());
-  return singleton;
+  if (!current) setCurrentProject(readCurrentId());
+  return current!.repo;
 }

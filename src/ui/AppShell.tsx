@@ -12,7 +12,8 @@ import { AudioEngine } from "../audio/engine/AudioEngine";
 import { Scheduler } from "../audio/sequencer/scheduler";
 import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
 import { Recorder } from "../audio/recording/recorder";
-import { attachAutosave, restoreProject } from "../audio/persistence";
+import { attachAutosave } from "../audio/persistence";
+import { initProjects } from "../audio/projects/operations";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { EditLog } from "../audio/commands/editLog";
@@ -92,21 +93,19 @@ export function AppShell() {
 
   const versionStore = useMemo(() => new VersionStore(projectStore, editLog), [projectStore, editLog]);
 
-  // Restore the saved project from the bundle, then autosave on any change and
-  // auto-checkpoint the version history. Restore is async (OPFS); the version
-  // store loads after it so HEAD reflects the restored project, and both attach
-  // only then (avoids a redundant immediate re-save of what we just loaded).
+  // Open the current project from the multi-project library (enumerates bundles,
+  // seeds the first project on a fresh install, and loads the persisted current one
+  // + its version history), then autosave on any change and auto-checkpoint. Async
+  // (OPFS); autosave/checkpoints attach only after, to avoid a redundant re-save.
   useEffect(() => {
     let active = true;
     let disposeAutosave = () => {};
     let disposeCheckpoints = () => {};
-    void restoreProject(projectStore, editLog)
-      .then(() => versionStore.load())
-      .then(() => {
-        if (!active) return;
-        disposeAutosave = attachAutosave(projectStore, editLog);
-        disposeCheckpoints = versionStore.attach();
-      });
+    void initProjects({ projectStore, editLog, versionStore }).then(() => {
+      if (!active) return;
+      disposeAutosave = attachAutosave(projectStore, editLog);
+      disposeCheckpoints = versionStore.attach();
+    });
     return () => {
       active = false;
       disposeAutosave();
@@ -210,7 +209,7 @@ export function AppShell() {
         className="app-body flex-1 min-h-0 relative"
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? "none" : undefined }}
       >
-        <LibraryPanel projectStore={projectStore} editLog={editLog} dispatch={dispatch} />
+        <LibraryPanel projectStore={projectStore} editLog={editLog} versionStore={versionStore} dispatch={dispatch} />
         <CenterWorkbench
           projectStore={projectStore}
           scheduler={scheduler}

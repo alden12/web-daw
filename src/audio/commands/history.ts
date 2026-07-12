@@ -53,7 +53,9 @@ export interface VersionState {
 export class VersionStore {
   private readonly project: ProjectStore;
   private readonly editLog: EditLog;
-  private readonly repo: ProjectRepository;
+  /** An injected repo (tests) pins the target; otherwise resolve the current project's
+   *  repo dynamically, so a project switch (which repoints getRepository) is picked up. */
+  private readonly repoOverride: ProjectRepository | null;
   private refs: Refs = { head: "main", branches: { main: null } };
   private lastCommittedSeq = -1;
   /** Delta commits written since the last keyframe (drives keyframe cadence). */
@@ -61,10 +63,14 @@ export class VersionStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
 
-  constructor(project: ProjectStore, editLog: EditLog, repo: ProjectRepository = getRepository()) {
+  constructor(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository) {
     this.project = project;
     this.editLog = editLog;
-    this.repo = repo;
+    this.repoOverride = repo ?? null;
+  }
+
+  private get repo(): ProjectRepository {
+    return this.repoOverride ?? getRepository();
   }
 
   /** Load refs + HEAD from the bundle. Call after the project is restored. */
@@ -76,11 +82,18 @@ export class VersionStore {
       this.lastCommittedSeq = head?.lastSeq ?? -1;
       this.commitsSinceKeyframe = await this.distanceToKeyframe(this.headId());
     } else {
-      // No history yet: start the DAG from here, rather than retro-committing the
-      // restored working log (which has no commits behind it).
+      // No history yet: reset to a fresh DAG and start from here, rather than
+      // retro-committing the restored working log (which has no commits behind it).
+      this.refs = { head: "main", branches: { main: null } };
       this.lastCommittedSeq = this.maxSeq();
+      this.commitsSinceKeyframe = 0;
     }
     this.emit();
+  }
+
+  /** Re-read history for the now-current project (after a project switch). */
+  reload(): Promise<void> {
+    return this.load();
   }
 
   /** Auto-checkpoint on edit activity (debounced). Returns a disposer. */

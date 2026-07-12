@@ -218,6 +218,11 @@ export function Menu({
           <div
             ref={popRef}
             role="menu"
+            // Stop pointerdown from bubbling to document: the popover is portaled to
+            // document.body, so an ancestor popover's outside-click handler would
+            // otherwise treat a click here as "outside" and unmount us before the
+            // click lands (nested-menu case, e.g. the project row's kebab).
+            onPointerDown={(e) => e.stopPropagation()}
             style={{ position: "fixed", top: coords.top, left: coords.left }}
             className="z-50 min-w-40 py-1 rounded-lg border border-line bg-card shadow-lg"
           >

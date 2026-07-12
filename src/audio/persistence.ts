@@ -37,17 +37,19 @@ export async function restoreProject(
  * note posted with no following edit would never be saved. Returns a disposer.
  * Re-subscribes to track stores whenever the track set changes.
  */
-export function attachAutosave(
-  project: ProjectStore,
-  editLog: EditLog,
-  repo: ProjectRepository = getRepository(),
-): () => void {
+export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository): () => void {
+  // Resolve the target at save time, not at attach time: a project switch replaces
+  // the current repository (setCurrentProject builds a new one per project), so a
+  // captured reference would keep writing the live project into the *previous*
+  // project's bundle. Tests inject a fixed repo; production follows the current one.
+  const targetRepo = () => repo ?? getRepository();
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
-      void repo.save(project.snapshot(), editLog.getEntries(), editLog.getNotes());
-      void repo.writeUndo(editLog.getCheckpoints()); // persist undo/redo so it survives a reload
+      const active = targetRepo();
+      void active.save(project.snapshot(), editLog.getEntries(), editLog.getNotes());
+      void active.writeUndo(editLog.getCheckpoints()); // persist undo/redo so it survives a reload
     }, SAVE_DEBOUNCE_MS);
   };
 
