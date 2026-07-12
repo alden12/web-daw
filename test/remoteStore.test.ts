@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeSyncEnv, type SyncEnv } from "./support/syncEnv";
 import { RemoteProjectStorage } from "../src/audio/remoteStore";
 
-// Route the client's global `fetch` (used by RemoteBundleStore and the hc client) at the
-// real Hono app over pglite, so this exercises the client protocol end-to-end against the
-// real server - not a hand-rolled mock that could drift from it.
+// Route the client's global `fetch` (used by the contract-derived createApiClient that
+// RemoteBundleStore/RemoteProjectStorage wrap) at the real Hono app over pglite, so this
+// exercises the client protocol end-to-end against the real server - not a hand-rolled
+// mock that could drift from it.
 let env: SyncEnv;
 let realFetch: typeof globalThis.fetch;
 

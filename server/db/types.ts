@@ -1,8 +1,9 @@
 /**
- * The `Db` type alone, split from client.ts so it carries no runtime deps. The client
- * imports the Hono `AppType` (which transitively reaches this) for its typed RPC client;
- * keeping postgres.js / process out of this module means that type import stays clean
- * under the DOM-only client tsconfig. client.ts (the real connection) imports this back.
+ * The `Db` type alone, split from client.ts so it carries no runtime deps. store.ts and
+ * app.ts type against `Db` without importing the postgres.js driver (which lives in
+ * client.ts), so the app + its tests stay driver-free - the tests run the app over pglite
+ * and must not pull postgres.js into their graph. client.ts (the real connection) imports
+ * this back.
  */
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import type * as schema from "./schema";
