@@ -825,9 +825,25 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   (kick/snare/hats/clap/rim/tom) synthesized from scratch (`src/audio/samples/assets/generate.mjs`,
   unambiguously CC0) and bundled via Vite `?url`; the shared voice was generalized from
   `oscillators` to `AudioScheduledSourceNode[]` so a buffer source reuses the base envelope.
-  *Follow-ups:* **local file import + a project sample manifest** (so imported WAVs get names and
-  `file:` refs resolve through the existing content-addressed OPFS store) is PR 2; the **drum rack**
-  (below) + the deferred **per-track groove override** is PR 3.
+  *Follow-up done in PR 2 (slice 51):* see the sample library below.
+- **Sample library + local import - DONE (slice 51, PR 2 of the drum arc).** Imported samples get an
+  **asset-record layer**, the lesson from how Unity/Godot/Git-LFS/Bazel separate identity from bytes
+  from derived artifacts: a project-level `SampleAsset { id; name; contentHash; source? }` where the
+  stable `id` (not the hash) is what a `sample` param references (`asset:<id>`), so trimming or
+  re-encoding a sample never breaks references. The content hash is just the current bytes in the
+  OPFS blob store (dedup + integrity); decoded buffers are a regenerable cache keyed by hash. Local
+  import (Library panel "Samples" section + inline in the Sampler picker) stores the file, dedupes by
+  hash, and adds an asset record; instruments resolve `asset:<id> -> hash` through a small
+  `sampleRegistry` the engine syncs on reconcile (instruments only get `(ctx, store)`). MCP
+  `list_samples` reports built-ins + the project library; import is browser-only (Node can't read
+  local files / hash / write OPFS). *Follow-ups:* **remote sample browsing** (Freesound CC0 et al via
+  a same-origin proxy on the Node server - their media servers send no CORS headers and downloads
+  need OAuth2; pulling a remote sample hashes + stores + records license/source); **waveform peaks +
+  tags/search** over the library index; doing the OPFS bytes I/O + hashing + peak generation in a
+  **Worker** (the AudioWorklet can't touch OPFS, `crypto.subtle.digest` is one-shot, `decodeAudioData`
+  detaches its buffer); and `navigator.storage.persist()` + a quota meter (OPFS is evicted LRU). The
+  **drum rack** + the deferred **per-track groove override** is the next slice (pads reference the
+  same library).
 - **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or (the Sampler above is
   the shared substrate for the sampled path):
   - *Synthesized classic voices (preferred for 808/909/707/606/LinnDrum).* The analog machines are

@@ -5,9 +5,15 @@
  * is the single list the UI, MCP, and the Sampler iterate.
  *
  * A sample is referenced by a tagged string ("the ref"): "builtin:<id>" for a
- * sample shipped with the app, "file:<fileId>" for an imported one (PR 2), or
- * "" for an empty slot. Keeping refs as opaque tagged strings lets a single
- * `sample` param kind serve both without the schema knowing the catalog.
+ * sample shipped with the app, "asset:<id>" for one in the project's sample
+ * library (imported), or "" for an empty slot. Keeping refs as opaque tagged
+ * strings lets a single `sample` param kind serve both without the schema
+ * knowing the catalog.
+ *
+ * An imported sample is an *asset record* (see SampleAsset): a stable id that
+ * survives edits/re-encodes, carrying the human name and pointing at the current
+ * content hash (the bytes in the OPFS blob store). References use the stable id,
+ * never the content hash, so trimming or re-encoding a sample never breaks them.
  */
 
 export interface BuiltinSample {
@@ -15,6 +21,18 @@ export interface BuiltinSample {
   id: string;
   /** Human-readable name for the picker and MCP. */
   name: string;
+}
+
+/**
+ * A project-library sample. `id` is stable (minted once at import); `contentHash`
+ * is the current bytes (the OPFS blob key) and may change if the sample is later
+ * edited. `source` records provenance ("import" now; a remote origin later).
+ */
+export interface SampleAsset {
+  id: string;
+  name: string;
+  contentHash: string;
+  source?: string;
 }
 
 export const BUILTIN_SAMPLES: BuiltinSample[] = [
@@ -27,27 +45,33 @@ export const BUILTIN_SAMPLES: BuiltinSample[] = [
   { id: "tom", name: "Tom" },
 ];
 
-export type SampleRef = { kind: "none" } | { kind: "builtin"; id: string } | { kind: "file"; fileId: string };
+export type SampleRef = { kind: "none" } | { kind: "builtin"; id: string } | { kind: "asset"; id: string };
 
 /** Build the ref string for a built-in sample. */
 export const builtinRef = (id: string): string => `builtin:${id}`;
 
-/** Build the ref string for an imported sample (PR 2). */
-export const fileRef = (fileId: string): string => `file:${fileId}`;
+/** Build the ref string for a project-library (imported) sample. */
+export const assetRef = (id: string): string => `asset:${id}`;
 
 /** Parse a tagged sample ref. Unknown/empty refs parse to `{ kind: "none" }`. */
 export function parseRef(ref: string): SampleRef {
   if (ref.startsWith("builtin:")) return { kind: "builtin", id: ref.slice("builtin:".length) };
-  if (ref.startsWith("file:")) return { kind: "file", fileId: ref.slice("file:".length) };
+  if (ref.startsWith("asset:")) return { kind: "asset", id: ref.slice("asset:".length) };
   return { kind: "none" };
 }
 
-/** Human name for a ref, for labels (built-ins resolve via the catalog). */
-export function refLabel(ref: string): string {
+/**
+ * Human name for a ref, for labels. Built-ins resolve via the catalog; project
+ * assets resolve via the passed library (the catalog is DOM-free and project-
+ * agnostic, so the asset list is supplied by the caller).
+ */
+export function refLabel(ref: string, assets: SampleAsset[] = []): string {
   const parsed = parseRef(ref);
   if (parsed.kind === "builtin") {
     return BUILTIN_SAMPLES.find((sample) => sample.id === parsed.id)?.name ?? parsed.id;
   }
-  if (parsed.kind === "file") return parsed.fileId.slice(0, 8);
+  if (parsed.kind === "asset") {
+    return assets.find((asset) => asset.id === parsed.id)?.name ?? parsed.id;
+  }
   return "None";
 }

@@ -123,9 +123,10 @@ describe("MCP server (tracks)", () => {
 
   it("list_samples lists the built-in kit; set_parameter validates a sampler sample ref", async () => {
     const data = parse(await call("list_samples"));
-    const refs = data.samples.map((sample: { ref: string }) => sample.ref);
-    expect(refs).toContain("builtin:kick");
-    expect(refs.length).toBeGreaterThanOrEqual(5);
+    const builtinRefs = data.builtin.map((sample: { ref: string }) => sample.ref);
+    expect(builtinRefs).toContain("builtin:kick");
+    expect(builtinRefs.length).toBeGreaterThanOrEqual(5);
+    expect(data.project).toEqual([]); // no imported samples yet
 
     const messages = await connectTab();
     const trackId = await makeTrack("sampler");
@@ -133,6 +134,8 @@ describe("MCP server (tracks)", () => {
     expect((await call("set_parameter", { id: "sampler.sample", value: "builtin:clap" })).isError).toBeFalsy();
     await waitFor(() => typesOf(messages).includes("setParam"));
     expect(messages).toContainEqual({ type: "setParam", trackId, id: "sampler.sample", value: "builtin:clap" });
+    // an imported-asset ref shape is also accepted
+    expect((await call("set_parameter", { id: "sampler.sample", value: "asset:smp-1234" })).isError).toBeFalsy();
     // a bare string is not a valid tagged sample ref
     expect((await call("set_parameter", { id: "sampler.sample", value: "garbage" })).isError).toBe(true);
   });

@@ -74,6 +74,7 @@ export function buildStructure(tracks: Track[], groups: Group[], transport: Tran
     loopStart: transport.loopStartBeats,
     grooveId: transport.grooveId,
     grooveAmount: transport.grooveAmount,
+    samples: transport.samples,
     selectedTrackId: transport.selectedTrackId,
   };
 }

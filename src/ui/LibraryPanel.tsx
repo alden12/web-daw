@@ -11,6 +11,9 @@ import type { EditLog } from "../audio/commands/editLog";
 import { instrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
+import { assetRef } from "../audio/samples/catalog";
+import { importSampleFile } from "../audio/samples/importSample";
+import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
 import { type Patch, listPatches, removePatch, subscribePatches } from "../audio/patches/library";
@@ -125,6 +128,38 @@ function PatchLeaf({
   );
 }
 
+/** A project-library sample row: click the name to add a Sampler track on it, × to remove. */
+function SampleLeaf({
+  name,
+  indent = "pl-8",
+  onAdd,
+  onRemove,
+}: {
+  name: string;
+  indent?: string;
+  onAdd: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className={`group flex items-center w-full ${indent} pr-2 hover:bg-you/10`}>
+      <button
+        type="button"
+        onClick={onAdd}
+        title={`Add a Sampler track playing "${name}"`}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
+      >
+        <span aria-hidden="true" className="w-1.75 h-1.75 rounded-sm shrink-0 bg-line" />
+        <span className="truncate">{name}</span>
+      </button>
+      <Menu
+        label={`Sample actions: ${name}`}
+        triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+        items={[{ label: "Remove from library", danger: true, onClick: onRemove }]}
+      />
+    </div>
+  );
+}
+
 export function LibraryPanel({
   projectStore,
   editLog,
@@ -134,6 +169,7 @@ export function LibraryPanel({
   editLog: EditLog;
   dispatch: Dispatch;
 }) {
+  const project = useProject(projectStore);
   const [importError, setImportError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -141,6 +177,7 @@ export function LibraryPanel({
   const menuRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const sampleInputRef = useRef<HTMLInputElement>(null);
 
   // The patch library is global (cross-project); mirror it into React state.
   useEffect(() => {
@@ -205,13 +242,29 @@ export function LibraryPanel({
     }
   };
 
+  // Import a file into the project sample library (for the Sampler), via the shared helper.
+  const onImportSample = async (file: File) => {
+    setImportError(null);
+    const ref = await importSampleFile(file, project.samples, dispatch);
+    if (!ref) setImportError("Sample import failed (audio storage may be unavailable).");
+  };
+
+  // Add a Sampler track preloaded with a library sample (mirrors clicking an instrument).
+  const addSamplerTrack = (assetId: string) => {
+    const id = newTrackId();
+    dispatch({ type: "createTrack", instrumentType: "sampler", id });
+    dispatch({ type: "setParam", trackId: id, id: "sampler.sample", value: assetRef(assetId) });
+  };
+
   // Basic library search: filter each catalog by name (the box's "ask" use is future).
   const query = searchQuery.trim().toLowerCase();
   const matches = (label: string) => !query || label.toLowerCase().includes(query);
   const instruments = instrumentInfos().filter((def) => matches(def.label));
   const effects = effectInfos().filter((def) => matches(def.label));
   const matchedPatches = patches.filter((patch) => matches(patch.name));
-  const noMatches = query !== "" && !instruments.length && !effects.length && !matchedPatches.length;
+  const matchedSamples = project.samples.filter((sample) => matches(sample.name));
+  const noMatches =
+    query !== "" && !instruments.length && !effects.length && !matchedPatches.length && !matchedSamples.length;
 
   return (
     <div className="[grid-area:library] bg-rail border-r border-line flex flex-col min-h-0">
@@ -302,6 +355,18 @@ export function LibraryPanel({
             e.target.value = "";
           }}
         />
+        <input
+          ref={sampleInputRef}
+          data-testid="sample-import-input"
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void onImportSample(file);
+            e.target.value = "";
+          }}
+        />
 
         <input
           type="text"
@@ -371,6 +436,33 @@ export function LibraryPanel({
                 }}
               />
             ))}
+          </Category>
+        )}
+
+        {(query === "" || matchedSamples.length > 0) && (
+          <Category label="Samples">
+            <button
+              type="button"
+              onClick={() => sampleInputRef.current?.click()}
+              className="flex items-center gap-2.5 w-full text-left pl-8 pr-4 py-1.5 text-[12.5px] text-muted hover:text-ink cursor-pointer hover:bg-you/10"
+            >
+              <span aria-hidden="true" className="w-3.5 text-center leading-none">
+                +
+              </span>
+              <span className="truncate">Import sample…</span>
+            </button>
+            {matchedSamples.length === 0 && query === "" ? (
+              <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">Import a sample to play it with the Sampler.</p>
+            ) : (
+              matchedSamples.map((sample) => (
+                <SampleLeaf
+                  key={sample.id}
+                  name={sample.name}
+                  onAdd={() => addSamplerTrack(sample.id)}
+                  onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
+                />
+              ))
+            )}
           </Category>
         )}
 

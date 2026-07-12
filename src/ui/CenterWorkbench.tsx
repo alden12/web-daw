@@ -456,6 +456,7 @@ export function CenterWorkbench({
                 instrumentType={selectedTrack.instrumentType}
                 trackId={selectedTrack.id}
                 dispatch={dispatch}
+                samples={project.samples}
               />
             )}
             <EffectChain

@@ -6,6 +6,8 @@
  * pulling in Vite asset imports or Web Audio.
  */
 import { parseRef } from "./catalog";
+import { resolveSampleHash } from "./sampleRegistry";
+import { getAudioBuffer } from "../audioStore";
 import kickUrl from "./assets/kick.wav?url";
 import snareUrl from "./assets/snare.wav?url";
 import hatClosedUrl from "./assets/hat-closed.wav?url";
@@ -25,29 +27,37 @@ export const BUILTIN_URLS: Record<string, string> = {
   tom: tomUrl,
 };
 
-// One decode per ref, shared across every Sampler instance (buffers are immutable).
+// One decode per source, shared across every Sampler instance (buffers are
+// immutable). Keyed by a "builtin:<id>" ref or by an asset's content hash, so two
+// asset records over identical bytes share a single decode.
 const cache = new Map<string, Promise<AudioBuffer>>();
+
+function decodeOnce(key: string, bytes: () => Promise<ArrayBuffer>, ctx: BaseAudioContext): Promise<AudioBuffer> {
+  let pending = cache.get(key);
+  if (!pending) {
+    pending = bytes().then((buffer) => ctx.decodeAudioData(buffer));
+    cache.set(key, pending);
+  }
+  return pending;
+}
 
 /**
  * Decode the audio for a sample ref into an AudioBuffer, or resolve null for an
- * empty/unknown ref. Built-in refs fetch their bundled URL; "file:" refs (imported
- * samples) arrive in a later slice and throw here for now.
+ * empty/unresolvable ref. Built-in refs fetch their bundled URL; "asset:" refs
+ * resolve to a content hash (via the sample registry) and read bytes from the
+ * content-addressed store.
  */
 export function loadSampleBuffer(ctx: BaseAudioContext, ref: string): Promise<AudioBuffer | null> {
   const parsed = parseRef(ref);
-  if (parsed.kind === "none") return Promise.resolve(null);
-  if (parsed.kind === "file") {
-    return Promise.reject(new Error(`Imported samples are not supported yet: ${ref}`));
+  if (parsed.kind === "builtin") {
+    const url = BUILTIN_URLS[parsed.id];
+    if (!url) return Promise.resolve(null);
+    return decodeOnce(ref, () => fetch(url).then((response) => response.arrayBuffer()), ctx);
   }
-  const url = BUILTIN_URLS[parsed.id];
-  if (!url) return Promise.resolve(null);
-
-  let pending = cache.get(ref);
-  if (!pending) {
-    pending = fetch(url)
-      .then((response) => response.arrayBuffer())
-      .then((bytes) => ctx.decodeAudioData(bytes));
-    cache.set(ref, pending);
+  if (parsed.kind === "asset") {
+    const hash = resolveSampleHash(parsed.id);
+    if (!hash) return Promise.resolve(null);
+    return decodeOnce(hash, () => getAudioBuffer(hash), ctx);
   }
-  return pending;
+  return Promise.resolve(null);
 }

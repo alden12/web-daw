@@ -3,7 +3,7 @@ import { ParamStore } from "../src/audio/params/store";
 import { specToZod } from "../src/audio/params/zod";
 import { validateParam } from "../src/audio/params/validate";
 import type { SampleSpec } from "../src/audio/params/types";
-import { BUILTIN_SAMPLES, builtinRef, fileRef, parseRef, refLabel } from "../src/audio/samples/catalog";
+import { BUILTIN_SAMPLES, assetRef, builtinRef, parseRef, refLabel } from "../src/audio/samples/catalog";
 
 const spec: SampleSpec = { id: "x.sample", label: "Sample", kind: "sample", default: "builtin:kick" };
 
@@ -24,7 +24,7 @@ describe("sample param kind", () => {
     const zod = specToZod(spec);
     expect(zod.safeParse("").success).toBe(true);
     expect(zod.safeParse("builtin:kick").success).toBe(true);
-    expect(zod.safeParse("file:abc123").success).toBe(true);
+    expect(zod.safeParse("asset:abc123").success).toBe(true);
     expect(zod.safeParse("garbage").success).toBe(false);
     expect(zod.safeParse("builtin:").success).toBe(false);
 
@@ -34,9 +34,9 @@ describe("sample param kind", () => {
 });
 
 describe("sample catalog refs", () => {
-  it("builtin/file refs round-trip through parseRef", () => {
+  it("builtin/asset refs round-trip through parseRef", () => {
     expect(parseRef(builtinRef("kick"))).toEqual({ kind: "builtin", id: "kick" });
-    expect(parseRef(fileRef("abc"))).toEqual({ kind: "file", fileId: "abc" });
+    expect(parseRef(assetRef("abc"))).toEqual({ kind: "asset", id: "abc" });
     expect(parseRef("")).toEqual({ kind: "none" });
     expect(parseRef("nonsense")).toEqual({ kind: "none" });
   });
@@ -45,6 +45,7 @@ describe("sample catalog refs", () => {
     const ids = BUILTIN_SAMPLES.map((sample) => sample.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(refLabel(builtinRef("kick"))).toBe("Kick");
+    expect(refLabel(assetRef("x1"), [{ id: "x1", name: "My Loop", contentHash: "h" }])).toBe("My Loop");
     expect(refLabel("")).toBe("None");
   });
 });
