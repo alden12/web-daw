@@ -76,18 +76,25 @@ export async function writeFile(
     const owned = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId));
     if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
 
-    // Commits are immutable: never overwrite one (append-only history).
-    if (isCommitPath(path) && (await fileExists(tx, ownerId, projectId, path))) {
-      return { ok: false, reason: "conflict" };
+    if (isCommitPath(path)) {
+      // Commits are immutable (append-only history). Insert, never update: the (projectId, path)
+      // unique constraint makes exactly one concurrent insert win - the loser gets no row back
+      // and is a conflict. This is atomic, unlike a check-then-upsert which two writers can race.
+      const inserted = await tx
+        .insert(files)
+        .values({ projectId, path, ...columns })
+        .onConflictDoNothing()
+        .returning({ path: files.path });
+      if (inserted.length === 0) return { ok: false, reason: "conflict" };
+    } else {
+      await tx
+        .insert(files)
+        .values({ projectId, path, ...columns })
+        .onConflictDoUpdate({
+          target: [files.projectId, files.path],
+          set: { ...columns, updatedAt: sql`now()` },
+        });
     }
-
-    await tx
-      .insert(files)
-      .values({ projectId, path, ...columns })
-      .onConflictDoUpdate({
-        target: [files.projectId, files.path],
-        set: { ...columns, updatedAt: sql`now()` },
-      });
 
     // Keep the queryable project columns in step with the bundle's own metadata.
     if (payload.kind === "json" && path === "meta.json") await syncMeta(tx, projectId, payload.json);
