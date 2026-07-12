@@ -10,6 +10,14 @@ import { clamp } from "../../util";
 
 const DEFAULT_LENGTH = 16;
 
+/**
+ * Smallest note length we keep (one 16th). Note *positions* are free - the store no
+ * longer snaps `start`/`length` to the grid, so recorded feel, sub-grid edits, and
+ * (later) grooves survive. Quantizing is now an explicit operation (see `quantize.ts`),
+ * not an invariant. We still floor the length here so a note can't collapse to zero.
+ */
+const MIN_LENGTH = GRID;
+
 const snap = (v: number) => Math.round(v / GRID) * GRID;
 
 /** Input accepted by addNote; id/length/velocity are filled in if omitted. */
@@ -32,8 +40,10 @@ export class ClipStore {
   }
 
   private normalize(input: NoteInput, id: string): NoteEvent {
-    const start = clamp(snap(input.start), 0, Math.max(0, this.lengthBeats - GRID));
-    const length = clamp(snap(input.length ?? 1), GRID, this.lengthBeats - start);
+    // Coerce into bounds (trusted-value clamping) but do NOT snap to the grid - the
+    // note keeps its true position. The UI snaps at edit time; quantize is explicit.
+    const start = clamp(input.start, 0, Math.max(0, this.lengthBeats - MIN_LENGTH));
+    const length = clamp(input.length ?? 1, MIN_LENGTH, this.lengthBeats - start);
     return {
       id,
       pitch: clamp(Math.round(input.pitch), 0, 127),

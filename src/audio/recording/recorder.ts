@@ -24,8 +24,12 @@ import type { Dispatch } from "../commands/types";
 import { newClipId, newNoteId, newPlacementId, newTrackId } from "../commands/ids";
 import { audioStorageAvailable, putAudio } from "../audioStore";
 import { GRID, type NoteEvent } from "../sequencer/types";
+import { quantizeNotes, type QuantizeSettings } from "../sequencer/quantize";
 import { beatsPerSecond } from "../timing";
 import { encodeWav } from "./wav";
+
+/** Returns the quantize settings to apply to a take as it's captured, or null to leave it raw. */
+export type AutoQuantize = () => QuantizeSettings | null;
 
 const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
 const COUNT_IN_LEAD_SEC = 0.12; // small lead so the first click is not clipped
@@ -91,12 +95,20 @@ export class Recorder {
   private readonly scheduler: Scheduler;
   private readonly project: ProjectStore;
   private readonly dispatch: Dispatch;
+  private readonly getAutoQuantize: AutoQuantize;
 
-  constructor(engine: AudioEngine, scheduler: Scheduler, project: ProjectStore, dispatch: Dispatch) {
+  constructor(
+    engine: AudioEngine,
+    scheduler: Scheduler,
+    project: ProjectStore,
+    dispatch: Dispatch,
+    getAutoQuantize: AutoQuantize = () => null,
+  ) {
     this.engine = engine;
     this.scheduler = scheduler;
     this.project = project;
     this.dispatch = dispatch;
+    this.getAutoQuantize = getAutoQuantize;
   }
 
   subscribe(listener: () => void): () => void {
@@ -323,13 +335,17 @@ export class Recorder {
     // relative to the bar and the clip lines up with the grid. The clip is sized
     // up to whole bars to cover the last note.
     const clipStart = Math.max(0, Math.floor(this.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR);
-    const notes: NoteEvent[] = captured.map((note) => ({
+    const captured0: NoteEvent[] = captured.map((note) => ({
       id: newNoteId(),
       pitch: note.pitch,
       start: Math.max(0, note.startBeat - clipStart),
       length: Math.max(GRID, note.endBeat - note.startBeat),
       velocity: note.velocity,
     }));
+    // When auto-quantize is armed, tighten the take to the grid as it lands; otherwise
+    // keep the performance exactly as played (the store no longer snaps).
+    const autoQuantize = this.getAutoQuantize();
+    const notes = autoQuantize ? quantizeNotes(captured0, autoQuantize) : captured0;
     const span = Math.max(...notes.map((note) => note.start + note.length));
     const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
     this.dispatch({

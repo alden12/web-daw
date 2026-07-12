@@ -607,8 +607,18 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   (two ruler handles; grid drawn past the end), fit-to-window on load, pinch / modifier-scroll
   zoom, a resizable velocity lane, deselect on Escape / click-out, and a workbench relayout
   (variants in a left rail, resizable device|roll divider, wrapping rack). *Musical editing
-  follow-ups below (quantize/groove, project key) still pending.*
-- **Musical editing:** quantization + grooves (strength, swing, groove templates), and a
+  follow-ups below (grooves, project key) still pending; quantization is now done.*
+- **Quantization - DONE.** The keystone change was removing the **destructive force-snap** from
+  `ClipStore` (it used to round every note to a 16th on input, killing recorded feel): notes now
+  hold their true positions, the store only coerces (clamp/min-length), and the UI still snaps at
+  *edit* time. Quantizing is now an explicit pure op (`src/audio/sequencer/quantize.ts`, shared by
+  the roll UI and the Node MCP server): an adjustable grid (reusing the roll's snap division, incl.
+  triplets, all from one `GRID_DIVISIONS` list) and a strength (partial pull). The roll exposes a
+  **Quantize** action (selection or whole clip, one `editNotes` = one undo step), an **Auto-Q**
+  toggle (lights up; snaps takes as they record), and a **⋯ settings** menu (strength, snap-ends).
+  An MCP `quantize` tool mirrors it. *Forward-compat for grooves/time-signature:* every grid calc
+  reads `GRID_DIVISIONS`/the snap division (no hardcoded 16ths), so those later slices drop in.
+- **Musical editing:** grooves (strength, swing, groove templates), and a
   project key with the roll showing note intervals/scale relative to it. *Groove model:* a
   groove is a small template `{ grid, swing, slots: [{ offsetTicks, velocityScale }], strength }`
   applied **at schedule time** by the scheduler (nudge each note's `when` + scale velocity by the
@@ -738,6 +748,25 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   over the decoded buffer to produce a derived buffer cached by `(fileId, semitones, ratio)`, and
   point the clip at it; a ±semitone + tempo-ratio control on the clip. Realtime worklet shifting +
   Ableton-style **warp markers** (align transients to the grid) build on this later.
+- **Autotune / pitch correction (follow-on to audio pitch & time).** Detect a recorded vocal's
+  fundamental-frequency (f0) contour and remap it toward the nearest scale note. This is the **same
+  shifting engine** as clip pitch-shift, driven by a *dynamic, time-varying* shift ratio
+  (`target note / detected f0`) instead of one constant ±semitone - so do clip pitch-shift first and
+  autotune becomes a layer on top, not a from-scratch build. The added layers are the JS-friendly,
+  Claude-fluent parts: **(1) pitch detection** - YIN/autocorrelation over `Float32Array` (offline,
+  go further with pYIN + Viterbi smoothing for a clean track; unit-testable with synthetic tones);
+  **(2) musical control** - snap to scale/key with a retune *amount* and *speed* (slow natural
+  correction vs hard-snap), reusing the planned **project key/scale** work. Frame it as an **offline
+  clip processor** (recorded clip in -> corrected clip out via OfflineAudioContext + the sample
+  store), like audio pitch & time; a realtime worklet effect is much harder and a later step.
+  Engine caveats vs constant pitch-shift: autotune needs an engine that supports a **time-varying**
+  ratio (phase vocoder with per-frame ratio, or pitch-synchronous PSOLA - a plain stretch-then-
+  resample only does a constant ratio), and **formant preservation** matters far more for a voice;
+  caching is by `(fileId, settings-hash)` since the result is content-derived, not a tiny param key.
+  Faust note: it does *not* meaningfully ease this - detection and the musical layer are awkward in
+  Faust and fluent in JS, and its stock `ef.transpose` shifter is the artifacty, non-formant-
+  preserving kind. Keep the **shifter core as a swappable node** (a quality JS/WASM stretch lib, or
+  Faust) behind our effect interface if CPU/quality demands it; build detection + control in JS.
 - **Recording follow-ups (later):** MCP arm/record tools, input level meter, remembered device +
   eager enumeration, software-monitoring option, loopback **latency calibration** (store the offset
   on the region), punch-in at the playhead, multi-track arm, stereo.
@@ -757,11 +786,10 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   (not just the computer keyboard) with true velocity and (later) aftertouch/CC. Routes into the
   same `Recorder.noteOn/noteOff` capture path and live monitoring, so recording, the live overlay,
   and quantize all come along; just a new input source + a device picker.
-- **Quantize - roadmap.** Recorded notes currently snap to the 16th grid on the way in (the
-  `ClipStore` quantizes everything, app-wide). Make it a real control: a per-take **record-raw**
-  option (preserve exact timing, off the grid) plus a **quantize** action with adjustable strength
-  and grid (1/4 ... 1/32, triplets), applied after the fact to a selection. Needs the `ClipStore`
-  to allow off-grid note times (today it always snaps), so it is its own slice.
+- **Quantize - DONE.** The `ClipStore` force-snap is gone (notes keep exact timing); quantize is an
+  explicit strength/grid action on a selection-or-clip, with an **Auto-Q** toggle for snap-on-record
+  (the per-take raw-vs-quantized choice) and an MCP `quantize` tool. See the "Quantization - DONE"
+  entry under the real-DAW pieces above for the full shape.
 - **Overdub & punch options - roadmap.** Record into the existing clip (merge takes) instead of
   always punching in a fresh clip; a loop-record mode that stacks takes; MCP arm/record tools.
 

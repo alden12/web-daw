@@ -143,6 +143,29 @@ describe("MCP server (tracks)", () => {
     expect(notes).toHaveLength(0);
   });
 
+  it("quantize pulls a clip's notes to the grid and emits one editNotes", async () => {
+    const messages = await connectTab();
+    await makeTrack("subtractive");
+
+    await call("add_notes", {
+      notes: [
+        { pitch: 60, start: 1.1, length: 0.9 },
+        { pitch: 64, start: 2.05, length: 1 },
+      ],
+    });
+    // Off-grid positions survive (the store no longer force-snaps).
+    let notes = parse(await call("list_notes")).clip.notes;
+    expect(notes.find((n: { pitch: number }) => n.pitch === 60).start).toBeCloseTo(1.1);
+
+    const res = await call("quantize", { grid: "1/4", strength: 1 });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("editNotes"));
+
+    notes = parse(await call("list_notes")).clip.notes;
+    expect(notes.find((n: { pitch: number }) => n.pitch === 60).start).toBeCloseTo(1.0);
+    expect(notes.find((n: { pitch: number }) => n.pitch === 64).start).toBeCloseTo(2.0);
+  });
+
   it("add_note can target a specific track id", async () => {
     await connectTab();
     const a = await makeTrack("subtractive");
