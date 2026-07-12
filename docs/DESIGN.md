@@ -1661,6 +1661,15 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 - **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
   samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
   for true multiplayer) - all fit behind the current seams.
+- **Agent-session persistence.** Agent chat (`ChatTurn` via `src/ui/agentSessions.ts`) is
+  `localStorage`-only and **global** (cross-project) today - the same evictable storage that motivated
+  the sync service, so it is the next durability gap after project data. Move it behind the sync seam as
+  its own session-scoped store (`agent_sessions` + `agent_turns`, keyed by session id, not by the
+  project's edit `seq`). Two decisions to settle when picked up: per-project vs global scoping (currently
+  global - the agent re-reads project state each turn, so a conversation can span projects), and
+  transcript size/privacy (tool-call payloads get large and are more sensitive than project data). This
+  is a **distinct** stream from the project's authored edit-log: chat is the reasoning transcript that
+  *produces* edits + feed notes; do not fold agent turns into the project edit-log.
 - **Delta sync - _done_ (slices 66-67).** Autosave no longer re-uploads the whole `project.json` on
   every edit; it **appends the delta** to a durable, append-only edit log and rewrites `project.json`
   only as a throttled **keyframe** (recording, via a `headSeq` marker, the seq it reflects). Load
@@ -1674,22 +1683,21 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   WS `edit` message reuses** (HTTP now, WS with multiplayer). Known limit: a coalescing edit still in
   the un-keyframed tail may reload at an intermediate value after a hard crash mid-drag; the next
   keyframe heals it.
-  - **Keyframe cadence - follow-on (planned).** The initial cadence fires a full-bundle keyframe
-    ~1.5s after edits stop (idle-triggered), which re-introduces whole-bundle writes after nearly
-    every editing pause. The fix rests on one insight: **keyframes are not a durability mechanism**
-    (the delta append is already the durable write) - their *only* job is bounding load-time replay.
-    Since replaying is cheap (each edit is one in-memory store mutation), the crossover between
-    "assemble from deltas" and "write+store a keyframe" sits far out, so the cadence should be
-    **count-primary**: keyframe every ~N edits (start N=50, conservative for snappy loads; expected
-    to rise toward 100-200 once large-project testing reveals the real crossover - a single tunable
-    constant), plus the existing undo/redo-forces-keyframe, plus a **page-hide flush**
-    (`visibilitychange`/`beforeunload`) replacing the periodic idle timer. Caveat that shapes the
-    design: `meta.json` (modifiedAt), `notes.json` (feed notes), and `undo.json` currently persist
-    *only* via the keyframe, not the delta path - so a session of <N edits then leaving would strand
-    the modified-time and lose feed notes. The page-hide flush covers the leave case; the durable fix
-    is to make **feed notes append durably too** (they already share the monotonic `seq` counter with
-    edits, so they can ride the same append path), after which the small files no longer need a
-    periodic flush at all.
+  - **Keyframe cadence - _done_ (slice 69).** The initial cadence fired a full-bundle keyframe ~1.5s
+    after edits stopped (idle-triggered), re-introducing whole-bundle writes after nearly every editing
+    pause. The rework rests on one insight: **keyframes are not a durability mechanism** (the delta
+    append is the durable write) - their *only* job is bounding load-time replay, which is cheap. So the
+    cadence is now **count-primary**: `project.json` is rewritten every `KEYFRAME_EDIT_INTERVAL` edits
+    (100 to start, a single tunable constant, expected to rise once large-project testing shows the real
+    assemble-vs-write crossover), plus the existing undo/redo-forces-keyframe (an unreplayable entry in
+    the tail), and the periodic idle timer is gone. The small files are **unbundled** from the keyframe:
+    `notes.json` is written on the fast cadence (on change) and `meta.json` on the keyframe cadence, so
+    feed notes and the modified-time no longer wait for a rare keyframe. A **page-hide flush**
+    (`visibilitychange`/`pagehide`) sends whatever the debounce is still holding (a fast edit burst never
+    pauses long enough to append) plus notes + a meta touch; it deliberately does *not* keyframe (the
+    payload stays small and reliable, and `project.json` is rebuilt by replay next load). Follow-on
+    (slice 70): fold `notes.json` into the edit-log as `kind:"note"` rows so notes become durable
+    deltas and both `notes.json` and the `log.json`/`edits`-table duplication retire.
   - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
     materializes and uploads keyframes. A server could instead build them by replaying the `edits`
     table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that
