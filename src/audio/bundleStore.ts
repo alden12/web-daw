@@ -29,11 +29,13 @@ export interface BundleStore {
 const PROJECTS_DIR = "projects";
 
 /**
- * The file-backed edit log (used by the OPFS / in-memory stores): the edit stream lives in the
- * bundle's `log.json`, read-concat-written. Cheap locally; the remote store overrides both with
- * the efficient append/fetch endpoints. Append is idempotent by `seq` so a re-append is a no-op.
+ * The file-backed edit log (used by the OPFS / in-memory stores): the append stream lives in the
+ * bundle's `edits.json`, read-concat-written. Cheap locally; the remote store overrides both with
+ * the efficient append/fetch endpoints (backed by the `edits` table). Kept distinct from the feed
+ * `log.json` so the two never conflate - mirroring the remote layout (edits table + `log.json`).
+ * Append is idempotent by `seq` so a re-append is a no-op.
  */
-const EDIT_LOG_PATH = "log.json";
+const EDIT_LOG_PATH = "edits.json";
 
 async function readEditsFromFile(store: BundleStore, sinceSeq: number): Promise<EditEntry[]> {
   const raw = await store.readText(EDIT_LOG_PATH);
