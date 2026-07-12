@@ -46,10 +46,10 @@ export class RemoteBundleStore implements BundleStore {
     await this.client.appendEdits(this.projectId, entries);
   }
 
-  async readEdits(sinceSeq: number): Promise<EditEntry[]> {
+  async readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
     // The wire shape validates `command` structurally ({type}); at runtime it is the full stored
     // command, so this cast back to the app's EditEntry is safe.
-    const entries = await this.client.getEdits(this.projectId, sinceSeq);
+    const entries = await this.client.getEdits(this.projectId, sinceSeq, limit);
     return entries as unknown as EditEntry[];
   }
 

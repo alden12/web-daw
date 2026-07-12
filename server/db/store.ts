@@ -7,7 +7,7 @@
  *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
  *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
  */
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "./types";
 import { edits, files, projects } from "./schema";
 
@@ -185,26 +185,35 @@ export async function appendEdits(
   });
 }
 
-/** The owner's authored edits with `seq > sinceSeq`, oldest first (the delta tail / feed window). */
+/**
+ * The owner's authored edits with `seq > sinceSeq`, oldest first (the delta tail / feed window).
+ * With `limit`, returns the most recent N (order desc + limit, then reversed to oldest-first) so the
+ * caller gets a bounded recent window rather than the unbounded history.
+ */
 export async function readEdits(
   db: Db,
   ownerId: string,
   projectId: string,
   sinceSeq: number,
+  limit?: number,
 ): Promise<EditEntryInput[]> {
-  const rows = await db
-    .select({
-      seq: edits.seq,
-      command: edits.command,
-      author: edits.author,
-      time: edits.time,
-      kind: edits.kind,
-      label: edits.label,
-    })
-    .from(edits)
-    .innerJoin(projects, eq(edits.projectId, projects.id))
-    .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId), gt(edits.seq, sinceSeq)))
-    .orderBy(edits.seq);
+  const select = () =>
+    db
+      .select({
+        seq: edits.seq,
+        command: edits.command,
+        author: edits.author,
+        time: edits.time,
+        kind: edits.kind,
+        label: edits.label,
+      })
+      .from(edits)
+      .innerJoin(projects, eq(edits.projectId, projects.id))
+      .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId), gt(edits.seq, sinceSeq)));
+  const rows =
+    limit != null
+      ? (await select().orderBy(desc(edits.seq)).limit(limit)).reverse()
+      : await select().orderBy(edits.seq);
   // Drop null kind/label so the entries match the wire schema (optional, not nullable).
   return rows.map((row) => ({
     seq: row.seq,

@@ -18,6 +18,7 @@
     "api": "tsx watch --env-file-if-exists=.env server/api/index.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
+    "db:reset": "tsx --env-file-if-exists=.env server/db/reset.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts",
     "db:studio": "drizzle-kit studio",

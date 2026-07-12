@@ -1695,9 +1695,21 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     feed notes and the modified-time no longer wait for a rare keyframe. A **page-hide flush**
     (`visibilitychange`/`pagehide`) sends whatever the debounce is still holding (a fast edit burst never
     pauses long enough to append) plus notes + a meta touch; it deliberately does *not* keyframe (the
-    payload stays small and reliable, and `project.json` is rebuilt by replay next load). Follow-on
-    (slice 70): fold `notes.json` into the edit-log as `kind:"note"` rows so notes become durable
-    deltas and both `notes.json` and the `log.json`/`edits`-table duplication retire.
+    payload stays small and reliable, and `project.json` is rebuilt by replay next load).
+  - **Feed + edit-log unification - _done_ (slice 70).** Feed notes and edits are now **one**
+    seq-ordered authored stream. A note is a `kind:"note"` entry carrying its text on `command`
+    (`{type:"note", text}`); forward replay skips it (only `edit` kinds apply). So notes ride the delta
+    append (durable without a keyframe) and both `notes.json` and `log.json` retire - killing the
+    `log.json`/`edits`-table duplication the earlier inspection found. The stream is the single feed
+    source: local backends keep it in `edits.json`, the sync server in the `edits` table; load reads a
+    bounded recent window (`readEdits` gained a `limit`; `KEYFRAME_EDIT_INTERVAL` << the window, with a
+    guard that reads the full tail in the unlikely case it doesn't reach the keyframe). The in-memory
+    `EditLog` API is unchanged - the edits/notes merge and split live at the persistence boundary
+    (`ProjectRepository`). Old bundles: pre-unification `log.json`/`notes.json` are **not** read back -
+    the local dev DB was refreshed by explicit consent (the sync service still holds only disposable dev
+    data; there are no real users yet), so a one-time discard was preferred over carrying transition
+    code. The forward-migration discipline (CLAUDE.md) resumes for changes made once real data exists.
+    `.daw.zip` export/import uses the unified `edits.json`.
   - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
     materializes and uploads keyframes. A server could instead build them by replaying the `edits`
     table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that

@@ -133,8 +133,9 @@ export interface EditEntry {
   command: EditCommand;
   author: Author;
   time: number;
-  /** What this entry records. Absent = a normal edit (back-compat). */
-  kind?: "edit" | "undo" | "redo";
+  /** What this entry records. Absent = a normal edit (back-compat). "note" is a feed-only annotation
+   *  folded into the one authored stream (text on `command`); skipped by forward replay. */
+  kind?: "edit" | "undo" | "redo" | "note";
   /** Display override for non-edit entries (e.g. "Undid: Added note"). */
   label?: string;
 }
