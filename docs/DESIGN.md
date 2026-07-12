@@ -411,6 +411,22 @@ The follow-on slices (not in this push): **15C** branches + revert + cherry-pick
 tries an arrangement on a branch, you compare and merge" workflow), **15D** a real disk folder
 via the File System Access API (+ optional git export), **15E** remote sync / collaboration.
 
+- **15F - project library + switcher (multi-project, can land early).** Today the store is a
+  *single* OPFS bundle behind a `getRepository()` singleton ("multi-project is later" is marked
+  in `bundleStore.ts`); `.daw` export/import already exists, but there is no library of projects
+  or a way to switch between them. The valuable move is to generalize the singleton into a
+  **keyed multi-bundle store** plus a **backend-agnostic projects index** (id, name,
+  last-modified, later a thumbnail), then a thin **switcher menu** (new / open / rename /
+  duplicate / delete) in the project menu by the library title. Build the index/metadata model
+  *independent of where bytes live* so the disk-folder backend (15D) plugs into the same
+  `ProjectRepository` interface additively rather than forcing a rewrite. This is independent of
+  the commit work (15B/15C) and can land on OPFS first; it pairs naturally with **sample import**
+  (which also touches the repository), so doing them adjacent avoids re-learning that code twice.
+  Caveat that motivates the layering: OPFS is a browser-private sandbox (invisible in the file
+  manager, not user-backup-able, evictable under storage pressure) - fine as a default store,
+  not the long-term home, which is why the user-visible disk backend (15D) stays the durable
+  endpoint and 15F must not bake in OPFS-shaped assumptions.
+
 **Extension SDK - third-party instruments & effects (ecosystem + ownership)**
 
 The project is licensed **AGPL-3.0** (strong copyleft so a modified core can't be closed and
