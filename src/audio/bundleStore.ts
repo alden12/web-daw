@@ -11,6 +11,7 @@
  * enumerate/delete them; the repository singleton points at the current project.
  */
 import { RemoteProjectStorage } from "./remoteStore";
+import type { EditEntry } from "./commands/types";
 
 export interface BundleStore {
   readText(path: string): Promise<string | null>;
@@ -18,10 +19,36 @@ export interface BundleStore {
   readBlob(path: string): Promise<ArrayBuffer | null>;
   writeBlob(path: string, blob: Blob): Promise<void>;
   exists(path: string): Promise<boolean>;
+  /** Append authored edits to the bundle's edit log (append-only, idempotent by `seq`). */
+  appendEdits(entries: EditEntry[]): Promise<void>;
+  /** Read the edit log entries with `seq > sinceSeq` (all if `sinceSeq < 0`), oldest first. */
+  readEdits(sinceSeq: number): Promise<EditEntry[]>;
 }
 
 /** The parent directory (under the OPFS root) that holds every project bundle. */
 const PROJECTS_DIR = "projects";
+
+/**
+ * The file-backed edit log (used by the OPFS / in-memory stores): the edit stream lives in the
+ * bundle's `log.json`, read-concat-written. Cheap locally; the remote store overrides both with
+ * the efficient append/fetch endpoints. Append is idempotent by `seq` so a re-append is a no-op.
+ */
+const EDIT_LOG_PATH = "log.json";
+
+async function readEditsFromFile(store: BundleStore, sinceSeq: number): Promise<EditEntry[]> {
+  const raw = await store.readText(EDIT_LOG_PATH);
+  const all = raw ? (JSON.parse(raw) as EditEntry[]) : [];
+  return all.filter((entry) => entry.seq > sinceSeq);
+}
+
+async function appendEditsToFile(store: BundleStore, entries: EditEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  const raw = await store.readText(EDIT_LOG_PATH);
+  const all = raw ? (JSON.parse(raw) as EditEntry[]) : [];
+  const seen = new Set(all.map((entry) => entry.seq));
+  const merged = all.concat(entries.filter((entry) => !seen.has(entry.seq)));
+  await store.writeText(EDIT_LOG_PATH, JSON.stringify(merged));
+}
 
 /** Origin Private File System backend: the bundle is a real directory tree rooted at `root`. */
 export class OpfsBundleStore implements BundleStore {
@@ -92,6 +119,13 @@ export class OpfsBundleStore implements BundleStore {
   async exists(path: string): Promise<boolean> {
     return (await this.fileHandle(path, false)) !== null;
   }
+
+  appendEdits(entries: EditEntry[]): Promise<void> {
+    return appendEditsToFile(this, entries);
+  }
+  readEdits(sinceSeq: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq);
+  }
 }
 
 /** In-memory backend used by unit tests and as a no-OPFS fallback (not durable). */
@@ -113,6 +147,12 @@ export class MemoryBundleStore implements BundleStore {
   }
   async exists(path: string): Promise<boolean> {
     return this.text.has(path) || this.blob.has(path);
+  }
+  appendEdits(entries: EditEntry[]): Promise<void> {
+    return appendEditsToFile(this, entries);
+  }
+  readEdits(sinceSeq: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq);
   }
 }
 
@@ -185,6 +225,12 @@ class RootedMemoryStore implements BundleStore {
   }
   async exists(path: string) {
     return this.text.has(this.key(path)) || this.blob.has(this.key(path));
+  }
+  appendEdits(entries: EditEntry[]): Promise<void> {
+    return appendEditsToFile(this, entries);
+  }
+  readEdits(sinceSeq: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq);
   }
 }
 

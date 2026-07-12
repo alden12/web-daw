@@ -12,7 +12,7 @@
  *    entries, stored as jsonb so they are valid-JSON-checked, readable, and queryable) OR
  *    `bytes` (binary, e.g. samples) - a CHECK enforces exactly one.
  */
-import { pgTable, text, integer, timestamp, primaryKey, customType, jsonb, check } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, timestamp, primaryKey, customType, jsonb, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -58,5 +58,33 @@ export const files = pgTable(
   ],
 );
 
+/**
+ * The append-only edit log: one row per authored edit, keyed `(projectId, seq)` with the
+ * client's monotonic `seq`. This is the delta stream - autosave appends new entries instead of
+ * re-uploading the whole `project.json`, and load reconstructs HEAD by replaying entries after
+ * the last keyframe. Append-only and immutable per `seq` (like a commit): a re-sent entry is an
+ * idempotent no-op, never an overwrite. FK to `projects` with ON DELETE RESTRICT (deletion is
+ * soft, on the project row). The command payload is stored as jsonb (valid-JSON-checked, queryable).
+ */
+export const edits = pgTable(
+  "edits",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "restrict" }),
+    seq: integer("seq").notNull(),
+    command: jsonb("command").notNull(),
+    author: text("author").notNull(),
+    /** Client edit timestamp (ms since epoch); well within a JS-number-safe bigint. */
+    time: bigint("time", { mode: "number" }).notNull(),
+    /** "edit" | "undo" | "redo"; absent = a normal edit. */
+    kind: text("kind"),
+    /** Optional display override for non-edit (undo/redo) entries. */
+    label: text("label"),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.seq] })],
+);
+
 export type ProjectRow = typeof projects.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
+export type EditRow = typeof edits.$inferSelect;
