@@ -33,14 +33,18 @@ const widthOf = (page: Page, area: "library" | "center" | "agent" | "timeline") 
 // empty - no manual clearing needed (and clearing on reload would defeat the
 // persistence tests).
 
-test("all four regions are visible on a clean load", async ({ page }) => {
+test("the core regions are visible on a clean load; the agent expands on demand", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
-  for (const area of ["library", "center", "agent", "timeline"] as const) {
+  // The agent pane is collapsed away by default, so only these three show at first.
+  for (const area of ["library", "center", "timeline"] as const) {
     const b = await box(page, area);
     expect(b.width, `${area} width`).toBeGreaterThan(20);
     expect(b.height, `${area} height`).toBeGreaterThan(20);
   }
+  await expect(region(page, "agent")).toHaveCount(0);
+  await page.getByRole("button", { name: /expand agent panel/i }).click();
+  await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
 });
 
 test("dragging the library handle resizes it and persists across reload", async ({ page }) => {
@@ -75,31 +79,31 @@ test("an oversized persisted timeline height cannot crowd out the workbench", as
   expect(center.height).toBeLessThanOrEqual(body.height + 1);
 });
 
-test("the activity panel collapses to a rail and expands again", async ({ page }) => {
+test("the reserved agent panel expands from the tab bar and collapses away", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
-  const full = (await box(page, "agent")).width;
-  expect(full).toBeGreaterThan(200);
+  // Collapsed by default: the pane is gone entirely (no idle rail).
+  await expect(region(page, "agent")).toHaveCount(0);
 
   // The column animates (0.42s transition), so poll until it settles.
-  await page.getByRole("button", { name: /collapse activity panel/i }).click();
-  await expect.poll(() => widthOf(page, "agent")).toBeLessThan(80);
-
-  await page.getByRole("button", { name: /expand activity panel/i }).click();
+  await page.getByRole("button", { name: /expand agent panel/i }).click();
   await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
+
+  await page.getByRole("button", { name: /collapse agent panel/i }).click();
+  await expect(region(page, "agent")).toHaveCount(0);
 });
 
-test("the center workbench reflows when the activity panel collapses and expands", async ({ page }) => {
+test("the center workbench reflows when the agent panel expands and collapses", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
-  const expanded = await widthOf(page, "center");
-  // Collapsing the activity panel to its rail gives the center its width back.
-  await page.getByRole("button", { name: /collapse activity panel/i }).click();
-  await expect.poll(() => widthOf(page, "agent")).toBeLessThan(80);
-  await expect.poll(() => widthOf(page, "center")).toBeGreaterThan(expanded + 100);
-  // Expanding it again shrinks the center back to (about) its original width.
-  await page.getByRole("button", { name: /expand activity panel/i }).click();
+  const collapsed = await widthOf(page, "center");
+  // Expanding the agent panel takes width from the center.
+  await page.getByRole("button", { name: /expand agent panel/i }).click();
   await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
-  await expect.poll(() => widthOf(page, "center")).toBeLessThan(expanded + 1);
+  await expect.poll(() => widthOf(page, "center")).toBeLessThan(collapsed - 100);
+  // Collapsing it again gives the center its width back.
+  await page.getByRole("button", { name: /collapse agent panel/i }).click();
+  await expect(region(page, "agent")).toHaveCount(0);
+  await expect.poll(() => widthOf(page, "center")).toBeGreaterThan(collapsed - 1);
 });

@@ -17,6 +17,8 @@ import { SamplePicker } from "./SamplePicker";
 export interface SampleContext {
   assets: SampleAsset[];
   onImportFile?: (file: File) => Promise<string | null>;
+  /** Reveal the Samples library view (fired when an empty picker is clicked). */
+  onReveal?: () => void;
 }
 
 const DRAG_SENSITIVITY = 1 / 200; // normalized units per pixel dragged
@@ -126,6 +128,7 @@ export function Knob({
         onChange={onChange}
         assets={sampleContext?.assets ?? []}
         onImportFile={sampleContext?.onImportFile}
+        onReveal={sampleContext?.onReveal}
       />
     ),
   };

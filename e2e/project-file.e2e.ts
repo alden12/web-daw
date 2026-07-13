@@ -31,11 +31,11 @@ test("export then import a .daw file restores the project", async ({ page }) => 
 
   await expect(placements(page)).toHaveCount(1); // the seed placement
 
-  // Export the seed project (one placement) from the project menu, capture the file.
-  await page.getByTitle("Project menu").click();
+  // Export the seed project (one placement) from the Projects rail view, capture the file.
+  await page.getByRole("button", { name: "Projects" }).click();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("menuitem", { name: "Export project…" }).click(),
+    page.getByRole("button", { name: "Export project…" }).click(),
   ]);
   expect(download.suggestedFilename()).toBe("project.daw.zip");
   const file = await download.path();

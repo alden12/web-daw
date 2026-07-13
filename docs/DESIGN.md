@@ -421,9 +421,29 @@ via the File System Access API (+ optional git export), **15E** remote sync / co
   `editLog.restore` + `versionStore.reload`); the engine, MCP mirror, and autosave re-derive via
   subscriptions and the AudioContext is preserved. History + samples are per-project (they already
   live in the bundle). On first run an empty store seeds one project (the old single bundle is
-  discarded per the no-legacy rule). The switcher UI lands with the activity rail (next slice);
-  an interim project list sits in the library menu. Enumeration uses the OPFS directory handle, so
-  this needed no disk access - 15D (a user-visible disk folder) remains the durable follow-on.
+  discarded per the no-legacy rule). Enumeration uses the OPFS directory handle, so this needed no
+  disk access - 15D (a user-visible disk folder) remains the durable follow-on.
+
+- **The VSCode-style spine - activity rail + in-panel chrome - DONE (slice 53).** The ever-growing
+  left library and the split right panel became a proper editor spine, with **no separate top
+  toolbar** - the chrome distributes into the pieces it belongs to. A thin **activity rail**
+  (`ActivityRail.tsx`) on the far left switches the panel between one view at a time - Search /
+  Project / Instruments / Effects / Patches / Samples / Activity - and clicking the active icon
+  collapses the panel to just the rail (state lifted + persisted in `AppShell`; `usePersistentString`).
+  The **library panel header** carries the app chrome: a **search box** above the view title (typing
+  jumps to the **Search** results view - grouped matches across instruments/effects/patches/samples),
+  an **undo/redo** menu left of the title, and the **MCP** status dot on the right. The selected
+  track is a single editor **tab** in the workbench header (`CenterWorkbench`, reserving space for
+  future multi-window tabs); Save-as-patch moved beside the device rack and the clip name beside the
+  piano roll. Activity + version history moved into the left rail's **Activity view**
+  (`ActivityView.tsx`); the **Project view** (`ProjectView.tsx`) is the real explorer
+  (list/switch/create/rename/delete + export/import); **import audio** moved into the Samples view.
+  The **right agent pane collapses away entirely** (no idle rail) - its expand control lives at the
+  right of the workbench tab bar, keeping the agreed agent-right direction until the chat lands. An
+  empty Sampler picker offers a "browse the library" affordance that reveals the Samples view
+  (`SamplePicker` `onReveal`, threaded up). Follow-ons: real multi-window editor tabs, navigable
+  search results that jump to a track, the agent chat itself, drag-a-sample-into-the-Sampler, and
+  MCP project tools.
 
 **Extension SDK - third-party instruments & effects (ecosystem + ownership)**
 

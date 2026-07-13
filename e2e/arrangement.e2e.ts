@@ -24,6 +24,11 @@ async function dismissStart(page: Page) {
 
 const placements = (page: Page) => page.getByTestId("placement");
 
+/** Open the Activity rail view so the edit feed (Placed/Moved/... entries) is visible. */
+async function openActivity(page: Page) {
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+}
+
 /** Zoom the arrangement out a few notches so blocks are compact and empty lane shows. */
 async function zoomOut(page: Page) {
   const btn = page.getByTitle("Zoom out", { exact: true });
@@ -33,6 +38,7 @@ async function zoomOut(page: Page) {
 test("place, move, split and delete clips in the arrangement", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
   await zoomOut(page);
 
   // The seed track shows exactly one placement on load.
@@ -86,6 +92,7 @@ test("copy and paste a placement", async ({ page }) => {
 test("drag on an empty lane creates a new empty clip sized to the drag", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
   await zoomOut(page);
 
   // Drag across empty lane to the right of the seed block.
@@ -115,6 +122,7 @@ test("a track can be renamed inline", async ({ page }) => {
 test("drag a clip from the rail onto its lane places it", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
 
   await expect(placements(page)).toHaveCount(1); // the seed placement of clip A
 
@@ -164,6 +172,7 @@ test("a group can be renamed inline", async ({ page }) => {
 test("the arrangement ruler sets the loop region", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
   await zoomOut(page);
 
   // Scope to the arrangement scroller (the piano roll also renders a ruler).

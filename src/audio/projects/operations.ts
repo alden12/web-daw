@@ -58,8 +58,11 @@ async function seedNewProject(deps: ProjectDeps, name: string): Promise<string> 
 export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = getProjectStorage()): Promise<void> {
   const ids = await storage.listProjectIds();
   if (ids.length === 0) {
-    const id = newProjectId();
-    setCurrentProject(id);
+    // Seed the first project under a *stable* id (the persisted current, or "default"),
+    // not a fresh random one: boot can run twice (React StrictMode double-invokes the
+    // mount effect in dev), and two random ids would seed two projects. A stable id
+    // makes the second pass a harmless re-flush of the same bundle.
+    setCurrentProject(currentProjectId());
     await getRepository().setName("Untitled");
     await flush(deps); // persist the live (seeded) project as project one
   } else {

@@ -1,28 +1,54 @@
 /**
- * The library (left): the instrument and effect catalogs as a collapsible tree.
- * Instrument leaves add a track; effect leaves attach to the selected track.
- * Both read from the same catalogs the engine and MCP use, so the tree never
- * drifts from what can actually be loaded.
+ * The library panel (beside the activity rail): shows exactly one view at a time -
+ * the view chosen on the rail. A search box sits above the view title; typing shows
+ * a grouped results view across the catalogs. The header also carries the app chrome
+ * that used to live in a top toolbar: an undo/redo menu (left of the title) and the
+ * MCP connection dot (right). Instruments / Effects / Patches / Samples read from the
+ * same catalogs the engine and MCP use; Project and Activity delegate to their own
+ * components.
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
 import type { VersionStore } from "../audio/commands/history";
-import { type ProjectMeta, listProjects, subscribeProjects } from "../audio/projects/library";
-import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
-import { currentProjectId } from "../audio/projectRepository";
+import type { McpStatus } from "../audio/mcp/bridge";
+import { useEditLog } from "../audio/commands/useEditLog";
 import { instrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
-import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import { assetRef } from "../audio/samples/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
+import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
 import { newEffectId, newTrackId } from "../audio/commands/ids";
 import { type Patch, listPatches, removePatch, subscribePatches } from "../audio/patches/library";
-import { exportProjectFile, importProjectFile } from "./projectFile";
+import type { LibraryView } from "./ActivityRail";
+import { ActivityView } from "./ActivityView";
+import { ProjectView } from "./ProjectView";
 import { Menu } from "./Menu";
+
+const VIEW_TITLE: Record<LibraryView, string> = {
+  search: "Search",
+  project: "Projects",
+  instruments: "Instruments",
+  effects: "Effects",
+  patches: "Patches",
+  samples: "Samples",
+  activity: "Activity",
+};
+
+const MCP_DOT: Record<McpStatus, string> = {
+  connected: "bg-good",
+  connecting: "bg-warn",
+  disconnected: "bg-claude",
+};
+
+const MCP_TITLE: Record<McpStatus, string> = {
+  connected: "MCP connected",
+  connecting: "MCP connecting…",
+  disconnected: "MCP disconnected",
+};
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -42,54 +68,14 @@ function audioDuration(file: Blob): Promise<number> {
   });
 }
 
-function Category({
-  label,
-  defaultOpen = true,
-  nested = false,
-  children,
-}: {
-  label: string;
-  defaultOpen?: boolean;
-  /** A sub-section inside another category: indented and lighter than a top-level title. */
-  nested?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 w-full text-left py-1.5 cursor-pointer ${
-          nested ? "pl-8 pr-4 text-[12px] font-medium text-muted" : "px-4 text-xs font-semibold text-ink"
-        }`}
-      >
-        <span className="w-2.5 text-2xl text-muted">{open ? "▾" : "▸"}</span>
-        {label}
-      </button>
-      {open && children}
-    </>
-  );
-}
-
-function Leaf({
-  label,
-  fx,
-  indent = "pl-8",
-  onClick,
-}: {
-  label: string;
-  fx?: boolean;
-  indent?: string;
-  onClick: () => void;
-}) {
+/** A catalog leaf: click to add an instrument track (or attach an effect to the selection). */
+function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={label}
-      className={`flex items-center gap-2.5 w-full text-left ${indent} pr-4 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10`}
+      className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
     >
       <span className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`} />
       <span className="truncate">{label}</span>
@@ -97,20 +83,10 @@ function Leaf({
   );
 }
 
-/** A saved-patch row: click the name to add a track, the × to delete the patch. */
-function PatchLeaf({
-  patch,
-  indent = "pl-8",
-  onAdd,
-  onDelete,
-}: {
-  patch: Patch;
-  indent?: string;
-  onAdd: () => void;
-  onDelete: () => void;
-}) {
+/** A saved-patch row: click the name to add a track, the kebab to delete the patch. */
+function PatchLeaf({ patch, onAdd, onDelete }: { patch: Patch; onAdd: () => void; onDelete: () => void }) {
   return (
-    <div className={`group flex items-center w-full ${indent} pr-2 hover:bg-you/10`}>
+    <div className="group flex items-center w-full pl-3.5 pr-2 hover:bg-you/10">
       <button
         type="button"
         onClick={onAdd}
@@ -132,20 +108,10 @@ function PatchLeaf({
   );
 }
 
-/** A project-library sample row: click the name to add a Sampler track on it, × to remove. */
-function SampleLeaf({
-  name,
-  indent = "pl-8",
-  onAdd,
-  onRemove,
-}: {
-  name: string;
-  indent?: string;
-  onAdd: () => void;
-  onRemove: () => void;
-}) {
+/** A project-library sample row: click the name to add a Sampler track on it, kebab to remove. */
+function SampleLeaf({ name, onAdd, onRemove }: { name: string; onAdd: () => void; onRemove: () => void }) {
   return (
-    <div className={`group flex items-center w-full ${indent} pr-2 hover:bg-you/10`}>
+    <div className="group flex items-center w-full pl-3.5 pr-2 hover:bg-you/10">
       <button
         type="button"
         onClick={onAdd}
@@ -164,41 +130,47 @@ function SampleLeaf({
   );
 }
 
+/** A results section header (grouped search results). */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div className="px-3.5 pt-2.5 pb-1 text-[10.5px] uppercase tracking-wide text-faint">{children}</div>;
+}
+
+/** An empty-view hint (no matches, or nothing saved yet). */
+function Hint({ children }: { children: ReactNode }) {
+  return <p className="px-3.5 py-2 text-[11.5px] text-faint">{children}</p>;
+}
+
 export function LibraryPanel({
   projectStore,
   editLog,
   versionStore,
   dispatch,
+  activeView,
+  search,
+  onSearch,
+  mcpStatus,
 }: {
   projectStore: ProjectStore;
   editLog: EditLog;
   versionStore: VersionStore;
   dispatch: Dispatch;
+  activeView: LibraryView;
+  search: string;
+  onSearch: (query: string) => void;
+  mcpStatus: McpStatus;
 }) {
   const project = useProject(projectStore);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const { canUndo, canRedo } = useEditLog(editLog);
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
-  const [projects, setProjects] = useState<ProjectMeta[]>(() => listProjects());
-  const menuRef = useRef<HTMLDivElement>(null);
-  const audioInputRef = useRef<HTMLInputElement>(null);
-  const projectInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const sampleInputRef = useRef<HTMLInputElement>(null);
-  const projectDeps = { projectStore, editLog, versionStore };
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   // The patch library is global (cross-project); mirror it into React state.
   useEffect(() => {
     const sync = () => setPatches(listPatches());
     sync();
     return subscribePatches(sync);
-  }, []);
-
-  // Mirror the project library (populated at boot by initProjects).
-  useEffect(() => {
-    const sync = () => setProjects(listProjects());
-    sync();
-    return subscribeProjects(sync);
   }, []);
 
   // Apply a saved patch as one authored edit. Effect ids are minted here and carried
@@ -218,26 +190,25 @@ export function LibraryPanel({
       })),
     });
 
-  // Close the project menu on an outside click.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [menuOpen]);
-
-  const onImportProject = async (file: File) => {
-    setImportError(null);
-    try {
-      await importProjectFile(file, projectStore, editLog);
-    } catch {
-      setImportError("Could not open that .daw.zip file.");
-    }
+  const addInstrument = (type: string) => dispatch({ type: "createTrack", instrumentType: type, id: newTrackId() });
+  const addEffect = (type: string) => {
+    const hostId = projectStore.selectedId;
+    if (hostId) dispatch({ type: "addEffect", hostId, effectType: type, id: newEffectId() });
+  };
+  // Add a Sampler track preloaded with a library sample (mirrors clicking an instrument).
+  const addSamplerTrack = (assetId: string) => {
+    const id = newTrackId();
+    dispatch({ type: "createTrack", instrumentType: "sampler", id });
+    dispatch({ type: "setParam", trackId: id, id: "sampler.sample", value: assetRef(assetId) });
   };
 
-  const onImport = async (file: File) => {
+  const onImportSample = async (file: File) => {
+    setImportError(null);
+    const ref = await importSampleFile(file, project.samples, dispatch);
+    if (!ref) setImportError("Sample import failed (audio storage may be unavailable).");
+  };
+
+  const onImportAudio = async (file: File) => {
     setImportError(null);
     if (!audioStorageAvailable()) {
       setImportError("Audio storage is unavailable in this browser.");
@@ -257,286 +228,196 @@ export function LibraryPanel({
     }
   };
 
-  // Import a file into the project sample library (for the Sampler), via the shared helper.
-  const onImportSample = async (file: File) => {
-    setImportError(null);
-    const ref = await importSampleFile(file, project.samples, dispatch);
-    if (!ref) setImportError("Sample import failed (audio storage may be unavailable).");
-  };
-
-  // Add a Sampler track preloaded with a library sample (mirrors clicking an instrument).
-  const addSamplerTrack = (assetId: string) => {
-    const id = newTrackId();
-    dispatch({ type: "createTrack", instrumentType: "sampler", id });
-    dispatch({ type: "setParam", trackId: id, id: "sampler.sample", value: assetRef(assetId) });
-  };
-
-  // Basic library search: filter each catalog by name (the box's "ask" use is future).
-  const query = searchQuery.trim().toLowerCase();
-  const matches = (label: string) => !query || label.toLowerCase().includes(query);
+  const query = search.trim().toLowerCase();
+  const matches = (label: string) => label.toLowerCase().includes(query);
   const instruments = instrumentInfos().filter((def) => matches(def.label));
   const effects = effectInfos().filter((def) => matches(def.label));
   const matchedPatches = patches.filter((patch) => matches(patch.name));
   const matchedSamples = project.samples.filter((sample) => matches(sample.name));
-  const noMatches =
-    query !== "" && !instruments.length && !effects.length && !matchedPatches.length && !matchedSamples.length;
 
-  return (
-    <div className="[grid-area:library] bg-rail border-r border-line flex flex-col min-h-0">
-      <div className="shrink-0 pt-3">
-        <div className="flex items-center gap-1.5 px-3 pb-4 font-semibold text-sm text-bright">
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              title="Project menu"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-              className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-bright hover:bg-ground cursor-pointer"
-            >
-              <span className="text-base leading-none">☰</span>
-            </button>
-            {menuOpen && (
-              <div
-                role="menu"
-                className="absolute z-30 left-0 mt-1 min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg font-normal text-[12.5px] text-ink"
-              >
-                <button
-                  role="menuitem"
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    audioInputRef.current?.click();
-                  }}
-                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
-                >
-                  Import audio…
-                </button>
-                <div className="my-1 border-t border-line" />
-                <button
-                  role="menuitem"
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void exportProjectFile(projectStore, editLog);
-                  }}
-                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
-                >
-                  Export project…
-                </button>
-                <button
-                  role="menuitem"
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    projectInputRef.current?.click();
-                  }}
-                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer"
-                >
-                  Import project…
-                </button>
-                <div className="my-1 border-t border-line" />
-                <div className="px-3 py-1 text-[10.5px] uppercase tracking-wide text-faint">Projects</div>
-                {projects.map((meta) => (
-                  <div key={meta.id} className="group flex items-center pr-2 hover:bg-you/10">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        if (meta.id !== currentProjectId()) void switchProject(projectDeps, meta.id);
-                      }}
-                      className="flex items-center gap-2 flex-1 min-w-0 text-left px-3 py-1.5 cursor-pointer"
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.id === currentProjectId() ? "bg-you" : "bg-transparent"}`}
-                      />
-                      <span className="truncate">{meta.name}</span>
-                    </button>
-                    <Menu
-                      label={`Project actions: ${meta.name}`}
-                      triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
-                      items={[
-                        {
-                          label: "Rename…",
-                          onClick: () => {
-                            const name = window.prompt("Rename project", meta.name)?.trim();
-                            if (name) void renameProject(meta.id, name);
-                          },
-                        },
-                        {
-                          label: "Delete",
-                          danger: true,
-                          disabled: projects.length <= 1,
-                          onClick: () => {
-                            if (window.confirm(`Delete project "${meta.name}"? This cannot be undone.`)) {
-                              setMenuOpen(false);
-                              void deleteProject(projectDeps, meta.id);
-                            }
-                          },
-                        },
-                      ]}
-                    />
-                  </div>
-                ))}
-                <button
-                  role="menuitem"
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void createProject(projectDeps);
-                  }}
-                  className="block w-full text-left px-3 py-1.5 hover:bg-you/10 cursor-pointer text-muted"
-                >
-                  + New project
-                </button>
-              </div>
-            )}
-          </div>
-          <span
-            className="w-4 h-4 rounded-full"
-            style={{
-              background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))",
-            }}
-          />
-          Web DAW
-        </div>
-
-        {/* Hidden inputs driven by the menu items above. */}
-        <input
-          ref={audioInputRef}
-          type="file"
-          accept="audio/*"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void onImport(file);
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={projectInputRef}
-          type="file"
-          accept=".zip,application/zip"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void onImportProject(file);
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={sampleInputRef}
-          data-testid="sample-import-input"
-          type="file"
-          accept="audio/*"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void onImportSample(file);
-            e.target.value = "";
-          }}
-        />
-
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search…"
-          aria-label="Search the library"
-          className="block w-[calc(100%-1.75rem)] mx-3.5 mb-2 px-3 py-2 border border-line rounded-lg bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
-        />
-        {importError && <p className="text-claude text-[11px] px-4 pb-1">{importError}</p>}
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto pb-3">
-        {(instruments.length > 0 || matchedPatches.length > 0) && (
-          <Category label="Instruments">
-            {instruments.map((def) => (
-              <Leaf
-                key={def.type}
-                label={def.label}
-                onClick={() =>
-                  dispatch({
-                    type: "createTrack",
-                    instrumentType: def.type,
-                    id: newTrackId(),
-                  })
-                }
-              />
-            ))}
-            {(query === "" || matchedPatches.length > 0) && (
-              <Category label="Patches" nested>
-                {matchedPatches.length === 0 ? (
-                  <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">
-                    Save an instrument as a patch to reuse it here.
-                  </p>
-                ) : (
-                  matchedPatches.map((patch) => (
-                    <PatchLeaf
-                      key={patch.id}
-                      patch={patch}
-                      indent="pl-12"
-                      onAdd={() => addFromPatch(patch)}
-                      onDelete={() => removePatch(patch.id)}
-                    />
-                  ))
-                )}
-              </Category>
-            )}
-          </Category>
-        )}
-
-        {effects.length > 0 && (
-          <Category label="Effects">
-            {effects.map((def) => (
-              <Leaf
-                key={def.type}
-                label={def.label}
-                fx
-                onClick={() => {
-                  const hostId = projectStore.selectedId;
-                  if (hostId)
-                    dispatch({
-                      type: "addEffect",
-                      hostId,
-                      effectType: def.type,
-                      id: newEffectId(),
-                    });
-                }}
-              />
-            ))}
-          </Category>
-        )}
-
-        {(query === "" || matchedSamples.length > 0) && (
-          <Category label="Samples">
-            <button
-              type="button"
-              onClick={() => sampleInputRef.current?.click()}
-              className="flex items-center gap-2.5 w-full text-left pl-8 pr-4 py-1.5 text-[12.5px] text-muted hover:text-ink cursor-pointer hover:bg-you/10"
-            >
-              <span aria-hidden="true" className="w-3.5 text-center leading-none">
-                +
-              </span>
-              <span className="truncate">Import sample…</span>
-            </button>
-            {matchedSamples.length === 0 && query === "" ? (
-              <p className="pl-12 pr-4 py-1.5 text-[11.5px] text-faint">Import a sample to play it with the Sampler.</p>
-            ) : (
-              matchedSamples.map((sample) => (
+  // One renderer per view (data-driven, so adding a view is a single entry).
+  const views: Record<LibraryView, () => ReactNode> = {
+    search: () =>
+      query === "" ? (
+        <Hint>Type above to search instruments, effects, patches, and samples.</Hint>
+      ) : instruments.length + effects.length + matchedPatches.length + matchedSamples.length === 0 ? (
+        <Hint>No matches for “{search.trim()}”.</Hint>
+      ) : (
+        <div className="pb-2">
+          {instruments.length > 0 && (
+            <>
+              <SectionLabel>Instruments</SectionLabel>
+              {instruments.map((def) => (
+                <Leaf key={def.type} label={def.label} onClick={() => addInstrument(def.type)} />
+              ))}
+            </>
+          )}
+          {effects.length > 0 && (
+            <>
+              <SectionLabel>Effects</SectionLabel>
+              {effects.map((def) => (
+                <Leaf key={def.type} label={def.label} fx onClick={() => addEffect(def.type)} />
+              ))}
+            </>
+          )}
+          {matchedPatches.length > 0 && (
+            <>
+              <SectionLabel>Patches</SectionLabel>
+              {matchedPatches.map((patch) => (
+                <PatchLeaf
+                  key={patch.id}
+                  patch={patch}
+                  onAdd={() => addFromPatch(patch)}
+                  onDelete={() => removePatch(patch.id)}
+                />
+              ))}
+            </>
+          )}
+          {matchedSamples.length > 0 && (
+            <>
+              <SectionLabel>Samples</SectionLabel>
+              {matchedSamples.map((sample) => (
                 <SampleLeaf
                   key={sample.id}
                   name={sample.name}
                   onAdd={() => addSamplerTrack(sample.id)}
                   onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
                 />
-              ))
-            )}
-          </Category>
-        )}
-
-        {noMatches && <p className="px-4 py-2 text-[11.5px] text-faint">No matches for “{searchQuery.trim()}”.</p>}
+              ))}
+            </>
+          )}
+        </div>
+      ),
+    project: () => <ProjectView projectStore={projectStore} editLog={editLog} versionStore={versionStore} />,
+    activity: () => <ActivityView editLog={editLog} versionStore={versionStore} />,
+    instruments: () => (
+      <div className="py-1">
+        {instrumentInfos().map((def) => (
+          <Leaf key={def.type} label={def.label} onClick={() => addInstrument(def.type)} />
+        ))}
       </div>
+    ),
+    effects: () => (
+      <div className="py-1">
+        {effectInfos().map((def) => (
+          <Leaf key={def.type} label={def.label} fx onClick={() => addEffect(def.type)} />
+        ))}
+      </div>
+    ),
+    patches: () => (
+      <div className="py-1">
+        {patches.length === 0 ? (
+          <Hint>Save an instrument as a patch (in the workbench) to reuse it here.</Hint>
+        ) : (
+          patches.map((patch) => (
+            <PatchLeaf
+              key={patch.id}
+              patch={patch}
+              onAdd={() => addFromPatch(patch)}
+              onDelete={() => removePatch(patch.id)}
+            />
+          ))
+        )}
+      </div>
+    ),
+    samples: () => (
+      <div className="py-1">
+        <button
+          type="button"
+          onClick={() => sampleInputRef.current?.click()}
+          className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-muted hover:text-ink cursor-pointer hover:bg-you/10"
+        >
+          <span aria-hidden="true" className="w-3.5 text-center leading-none">
+            +
+          </span>
+          <span className="truncate">Import sample…</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => audioInputRef.current?.click()}
+          className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-muted hover:text-ink cursor-pointer hover:bg-you/10"
+        >
+          <span aria-hidden="true" className="w-3.5 text-center leading-none">
+            +
+          </span>
+          <span className="truncate">Import audio as a track…</span>
+        </button>
+        {importError && <p className="text-claude text-[11px] px-3.5 py-1">{importError}</p>}
+        {project.samples.length === 0 ? (
+          <Hint>Import a sample to play it with the Sampler.</Hint>
+        ) : (
+          project.samples.map((sample) => (
+            <SampleLeaf
+              key={sample.id}
+              name={sample.name}
+              onAdd={() => addSamplerTrack(sample.id)}
+              onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
+            />
+          ))
+        )}
+      </div>
+    ),
+  };
+
+  return (
+    <div className="flex-1 min-w-0 bg-rail border-r border-line flex flex-col min-h-0">
+      {/* Search sits above the view title; typing jumps to the Search results view. */}
+      <div className="shrink-0 p-2 border-b border-line">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          placeholder="Search library…"
+          aria-label="Search the library"
+          className="w-full px-2.5 py-1.5 border border-line rounded-md bg-ground text-ink placeholder:text-faint text-xs focus:outline-none focus:border-you"
+        />
+      </div>
+      {/* View header: undo/redo menu (left), title, MCP dot (right). */}
+      <div className="shrink-0 flex items-center gap-2 h-9 px-2.5 border-b border-line">
+        <Menu
+          label="History"
+          align="left"
+          triggerClassName="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md text-muted hover:text-bright hover:bg-ground cursor-pointer text-base leading-none"
+          items={[
+            { label: "Undo", disabled: !canUndo, onClick: () => editLog.undo() },
+            { label: "Redo", disabled: !canRedo, onClick: () => editLog.redo() },
+          ]}
+        />
+        <span className="font-semibold text-[13px] text-bright">{VIEW_TITLE[activeView]}</span>
+        <span
+          className="ml-auto inline-flex items-center gap-1.5 font-mono text-[11px] text-muted"
+          title={MCP_TITLE[mcpStatus]}
+        >
+          <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} /> MCP
+        </span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto">{views[activeView]()}</div>
+
+      {/* Hidden inputs for the Samples view's import actions. */}
+      <input
+        ref={sampleInputRef}
+        data-testid="sample-import-input"
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onImportSample(file);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={audioInputRef}
+        data-testid="audio-import-input"
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void onImportAudio(file);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }

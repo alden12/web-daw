@@ -47,7 +47,7 @@
    grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
 .app-body {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 320px;
+  grid-template-columns: 248px minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 244px;
   grid-template-areas:
     "library center agent"

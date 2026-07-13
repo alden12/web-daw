@@ -14,6 +14,7 @@ export function SamplePicker({
   onChange,
   assets,
   onImportFile,
+  onReveal,
 }: {
   spec: ParamSpec;
   value: string;
@@ -21,6 +22,8 @@ export function SamplePicker({
   assets: SampleAsset[];
   /** Import a local file into the library; resolves to its ref (or null on failure). */
   onImportFile?: (file: File) => Promise<string | null>;
+  /** Jump to the Samples library view - offered when the picker is empty. */
+  onReveal?: () => void;
 }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -56,6 +59,17 @@ export function SamplePicker({
             </optgroup>
           )}
         </select>
+        {onReveal && value === "" && (
+          <button
+            type="button"
+            title="Browse samples in the library"
+            aria-label="Browse samples in the library"
+            onClick={onReveal}
+            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md border border-line text-muted hover:text-ink hover:border-you/55 cursor-pointer"
+          >
+            ⌕
+          </button>
+        )}
         {onImportFile && (
           <>
             <button

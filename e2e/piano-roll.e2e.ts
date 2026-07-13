@@ -33,6 +33,11 @@ async function dismissStart(page: Page) {
  * on load, so the grid's own box can sit above the viewport). dy clears the sticky
  * ruler; the point still lands on the grid surface.
  */
+/** Open the Activity rail view so the edit feed (Added note / Set clip length ...) is visible. */
+async function openActivity(page: Page) {
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+}
+
 async function gridPoint(page: Page, dx: number, dy: number) {
   const box = (await page.getByTestId("roll-scroll").boundingBox())!;
   return { x: box.x + dx, y: box.y + dy };
@@ -41,6 +46,7 @@ async function gridPoint(page: Page, dx: number, dy: number) {
 test("add, move and delete notes with the mouse; a note persists across reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
 
   await expect(page.getByTestId("piano-grid")).toBeVisible();
   await expect(page.getByTestId("note")).toHaveCount(0);
@@ -78,6 +84,7 @@ test("add, move and delete notes with the mouse; a note persists across reload",
 test("dragging the roll handle changes the active clip length", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
 
   // Zoom all the way out (time) so the whole clip + handle fit without scrolling.
   const zoomOut = page.getByTitle("Zoom out (time)");
