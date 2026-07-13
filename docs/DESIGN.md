@@ -1807,9 +1807,24 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   is embedded in the document) -> **catalog versioning** -> **built-in params** -> deep `EditCommand`.
   Full declarative conversion of built-ins is the separate gated declarative-DSP initiative (section
   16), not a validation lever (built-ins would still be referenced by id from a shared catalog).
-- **Realtime multiplayer - chosen strategy (design decided; the next major slice).** Live multi-user
-  editing. The transport, authority, conflict model, and offline stance are settled below; the build is
-  a distinct slice.
+- **Realtime multiplayer - chosen strategy (design decided; build underway).** Live multi-user
+  editing. The transport, authority, conflict model, and offline stance are settled below.
+  - **Build progress.** Phase A is landing in two slices. **A1 (slice 71, done):** the server-side
+    per-project authority - a `Room` (server/api/rooms.ts) holds a headless `ProjectStore`, assigns the
+    single monotonic `seq`, applies via `applyEdit`, persists through the existing `appendEdits`, and
+    broadcasts `editApplied`; a `WebSocketServer` on the same HTTP port (`/ws`, token at the upgrade)
+    is the transport glue. Idempotent by `opId`; reloads HEAD from Postgres by replay on restart.
+    **A2 (slice 72, done):** the client `SharedSession` (src/audio/sync/sharedSession.ts) - optimistic
+    apply + total-order rebase. It keeps a confirmed `base` (advanced by `applyEdit` in `seq` order) and
+    a `pending` list of unconfirmed local ops; the live store is `base + pending`. Its own `editApplied`
+    just retires the pending op (live already matches); a peer's advances `base` and **rebases** (rebuild
+    live as `base` with `pending` replayed on top). Wired through a single `EditLog` remote-sink so UI /
+    MCP / recorder / agent edits all forward automatically; enabled whenever a remote backend is
+    configured (`VITE_DAW_API_URL`), where the client stops HTTP autosave and the authority persists.
+    Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase); a shared
+    feed, peer-edit attribution in the activity log, and reconnect gap-fill hardening are follow-ons.
+    Still to build: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence),
+    **Phase D** (solo-offline PWA).
   - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
     ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
     server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample

@@ -32,9 +32,11 @@ if (staleProjects.length > 0) {
 const port = process.env.API_PORT ? Number(process.env.API_PORT) : 5170;
 const corsOrigin = process.env.DAW_CORS_ORIGIN?.split(",").map((origin) => origin.trim());
 const token = process.env.DAW_API_TOKEN;
-const app = createApp(getDb(), { token, corsOrigin });
+// Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
+const verbose = process.env.NODE_ENV !== "production";
+const app = createApp(getDb(), { token, corsOrigin, logRequests: verbose });
 
 // The realtime multiplayer socket shares the HTTP server/port (path /ws), so it is one origin.
 const server = serve({ fetch: app.fetch, port }) as Server;
-attachWsServer(server, { db: getDb(), token });
+attachWsServer(server, { db: getDb(), token, log: verbose });
 console.log(`[web-daw] sync API listening on http://localhost:${port} (+ ws on /ws)`);
