@@ -160,8 +160,8 @@ test("a group can be renamed inline", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
-  // The seed subtractive track is filed into the "Synths" group.
-  const group = page.getByTestId("arr-scroll").getByText("Synths", { exact: true });
+  // New tracks are filed into the single default "main" group.
+  const group = page.getByTestId("arr-scroll").getByText("main", { exact: true });
   await group.dblclick();
   const input = page.getByTestId("arr-scroll").getByRole("textbox");
   await input.fill("Leads");

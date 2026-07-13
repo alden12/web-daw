@@ -83,11 +83,20 @@ export function AppShell() {
     if (libCollapsed) setLibCollapsed(false);
   };
 
-  // Typing in the panel's search box jumps to the Search results view (and opens the
-  // panel if it was collapsed), so results replace whatever view was showing.
+  // Typing in the panel's search box jumps to the Search results view (remembering
+  // the view it left, so emptying the box returns there); opens the panel if collapsed.
+  const preSearchView = useRef<LibraryView | null>(null);
   const onSearch = (query: string) => {
     setSearch(query);
-    if (query.trim()) selectView("search");
+    if (query.trim()) {
+      if (libView !== "search") {
+        preSearchView.current = libView;
+        selectView("search");
+      }
+    } else if (libView === "search" && preSearchView.current) {
+      setLibView(preSearchView.current);
+      preSearchView.current = null;
+    }
   };
 
   // Track the body height so the timeline can never crowd out the workbench:
@@ -249,7 +258,6 @@ export function AppShell() {
               activeView={libView}
               search={search}
               onSearch={onSearch}
-              mcpStatus={mcpStatus}
             />
           )}
         </div>
@@ -260,6 +268,7 @@ export function AppShell() {
           dispatch={dispatch}
           selectedTrack={selectedTrack}
           onRevealSamples={() => selectView("samples")}
+          mcpStatus={mcpStatus}
           agentCollapsed={agentCollapsed}
           onExpandAgent={() => setAgentCollapsed(false)}
         />

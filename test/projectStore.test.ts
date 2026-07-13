@@ -134,21 +134,21 @@ describe("ProjectStore", () => {
 });
 
 describe("ProjectStore groups (bus tree)", () => {
-  it("files a new track into its instrument family group (librarian), creating it", () => {
+  it("files new tracks into the single default 'main' group, creating it once", () => {
     const p = new ProjectStore(false);
-    const sub = p.addTrack("subtractive"); // family "Synths"
+    const sub = p.addTrack("subtractive");
     const groups = p.getGroups();
     expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe("Synths");
+    expect(groups[0].name).toBe("main");
     expect(groups[0].parentId).toBeNull();
     expect(sub.parentId).toBe(groups[0].id);
 
-    // a second subtractive reuses the same family group; an fm makes a new one
+    // every kind of track reuses the same "main" group (no more per-family groups)
     const sub2 = p.addTrack("subtractive");
     expect(sub2.parentId).toBe(groups[0].id);
-    const fm = p.addTrack("fm"); // family "Bass"
-    expect(p.getGroups()).toHaveLength(2);
-    expect(p.getGroup(fm.parentId)!.name).toBe("Bass");
+    const fm = p.addTrack("fm");
+    expect(p.getGroups()).toHaveLength(1);
+    expect(fm.parentId).toBe(groups[0].id);
   });
 
   it("seeds the default project with one track filed into a group", () => {
@@ -214,7 +214,7 @@ describe("ProjectStore groups (bus tree)", () => {
     expect(b.getTrack(t.id)!.parentId).toBe(grp.id);
   });
 
-  it("migrates a legacy flat snapshot by filing tracks into family groups", () => {
+  it("migrates a legacy flat snapshot by filing tracks into the main group", () => {
     const legacy = {
       tracks: [
         {
@@ -246,14 +246,14 @@ describe("ProjectStore groups (bus tree)", () => {
     const p = new ProjectStore(false);
     p.load(legacy);
     expect(p.getStructure().tracks).toHaveLength(2);
-    // each track was filed into a real group named for its family
-    expect(p.getGroup(p.getTrack("t-1")!.parentId)!.name).toBe("Synths");
-    expect(p.getGroup(p.getTrack("t-2")!.parentId)!.name).toBe("Bass");
+    // both tracks were filed into the single "main" group
+    expect(p.getGroup(p.getTrack("t-1")!.parentId)!.name).toBe("main");
+    expect(p.getTrack("t-2")!.parentId).toBe(p.getTrack("t-1")!.parentId);
   });
 });
 
 describe("ProjectStore audio tracks", () => {
-  it("adds an audio track filed into the Audio group, with a clip + placement", () => {
+  it("adds an audio track filed into the main group, with a clip + placement", () => {
     const p = new ProjectStore(false);
     const t = p.addAudioTrack({ fileId: "au-xyz", name: "Take 1", durationSec: 3.5 });
     expect(t.kind).toBe("audio");
@@ -261,7 +261,7 @@ describe("ProjectStore audio tracks", () => {
     expect(t.clips[0].durationSec).toBe(3.5);
     expect(t.placements[0].startBeat).toBe(0);
     const group = p.getGroup(t.parentId)!;
-    expect(group.name).toBe("Audio");
+    expect(group.name).toBe("main");
     expect(group.parentId).toBeNull();
   });
 

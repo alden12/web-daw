@@ -10,6 +10,7 @@ import type { ProjectStore, Track, AudioTrack, InstrumentTrack } from "../audio/
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
+import type { McpStatus } from "../audio/mcp/bridge";
 import { useProject } from "../audio/project/useProject";
 import { beatsPerSecond } from "../audio/timing";
 import { useAnimationFrame } from "./useAnimationFrame";
@@ -26,6 +27,17 @@ import { beatToX } from "./timeline/timeGrid";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber } from "./usePersistent";
+
+const MCP_DOT: Record<McpStatus, string> = {
+  connected: "bg-good",
+  connecting: "bg-warn",
+  disconnected: "bg-claude",
+};
+const MCP_TITLE: Record<McpStatus, string> = {
+  connected: "MCP connected",
+  connecting: "MCP connecting…",
+  disconnected: "MCP disconnected",
+};
 
 /**
  * "Save as patch": capture the instrument + its params + effect chain as a named,
@@ -323,6 +335,7 @@ export function CenterWorkbench({
   dispatch,
   selectedTrack,
   onRevealSamples,
+  mcpStatus,
   agentCollapsed,
   onExpandAgent,
 }: {
@@ -333,6 +346,8 @@ export function CenterWorkbench({
   selectedTrack: Track | undefined;
   /** Reveal the Samples library view (threaded to an empty Sampler's picker). */
   onRevealSamples?: () => void;
+  /** MCP connection status - shown as a dot in the tab bar's indicator area. */
+  mcpStatus: McpStatus;
   /** The agent pane is collapsed away; the tab bar hosts its expand control. */
   agentCollapsed: boolean;
   onExpandAgent: () => void;
@@ -347,24 +362,31 @@ export function CenterWorkbench({
   const [clipRailW, setClipRailW] = usePersistentNumber("web-daw:clip-rail-width", 96, 72, 260);
   const clipRailRef = useRef<HTMLDivElement>(null);
 
-  // The agent-expand control lives at the tab bar's right (the pane collapses away
-  // entirely, so there is no idle rail to reopen it from).
-  const expandAgent = agentCollapsed && (
-    <button
-      type="button"
-      onClick={onExpandAgent}
-      aria-label="Expand agent panel"
-      title="Open the agent panel"
-      className="ml-auto self-center mr-2 flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-bright hover:bg-panel cursor-pointer"
-    >
-      <span className="text-lg leading-none">«</span>
-    </button>
+  // The tab bar's right-hand indicator area: the MCP status dot, then (when the
+  // agent pane is collapsed away) its expand control - there is no idle rail.
+  const indicators = (
+    <div className="ml-auto self-center flex items-center gap-2 pr-2">
+      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted" title={MCP_TITLE[mcpStatus]}>
+        <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} /> MCP
+      </span>
+      {agentCollapsed && (
+        <button
+          type="button"
+          onClick={onExpandAgent}
+          aria-label="Expand agent panel"
+          title="Open the agent panel"
+          className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-bright hover:bg-panel cursor-pointer"
+        >
+          <span className="text-lg leading-none">«</span>
+        </button>
+      )}
+    </div>
   );
 
   if (!selectedTrack) {
     return (
       <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
-        <div className="flex items-center h-11 border-b border-line shrink-0">{expandAgent}</div>
+        <div className="flex items-center h-11 border-b border-line shrink-0">{indicators}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
         </div>
@@ -390,7 +412,7 @@ export function CenterWorkbench({
           />
           <span className="font-mono text-[9px] tracking-wider uppercase text-faint shrink-0">{kindLabel}</span>
         </div>
-        {expandAgent}
+        {indicators}
       </div>
 
       {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
