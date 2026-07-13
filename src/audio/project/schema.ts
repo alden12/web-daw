@@ -25,8 +25,11 @@ import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 /* Leaves                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/** Who authored a piece of durable state (mirrors commands `Author` + project `ClipAuthor`). */
-export const authorSchema = z.enum(["you", "claude", "agent"]);
+/** Who authored a piece of durable state (mirrors commands `Author` + project `ClipAuthor`). A bounded
+ *  free string, not an enum: `"claude"` / `"agent"` are reserved AI voices and `"you"` is the default
+ *  solo user, but any other value is a human user id (multi-user - the id is a display handle until real
+ *  auth supplies a stable one). The colour layer (authorColors.ts) resolves any id to a stable hue. */
+export const authorSchema = z.string().min(1).max(64);
 
 /** A single parameter value (the union a ParamStore holds). */
 export const paramValueSchema = z.union([z.number(), z.string(), z.boolean()]);

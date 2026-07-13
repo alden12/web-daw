@@ -149,6 +149,7 @@ export class SharedSession {
       this.pending.splice(index, 1); // ours: confirmed, live already reflects it
     } else {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
+      this.editLog.recordRemote(message.command as EditCommand, message.author); // narrate it in the feed
     }
   }
 
