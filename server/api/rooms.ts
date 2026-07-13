@@ -16,7 +16,7 @@ import type { Author, EditCommand } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
 import type { ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
-import { appendEdits, maxEditSeq, readEdits, readFile, type EditEntryInput } from "../db/store";
+import { appendEdits, ensureUser, maxEditSeq, readEdits, readFile, type EditEntryInput } from "../db/store";
 
 /** How many recent entries a `snapshot` carries (bounded feed window; matches MAX_PERSISTED_ENTRIES). */
 const SNAPSHOT_WINDOW = 2000;
@@ -62,6 +62,10 @@ export class Room {
    *  edit tail after its `headSeq`. With no keyframe, replays the whole stream from empty (still HEAD;
    *  Phase B adds server-written keyframes to bound the replay). */
   static async load(db: Db, ownerId: string, projectId: string): Promise<Room> {
+    // Guarantee the owner exists before we persist any owner-stamped edit (the `projects.owner_id` FK).
+    // In production the principal seam already provisioned it; this keeps the authority self-consistent
+    // for any caller (and idempotent).
+    await ensureUser(db, ownerId);
     const store = new ProjectStore(false);
     const projectFile = await readFile(db, ownerId, projectId, "project.json");
     let headSeq = -1;
