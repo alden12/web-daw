@@ -145,6 +145,9 @@ export class EditLog {
   private undoStack: Checkpoint[] = [];
   private redoStack: Checkpoint[] = [];
   private seq = 0;
+  /** The author stamped on local edits/undo/redo when a caller doesn't specify one (MCP passes "claude",
+   *  the agent "agent"). Defaults to "you"; a shared session sets it to the current user id. */
+  private localAuthor: Author = "you";
   private lastKey: string | null = null;
   private lastTime = 0;
   private readonly listeners = new Set<() => void>();
@@ -159,8 +162,8 @@ export class EditLog {
     this.rebuild();
   }
 
-  /** Apply + log an edit. UI edits are authored 'you'; MCP (Claude) edits 'claude'. */
-  dispatch = (command: EditCommand, author: Author = "you"): void => {
+  /** Apply + log an edit. UI edits are authored by the current user (default 'you'); MCP edits 'claude'. */
+  dispatch = (command: EditCommand, author: Author = this.localAuthor): void => {
     const now = Date.now();
     const key = COALESCABLE.has(command.type) ? `${author}:${coalesceKey(command)}` : null;
     const coalesce =
@@ -192,6 +195,22 @@ export class EditLog {
     this.remote = sink;
   };
 
+  /** Set the author stamped on local edits (the current user id in a shared session). */
+  setLocalAuthor = (author: Author): void => {
+    this.localAuthor = author;
+  };
+
+  /**
+   * Record a remote peer's edit in the activity feed WITHOUT applying it (the SharedSession has already
+   * applied it to the project). Append-only, like a reflog entry, so the feed narrates who-did-what
+   * across users. Gets a fresh local `seq` (the feed's own ordering); the caller (SharedSession) already
+   * dedups each authoritative edit once, so no seq-space mixing here.
+   */
+  recordRemote = (command: EditCommand, author: Author): void => {
+    this.entries.push({ seq: this.seq++, command, author, time: Date.now(), kind: "edit" });
+    this.emit();
+  };
+
   undo = (): void => {
     const cp = this.undoStack.pop();
     if (!cp) return;
@@ -202,7 +221,7 @@ export class EditLog {
     this.entries.push({
       seq: this.seq++,
       command: cp.command,
-      author: "you",
+      author: this.localAuthor,
       time: Date.now(),
       kind: "undo",
       label: `Undid: ${describeCommand(cp.command)}`,
@@ -219,7 +238,7 @@ export class EditLog {
     this.entries.push({
       seq: this.seq++,
       command: cp.command,
-      author: "you",
+      author: this.localAuthor,
       time: Date.now(),
       kind: "redo",
       label: `Redid: ${describeCommand(cp.command)}`,

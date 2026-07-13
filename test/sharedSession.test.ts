@@ -21,8 +21,9 @@ class Harness {
     this.room = room;
   }
 
-  connect(id: string): Client {
+  connect(id: string, userId?: string): Client {
     const client = new Client(id, this.room, this.serverQueue);
+    if (userId) client.editLog.setLocalAuthor(userId);
     this.clients.push(client);
     return client;
   }
@@ -188,6 +189,29 @@ describe("SharedSession (client optimistic + rebase)", () => {
     b.flush();
 
     expect(b.trackIds()).toEqual(["t-1"]); // exactly once
+  });
+
+  it("narrates a peer's edit in the recipient's feed, attributed to that user, without double-recording own edits", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const alice = harness.connect("p1", "alice");
+    const bob = harness.connect("p1", "bob");
+    await harness.pump();
+
+    alice.editLog.dispatch(createTrack("t-a"));
+    await harness.pump();
+    alice.flush();
+    bob.flush();
+
+    // Alice made one edit: it appears once in her feed (from dispatch), authored by her.
+    const aliceEdits = alice.editLog.getEntries().filter((entry) => entry.kind === "edit");
+    expect(aliceEdits).toHaveLength(1);
+    expect(aliceEdits[0].author).toBe("alice");
+
+    // Bob never made an edit, but Alice's arrives in his feed attributed to "alice".
+    const bobEdits = bob.editLog.getEntries().filter((entry) => entry.kind === "edit");
+    expect(bobEdits).toHaveLength(1);
+    expect(bobEdits[0].author).toBe("alice");
   });
 
   it("rolls back an optimistic edit the authority rejects", async () => {
