@@ -138,7 +138,7 @@ describe("project + edit-log persistence", () => {
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
     log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-2" });
     // Keyframe reflecting only the first two edits.
-    await repo.writeKeyframe(project.snapshot(), log.getEntries().at(-1)!.seq, log.getEntries());
+    await repo.writeKeyframe(project.snapshot(), log.getEntries().at(-1)!.seq);
     // Two more edits AFTER the keyframe - appended to the log, not folded into a new keyframe.
     log.dispatch({ type: "setTempo", bpm: 140 });
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-3" });
@@ -307,6 +307,36 @@ describe("project + edit-log persistence", () => {
     expect(log2.getNotes().map((n) => n.text)).toEqual(["about to layer a pad on top"]);
   });
 
+  it("folds feed notes into the unified stream (no separate notes.json) and round-trips them", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.note("layering a pad", "claude");
+    await vi.runAllTimersAsync();
+    dispose();
+    vi.useRealTimers();
+
+    // The note is an entry in the append stream (kind:"note"), not a notes.json blob.
+    expect(await store.readText("notes.json")).toBeNull();
+    const stream = JSON.parse((await store.readText("edits.json"))!) as Array<{
+      kind?: string;
+      command: { type: string; text?: string };
+    }>;
+    expect(stream.some((entry) => entry.kind === "note" && entry.command.text === "layering a pad")).toBe(true);
+
+    // It round-trips back into the feed on reload, split from the edits.
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    expect(log2.getNotes().map((n) => n.text)).toEqual(["layering a pad"]);
+    expect(log2.getEntries().map((e) => e.command.type)).toEqual(["createTrack"]);
+  });
+
   it("persists undo/redo so undo works after a restore (reload)", async () => {
     vi.useFakeTimers();
     const repo = new ProjectRepository(new MemoryBundleStore());
@@ -431,10 +461,18 @@ describe("project + edit-log persistence", () => {
     const notes = [{ seq: 1, text: "set the groove tempo", author: "claude" as const, time: 2 }];
 
     const files = await source.exportBundle(project, log, notes);
-    // Readable JSON entries plus the referenced sample as real .wav bytes.
+    // Readable JSON entries plus the referenced sample as real .wav bytes. The unified stream
+    // (edits.json) carries the edit and the feed note (as a kind:"note" entry), ordered by seq.
     const proj = JSON.parse(new TextDecoder().decode(files["project.json"])) as ProjectData;
     expect(proj.tempoBpm).toBe(128);
-    expect(files["notes.json"]).toBeTruthy();
+    const stream = JSON.parse(new TextDecoder().decode(files["edits.json"])) as Array<{
+      seq: number;
+      kind?: string;
+      command: { type: string; text?: string };
+    }>;
+    expect(stream.map((entry) => entry.seq)).toEqual([0, 1]);
+    expect(stream[1]).toMatchObject({ kind: "note", command: { type: "note", text: "set the groove tempo" } });
+    expect(files["notes.json"]).toBeUndefined(); // retired: notes live in the stream now
     expect(files[`samples/${hash}.wav`]).toBeTruthy();
 
     // Import into a brand-new, empty repository.

@@ -32,8 +32,9 @@ export interface ApiClient {
   fileExists(id: string, path: string): Promise<boolean>;
   /** Append authored edits to the log; returns the project's current max seq. */
   appendEdits(id: string, entries: WireEditEntry[]): Promise<number>;
-  /** Fetch edits with `seq > since` (from the start if omitted), oldest first. */
-  getEdits(id: string, since?: number): Promise<WireEditEntry[]>;
+  /** Fetch edits with `seq > since` (from the start if omitted), oldest first. `limit` caps to the
+   *  most recent N (bounded feed window). */
+  getEdits(id: string, since?: number, limit?: number): Promise<WireEditEntry[]>;
 }
 
 export function createApiClient(config: { baseUrl: string; token?: string }): ApiClient {
@@ -110,9 +111,13 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
       return body.maxSeq;
     },
 
-    async getEdits(id, since) {
+    async getEdits(id, since, limit) {
       const path = routes.getEdits.path.replace(":id", encodeURIComponent(id));
-      const url = since != null ? `${baseUrl}${path}?since=${since}` : `${baseUrl}${path}`;
+      const params = new URLSearchParams();
+      if (since != null) params.set("since", String(since));
+      if (limit != null) params.set("limit", String(limit));
+      const query = params.toString();
+      const url = query ? `${baseUrl}${path}?${query}` : `${baseUrl}${path}`;
       const res = await fetch(url, { headers: authHeaders });
       if (!res.ok) throw new Error(`sync: get edits for ${id} failed (${res.status})`);
       const body = (await res.json()) as z.infer<(typeof routes.getEdits)["response"]>;

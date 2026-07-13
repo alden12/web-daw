@@ -21,26 +21,28 @@ export interface BundleStore {
   exists(path: string): Promise<boolean>;
   /** Append authored edits to the bundle's edit log (append-only, idempotent by `seq`). */
   appendEdits(entries: EditEntry[]): Promise<void>;
-  /** Read the edit log entries with `seq > sinceSeq` (all if `sinceSeq < 0`), oldest first. */
-  readEdits(sinceSeq: number): Promise<EditEntry[]>;
+  /** Read the edit log entries with `seq > sinceSeq` (all if `sinceSeq < 0`), oldest first. `limit`
+   *  caps to the most recent N (a bounded feed window); omit for the full tail. */
+  readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]>;
 }
 
 /** The parent directory (under the OPFS root) that holds every project bundle. */
 const PROJECTS_DIR = "projects";
 
 /**
- * The file-backed edit log (used by the OPFS / in-memory stores): the append stream lives in the
- * bundle's `edits.json`, read-concat-written. Cheap locally; the remote store overrides both with
- * the efficient append/fetch endpoints (backed by the `edits` table). Kept distinct from the feed
- * `log.json` so the two never conflate - mirroring the remote layout (edits table + `log.json`).
- * Append is idempotent by `seq` so a re-append is a no-op.
+ * The file-backed authored stream (used by the OPFS / in-memory stores): the one seq-ordered log of
+ * edits AND feed notes lives in the bundle's `edits.json`, read-concat-written. Cheap locally; the
+ * remote store overrides both methods with the append/fetch endpoints (backed by the `edits` table).
+ * This is the single home for the feed since the unification - there is no separate `log.json`/
+ * `notes.json`. Append is idempotent by `seq` so a re-append is a no-op.
  */
 const EDIT_LOG_PATH = "edits.json";
 
-async function readEditsFromFile(store: BundleStore, sinceSeq: number): Promise<EditEntry[]> {
+async function readEditsFromFile(store: BundleStore, sinceSeq: number, limit?: number): Promise<EditEntry[]> {
   const raw = await store.readText(EDIT_LOG_PATH);
   const all = raw ? (JSON.parse(raw) as EditEntry[]) : [];
-  return all.filter((entry) => entry.seq > sinceSeq);
+  const matching = all.filter((entry) => entry.seq > sinceSeq);
+  return limit != null ? matching.slice(-limit) : matching;
 }
 
 async function appendEditsToFile(store: BundleStore, entries: EditEntry[]): Promise<void> {
@@ -125,8 +127,8 @@ export class OpfsBundleStore implements BundleStore {
   appendEdits(entries: EditEntry[]): Promise<void> {
     return appendEditsToFile(this, entries);
   }
-  readEdits(sinceSeq: number): Promise<EditEntry[]> {
-    return readEditsFromFile(this, sinceSeq);
+  readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq, limit);
   }
 }
 
@@ -153,8 +155,8 @@ export class MemoryBundleStore implements BundleStore {
   appendEdits(entries: EditEntry[]): Promise<void> {
     return appendEditsToFile(this, entries);
   }
-  readEdits(sinceSeq: number): Promise<EditEntry[]> {
-    return readEditsFromFile(this, sinceSeq);
+  readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq, limit);
   }
 }
 
@@ -231,8 +233,8 @@ class RootedMemoryStore implements BundleStore {
   appendEdits(entries: EditEntry[]): Promise<void> {
     return appendEditsToFile(this, entries);
   }
-  readEdits(sinceSeq: number): Promise<EditEntry[]> {
-    return readEditsFromFile(this, sinceSeq);
+  readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
+    return readEditsFromFile(this, sinceSeq, limit);
   }
 }
 

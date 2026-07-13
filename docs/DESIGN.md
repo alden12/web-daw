@@ -1695,9 +1695,50 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     feed notes and the modified-time no longer wait for a rare keyframe. A **page-hide flush**
     (`visibilitychange`/`pagehide`) sends whatever the debounce is still holding (a fast edit burst never
     pauses long enough to append) plus notes + a meta touch; it deliberately does *not* keyframe (the
-    payload stays small and reliable, and `project.json` is rebuilt by replay next load). Follow-on
-    (slice 70): fold `notes.json` into the edit-log as `kind:"note"` rows so notes become durable
-    deltas and both `notes.json` and the `log.json`/`edits`-table duplication retire.
+    payload stays small and reliable, and `project.json` is rebuilt by replay next load).
+  - **Feed + edit-log unification - _done_ (slice 70).** Feed notes and edits are now **one**
+    seq-ordered authored stream. A note is a `kind:"note"` entry carrying its text on `command`
+    (`{type:"note", text}`); forward replay skips it (only `edit` kinds apply). So notes ride the delta
+    append (durable without a keyframe) and both `notes.json` and `log.json` retire - killing the
+    `log.json`/`edits`-table duplication the earlier inspection found. The stream is the single feed
+    source: local backends keep it in `edits.json`, the sync server in the `edits` table; load reads a
+    bounded recent window (`readEdits` gained a `limit`; `KEYFRAME_EDIT_INTERVAL` << the window, with a
+    guard that reads the full tail in the unlikely case it doesn't reach the keyframe). The in-memory
+    `EditLog` API is unchanged - the edits/notes merge and split live at the persistence boundary
+    (`ProjectRepository`). Old bundles: pre-unification `log.json`/`notes.json` are **not** read back -
+    the local dev DB was refreshed by explicit consent (the sync service still holds only disposable dev
+    data; there are no real users yet), so a one-time discard was preferred over carrying transition
+    code. The forward-migration discipline (CLAUDE.md) resumes for changes made once real data exists.
+    `.daw.zip` export/import uses the unified `edits.json`.
+  - **Commits referencing edit ranges instead of embedding entries - deferred, gated on the
+    authoritative log.** A commit currently embeds its `entries` (a copy of the edits it bundles),
+    which duplicates rows the `edits` table also holds. A commit could instead store just a seq range
+    (`fromSeq..lastSeq`) and resolve the entries from the stream. But the two layers have *opposite*
+    lifecycles today: the `edits` table is a **mutable, prunable working stream** (coalescing upserts;
+    compaction is a future item), while commits are **write-once and kept forever**. Embedding is what
+    makes a commit self-contained and independent of that stream; referencing would make committed
+    history hostage to the working stream's lifecycle (a pruned/rewritten seq dangles a commit). It is
+    also a small win - edit commands are tiny; the bytes that dominate the history file are the keyframe
+    **snapshots**, which are materialized state not present in the `edits` table and so can't be deduped
+    this way. The right time is the **authoritative-server / multiplayer** slice: there the `edits`
+    table stops being a per-client mutable stream and becomes the canonical, server-assigned,
+    append-only log, at which point "commits are markers/ranges into the one log" is the clean model
+    (the feed + commit DAG genuinely merge). Doing it before then bolts immutability onto a stream
+    designed to be mutable. So: unify commits with the edit-log when the log becomes authoritative, not
+    before - and even then it mostly de-dupes the cheap part, so it is model cleanliness more than
+    storage savings.
+  - **Snapshot-anchor dedup - deferred (low priority).** Full `ProjectData` snapshots live in three
+    places: `project.json` (the HEAD keyframe), `undo.json` (`undo.base` + `redo.base`, the delta-encoded
+    stacks' anchors), and keyframe commits. These are *materialized state*, not edits, so they are the
+    real weight in a bundle - but they are mostly not literal duplicates: each is a distinct point in
+    time (HEAD, the ~30-edits-back undo floor, a redo anchor, historical commit points). They exist as
+    stored anchors because `applyEdit` is **forward-only** - with no inverse you cannot derive a past
+    state by walking HEAD backward, so a state you want to restore must be stored (or reconstructable by
+    forward replay from a stored anchor). `undo.json` already delta-encodes (one base per stack + the
+    commands, not ~30 snapshots) and is bounded to `PERSIST_UNDO_DEPTH`. A future "anchor management"
+    pass could share anchors where points coincide (e.g. an undo base that lands on a commit keyframe)
+    or reconstruct undo/redo from the reflog, but the win is small and it needs care - not worth it until
+    snapshot storage is shown to matter.
   - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
     materializes and uploads keyframes. A server could instead build them by replaying the `edits`
     table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that
@@ -1766,15 +1807,88 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   is embedded in the document) -> **catalog versioning** -> **built-in params** -> deep `EditCommand`.
   Full declarative conversion of built-ins is the separate gated declarative-DSP initiative (section
   16), not a validation lever (built-ins would still be referenced by id from a shared catalog).
-- **Realtime multiplayer: the contract is the easy part, concurrency is the hard part.** Live
-  multi-user editing needs conflict resolution (CRDT/OT) and an ephemeral-vs-durable split (presence +
-  live MIDI are never persisted; an edit is both broadcast *and* committed) - a state-sync toolbox
-  (yjs / liveblocks / partykit / automerge), separate from the message contract. Design principle:
-  **transport edits as semantic `EditCommand`s, not document snapshots** - the codebase already models
-  edits as a command layer (the union behind `commands/diff.ts|history.ts|editLog.ts` and the
-  semantic-edit commit DAG), and that same command is the natural unit for local apply, WS broadcast,
-  persisted commit, and later the CRDT op. That convergence is when `editCommandSchema` graduates from
-  structural to first-class typed. Keep WS messages small and intent-based so this door stays open.
+- **Realtime multiplayer - chosen strategy (design decided; the next major slice).** Live multi-user
+  editing. The transport, authority, conflict model, and offline stance are settled below; the build is
+  a distinct slice.
+  - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
+    ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
+    server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample
+    transfer, and bundle export stay HTTP. Transport edits as semantic `EditCommand`s, never document
+    snapshots - the command is the one unit for local apply, WS broadcast, persisted delta, and commit.
+  - **Server becomes the authority (the "dumb blob store -> smart authority" shift).** Per project, one
+    authority instance holds the in-memory replay state, assigns the authoritative `seq`, applies, and
+    broadcasts `editApplied` to peers. History/keyframe/commit logic moves **server-side** (the server
+    now owns the replay engine, so the deferred server-side-keyframe and commit-referencing items land
+    here). Client traffic collapses to *semantic commands out, broadcasts in* (+ presence) - no more
+    whole-`project.json` uploads or client-computed keyframes. This is the deliberate departure from the
+    thin `(projectId, path) -> bytes` store; the `BundleStore` seam already permits a smart backend.
+  - **Conflict resolution: server-authoritative total order + optimistic apply + rebase** (NOT OT, NOT
+    CRDT). The client applies a command optimistically to its local replica and sends it tagged with the
+    last authoritative `seq` it saw + a client op-id; the server appends it at the next `seq`, applies to
+    HEAD, and broadcasts; a client that had in-flight ops **rebases** (roll back optimistic ops, apply
+    the authoritative ones in order, re-apply its pending ops on top). Rationale: our edits are coarse
+    **semantic** commands that mostly target *different* objects, so they commute and the authority need
+    only *order* them; the rare **same-target** clash (two users on one knob/note) resolves
+    **last-writer-wins by `seq`**, which matches expectation. OT is rejected (a ~50x50 transform matrix);
+    CRDT is rejected *for now* because its value is authority-free multi-primary merge, which we do not
+    need (single authority per project, single region at a time) and which would reshape `ProjectStore`
+    and lose semantic intent. CRDT stays the escape hatch only if offline-collaboration or
+    multi-region-per-project ever becomes a hard requirement. Two requirements this imposes: (1)
+    **`applyEdit` must no-op gracefully on a stale target** (e.g. `addNote` to a track another user just
+    deleted) instead of throwing; (2) **client op-ids** so reconnect/retry never double-applies. This is
+    when `editCommandSchema` graduates from structural to first-class typed and server-assigned `seq`
+    replaces the client-stamped `seq`.
+  - **Ephemeral vs durable split.** Presence (cursors, who's online) and live MIDI are **never
+    persisted** - they live in the room instance's memory / a pub-sub bus. Only authored `EditCommand`s
+    hit Postgres, so write load stays proportional to real edits.
+  - **Offline stance: solo-offline kept, live-collab requires a connection.** Solo editing stays
+    **local-first** (OPFS working copy, queue commands, flush on reconnect - one writer, so the server
+    sequences the queue with nothing to conflict against). Live collaboration requires a connection;
+    brief disconnects are absorbed by the optimistic queue (reconnect -> replay pending -> rebase). We do
+    **not** go Onshape-online-only (solo offline is cheap and valuable) nor full offline-first (that
+    effectively demands CRDT). **Offline *during* active collaboration is deferred** - the genuinely hard
+    merge; when wanted, prefer **branch-and-merge** (an offline session becomes a branch, reconnect does a
+    3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
+  - See the hosting/scaling entry above: the authority is **per-project** (the shard unit), so a project
+    is single-region at a time; server-assigned `seq` is the enabling change.
+- **Hosting & scaling (deferred, recorded for the multiplayer slice).**
+  - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
+    unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
+    functions, plain Lambda) for the socket layer; it needs an always-on process.
+  - **Affordable platforms to start:** a small always-on **Node** instance + **managed Postgres**.
+    Recommended default **Fly.io** (runs the process as a long-lived VM, holds WS, region-pinnable next
+    to the DB, a few $/mo) **+ Neon** (serverless PG, scale-to-zero, branching, built-in pooler) - or
+    **Railway** for both if one dashboard is preferred. **Supabase** is tempting because it could also
+    supply auth (replacing the stubbed token). **Cloudflare Durable Objects / PartyKit** is the
+    odd-one-out: purpose-built stateful per-key "rooms" (each project = one addressable actor), the
+    cleanest fit for the model below, but a Cloudflare tie and a non-Node (Workers) runtime, so reach
+    for it only if per-project rooms dominate. Avoid API-Gateway-WebSockets-on-Lambda (awkward).
+  - **The project is the shard unit at every layer.** A project's edit stream is a single ordered log,
+    so multiplayer needs exactly **one authority per project** (assigns order/`seq`, applies, broadcasts).
+    That same `projectId` partitions all three layers: (1) **WS routing** - a stateless gateway routes a
+    client for project P to P's owning instance (consistent hashing on `projectId`, or a directory;
+    Durable Objects/PartyKit do this natively via `idFromName(projectId)`); (2) **in-memory authority** -
+    the owner holds P's replay/CRDT state and fans out to P's peers, with **failover** cheap because any
+    instance can reload P from Postgres (keyframe + replay - the path already built) and take ownership;
+    (3) **DB sharding** - only when a single vertically-scaled PG (with pooling, read replicas, and
+    `edits` partitioned by `projectId`) is outgrown, shard by `projectId`/`ownerId`; a project never
+    spans a shard. This is clean **only because** the schema is already owner-/project-scoped with no
+    cross-project joins ("multi-user later is a change of principal, not of queries"). Ephemeral state
+    (presence, cursors, live MIDI) stays in the room's memory / a pub-sub bus, never the DB - so PG write
+    load stays proportional to authored edits. The one code change scaling assumes: the **server** assigns
+    `seq` (not the client, as today), the multiplayer/authoritative-log change.
+  - **A project is single-region at a time (consequence, acceptable).** One authority per project means
+    that authority - and ideally its DB shard - lives in **one region** at any instant. The *service* is
+    multi-region (different projects homed in different regions; a project's ownership can **migrate**
+    regions on failover/rebalance, e.g. toward its active collaborators), but a single project is **not**
+    simultaneously authoritative in two regions - that would break the single total order. This is not a
+    latency problem in practice: with **optimistic local apply** (apply instantly, reconcile on server
+    ack), the authority's region only affects when the authoritative order/conflict-resolution *confirms*,
+    not the felt responsiveness of editing. The only way to make one project genuinely multi-region
+    (multi-primary, no central order) is a **CRDT** (yjs/automerge), which drops the single-`seq`
+    authority for conflict-free merge - a real fork we are deliberately *not* taking now (we lean
+    single-authority + server-assigned `seq`). So: single region per project unless/until a CRDT model is
+    adopted; revisit only if globally-distributed collaborators on one project become a real need.
 
 **Security hardening (from a review of the sync service):**
 

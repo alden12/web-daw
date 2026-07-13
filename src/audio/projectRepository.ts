@@ -5,9 +5,8 @@
  *
  *   project.daw/
  *     manifest.json     formatVersion, project id, project-schema version
- *     project.json      the materialized ProjectData snapshot (working state)
- *     log.json          the persisted authored edit log (drives the activity feed)
- *     notes.json        the persisted feed notes (intent narration; parallel to log)
+ *     project.json      the materialized ProjectData snapshot (working state) + headSeq marker
+ *     edits.json        the unified authored stream: edits + feed notes, seq-ordered (the feed)
  *     meta.json         human-facing name + modified time
  *     samples/<sha256>  audio sample bytes, content-addressed (dedup + integrity)
  *     history/          the commit DAG: refs.json + commits/<id>.json (keyframe + delta)
@@ -17,7 +16,7 @@
  * doubles as an integrity check.
  */
 import type { ProjectData } from "./project/types";
-import type { Author, EditEntry } from "./commands/types";
+import type { Author, EditCommand, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
@@ -32,6 +31,57 @@ type PersistedProject = ProjectData & { headSeq?: number };
 /** Fold the edit log's high-water seq (edits + feed notes share the counter). */
 const highWaterSeq = (log: { seq: number }[], notes: { seq: number }[]): number =>
   Math.max(-1, ...log.map((entry) => entry.seq), ...notes.map((note) => note.seq));
+
+/* -- The unified authored stream: edits and feed notes are one seq-ordered log. A note is encoded as
+      a kind:"note" entry carrying its text on the command (structural; skipped by forward replay), so
+      the delta stream (edits.json / the `edits` table) is the single home for both - no parallel
+      notes.json/log.json. `toStream`/`fromStream` convert at the persistence boundary; the in-memory
+      EditLog keeps edits and notes as separate lists (its API is unchanged). ------------------------ */
+
+/** Encode a feed note as a stream entry. */
+const noteToEntry = (note: FeedNote): EditEntry => ({
+  seq: note.seq,
+  // Not a real EditCommand (replay never applies it); the wire/schema treat command structurally.
+  command: { type: "note", text: note.text } as unknown as EditCommand,
+  author: note.author,
+  time: note.time,
+  kind: "note",
+});
+
+/** Merge edits + notes into the single stream, seq-ordered. */
+const toStream = (entries: EditEntry[], notes: FeedNote[]): EditEntry[] =>
+  [...entries, ...notes.map(noteToEntry)].sort((a, b) => a.seq - b.seq);
+
+/** Dedup entries by seq (later arrays win on conflict) and sort ascending. */
+const mergeBySeq = (...streams: EditEntry[][]): EditEntry[] => {
+  const bySeq = new Map<number, EditEntry>();
+  for (const stream of streams) for (const entry of stream) bySeq.set(entry.seq, entry);
+  return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+};
+
+/** Split a stream back into edits (incl. undo/redo) and feed notes. */
+const fromStream = (stream: EditEntry[]): { entries: EditEntry[]; notes: FeedNote[] } => {
+  const entries: EditEntry[] = [];
+  const notes: FeedNote[] = [];
+  for (const entry of stream) {
+    if (entry.kind === "note") {
+      const text = (entry.command as { text?: unknown }).text;
+      notes.push({
+        seq: entry.seq,
+        text: typeof text === "string" ? text : "",
+        author: entry.author,
+        time: entry.time,
+      });
+    } else {
+      entries.push(entry);
+    }
+  }
+  return { entries, notes };
+};
+
+/** Whether a stream entry is replayed forward through `applyEdit` (edits only; notes and the
+ *  undo/redo reflog markers are not). Absent kind = a legacy edit. */
+const isReplayable = (entry: EditEntry): boolean => entry.kind === undefined || entry.kind === "edit";
 
 const FORMAT_VERSION = 1;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
@@ -132,14 +182,6 @@ export class ProjectRepository {
     return this.saveChain;
   }
 
-  /** Persist feed notes (notes.json) on the fast cadence: they do not ride the delta append path, so
-   *  this keeps them durable without waiting for a (now rare) keyframe. Serialized with other writes. */
-  writeNotes(notes: FeedNote[]): Promise<void> {
-    const run = () => this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
-    this.saveChain = this.saveChain.then(run, run);
-    return this.saveChain;
-  }
-
   /** Load the working snapshot + log; null if no bundle has been written yet. */
   async load(): Promise<StoredProject | null> {
     const manifestRaw = await this.store.readText("manifest.json");
@@ -159,30 +201,32 @@ export class ProjectRepository {
         // keep the default name
       }
     }
-    const logRaw = await this.store.readText("log.json");
-    const notesRaw = await this.store.readText("notes.json");
-    const feedFromFile = logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [];
-    const notes = notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [];
+    // Read the unified authored stream (edits + notes), bounded to a recent window for the feed.
+    let stream = await this.store.readEdits(-1, MAX_PERSISTED_ENTRIES);
+    // Guard: if the capped window did not reach back to the keyframe, read the full tail so replay is
+    // complete (only fires with > MAX_PERSISTED_ENTRIES edits since the last keyframe - shouldn't
+    // happen in normal use, where a keyframe lands every KEYFRAME_EDIT_INTERVAL edits).
+    if (headSeq != null && stream.length > 0 && stream[0].seq > headSeq + 1) {
+      stream = mergeBySeq(await this.store.readEdits(headSeq), stream);
+    }
+    const { entries, notes } = fromStream(stream);
 
-    // Reconstruct HEAD from the keyframe + the edit tail: the keyframe (`project.json`) reflects
-    // seq `headSeq`; replay the log entries after it through `applyEdit` to reach the true working
-    // state. Only kind:"edit" entries are pure-forward (undo/redo force a keyframe, so the tail
-    // never carries them). Legacy bundles have no `headSeq` and an empty edit log, so this no-ops
-    // and `project.json` is authoritative, as before.
-    const tail = headSeq != null ? await this.store.readEdits(headSeq) : [];
+    // Reconstruct HEAD from the keyframe + the edit tail: the keyframe (`project.json`) reflects seq
+    // `headSeq`; replay the edits after it through `applyEdit` to reach the true working state (notes
+    // and the undo/redo reflog markers are skipped - not pure-forward). A bundle with no `headSeq`
+    // has `project.json` authoritative, so this no-ops.
     let project = baseProject;
-    if (tail.length > 0) {
+    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry));
+    if (replayTail.length > 0) {
       const replayStore = new ProjectStore(false);
       replayStore.load(baseProject);
-      for (const entry of tail) {
-        if (entry.kind !== "undo" && entry.kind !== "redo") applyEdit(replayStore, entry.command, entry.author);
-      }
+      for (const entry of replayTail) applyEdit(replayStore, entry.command, entry.author);
       project = replayStore.snapshot();
     }
     this.lastKeyframeSeq = headSeq ?? -1;
-    // Everything on disk is already sealed history, so nothing below the max needs re-sending.
-    this.syncedThroughSeq = Math.max(headSeq ?? -1, highWaterSeq(tail, []));
-    return { project, log: [...feedFromFile, ...tail], notes };
+    // Everything on disk is already sealed history, so nothing at/below the max needs re-sending.
+    this.syncedThroughSeq = Math.max(headSeq ?? -1, highWaterSeq(entries, notes));
+    return { project, log: entries, notes };
   }
 
   /**
@@ -203,16 +247,18 @@ export class ProjectRepository {
   }
 
   /**
-   * Append authored edits to the log (the delta). Sends everything above the last sealed seq: the
-   * last entry may still be coalescing, so it is re-sent each call (the store upserts by seq) to
-   * carry its final value; entries below it are immutable and sent once. Serialized with saves.
+   * Append the authored stream delta (edits + feed notes, merged and seq-ordered). Sends everything
+   * above the last sealed seq; the last EDIT may still be coalescing, so it is re-sent each call (the
+   * store upserts by seq) to carry its final value. Sealing is by the edits (notes never coalesce and
+   * are idempotent upserts), so a note appended after an edit can't prematurely seal it. Serialized
+   * with saves.
    */
-  appendEdits(entries: EditEntry[]): Promise<void> {
+  appendEdits(entries: EditEntry[], notes: FeedNote[] = []): Promise<void> {
     const run = async () => {
-      const toSend = entries.filter((entry) => entry.seq > this.syncedThroughSeq);
+      const toSend = toStream(entries, notes).filter((entry) => entry.seq > this.syncedThroughSeq);
       if (toSend.length === 0) return;
       await this.store.appendEdits(toSend);
-      // Seal all but the last entry (only the last can still coalesce, so keep re-sending it).
+      // Seal all but the last edit (only it can still coalesce, so keep re-sending it).
       if (entries.length >= 2) this.syncedThroughSeq = entries[entries.length - 2].seq;
     };
     this.saveChain = this.saveChain.then(run, run);
@@ -221,17 +267,16 @@ export class ProjectRepository {
 
   /**
    * Write the working snapshot as a keyframe: `project.json` records the edit `seq` it reflects
-   * (`headSeq`), so load replays only the tail after it. The feed cache (`log.json`) + meta ride
-   * along; feed notes are written separately on the fast cadence (`writeNotes`). Writes are
-   * serialized so they never overlap.
+   * (`headSeq`), so load replays only the tail after it, and `meta.json` rides along. The feed lives
+   * entirely in the append stream now (no log.json/notes.json). Writes are serialized.
    */
-  writeKeyframe(project: ProjectData, headSeq: number, log: EditEntry[]): Promise<void> {
-    const run = () => this.writeKeyframeNow(project, headSeq, log);
+  writeKeyframe(project: ProjectData, headSeq: number): Promise<void> {
+    const run = () => this.writeKeyframeNow(project, headSeq);
     this.saveChain = this.saveChain.then(run, run);
     return this.saveChain;
   }
 
-  private async writeKeyframeNow(project: ProjectData, headSeq: number, log: EditEntry[]): Promise<void> {
+  private async writeKeyframeNow(project: ProjectData, headSeq: number): Promise<void> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
@@ -241,17 +286,15 @@ export class ProjectRepository {
     const keyframe: PersistedProject = { ...project, headSeq };
     await this.store.writeText("manifest.json", JSON.stringify(manifest));
     await this.store.writeText("project.json", JSON.stringify(keyframe));
-    await this.store.writeText("log.json", JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
     await this.store.writeText("meta.json", this.metaJson());
     this.lastKeyframeSeq = headSeq;
   }
 
-  /** A full write (keyframe + notes + the whole log appended) for non-autosave callers:
+  /** A full write (keyframe + the whole stream appended) for non-autosave callers:
    *  switch/create/import. */
   save(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
-    this.writeKeyframe(project, highWaterSeq(log, notes), log);
-    this.writeNotes(notes);
-    return this.appendEdits(log);
+    this.writeKeyframe(project, highWaterSeq(log, notes));
+    return this.appendEdits(log, notes);
   }
 
   /** Store an audio sample, returning its content hash (its `fileId`). Dedups. */
@@ -274,11 +317,11 @@ export class ProjectRepository {
   }
 
   /**
-   * The current project as a readable bundle (path -> bytes): pretty-printed
-   * manifest / project / log / notes / meta JSON plus the referenced samples as
-   * real `.wav` bytes. The UI zips this into a portable `.daw.zip`. This is the same
-   * shape the disk-folder backend (15D) will write uncompressed, so export and
-   * on-disk are one format. Pass the live snapshot + log + notes so it is always current.
+   * The current project as a readable bundle (path -> bytes): pretty-printed manifest / project /
+   * meta JSON, the unified authored stream (`edits.json`: edits + notes), plus the referenced samples
+   * as real `.wav` bytes. The UI zips this into a portable `.daw.zip`. This is the same shape the
+   * disk-folder backend (15D) will write uncompressed, so export and on-disk are one format. Pass the
+   * live snapshot + log + notes so it is always current.
    */
   async exportBundle(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<BundleFiles> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
@@ -290,8 +333,7 @@ export class ProjectRepository {
     const files: BundleFiles = {
       "manifest.json": json(manifest),
       "project.json": json(project),
-      "log.json": json(log),
-      "notes.json": json(notes),
+      "edits.json": json(toStream(log, notes)),
       "meta.json": json({ name: this.name, modifiedAt: new Date().toISOString() }),
     };
     for (const id of referencedSampleIds(project)) {
@@ -301,12 +343,13 @@ export class ProjectRepository {
     return files;
   }
 
-  /** Load a bundle file map (from an unzipped `.daw.zip`), replacing the project. */
+  /** Load a bundle file map (from an unzipped `.daw.zip`), replacing the project. Reads the unified
+   *  `edits.json` stream (edits + feed notes). */
   async importBundle(files: BundleFiles): Promise<StoredProject> {
     const project = JSON.parse(text(files["project.json"])) as ProjectData;
     if (!project?.tracks) throw new Error("bundle: missing project.json");
-    const log = files["log.json"] ? (JSON.parse(text(files["log.json"])) as EditEntry[]) : [];
-    const notes = files["notes.json"] ? (JSON.parse(text(files["notes.json"])) as FeedNote[]) : [];
+    const stream = files["edits.json"] ? (JSON.parse(text(files["edits.json"])) as EditEntry[]) : [];
+    const { entries: log, notes } = fromStream(stream);
     for (const [path, bytes] of Object.entries(files)) {
       if (!path.startsWith("samples/")) continue;
       const id = path.slice("samples/".length).replace(/\.[^.]*$/, ""); // strip dir + extension -> content hash
