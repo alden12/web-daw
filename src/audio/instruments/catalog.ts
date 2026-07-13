@@ -190,6 +190,105 @@ export const wavetableSchema: ParamSchema = [
   },
 ] as const;
 
+// Nimbus: a warm, Juno-inspired polyphonic subtractive synth (AudioWorklet). Param ids
+// match the processor's AudioParam names so WorkletInstrument binds them generically;
+// smoothMs keeps knob moves zipper-free. See instruments/nimbus.worklet.ts.
+export const nimbusSchema: ParamSchema = [
+  { id: "osc.saw", label: "Saw", kind: "number", min: 0, max: 1, default: 0.8, taper: "linear", smoothMs: 15 },
+  { id: "osc.pulse", label: "Pulse", kind: "number", min: 0, max: 1, default: 0, taper: "linear", smoothMs: 15 },
+  {
+    id: "osc.pulseWidth",
+    label: "Pulse Width",
+    kind: "number",
+    min: 0.05,
+    max: 0.95,
+    default: 0.5,
+    taper: "linear",
+    smoothMs: 15,
+  },
+  { id: "osc.sub", label: "Sub", kind: "number", min: 0, max: 1, default: 0.3, taper: "linear", smoothMs: 15 },
+  { id: "osc.noise", label: "Noise", kind: "number", min: 0, max: 1, default: 0, taper: "linear", smoothMs: 15 },
+  { id: "osc.drift", label: "Drift", kind: "number", min: 0, max: 1, default: 0.2, taper: "linear" },
+  {
+    id: "filter.cutoff",
+    label: "Cutoff",
+    kind: "number",
+    min: 20,
+    max: 18000,
+    default: 3000,
+    unit: "Hz",
+    taper: "exponential",
+    smoothMs: 15,
+  },
+  {
+    id: "filter.resonance",
+    label: "Resonance",
+    kind: "number",
+    min: 0,
+    max: 1,
+    default: 0.2,
+    taper: "linear",
+    smoothMs: 15,
+  },
+  {
+    id: "filter.env",
+    label: "Env Amount",
+    kind: "number",
+    min: -1,
+    max: 1,
+    default: 0.4,
+    taper: "linear",
+    smoothMs: 15,
+  },
+  { id: "filter.keytrack", label: "Keytrack", kind: "number", min: 0, max: 1, default: 0.3, taper: "linear" },
+  {
+    id: "env.attack",
+    label: "Attack",
+    kind: "number",
+    min: 1,
+    max: 4000,
+    default: 6,
+    unit: "ms",
+    taper: "exponential",
+  },
+  {
+    id: "env.decay",
+    label: "Decay",
+    kind: "number",
+    min: 1,
+    max: 4000,
+    default: 200,
+    unit: "ms",
+    taper: "exponential",
+  },
+  { id: "env.sustain", label: "Sustain", kind: "number", min: 0, max: 1, default: 0.7, taper: "linear" },
+  {
+    id: "env.release",
+    label: "Release",
+    kind: "number",
+    min: 1,
+    max: 6000,
+    default: 300,
+    unit: "ms",
+    taper: "exponential",
+  },
+  {
+    id: "lfo.rate",
+    label: "LFO Rate",
+    kind: "number",
+    min: 0.05,
+    max: 20,
+    default: 5,
+    unit: "Hz",
+    taper: "exponential",
+  },
+  { id: "lfo.pitch", label: "LFO Pitch", kind: "number", min: 0, max: 1, default: 0, taper: "linear" },
+  { id: "lfo.filter", label: "LFO Filter", kind: "number", min: 0, max: 1, default: 0, taper: "linear" },
+  { id: "lfo.pwm", label: "LFO PWM", kind: "number", min: 0, max: 1, default: 0, taper: "linear" },
+  { id: "lfo.delay", label: "LFO Delay", kind: "number", min: 0, max: 4000, default: 0, unit: "ms", taper: "linear" },
+  { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.7, taper: "linear", smoothMs: 10 },
+] as const;
+
 // One-shot sampler. `sampler.sample` is the keystone's `sample` kind - a ref into
 // the built-in kit (or, later, an imported file); the picker fills the choices.
 // Short envelope by default since notes play the whole sample (percussive).
@@ -283,6 +382,7 @@ registerInstrument({ type: "fm", label: "FM", schema: fmSchema, family: "Bass" }
 registerInstrument({ type: "supersaw", label: "Supersaw", schema: supersawSchema, family: "Synths" });
 registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family: "Keys" });
 registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
+registerInstrument({ type: "nimbus", label: "Nimbus", schema: nimbusSchema, family: "Synths" });
 registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });
 // The empty-track sentinel: no params, hidden from the palette, silent factory (registry.ts).
 registerInstrument({ type: EMPTY_INSTRUMENT, label: "No instrument", schema: [], family: "main", hidden: true });
