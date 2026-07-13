@@ -137,35 +137,67 @@ export function wsBaseFromApiUrl(apiUrl: string): string {
 }
 
 /** A typed WebSocket wrapper: `send` only buffers/sends `ClientMessage`s (queuing until the socket
- *  opens), and `onMessage` delivers validated `ServerMessage`s. Thin transport glue over the contract's
- *  message unions. The token rides the query string because a browser `WebSocket` cannot set an
- *  Authorization header (the server reads `?token=` at the upgrade, mirroring the HTTP bearer gate). */
+ *  opens), `onMessage` delivers validated `ServerMessage`s, and `onOpen` fires on every (re)connect.
+ *  It reconnects automatically with capped exponential backoff after an unexpected drop, so a brief
+ *  network blip or an API restart self-heals; `onOpen` is the session's cue to re-subscribe and re-send
+ *  its unconfirmed edits. Thin transport glue over the contract's message unions. The token rides the
+ *  query string because a browser `WebSocket` cannot set an Authorization header (the server reads
+ *  `?token=` at the upgrade, mirroring the HTTP bearer gate). */
 export function createWsClient(config: { baseUrl: string; token?: string }): {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
+  onOpen(handler: () => void): void;
   close(): void;
 } {
   const base = `${config.baseUrl.replace(/\/$/, "")}${channels.main.path}`;
   const url = config.token ? `${base}?token=${encodeURIComponent(config.token)}` : base;
-  const socket = new WebSocket(url);
-  // Buffer sends made before the socket opens (subscribe fires from the constructor), flush on open.
+  const RECONNECT_BASE_MS = 500;
+  const RECONNECT_MAX_MS = 10_000;
+
+  // Handlers registered once, re-bound onto each socket instance across reconnects.
+  const messageHandlers: Array<(message: ServerMessage) => void> = [];
+  const openHandlers: Array<() => void> = [];
+  // Sends made while the socket is not open queue here and flush once it opens (after the open handlers,
+  // so a re-subscribe always precedes any queued edit).
   const backlog: ClientMessage[] = [];
-  socket.addEventListener("open", () => {
-    for (const message of backlog) socket.send(JSON.stringify(message));
-    backlog.length = 0;
-  });
+  let socket: WebSocket;
+  let closed = false;
+  let retries = 0;
+
+  const connect = (): void => {
+    socket = new WebSocket(url);
+    socket.addEventListener("open", () => {
+      retries = 0;
+      for (const handler of openHandlers) handler();
+      for (const message of backlog) socket.send(JSON.stringify(message));
+      backlog.length = 0;
+    });
+    socket.addEventListener("message", (event) => {
+      const parsed = parseServerMessage(JSON.parse(String(event.data)));
+      if (parsed.success) for (const handler of messageHandlers) handler(parsed.data);
+    });
+    socket.addEventListener("close", () => {
+      if (closed) return; // deliberate close(): do not reconnect
+      const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** retries);
+      retries += 1;
+      setTimeout(connect, delay);
+    });
+  };
+  connect();
+
   return {
     send(message) {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
       else backlog.push(message);
     },
     onMessage(handler) {
-      socket.addEventListener("message", (event) => {
-        const parsed = parseServerMessage(JSON.parse(String(event.data)));
-        if (parsed.success) handler(parsed.data);
-      });
+      messageHandlers.push(handler);
+    },
+    onOpen(handler) {
+      openHandlers.push(handler);
     },
     close() {
+      closed = true;
       socket.close();
     },
   };
