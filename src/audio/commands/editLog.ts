@@ -149,6 +149,10 @@ export class EditLog {
   private lastTime = 0;
   private readonly listeners = new Set<() => void>();
   private cached!: EditLogState;
+  /** Optional realtime sink: when a shared session is live, each dispatched edit is forwarded to the
+   *  authority after being applied optimistically here (see SharedSession). Undo/redo do NOT forward -
+   *  they are local best-effort in a shared session. */
+  private remote: ((command: EditCommand, author: Author) => void) | null = null;
 
   constructor(project: ProjectStore) {
     this.project = project;
@@ -179,7 +183,13 @@ export class EditLog {
     }
     this.lastKey = key;
     this.lastTime = now;
+    this.remote?.(command, author);
     this.emit();
+  };
+
+  /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority. */
+  setRemote = (sink: ((command: EditCommand, author: Author) => void) | null): void => {
+    this.remote = sink;
   };
 
   undo = (): void => {
