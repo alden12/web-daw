@@ -1727,6 +1727,18 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     designed to be mutable. So: unify commits with the edit-log when the log becomes authoritative, not
     before - and even then it mostly de-dupes the cheap part, so it is model cleanliness more than
     storage savings.
+  - **Snapshot-anchor dedup - deferred (low priority).** Full `ProjectData` snapshots live in three
+    places: `project.json` (the HEAD keyframe), `undo.json` (`undo.base` + `redo.base`, the delta-encoded
+    stacks' anchors), and keyframe commits. These are *materialized state*, not edits, so they are the
+    real weight in a bundle - but they are mostly not literal duplicates: each is a distinct point in
+    time (HEAD, the ~30-edits-back undo floor, a redo anchor, historical commit points). They exist as
+    stored anchors because `applyEdit` is **forward-only** - with no inverse you cannot derive a past
+    state by walking HEAD backward, so a state you want to restore must be stored (or reconstructable by
+    forward replay from a stored anchor). `undo.json` already delta-encodes (one base per stack + the
+    commands, not ~30 snapshots) and is bounded to `PERSIST_UNDO_DEPTH`. A future "anchor management"
+    pass could share anchors where points coincide (e.g. an undo base that lands on a commit keyframe)
+    or reconstruct undo/redo from the reflog, but the win is small and it needs care - not worth it until
+    snapshot storage is shown to matter.
   - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
     materializes and uploads keyframes. A server could instead build them by replaying the `edits`
     table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that
