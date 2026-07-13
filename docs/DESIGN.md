@@ -1710,6 +1710,23 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     data; there are no real users yet), so a one-time discard was preferred over carrying transition
     code. The forward-migration discipline (CLAUDE.md) resumes for changes made once real data exists.
     `.daw.zip` export/import uses the unified `edits.json`.
+  - **Commits referencing edit ranges instead of embedding entries - deferred, gated on the
+    authoritative log.** A commit currently embeds its `entries` (a copy of the edits it bundles),
+    which duplicates rows the `edits` table also holds. A commit could instead store just a seq range
+    (`fromSeq..lastSeq`) and resolve the entries from the stream. But the two layers have *opposite*
+    lifecycles today: the `edits` table is a **mutable, prunable working stream** (coalescing upserts;
+    compaction is a future item), while commits are **write-once and kept forever**. Embedding is what
+    makes a commit self-contained and independent of that stream; referencing would make committed
+    history hostage to the working stream's lifecycle (a pruned/rewritten seq dangles a commit). It is
+    also a small win - edit commands are tiny; the bytes that dominate the history file are the keyframe
+    **snapshots**, which are materialized state not present in the `edits` table and so can't be deduped
+    this way. The right time is the **authoritative-server / multiplayer** slice: there the `edits`
+    table stops being a per-client mutable stream and becomes the canonical, server-assigned,
+    append-only log, at which point "commits are markers/ranges into the one log" is the clean model
+    (the feed + commit DAG genuinely merge). Doing it before then bolts immutability onto a stream
+    designed to be mutable. So: unify commits with the edit-log when the log becomes authoritative, not
+    before - and even then it mostly de-dupes the cheap part, so it is model cleanliness more than
+    storage savings.
   - **Server-side keyframes / compaction - converges with multiplayer.** The client currently
     materializes and uploads keyframes. A server could instead build them by replaying the `edits`
     table itself, so the client only ever POSTs deltas. This is feasible (`applyEdit` is app TS that
