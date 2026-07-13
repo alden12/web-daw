@@ -33,8 +33,13 @@ import {
 } from "../db/store";
 import { validateBundleFile } from "../../src/audio/project/schema";
 import { routes, isBinaryPath } from "../../src/contract/http";
+import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipal } from "./principal";
 
 type Env = { Variables: { ownerId: string } };
+
+/** Read a bearer credential from an `Authorization: Bearer <token>` header (undefined if absent). */
+const bearer = (header: string | undefined): string | undefined =>
+  header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
 
 /** Body-size caps (a memory/storage DoS guard on the buffered PUT body). Generous defaults:
  *  a large project.json vs a long audio sample. Overridable per deployment. */
@@ -42,11 +47,18 @@ const DEFAULT_MAX_JSON_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_SAMPLE_BYTES = 64 * 1024 * 1024;
 
 export interface AppOptions {
-  /** Shared bearer token. When empty/unset, the API runs open (local dev). The entry
+  /** Real auth: verify a Supabase (or any OIDC) JWT against this JWKS/issuer. When set, it replaces the
+   *  shared-token gate and the principal is the token's user. When unset, the app runs in dev-stub mode
+   *  (`token` + `ownerId` below). */
+  auth?: AuthConfig;
+  /** Inject a pre-built principal resolver (tests use this to verify against a local key set). Takes
+   *  precedence over `auth`/`token`/`ownerId`. */
+  resolvePrincipal?: ResolvePrincipal;
+  /** Dev-stub: shared bearer token. When empty/unset, the API runs open (local dev). The entry
    *  point passes DAW_API_TOKEN; kept off `process` here so the app stays importable
    *  under any tsconfig. */
   token?: string;
-  /** The principal every request maps to (stubbed single owner until real auth). */
+  /** Dev-stub: the single principal every request maps to (until real auth supplies it). */
   ownerId?: string;
   /** Allowed CORS origin(s). Default "*" (the app runs on a different port in dev, and the
    *  bearer token, not a cookie, is the gate). Narrow this to the app origin on deploy. */
@@ -60,8 +72,13 @@ export interface AppOptions {
 }
 
 export function createApp(db: Db, options: AppOptions = {}) {
-  const token = options.token ?? "";
-  const ownerId = options.ownerId ?? "local";
+  // Resolve identity through one seam: an injected resolver (tests) > real JWT verification (`auth`) >
+  // the dev-stub shared-token gate. Handlers below are principal-agnostic - they read `c.get("ownerId")`.
+  const resolvePrincipal =
+    options.resolvePrincipal ??
+    (options.auth
+      ? makeJwtResolver(db, options.auth)
+      : makeDevResolver(db, { token: options.token, devUserId: options.ownerId }));
   const corsOrigin = options.corsOrigin ?? "*";
   const maxJsonBytes = options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES;
   const maxSampleBytes = options.maxSampleBytes ?? DEFAULT_MAX_SAMPLE_BYTES;
@@ -82,10 +99,9 @@ export function createApp(db: Db, options: AppOptions = {}) {
       // CORS next, so even a 401 carries the headers the browser needs to read the response.
       .use("*", cors({ origin: corsOrigin, allowMethods: ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"] }))
       .use("*", async (c, next) => {
-        if (token && c.req.header("Authorization") !== `Bearer ${token}`) {
-          return c.json({ error: "unauthorized" }, 401);
-        }
-        c.set("ownerId", ownerId);
+        const principal = await resolvePrincipal(bearer(c.req.header("Authorization")));
+        if (!principal) return c.json({ error: "unauthorized" }, 401);
+        c.set("ownerId", principal.userId);
         await next();
       })
       .get(routes.listProjects.path, async (c) => {

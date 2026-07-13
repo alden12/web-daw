@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
+import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, type JWTVerifyGetKey } from "jose";
 import { makeSyncEnv } from "./support/syncEnv";
 import { createApp } from "../server/api/app";
+import { makeJwtResolver, type AuthConfig } from "../server/api/principal";
 import { files, projects } from "../server/db/schema";
 
 const put = (app: Awaited<ReturnType<typeof makeSyncEnv>>["app"], path: string, body: string) =>
@@ -211,5 +213,56 @@ describe("sync API routes", () => {
       headers: { Origin: "http://localhost:5155", "Access-Control-Request-Method": "PUT" },
     });
     expect(preflight.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  describe("real auth (JWT)", () => {
+    const ISSUER = "https://test.supabase.co/auth/v1";
+    const ALG = "ES256";
+    const KID = "test-key";
+    const CONFIG: AuthConfig = { jwksUrl: "https://unused.invalid/jwks", issuer: ISSUER };
+
+    async function authFixture(): Promise<{ jwks: JWTVerifyGetKey; token: (sub: string) => Promise<string> }> {
+      const { publicKey, privateKey } = await generateKeyPair(ALG);
+      const jwk = await exportJWK(publicKey);
+      const jwks = createLocalJWKSet({ keys: [{ ...jwk, alg: ALG, kid: KID }] });
+      const token = (sub: string) =>
+        new SignJWT({})
+          .setProtectedHeader({ alg: ALG, kid: KID })
+          .setIssuer(ISSUER)
+          .setAudience("authenticated")
+          .setSubject(sub)
+          .setIssuedAt()
+          .setExpirationTime("1h")
+          .sign(privateKey);
+      return { jwks, token };
+    }
+
+    it("401s without a valid token and 200s with one (verified through the middleware)", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, token } = await authFixture();
+      const app = createApp(db, { resolvePrincipal: makeJwtResolver(db, CONFIG, jwks) });
+
+      expect((await app.request("/projects")).status).toBe(401);
+      expect((await app.request("/projects", { headers: { Authorization: "Bearer bogus" } })).status).toBe(401);
+      const ok = await app.request("/projects", { headers: { Authorization: `Bearer ${await token("user-1")}` } });
+      expect(ok.status).toBe(200);
+    });
+
+    it("scopes projects to the token's subject (two real users are isolated)", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, token } = await authFixture();
+      // One app, one verifier: the principal comes from each request's token, not app config.
+      const app = createApp(db, { resolvePrincipal: makeJwtResolver(db, CONFIG, jwks) });
+      const auth = async (sub: string) => ({ Authorization: `Bearer ${await token(sub)}` });
+
+      await app.request("/projects/p1/files/project.json", {
+        method: "PUT",
+        body: PROJECT,
+        headers: await auth("alice"),
+      });
+
+      expect(await (await app.request("/projects", { headers: await auth("alice") })).json()).toEqual({ ids: ["p1"] });
+      expect(await (await app.request("/projects", { headers: await auth("bob") })).json()).toEqual({ ids: [] });
+    });
   });
 });

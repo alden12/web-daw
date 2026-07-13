@@ -1859,26 +1859,40 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     its pending op, and peers drop it via their reorder guard. `onEditApplied` retires a pending op on any
     `opId` match, even when its echo trails a snapshot that already folded it into `base`. This closes A3
     (collaboration completeness); next is the auth + real-users epic below.
-  - **Auth + real users/sharing (the next epic, before Phase B/C).** Today auth is stubbed: one
+  - **Auth + real users/sharing (the current epic, before Phase B/C).** Today auth is stubbed: one
     hardcoded owner `"local"` + a shared bearer token, so "two users" are the same account. This epic
-    makes multi-user genuine and is the gateway to the rest:
-    1. **DB**: a `users` table; `projects.ownerId` -> a real user; a **membership/sharing** table (who
-       may open a project) - "two users on one project" only means something once a project is shared
-       with specific accounts.
-    2. **Auth mechanism**: login + sessions (Supabase is a candidate - could also supply auth, replacing
-       the token).
-    3. **Server**: resolve a real principal from a session on both HTTP and the WS upgrade, replacing the
-       token + `"local"` owner.
-    4. **Client**: a login UI; `currentUser` becomes the authenticated identity and the temporary
-       identity setter (A3a) is removed - the app already treats `author` as an opaque id, so nothing
-       downstream changes.
-    5. **Project index -> the `projects` table** (the `meta.json`-redundancy cleanup): list projects from
-       the table's `name`/`modifiedAt` (already columns) via a richer `GET /projects`, have the
-       **authority update `projects.name`** when it applies a `renameProject` edit, and retire server-side
-       `meta.json` (kept only as the OPFS/offline fallback index, or derived from `project.json`). Done
-       here because this epic reworks that table (ownership/sharing) and the list endpoint anyway - so the
-       index consolidation lands once, not twice. `name` stays in `project.json` as synced state (that is
-       what carries a rename through the edit stream); only the *index* copy moves.
+    makes multi-user genuine and is the gateway to the rest. We adopt **Supabase Auth as an identity
+    provider only** - it runs login and issues a JWT; our Hono+Postgres owns all domain data and just
+    *verifies* the token to get the principal. Lock-in is kept low deliberately (a decision with the
+    user): the DB stays plain Postgres (Drizzle unchanged), we keep our **own `users` table** keyed by
+    the auth subject (never FK into Supabase's tables), verification is a standard JWKS check behind a
+    one-function seam, and we use none of Supabase's realtime/storage/data-API - so moving to AWS
+    (RDS + Cognito or self-hosted GoTrue) later is a contained swap. Sliced A/B/C:
+    **Auth-A (slice 77, done):** the server-side principal, end to end. New `server/api/principal.ts`
+    seam (`makeJwtResolver` verifies a Supabase JWT via `jose`/JWKS - issuer + `authenticated` audience,
+    principal = `sub`; `makeDevResolver` keeps the pre-auth shared-token + single-`"local"`-owner stub
+    for local dev/tests). Both the HTTP middleware (`app.ts`) and the WS upgrade (`wsServer.ts`) resolve
+    identity through it (WS is now a *per-connection* owner; the message handler awaits the resolved
+    principal so an early `subscribe` is held, not dropped). A resolved principal is JIT-provisioned into
+    a new `users` table (`ensureUser`, `onConflictDoNothing`); `projects.ownerId` is now an FK to
+    `users.id` (+ an owner index), and `Room.load` also `ensureUser`s so the authority satisfies the FK
+    for any caller. Bootstrap reads `SUPABASE_JWKS_URL`/`SUPABASE_JWT_ISSUER` (unset -> dev-stub). No
+    client change (Auth-B wires the real token). Tests mint tokens against a local JWKS (no network/live
+    Supabase). **NOTE - authentication only:** per-project *authorization* (may this user open this
+    project?) still needs the membership model and lands in Auth-C; until then the owner is the only real
+    user and there is no login UI, so nothing can exploit it yet.
+    **Auth-B (next):** the login UI - `@supabase/supabase-js` in one client auth module, a login screen,
+    Google/GitHub OAuth; `currentUser` becomes the authenticated identity (retire the temporary A3a
+    identity setter); feed the live access token into `createApiClient`/`createWsClient` **as a getter,
+    not a snapshot** (token refresh - the capture-once at `remoteStore.ts` / `client.ts` is the fix).
+    **Auth-C:** a **membership/sharing** table (who may open a project) + "owner or member?" guards + a
+    share UI - "two users on one project" only means something once a project is shared with specific
+    accounts. Fold in **Project index -> the `projects` table** (the `meta.json`-redundancy cleanup):
+    list from the table's `name`/`modifiedAt` (already columns) via a richer `GET /projects`, have the
+    **authority update `projects.name`** when it applies a `renameProject` edit, and retire server-side
+    `meta.json` (kept only as the OPFS/offline fallback index). Done here because this slice reworks that
+    table (ownership/sharing) and the list endpoint anyway - the index consolidation lands once. `name`
+    stays in `project.json` as synced state; only the *index* copy moves. Then retire `DAW_API_TOKEN`.
     Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
     Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
     (solo-offline PWA).

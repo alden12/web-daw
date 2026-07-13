@@ -15,12 +15,18 @@ import type { EditCommand } from "../../src/audio/commands/types";
 import { channels, parseClientMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
 import { RoomRegistry, type RoomClient } from "./rooms";
+import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipal } from "./principal";
 
 export interface WsOptions {
   db: Db;
-  /** Shared bearer token; empty/unset = open (local dev). */
+  /** Real auth: verify a Supabase/OIDC JWT (from `?token=`) against this JWKS/issuer. When set it
+   *  replaces the shared-token gate and the principal is the token's user; when unset, dev-stub mode. */
+  auth?: AuthConfig;
+  /** Inject a pre-built principal resolver (tests). Takes precedence over `auth`/`token`/`ownerId`. */
+  resolvePrincipal?: ResolvePrincipal;
+  /** Dev-stub: shared bearer token; empty/unset = open (local dev). */
   token?: string;
-  /** The principal every connection maps to (stubbed single owner until real auth). */
+  /** Dev-stub: the single principal every connection maps to (until real auth supplies it). */
   ownerId?: string;
   /** Trace connection lifecycle + each message to the console. On in dev, off in prod. */
   log?: boolean;
@@ -28,20 +34,33 @@ export interface WsOptions {
 
 /** Attach the multiplayer socket server to an existing HTTP server. Returns it for lifecycle control. */
 export function attachWsServer(server: Server, options: WsOptions): WebSocketServer {
-  const token = options.token ?? "";
-  const ownerId = options.ownerId ?? "local";
+  // Same principal seam as the HTTP layer (see app.ts): injected resolver > JWT verification > dev-stub.
+  const resolvePrincipal =
+    options.resolvePrincipal ??
+    (options.auth
+      ? makeJwtResolver(options.db, options.auth)
+      : makeDevResolver(options.db, { token: options.token, devUserId: options.ownerId }));
   const registry = new RoomRegistry(options.db);
   const wss = new WebSocketServer({ server, path: channels.main.path });
   const log = options.log ? (message: string) => console.log(`[web-daw ws] ${message}`) : () => {};
 
   wss.on("connection", (socket, request) => {
-    const provided = new URL(request.url ?? "", "http://localhost").searchParams.get("token") ?? undefined;
-    if (token && provided !== token) {
-      log("connection rejected (unauthorized)");
-      socket.close(1008, "unauthorized");
-      return;
-    }
-    log("connection opened");
+    // Verify identity at the upgrade (a browser WebSocket can't set headers, so the credential rides
+    // `?token=`, mirroring the HTTP bearer gate). Resolution is async; the message handler awaits it, so
+    // an early `subscribe` is held rather than dropped. On failure we close 1008. NOTE: this establishes
+    // *authentication* (who) only - per-project *authorization* (may this user open this project?) needs
+    // the membership model and lands with sharing (Auth-C). Until then the owner is the only real user.
+    const credential = new URL(request.url ?? "", "http://localhost").searchParams.get("token") ?? undefined;
+    const principal = resolvePrincipal(credential);
+    void principal.then((resolved) => {
+      if (resolved) {
+        log("connection opened");
+      } else {
+        log("connection rejected (unauthorized)");
+        socket.close(1008, "unauthorized");
+      }
+    });
+
     const client: RoomClient = {
       send: (message) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -51,6 +70,9 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
     let projectId: string | null = null;
 
     socket.on("message", async (data) => {
+      const resolved = await principal;
+      if (!resolved) return; // unauthorized; the socket is closing
+      const ownerId = resolved.userId;
       let raw: unknown;
       try {
         raw = JSON.parse(String(data));
