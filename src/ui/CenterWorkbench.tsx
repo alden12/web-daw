@@ -18,7 +18,7 @@ import { useRecorder } from "./useRecorder";
 import { savePatch, newPatchId } from "../audio/patches/library";
 import { EMPTY_INSTRUMENT, pickableInstrumentInfos } from "../audio/instruments/catalog";
 import { InstrumentPanel } from "./InstrumentPanel";
-import { EffectChain } from "./EffectChain";
+import { EffectChain, FlowArrow } from "./EffectChain";
 import { Fader } from "./MixerControls";
 import { PianoRoll } from "./PianoRoll";
 import { ClipRail } from "./ClipRail";
@@ -535,21 +535,21 @@ export function CenterWorkbench({
               (selectedTrack.instrumentType === EMPTY_INSTRUMENT ? (
                 <InstrumentPicker trackId={selectedTrack.id} dispatch={dispatch} />
               ) : (
-                <InstrumentPanel
-                  params={selectedTrack.params}
-                  instrumentType={selectedTrack.instrumentType}
-                  trackId={selectedTrack.id}
-                  dispatch={dispatch}
-                  samples={project.samples}
-                  onRevealSamples={onRevealSamples}
-                />
+                // The instrument is the first device; its trailing arrow (into the first
+                // effect) stays glued to its right edge, so it wraps cleanly.
+                <div className="flex items-stretch shrink-0">
+                  <InstrumentPanel
+                    params={selectedTrack.params}
+                    instrumentType={selectedTrack.instrumentType}
+                    trackId={selectedTrack.id}
+                    dispatch={dispatch}
+                    samples={project.samples}
+                    onRevealSamples={onRevealSamples}
+                  />
+                  {selectedTrack.effects.length > 0 ? <FlowArrow /> : null}
+                </div>
               ))}
-            <EffectChain
-              projectStore={projectStore}
-              trackId={selectedTrack.id}
-              showFirstArrow={selectedTrack.kind === "instrument"}
-              dispatch={dispatch}
-            />
+            <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
           </div>
         </div>
       </div>

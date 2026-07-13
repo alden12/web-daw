@@ -5,25 +5,26 @@
  * goes through the project store, the same model MCP drives. (Adding an effect from
  * the UI is being reworked - removed for now; MCP add_effect still works.)
  */
-import { Fragment } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { useProject } from "../audio/project/useProject";
 import { effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
 import { Knob } from "./Knob";
 
-const ARROW = <div className="self-center text-faint text-sm px-0.5">→</div>;
+/** The signal-flow arrow. Placed to the RIGHT of an outputting device (and kept in the
+ *  same flex group as that device) so it trails cleanly instead of leading a wrapped row. */
+export function FlowArrow() {
+  return <div className="self-center text-faint text-sm px-1">→</div>;
+}
 const iconBtn = "font-mono text-[11px] w-5 h-5 rounded border border-line text-ink cursor-pointer";
 
 export function EffectChain({
   projectStore,
   trackId,
-  showFirstArrow = true,
   dispatch,
 }: {
   projectStore: ProjectStore;
   trackId: string;
-  showFirstArrow?: boolean;
   dispatch: Dispatch;
 }) {
   const project = useProject(projectStore);
@@ -36,9 +37,10 @@ export function EffectChain({
       {effects.map((fx, i) => {
         const store = projectStore.getEffect(trackId, fx.id)?.params;
         if (!store) return null;
+        // Each effect card carries its own trailing arrow (into the next effect) in one
+        // flex group, so the arrow stays glued to the device's right edge on wrap.
         return (
-          <Fragment key={fx.id}>
-            {i > 0 || showFirstArrow ? ARROW : null}
+          <div key={fx.id} className="flex items-stretch shrink-0">
             <div className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}>
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
                 <span
@@ -130,7 +132,8 @@ export function EffectChain({
                 ))}
               </div>
             </div>
-          </Fragment>
+            {i < effects.length - 1 ? <FlowArrow /> : null}
+          </div>
         );
       })}
     </>

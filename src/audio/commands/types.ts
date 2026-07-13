@@ -96,6 +96,18 @@ export type LocalEdit =
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
     }
   | {
+      // Apply a patch to an EXISTING instrument track (for auditioning a patch on the
+      // current track): replaces its instrument, params, and effect chain, keeping the
+      // track's clips, name, and mix. Effect ids are pre-minted by the caller (carried
+      // here) so replay reproduces them. `name` is only for the activity-feed phrasing.
+      type: "applyPatch";
+      trackId: string;
+      name?: string;
+      instrumentType: string;
+      params: PatchValues;
+      effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    }
+  | {
       // Add an imported sample to the project library. The bytes are already in the
       // content-addressed store (contentHash); the id is pre-minted by the caller so
       // replaying reproduces the same library entry. Browser-only (Node can't hash a
