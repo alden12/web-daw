@@ -11,6 +11,7 @@ import type { ProjectStore } from "../audio/project/projectStore";
 import type { EditLog } from "../audio/commands/editLog";
 import type { VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
+import { useProject } from "../audio/project/useProject";
 import { type ProjectMeta, listProjects, refreshProjects, subscribeProjects } from "../audio/projects/library";
 import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
 import { currentProjectId } from "../audio/projectRepository";
@@ -45,7 +46,10 @@ export function LibraryHeader({
   const importRef = useRef<HTMLInputElement>(null);
   const deps = { projectStore, editLog, versionStore };
   const currentId = currentProjectId();
-  const currentName = projects.find((meta) => meta.id === currentId)?.name ?? "Project";
+  // The live project name comes from the store (so a peer's rename updates the title in real time);
+  // the library list (meta.json) is the fallback before the store has loaded.
+  const currentName =
+    useProject(projectStore).name || projects.find((meta) => meta.id === currentId)?.name || "Project";
 
   // Mirror the project library; re-enumerate on mount (the header always exists).
   useEffect(() => {
@@ -57,7 +61,12 @@ export function LibraryHeader({
   }, []);
 
   const rename = (name: string) => {
-    if (name.trim()) void renameProject(currentId, name.trim());
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Dispatch the edit (updates project state -> live + synced across a shared session + persisted in
+    // project.json), and update meta.json + the library list via the operation (the list index).
+    editLog.dispatch({ type: "renameProject", name: trimmed });
+    void renameProject(currentId, trimmed);
   };
   const deleteCurrent = () => {
     if (window.confirm(`Delete project "${currentName}"? This cannot be undone.`)) void deleteProject(deps, currentId);
@@ -87,7 +96,7 @@ export function LibraryHeader({
       label: "Rename…",
       onClick: () => {
         const name = window.prompt("Rename project", currentName)?.trim();
-        if (name) void renameProject(currentId, name);
+        if (name) rename(name);
       },
     },
     { label: "Delete", danger: true, disabled: projects.length <= 1, onClick: deleteCurrent },

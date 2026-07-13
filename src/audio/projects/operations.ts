@@ -46,6 +46,7 @@ async function seedNewProject(deps: ProjectDeps, name: string): Promise<string> 
   setCurrentProject(id);
   await getRepository().setName(name);
   const seed = new ProjectStore(); // one default track
+  seed.renameProject(name); // carry the name in project.json (state), not only meta.json
   await getRepository().save(seed.snapshot(), [], []);
   await loadCurrentInto(deps);
   return id;

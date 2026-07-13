@@ -214,6 +214,24 @@ describe("SharedSession (client optimistic + rebase)", () => {
     expect(bobEdits[0].author).toBe("alice");
   });
 
+  it("syncs a project rename to a peer (name is project state)", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1", "alice");
+    const b = harness.connect("p1", "bob");
+    await harness.pump();
+
+    a.editLog.dispatch({ type: "renameProject", name: "Our Track" } as EditCommand);
+    expect(a.store.snapshot().name).toBe("Our Track"); // optimistic on A
+
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    expect(b.store.snapshot().name).toBe("Our Track"); // propagated to the peer
+    expect(harness.room.snapshot().name).toBe("Our Track"); // and the authority agrees
+  });
+
   it("rolls back an optimistic edit the authority rejects", async () => {
     const { db } = await makeSyncEnv();
     const harness = new Harness(await Room.load(db, "local", "p1"));
