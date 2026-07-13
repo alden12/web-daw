@@ -6,7 +6,7 @@
  * The library rail switches a single view; the panel header carries the app chrome
  * (search, MCP, undo/redo) so there is no separate top toolbar.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ProjectStore } from "../audio/project/projectStore";
 import { AudioEngine } from "../audio/engine/AudioEngine";
 import { Scheduler } from "../audio/sequencer/scheduler";
@@ -30,6 +30,7 @@ import { AgentPanel } from "./AgentPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
+import { AuthorColorsProvider } from "./authorColorsContext";
 import { activeKey } from "../audio/agent/config";
 import { ArrangementTimeline } from "./ArrangementTimeline";
 import { ResizeHandle } from "./ResizeHandle";
@@ -120,6 +121,9 @@ export function AppShell() {
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
+  // The current user id (default "you"), stamped on local edits and used to paint *my* edits as the
+  // "you" hue while peers get their own colour (perspective-relative; see authorColors.ts).
+  const currentUser = useSyncExternalStore(subscribeCurrentUser, readCurrentUser, readCurrentUser);
 
   // Rail interaction: a non-active icon selects its view (opening the panel if
   // collapsed); the active icon toggles the panel collapsed.
@@ -169,13 +173,9 @@ export function AppShell() {
   const bodyLeft = () => bodyRect()?.left ?? 0;
   const bodyRight = () => bodyRect()?.right ?? 0;
 
-  // Stamp local edits with the current user id (default "you"), kept in sync as it changes, so in a
-  // shared session each user's edits carry their identity (and colour). Temporary until real auth.
-  useEffect(() => {
-    const sync = () => editLog.setLocalAuthor(readCurrentUser());
-    sync();
-    return subscribeCurrentUser(sync);
-  }, [editLog]);
+  // Stamp local edits with the current user id, so in a shared session each user's edits carry their
+  // identity (and colour). Temporary until real auth supplies the id.
+  useEffect(() => editLog.setLocalAuthor(currentUser), [editLog, currentUser]);
 
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
@@ -309,101 +309,108 @@ export function AppShell() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink">
-      <div
-        ref={bodyRef}
-        className="app-body flex-1 min-h-0 relative"
-        style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? "none" : undefined }}
-      >
-        <ActivityRail
-          active={libView}
-          collapsed={libCollapsed}
-          onSelect={selectView}
-          onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
-        {!libCollapsed && (
-          <LibraryPanel
-            projectStore={projectStore}
-            editLog={editLog}
-            versionStore={versionStore}
-            dispatch={dispatch}
-            activeView={libView}
-            search={search}
-            onSearch={onSearch}
-          />
-        )}
-        <CenterWorkbench
-          projectStore={projectStore}
-          scheduler={scheduler}
-          recorder={recorder}
-          dispatch={dispatch}
-          selectedTrack={selectedTrack}
-          onRevealSamples={() => selectView("samples")}
-          mcpStatus={mcpStatus}
-          agentCollapsed={agentCollapsed}
-          onExpandAgent={() => setAgentCollapsed(false)}
-        />
-        {!agentCollapsed && (
-          <AgentPanel
-            onCollapse={() => setAgentCollapsed(true)}
-            projectStore={projectStore}
-            dispatch={dispatch}
-            scheduler={scheduler}
-            hasApiKey={activeKey(agentConfig) !== ""}
+    <AuthorColorsProvider value={{ config: authorColors, self: currentUser }}>
+      <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink">
+        <div
+          ref={bodyRef}
+          className="app-body flex-1 min-h-0 relative"
+          style={{
+            gridTemplateColumns: gridCols,
+            gridTemplateRows: gridRows,
+            transition: dragging ? "none" : undefined,
+          }}
+        >
+          <ActivityRail
+            active={libView}
+            collapsed={libCollapsed}
+            onSelect={selectView}
+            onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
             onOpenSettings={() => setSettingsOpen(true)}
           />
-        )}
-        <ArrangementTimeline
-          projectStore={projectStore}
-          scheduler={scheduler}
-          recorder={recorder}
-          dispatch={dispatch}
-          isPlaying={isPlaying}
-          started={started}
-        />
+          {!libCollapsed && (
+            <LibraryPanel
+              projectStore={projectStore}
+              editLog={editLog}
+              versionStore={versionStore}
+              dispatch={dispatch}
+              activeView={libView}
+              search={search}
+              onSearch={onSearch}
+            />
+          )}
+          <CenterWorkbench
+            projectStore={projectStore}
+            scheduler={scheduler}
+            recorder={recorder}
+            dispatch={dispatch}
+            selectedTrack={selectedTrack}
+            onRevealSamples={() => selectView("samples")}
+            mcpStatus={mcpStatus}
+            agentCollapsed={agentCollapsed}
+            onExpandAgent={() => setAgentCollapsed(false)}
+          />
+          {!agentCollapsed && (
+            <AgentPanel
+              onCollapse={() => setAgentCollapsed(true)}
+              projectStore={projectStore}
+              dispatch={dispatch}
+              scheduler={scheduler}
+              hasApiKey={activeKey(agentConfig) !== ""}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          )}
+          <ArrangementTimeline
+            projectStore={projectStore}
+            scheduler={scheduler}
+            recorder={recorder}
+            dispatch={dispatch}
+            isPlaying={isPlaying}
+            started={started}
+          />
 
-        {!libCollapsed && (
+          {!libCollapsed && (
+            <ResizeHandle
+              ariaLabel="Resize library"
+              onDragChange={setDragging}
+              onResize={(x) => setLibWidth(x - bodyLeft() - RAIL_WIDTH)}
+              style={{ left: libColRight - 3, top: 0, bottom: effTimelineH }}
+            />
+          )}
+          {!agentCollapsed && (
+            <ResizeHandle
+              ariaLabel="Resize agent panel"
+              onDragChange={setDragging}
+              onResize={(x) => setAgentWidth(bodyRight() - x)}
+              style={{ right: agentWidth - 3, top: 0, bottom: effTimelineH }}
+            />
+          )}
           <ResizeHandle
-            ariaLabel="Resize library"
+            ariaLabel="Resize timeline"
+            orientation="horizontal"
             onDragChange={setDragging}
-            onResize={(x) => setLibWidth(x - bodyLeft() - RAIL_WIDTH)}
-            style={{ left: libColRight - 3, top: 0, bottom: effTimelineH }}
+            onResize={(y) => {
+              const rect = bodyRect();
+              if (rect) setTimelineH(Math.min(rect.height - MIN_CENTER, rect.bottom - y));
+            }}
+            // Sit fully above the timeline's top edge, not straddling it, so it never
+            // covers the ruler's loop-region markers (which would steal their drags).
+            // Starts after the full-height rail (the timeline no longer spans it).
+            style={{ left: RAIL_WIDTH, right: 0, bottom: effTimelineH }}
+          />
+        </div>
+        {settingsOpen && (
+          <SettingsPanel
+            agentConfig={agentConfig}
+            authorColors={authorColors}
+            editLog={editLog}
+            midiInput={midiInput}
+            recorder={recorder}
+            engine={engine}
+            onClose={() => setSettingsOpen(false)}
           />
         )}
-        {!agentCollapsed && (
-          <ResizeHandle
-            ariaLabel="Resize agent panel"
-            onDragChange={setDragging}
-            onResize={(x) => setAgentWidth(bodyRight() - x)}
-            style={{ right: agentWidth - 3, top: 0, bottom: effTimelineH }}
-          />
-        )}
-        <ResizeHandle
-          ariaLabel="Resize timeline"
-          orientation="horizontal"
-          onDragChange={setDragging}
-          onResize={(y) => {
-            const rect = bodyRect();
-            if (rect) setTimelineH(Math.min(rect.height - MIN_CENTER, rect.bottom - y));
-          }}
-          // Sit fully above the timeline's top edge, not straddling it, so it never
-          // covers the ruler's loop-region markers (which would steal their drags).
-          // Starts after the full-height rail (the timeline no longer spans it).
-          style={{ left: RAIL_WIDTH, right: 0, bottom: effTimelineH }}
-        />
+        {!started && <StartDialog onStart={handleStart} />}
       </div>
-      {settingsOpen && (
-        <SettingsPanel
-          agentConfig={agentConfig}
-          authorColors={authorColors}
-          midiInput={midiInput}
-          recorder={recorder}
-          engine={engine}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
-      {!started && <StartDialog onStart={handleStart} />}
-    </div>
+    </AuthorColorsProvider>
   );
 }

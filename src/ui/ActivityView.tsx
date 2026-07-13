@@ -11,13 +11,13 @@ import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { VersionTimeline } from "./VersionTimeline";
 import { colorForAuthor } from "./authorColors";
-import { useAuthorColors } from "./useAuthorColors";
+import { useAuthorPresence } from "./authorColorsContext";
 
 export function ActivityView({ editLog, versionStore }: { editLog: EditLog; versionStore: VersionStore }) {
   const { entries, notes } = useEditLog(editLog);
-  // Per-author accent (hex): resolves reserved voices and any human user id to a stable hue, so a
-  // collaborator's edits read in their own colour (not collapsed to one of three voice classes).
-  const authorColors = useAuthorColors();
+  // Per-author accent (hex), perspective-relative: my own edits read teal, every collaborator in their
+  // own stable hue (not collapsed to one of three voice classes).
+  const { config, self } = useAuthorPresence();
   const [tab, setTab] = useState<"activity" | "versions">("activity");
 
   // Commits, loaded from the version store and refreshed when it changes, so the
@@ -91,7 +91,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   <li
                     key={`n-${n.seq}`}
                     className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2"
-                    style={{ borderLeftColor: colorForAuthor(n.author, authorColors) }}
+                    style={{ borderLeftColor: colorForAuthor(n.author, config, self) }}
                   >
                     <span className="text-[11px] shrink-0 text-muted">“</span>
                     <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
@@ -104,11 +104,11 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                 <li
                   key={entry.seq}
                   className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2"
-                  style={{ borderLeftColor: colorForAuthor(entry.author, authorColors) }}
+                  style={{ borderLeftColor: colorForAuthor(entry.author, config, self) }}
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ background: colorForAuthor(entry.author, authorColors) }}
+                    style={{ background: colorForAuthor(entry.author, config, self) }}
                   />
                   <span className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}>
                     {editLog.describe(entry)}
