@@ -18,8 +18,8 @@ async function dismissStart(page: Page) {
   }
 }
 
-const libWidth = (page: Page) =>
-  page.locator('[class*="grid-area:library"]').evaluate((el) => el.getBoundingClientRect().width);
+const libPanel = (page: Page) => page.locator('[class*="grid-area:library"]');
+const libWidth = (page: Page) => libPanel(page).evaluate((el) => el.getBoundingClientRect().width);
 
 test("the rail switches the single library view", async ({ page }) => {
   await page.goto("/");
@@ -38,20 +38,21 @@ test("the rail switches the single library view", async ({ page }) => {
 test("clicking the active rail icon collapses the panel to the rail, and it persists", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
-  expect(await libWidth(page)).toBeGreaterThan(200);
+  expect(await libWidth(page)).toBeGreaterThan(150);
 
-  // Clicking the active (Instruments) icon collapses the panel to just the rail.
+  // Clicking the active (Instruments) icon collapses the panel away (only the rail
+  // remains, which is now its own full-height column).
   await page.getByRole("button", { name: "Instruments" }).click();
-  await expect.poll(() => libWidth(page)).toBeLessThan(60);
+  await expect(libPanel(page)).toHaveCount(0);
 
   // Collapse persists across a reload.
   await page.reload();
   await dismissStart(page);
-  await expect.poll(() => libWidth(page)).toBeLessThan(60);
+  await expect(libPanel(page)).toHaveCount(0);
 
   // Selecting a different view reopens the panel on that view.
   await page.getByRole("button", { name: "Samples" }).click();
-  await expect.poll(() => libWidth(page)).toBeGreaterThan(200);
+  await expect.poll(() => libWidth(page)).toBeGreaterThan(150);
   await expect(page.getByText("Samples", { exact: true })).toBeVisible();
 });
 

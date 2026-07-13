@@ -48,6 +48,14 @@ export type LocalEdit =
       patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number };
     }
   | {
+      // Create an EMPTY audio track (no clip yet) - the audio peer of `createTrack`
+      // with an empty instrument. Recording a take or dropping a clip fills it later.
+      type: "createAudioTrack";
+      id: string;
+      name?: string;
+      groupId?: string;
+    }
+  | {
       // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool
       // and place it. Clip + placement ids are pre-minted by the caller and carried
       // here, so replaying the command reproduces the same ids exactly.

@@ -47,6 +47,17 @@ test("the core regions are visible on a clean load; the agent expands on demand"
   await expect.poll(() => widthOf(page, "agent")).toBeGreaterThan(200);
 });
 
+test("the activity rail spans the full height, and the timeline starts after it", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  const rail = (await page.locator('[class*="grid-area:rail"]').boundingBox())!;
+  const timeline = await box(page, "timeline");
+  // The rail reaches the bottom of the app (its own column spanning both rows)...
+  expect(Math.abs(rail.y + rail.height - (timeline.y + timeline.height))).toBeLessThan(2);
+  // ...and the timeline no longer spans it - it starts at the rail's right edge.
+  expect(timeline.x).toBeGreaterThanOrEqual(rail.x + rail.width - 1);
+});
+
 test("dragging the library handle resizes it and persists across reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);

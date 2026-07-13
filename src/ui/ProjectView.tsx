@@ -14,7 +14,10 @@ import type { ProjectStore } from "../audio/project/projectStore";
 import type { Dispatch } from "../audio/commands/types";
 import type { GroupMeta, TrackMeta } from "../audio/project/types";
 import { useProject } from "../audio/project/useProject";
+import { newTrackId } from "../audio/commands/ids";
+import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Fader, MuteSolo } from "./MixerControls";
+import { Menu } from "./Menu";
 
 /** One flattened tree row: a group header or a track, tagged with its depth. */
 type Row = { kind: "group"; group: GroupMeta; depth: number } | { kind: "track"; track: TrackMeta; depth: number };
@@ -96,23 +99,49 @@ export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectS
         if (row.kind === "group") {
           const open = !collapsedGroups.has(row.group.id);
           return (
-            <button
-              key={`g-${row.group.id}`}
-              type="button"
-              onClick={() => setCollapsedGroups((set) => toggle(set, row.group.id))}
-              style={indent}
-              className="flex items-center gap-1.5 w-full text-left pr-3 py-1 text-[11.5px] font-semibold text-muted hover:text-ink cursor-pointer"
-            >
-              <span className="w-2.5 text-center text-[10px] text-muted">{open ? "▾" : "▸"}</span>
-              <span className="truncate uppercase tracking-wide">{row.group.name}</span>
-            </button>
+            <div key={`g-${row.group.id}`} className="group/grp flex items-center pr-2 hover:bg-you/10">
+              <button
+                type="button"
+                onClick={() => setCollapsedGroups((set) => toggle(set, row.group.id))}
+                style={indent}
+                className="flex items-center gap-1.5 flex-1 min-w-0 text-left pr-2 py-1 text-[11.5px] font-semibold text-muted hover:text-ink cursor-pointer"
+              >
+                <span className="w-2.5 text-center text-[16px] text-muted">{open ? "▾" : "▸"}</span>
+                <span className="truncate uppercase tracking-wide">{row.group.name}</span>
+              </button>
+              <div className="shrink-0 opacity-60 group-hover/grp:opacity-100">
+                <Menu
+                  align="left"
+                  trigger="+"
+                  label={`Add a track to ${row.group.name}`}
+                  triggerClassName="w-5 text-center text-[14px] leading-none text-faint hover:text-bright cursor-pointer"
+                  items={[
+                    {
+                      label: "New MIDI track",
+                      onClick: () =>
+                        dispatch({
+                          type: "createTrack",
+                          instrumentType: EMPTY_INSTRUMENT,
+                          id: newTrackId(),
+                          groupId: row.group.id,
+                        }),
+                    },
+                    {
+                      label: "New audio track",
+                      onClick: () => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId: row.group.id }),
+                    },
+                  ]}
+                />
+              </div>
+            </div>
           );
         }
 
         const track = row.track;
         const selected = track.id === selectedId;
         const expanded = expandedTracks.has(track.id);
-        const kind = track.kind === "audio" ? "audio" : track.instrumentType;
+        const kind =
+          track.kind === "audio" ? "audio" : track.instrumentType === EMPTY_INSTRUMENT ? "empty" : track.instrumentType;
         return (
           <div key={`t-${track.id}`} ref={selected ? selectedRowRef : undefined}>
             <div

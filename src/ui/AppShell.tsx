@@ -114,8 +114,11 @@ export function AppShell() {
   }, []);
 
   const effTimelineH = bodyH ? Math.min(timelineH, bodyH - MIN_CENTER) : timelineH;
-  const libCol = RAIL_WIDTH + (libCollapsed ? 0 : libWidth);
-  const gridCols = `${libCol}px minmax(0, 1fr) ${agentCollapsed ? 0 : agentWidth}px`;
+  // The rail is its own full-height column (spans both rows), then the library panel
+  // (collapses to 0), the center, and the agent (collapses to 0). `libColRight` is the
+  // panel's right edge (rail + panel), where its resize handle sits.
+  const libColRight = RAIL_WIDTH + (libCollapsed ? 0 : libWidth);
+  const gridCols = `${RAIL_WIDTH}px ${libCollapsed ? 0 : libWidth}px minmax(0, 1fr) ${agentCollapsed ? 0 : agentWidth}px`;
   const gridRows = `minmax(0, 1fr) ${effTimelineH}px`;
   const bodyRect = () => bodyRef.current?.getBoundingClientRect();
   const bodyLeft = () => bodyRect()?.left ?? 0;
@@ -242,25 +245,23 @@ export function AppShell() {
         className="app-body flex-1 min-h-0 relative"
         style={{ gridTemplateColumns: gridCols, gridTemplateRows: gridRows, transition: dragging ? "none" : undefined }}
       >
-        <div className="[grid-area:library] flex min-w-0 min-h-0">
-          <ActivityRail
-            active={libView}
-            collapsed={libCollapsed}
-            onSelect={selectView}
-            onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
+        <ActivityRail
+          active={libView}
+          collapsed={libCollapsed}
+          onSelect={selectView}
+          onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
+        />
+        {!libCollapsed && (
+          <LibraryPanel
+            projectStore={projectStore}
+            editLog={editLog}
+            versionStore={versionStore}
+            dispatch={dispatch}
+            activeView={libView}
+            search={search}
+            onSearch={onSearch}
           />
-          {!libCollapsed && (
-            <LibraryPanel
-              projectStore={projectStore}
-              editLog={editLog}
-              versionStore={versionStore}
-              dispatch={dispatch}
-              activeView={libView}
-              search={search}
-              onSearch={onSearch}
-            />
-          )}
-        </div>
+        )}
         <CenterWorkbench
           projectStore={projectStore}
           scheduler={scheduler}
@@ -287,7 +288,7 @@ export function AppShell() {
             ariaLabel="Resize library"
             onDragChange={setDragging}
             onResize={(x) => setLibWidth(x - bodyLeft() - RAIL_WIDTH)}
-            style={{ left: libCol - 3, top: 0, bottom: effTimelineH }}
+            style={{ left: libColRight - 3, top: 0, bottom: effTimelineH }}
           />
         )}
         {!agentCollapsed && (
@@ -308,7 +309,8 @@ export function AppShell() {
           }}
           // Sit fully above the timeline's top edge, not straddling it, so it never
           // covers the ruler's loop-region markers (which would steal their drags).
-          style={{ left: 0, right: 0, bottom: effTimelineH }}
+          // Starts after the full-height rail (the timeline no longer spans it).
+          style={{ left: RAIL_WIDTH, right: 0, bottom: effTimelineH }}
         />
       </div>
       {!started && <StartDialog onStart={handleStart} />}

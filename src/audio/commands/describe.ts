@@ -36,6 +36,7 @@ type DescribeMap = {
 const DESCRIBE: DescribeMap = {
   createTrack: (command, ctx) => `Added ${instLabel(command.instrumentType)} track${on(ctx, command.id, "")}`,
   createTrackFromPatch: (command) => `Added ${command.name ? `"${command.name}"` : "a patch"} from the library`,
+  createAudioTrack: (command, ctx) => `Added audio track${on(ctx, command.id, "")}`,
   addAudioTrack: (command) => `Imported ${command.name ?? "audio"}`,
   removeTrack: () => "Removed track",
   setTrack: (command, ctx) => {
@@ -45,6 +46,8 @@ const DESCRIBE: DescribeMap = {
     if (command.solo !== undefined) return `${command.solo ? "Soloed" : "Unsoloed"} track${name}`;
     return `Set volume${name}`;
   },
+  setInstrument: (command, ctx) =>
+    `Set instrument to ${instLabel(command.instrumentType)}${on(ctx, command.trackId, "")}`,
   setAudioClip: () => "Edited audio clip",
   addAudioClip: (command) => `Recorded ${command.name ? `"${command.name}"` : "a take"}`,
   addNoteClip: (command) =>

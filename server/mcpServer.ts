@@ -14,7 +14,12 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { RawData } from "ws";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import type { Track, InstrumentTrack, EffectInstance, Group } from "../src/audio/project/projectStore";
-import { instrumentInfos, hasInstrument, instrumentSchema, instrumentFamily } from "../src/audio/instruments/catalog";
+import {
+  pickableInstrumentInfos,
+  hasInstrument,
+  instrumentSchema,
+  instrumentFamily,
+} from "../src/audio/instruments/catalog";
 import { effectInfos, hasEffect, effectSchema } from "../src/audio/effects/catalog";
 import { validateParam } from "../src/audio/params/validate";
 import type { NoteEvent } from "../src/audio/sequencer/types";
@@ -221,7 +226,11 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
             tempoBpm: mirror.tempo,
             lengthBeats: mirror.length,
             selectedTrackId: mirror.selectedId,
-            instruments: instrumentInfos().map((def) => ({ id: def.type, label: def.label, family: def.family })),
+            instruments: pickableInstrumentInfos().map((def) => ({
+              id: def.type,
+              label: def.label,
+              family: def.family,
+            })),
             tracks: mirror.getTracks().map((t) => ({
               id: t.id,
               name: t.name,
@@ -256,7 +265,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     async ({ instrument, name, group }) => {
       if (!hasInstrument(instrument)) {
         return fail(
-          `Unknown instrument "${instrument}". Options: ${instrumentInfos()
+          `Unknown instrument "${instrument}". Options: ${pickableInstrumentInfos()
             .map((i) => i.type)
             .join(", ")}.`,
         );

@@ -22,6 +22,8 @@ const APPLY: ApplyMap = {
   createTrack: (project, command) =>
     void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
   createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
+  createAudioTrack: (project, command) =>
+    void project.addEmptyAudioTrack({ id: command.id, name: command.name, groupId: command.groupId }),
   addAudioTrack: (project, command) =>
     void project.addAudioTrack(
       {
@@ -40,6 +42,7 @@ const APPLY: ApplyMap = {
     if (command.volume !== undefined) project.setVolume(command.trackId, command.volume);
     if (command.name !== undefined) project.renameTrack(command.trackId, command.name);
   },
+  setInstrument: (project, command) => project.setInstrument(command.trackId, command.instrumentType),
   setAudioClip: (project, command) => project.setAudioClip(command.trackId, command.clipId, command.patch),
   addAudioClip: (project, command) => project.addAudioClip(command),
   // A recorded MIDI take: create the clip (with its notes), punch it in over the

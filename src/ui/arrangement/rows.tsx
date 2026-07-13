@@ -8,7 +8,7 @@ import type { GroupMeta, TrackMeta, Placement } from "../../audio/project/types"
 import type { ProjectStore } from "../../audio/project/projectStore";
 import type { Dispatch } from "../../audio/commands/types";
 import { newTrackId } from "../../audio/commands/ids";
-import { DEFAULT_INSTRUMENT } from "../../audio/instruments/catalog";
+import { EMPTY_INSTRUMENT } from "../../audio/instruments/catalog";
 import { Menu } from "../Menu";
 import { InlineRename } from "../InlineRename";
 import { Fader, MuteSolo } from "../MixerControls";
@@ -63,14 +63,18 @@ export function GroupHeader({
         label="Group actions"
         items={[
           {
-            label: "Add empty track",
+            label: "Add MIDI track",
             onClick: () =>
               dispatch({
                 type: "createTrack",
-                instrumentType: DEFAULT_INSTRUMENT,
+                instrumentType: EMPTY_INSTRUMENT,
                 id: newTrackId(),
                 groupId: group.id,
               }),
+          },
+          {
+            label: "Add audio track",
+            onClick: () => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId: group.id }),
           },
           {
             label: "Delete group and its contents",

@@ -49,3 +49,33 @@ test("selecting a track in the tree selects it in the workbench", async ({ page 
   await page.getByTestId("tree-track").filter({ hasText: "subtractive" }).click();
   await expect(page.getByRole("tablist").getByText("subtractive", { exact: true })).toBeVisible();
 });
+
+test("add an empty track from a group, then assign it an instrument", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await openProjects(page);
+
+  // The "main" group's + button opens a menu; "New MIDI track" adds an empty
+  // instrument track (no instrument yet); it is selected.
+  await page.getByRole("button", { name: /Add a track to main/i }).click();
+  await page.getByRole("menuitem", { name: "New MIDI track" }).click();
+  await expect(page.getByRole("tablist").getByText("empty", { exact: true })).toBeVisible();
+  await expect(page.getByText("This track has no instrument yet. Choose one:")).toBeVisible();
+
+  // Picking an instrument assigns it - the tab's kind chip becomes that instrument.
+  await page.getByRole("button", { name: "FM", exact: true }).click();
+  await expect(page.getByRole("tablist").getByText("fm", { exact: true })).toBeVisible();
+});
+
+test("add an empty audio track from a group's + menu", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await openProjects(page);
+
+  // The + menu's "New audio track" adds an empty audio track; it is selected and its
+  // tab kind chip reads "audio", with the empty audio-clip panel in the workbench.
+  await page.getByRole("button", { name: /Add a track to main/i }).click();
+  await page.getByRole("menuitem", { name: "New audio track" }).click();
+  await expect(page.getByRole("tablist").getByText("audio", { exact: true })).toBeVisible();
+  await expect(page.getByText("No audio clip.")).toBeVisible();
+});
