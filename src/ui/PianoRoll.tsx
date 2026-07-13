@@ -22,7 +22,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { noteKey } from "../audio/commands/authorship";
-import { voiceNoteClass } from "./authorVoice";
+import { authorNoteStyle } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 import type { ClipStore } from "../audio/sequencer/clipStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -127,6 +128,7 @@ export function PianoRoll({
   rows?: RollRows;
 }) {
   const clip = useClip(clipStore);
+  const presence = useAuthorPresence();
   // The take in flight, if it is recording into THIS track: its notes overlay the
   // roll live (absolute beats, so they sit under the playhead).
   const rec = useRecorder(recorder);
@@ -607,15 +609,18 @@ export function PianoRoll({
 
               {clip.notes.map((note) => {
                 const selected = selection.has(note.id);
-                // Tint the note by its last editor (voice). Falls back to "you" when unstamped.
+                // Tint the note by its last editor. Falls back to "you" when unstamped.
                 const author = projectStore?.authorOf(noteKey(note.id)) ?? "you";
                 return (
                   <div
                     key={note.id}
                     data-testid="note"
                     onPointerDown={(e) => onNoteDown(note, e)}
-                    className={`absolute rounded-sm box-border cursor-grab ${voiceNoteClass(author, selected)}`}
+                    className={`absolute rounded-sm box-border cursor-grab border ${
+                      selected ? "bg-bright" : "hover:brightness-125"
+                    }`}
                     style={{
+                      ...authorNoteStyle(author, selected, presence),
                       left: beatToX(note.start, pxPerBeat),
                       width: Math.max(2, beatToX(note.length, pxPerBeat) - 1),
                       top: (MAX_PITCH - note.pitch) * rowH,

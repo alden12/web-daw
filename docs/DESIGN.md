@@ -1829,11 +1829,22 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     removed once real auth supplies the id) sets `EditLog`'s local-author default, so UI edits carry the
     user id (MCP/agent still stamp their own). A peer's `editApplied` now posts an append-only feed entry
     via `EditLog.recordRemote` (narration, no re-apply), and the activity feed colours each entry by
-    `colorForAuthor` (any id -> a stable hue) instead of collapsing to three voice classes. Remaining A3:
-    **A3b** `renameProject` edit command (name into `project.json`, needs a `PROJECT_SCHEMA` bump);
-    **A3c** reconnect gap-fill; **A3d** full per-surface tinting (Tailwind voice-class -> inline-hex so
-    notes/knobs/blocks show peer colours too, not just the feed). Still to build after A3: **Phase B**
-    (server-side history/keyframe/commits), **Phase C** (presence), **Phase D** (solo-offline PWA).
+    `colorForAuthor` (any id -> a stable hue) instead of collapsing to three voice classes. **A3d (slice 74, done):** full
+    per-surface tinting + **perspective-relative colouring**. The author-tinted surfaces (piano-roll
+    notes, knob/fader fills + pointers, arrangement placement blocks + note-summary bars, track-row
+    accents, clip rail, patch list, version timeline, feed) moved off the fixed 3-voice Tailwind classes
+    (authorVoice.ts) onto per-author inline hex (authorStyle.ts), fed a live `{config, self}` presence
+    through an `AuthorColorsProvider` context so a swatch/identity change recolours instantly. Colour is
+    **perspective-relative**: `colorForAuthor(author, config, self)` paints the viewer's OWN edits with
+    the teal "you" hue (whoever they are) and every collaborator in their own stable hashed hue;
+    `agent`/`claude` stay absolute voices. This removed the asymmetry where whoever kept the default `you`
+    was a privileged always-teal identity others couldn't recolour - now two users are symmetric (each
+    sees itself teal, the other in a distinct, recolourable colour). The Authors settings tab lists
+    **collaborators seen in the feed** (excluding the AI voices + self), each with its own swatch picker.
+    authorVoice.ts trimmed to the reserved-voice constants + label. Remaining A3: **A3b** `renameProject`
+    edit command (name into `project.json`, needs a `PROJECT_SCHEMA` bump); **A3c** reconnect gap-fill.
+    Still to build after A3: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence),
+    **Phase D** (solo-offline PWA).
   - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
     ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
     server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample

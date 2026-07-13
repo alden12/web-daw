@@ -12,7 +12,8 @@ import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
 import { pitchName } from "./noteNames";
-import { voiceFill, voiceIndicator } from "./authorVoice";
+import { authorFillStyle, authorDotStyle } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 
 /** Extra context the `sample` control needs (the project library + import action);
  *  optional, since only instrument panels with a sample param supply it. */
@@ -85,6 +86,7 @@ function NumberHSlider({
   author?: string;
 }) {
   const [value] = useParam(store, spec.id);
+  const presence = useAuthorPresence();
   const drag = useRef<{ startX: number; width: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
 
@@ -121,8 +123,8 @@ function NumberHSlider({
         onPointerUp={onPointerUp}
       >
         <span
-          className={`absolute left-0 top-0 bottom-0 rounded-full ${voiceFill(author ?? "you")}`}
-          style={{ width: `${norm * 100}%` }}
+          className="absolute left-0 top-0 bottom-0 rounded-full"
+          style={{ ...authorFillStyle(author ?? "you", presence), width: `${norm * 100}%` }}
         />
         <span
           className="absolute top-1/2 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
@@ -148,6 +150,7 @@ function NumberKnob({
   author?: string;
 }) {
   const [value] = useParam(store, spec.id);
+  const presence = useAuthorPresence();
   const drag = useRef<{ startY: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
   const angle = -135 + norm * 270;
@@ -182,8 +185,8 @@ function NumberKnob({
         onPointerUp={onPointerUp}
       >
         <span
-          className={`absolute left-1/2 bottom-1/2 w-0.5 h-4 rounded-full origin-bottom ${voiceIndicator(author ?? "you")}`}
-          style={{ transform: `translateX(-50%) rotate(${angle}deg)` }}
+          className="absolute left-1/2 bottom-1/2 w-0.5 h-4 rounded-full origin-bottom"
+          style={{ ...authorDotStyle(author ?? "you", presence), transform: `translateX(-50%) rotate(${angle}deg)` }}
         />
       </div>
       <span className="text-[9px] uppercase tracking-wide text-muted text-center leading-tight">{spec.label}</span>
@@ -206,6 +209,7 @@ function NumberSlider({
   author?: string;
 }) {
   const [value] = useParam(store, spec.id);
+  const presence = useAuthorPresence();
   const drag = useRef<{ startY: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
 
@@ -239,8 +243,8 @@ function NumberSlider({
         onPointerUp={onPointerUp}
       >
         <span
-          className={`absolute left-0 right-0 bottom-0 rounded-full ${voiceFill(author ?? "you")}`}
-          style={{ height: `${norm * 100}%` }}
+          className="absolute left-0 right-0 bottom-0 rounded-full"
+          style={{ ...authorFillStyle(author ?? "you", presence), height: `${norm * 100}%` }}
         />
         <span
           className="absolute left-1/2 h-1.5 w-4 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"

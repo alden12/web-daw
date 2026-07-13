@@ -27,7 +27,8 @@ import { ActivityView } from "./ActivityView";
 import { ProjectView } from "./ProjectView";
 import { LibraryHeader } from "./LibraryHeader";
 import { Menu } from "./Menu";
-import { voiceDot } from "./authorVoice";
+import { authorDotStyle } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -102,7 +103,7 @@ function PatchLeaf({
   /** Extra left padding when nested under an instrument in the tree. */
   indent?: boolean;
 }) {
-  const dot = patch.builtin ? "bg-line" : voiceDot(patch.author);
+  const presence = useAuthorPresence();
   return (
     <div className={`group flex items-center w-full ${indent ? "pl-9" : "pl-3.5"} pr-2 hover:bg-you/10`}>
       <button
@@ -111,7 +112,11 @@ function PatchLeaf({
         title={`Apply "${patch.name}" to the selected track`}
         className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1.5 text-[12.5px] text-ink cursor-pointer"
       >
-        <span aria-hidden="true" className={`w-1.75 h-1.75 rounded-sm shrink-0 ${dot}`} />
+        <span
+          aria-hidden="true"
+          className={`w-1.75 h-1.75 rounded-sm shrink-0 ${patch.builtin ? "bg-line" : ""}`}
+          style={patch.builtin ? undefined : authorDotStyle(patch.author, presence)}
+        />
         <span className="truncate">{patch.name}</span>
       </button>
       {onNew && <AddButton label={`Add "${patch.name}" as a new track`} onClick={onNew} />}

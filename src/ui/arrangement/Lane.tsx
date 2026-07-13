@@ -13,7 +13,8 @@ import type { Dispatch } from "../../audio/commands/types";
 import { GRID } from "../../audio/sequencer/types";
 import { useClip } from "../../audio/sequencer/useClip";
 import { clipKey, noteKey } from "../../audio/commands/authorship";
-import { voiceBlockClass, voiceBlockTint, voiceMiniClass } from "../authorVoice";
+import { authorBlockStyle, authorBlockTintStyle, authorMiniStyle } from "../authorStyle";
+import { useAuthorPresence } from "../authorColorsContext";
 import { newClipId, newPlacementId } from "../../audio/commands/ids";
 import { beginPointerDrag } from "../pointerDrag";
 import { Waveform } from "../Waveform";
@@ -42,16 +43,19 @@ function Block({
   onDoubleClick: (e: React.MouseEvent) => void;
   children?: React.ReactNode;
 }) {
+  const presence = useAuthorPresence();
   return (
     <div
       data-testid="placement"
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
-      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${voiceBlockClass(author, selected)}`}
-      style={{ left, width: Math.max(3, width) }}
+      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${
+        selected ? "" : "border-t-2 border-line bg-card hover:bg-card/70"
+      }`}
+      style={{ ...authorBlockStyle(author, selected, presence), left, width: Math.max(3, width) }}
       title={name}
     >
-      <div className={`absolute inset-0 ${voiceBlockTint(author)}`} />
+      <div className="absolute inset-0" style={authorBlockTintStyle(author, presence)} />
       {children}
       <span className="absolute left-1.5 top-1 font-mono text-[9px] text-muted truncate max-w-full pr-1">{name}</span>
       {/* right-edge resize affordance */}
@@ -80,6 +84,7 @@ function NoteMinis({
   fallbackAuthor: string;
 }) {
   const clip = useClip(store);
+  const presence = useAuthorPresence();
   const clipLen = clip.lengthBeats;
   if (clipLen <= 0) return null;
   const body = clip.notes.filter((note) => note.start >= 0 && note.start < clipLen);
@@ -112,10 +117,9 @@ function NoteMinis({
       {tiles.map(({ key, tau, note }) => (
         <div
           key={key}
-          className={`absolute h-0.5 rounded-[1px] pointer-events-none ${voiceMiniClass(
-            projectStore.authorOf(noteKey(note.id)) ?? fallbackAuthor,
-          )}`}
+          className="absolute h-0.5 rounded-[1px] pointer-events-none"
           style={{
+            ...authorMiniStyle(projectStore.authorOf(noteKey(note.id)) ?? fallbackAuthor, presence),
             left: beatToX(tau, pxPerBeat),
             width: Math.max(2, beatToX(note.length, pxPerBeat)),
             bottom: `${((note.pitch - lo) / span) * 60 + 18}%`,

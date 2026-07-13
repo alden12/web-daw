@@ -5,12 +5,17 @@
  * referentially stable so it is safe as a `useSyncExternalStore` getSnapshot.
  *
  * The config is a generic `author -> hex` map, not three fixed fields, and `colorForAuthor`
- * hashes any unknown author id into the palette. So although only the three voices (you /
- * agent / claude) are configurable today, the same mechanism already resolves a stable colour
- * for an arbitrary number of authors - the seam multi-user presence will grow into. Colour is
- * derived here; the *authorship* (who last edited a thing) is stored on the project data.
+ * hashes any unknown author id into the palette, so an arbitrary number of collaborators each
+ * resolve to a stable, distinct hue. Colour is derived here; the *authorship* (who last edited a
+ * thing) is stored on the project data.
+ *
+ * Colouring is PERSPECTIVE-RELATIVE: `colorForAuthor` takes the viewer's own id (`self`) and paints
+ * the viewer's own edits with the "you" hue (teal), so on every screen "my edits" read teal and
+ * everyone else reads in their own colour - symmetric, with no single privileged identity. `agent` /
+ * `claude` are absolute voices (same colour for everyone); every other id (including a peer who
+ * happens to be the default `you`) gets its configured or hashed hue.
  */
-import { DEFAULT_VOICE_COLORS, type Voice } from "./authorVoice";
+import { DEFAULT_VOICE_COLORS } from "./authorVoice";
 
 /** A pickable colour. `hex` is what lands in the CSS var / inline style. */
 export interface Swatch {
@@ -100,13 +105,17 @@ function hashString(value: string): number {
 }
 
 /**
- * The colour (hex) for an author. A configured override wins; otherwise a known voice uses its
- * default, and any other author id is hashed deterministically into the palette - so an
- * arbitrary future collaborator id already resolves to a stable, distinct hue.
+ * The colour (hex) for an author, from the viewer's perspective. A configured override wins; then the
+ * viewer's own id (`self`) takes the "you" hue (teal), so my edits always read teal on my screen; then
+ * the absolute AI voices (agent / claude); otherwise the id is hashed deterministically into the palette
+ * - so every collaborator (including a peer whose id is the default "you", when it is not me) gets a
+ * stable, distinct hue. `self` defaults to "you" (solo/back-compat: the lone user's edits are teal).
  */
-export function colorForAuthor(author: string, config: AuthorColorConfig = cached): string {
+export function colorForAuthor(author: string, config: AuthorColorConfig = cached, self = "you"): string {
   const override = config[author];
   if (override) return override;
-  if (author in DEFAULT_VOICE_COLORS) return DEFAULT_VOICE_COLORS[author as Voice];
+  if (author === self) return DEFAULT_VOICE_COLORS.you; // my own edits: the "you" hue, whoever I am
+  if (author === "agent") return DEFAULT_VOICE_COLORS.agent;
+  if (author === "claude") return DEFAULT_VOICE_COLORS.claude;
   return SWATCHES[hashString(author) % SWATCHES.length].hex;
 }

@@ -17,7 +17,8 @@ import { newClipId } from "../audio/commands/ids";
 import { InlineRename } from "./InlineRename";
 import { CLIP_DND_TYPE, clipDndKindType, clearDraggedClip, setDraggedClip } from "./clipDnd";
 import { getClipClipboard, setClipClipboard } from "./clipClipboard";
-import { voiceDot, voiceLabel } from "./authorVoice";
+import { authorDotStyle, authorLabel } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 
 export function ClipRail({
   projectStore,
@@ -37,6 +38,7 @@ export function ClipRail({
   footer?: ReactNode;
 }) {
   const project = useProject(projectStore);
+  const presence = useAuthorPresence();
   const track = project.tracks.find((track) => track.id === trackId);
   if (!track) return null;
 
@@ -115,7 +117,6 @@ export function ClipRail({
       <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1">Clips</span>
       {clips.map((clip) => {
         const active = clip.id === activeClipId;
-        const voice = voiceDot(clip.author);
         return (
           <div
             key={clip.id}
@@ -133,7 +134,7 @@ export function ClipRail({
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
-            title={`${voiceLabel(clip.author)} - drag onto the lane to place`}
+            title={`${authorLabel(clip.author)} - drag onto the lane to place`}
           >
             <button
               type="button"
@@ -152,7 +153,7 @@ export function ClipRail({
             >
               {launchedClipId === clip.id ? "■" : "▶"}
             </button>
-            <span className={`w-1.5 h-1.5 rounded-full ${voice}`} />
+            <span className="w-1.5 h-1.5 rounded-full" style={authorDotStyle(clip.author, presence)} />
             <InlineRename
               value={clip.name}
               onCommit={(name) => dispatch({ type: "renameClip", trackId, clipId: clip.id, name })}
