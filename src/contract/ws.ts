@@ -7,33 +7,59 @@
  * the client types are single-sourced.
  *
  * This is the realtime foundation: the destination is multiplayer editing (sync + live
- * play/record), which rides these messages over a socket. The message set here is minimal
- * and PROVISIONAL - ping/pong proves the bidirectional typed pipe, and one payload pair
- * (edit -> editApplied) shows messages carrying schema-typed payloads. Presence, cursors,
- * subscribe/resync, and the like are designed alongside the conflict-resolution (CRDT)
- * work, when the live socket server is stood up (it is deferred until then; today the
- * server implements only the HTTP surface). Keep new messages small and intent-based.
+ * play/record), which rides these messages over a socket. The model (see docs/DESIGN.md,
+ * sync-service roadmap) is a server-authoritative per-project authority: a client `subscribe`s,
+ * gets a `snapshot`, then sends `edit`s (applied optimistically locally) that the authority
+ * orders by assigning `seq`, applies, persists, and echoes back as `editApplied` to every peer.
+ * The originator matches its `editApplied` by `opId` (retire the optimistic op + adopt the seq);
+ * a peer's `editApplied` (an opId not its own) triggers a rebase. `baseSeq` tells the authority
+ * the last seq the client had seen. Presence/cursors/live-MIDI are a later phase. Keep new
+ * messages small and intent-based.
  *
  * Pure zod, DOM/Node-free - the server imports this.
  */
 import { z } from "zod";
-import { editCommandSchema } from "../audio/project/schema";
+import { authorSchema, editCommandSchema, editEntrySchema } from "../audio/project/schema";
 
 /** Messages the client sends to the server. Discriminated on `type`. */
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
-  z.object({ type: z.literal("edit"), projectId: z.string(), command: editCommandSchema }),
+  /** Join a project's room; the server replies with a `snapshot`. */
+  z.object({ type: z.literal("subscribe"), projectId: z.string() }),
+  /** An optimistically-applied local edit. `opId` (client uuid) matches the echo and dedups a
+   *  resend; `baseSeq` is the last authoritative seq the client had; `author` defaults to "you". */
+  z.object({
+    type: z.literal("edit"),
+    projectId: z.string(),
+    command: editCommandSchema,
+    opId: z.string(),
+    baseSeq: z.number(),
+    author: authorSchema.optional(),
+  }),
 ]);
 
 /** Messages the server sends to the client. Discriminated on `type`. */
 export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("pong") }),
+  /** Catch-up on subscribe: the authoritative head and the recent edit stream to rebuild from. */
+  z.object({
+    type: z.literal("snapshot"),
+    projectId: z.string(),
+    headSeq: z.number(),
+    entries: z.array(editEntrySchema),
+  }),
+  /** An edit the authority ordered + applied. Broadcast to every peer; the originator recognises
+   *  it by `opId`. `seq` is the assigned order; `author` is who made it. */
   z.object({
     type: z.literal("editApplied"),
     projectId: z.string(),
     seq: z.number(),
     command: editCommandSchema,
+    author: authorSchema,
+    opId: z.string(),
   }),
+  /** The authority refused an edit (e.g. not the owner); the client drops the optimistic op. */
+  z.object({ type: z.literal("editRejected"), opId: z.string(), reason: z.string() }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 
