@@ -1816,6 +1816,44 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   semantic-edit commit DAG), and that same command is the natural unit for local apply, WS broadcast,
   persisted commit, and later the CRDT op. That convergence is when `editCommandSchema` graduates from
   structural to first-class typed. Keep WS messages small and intent-based so this door stays open.
+- **Hosting & scaling (deferred, recorded for the multiplayer slice).**
+  - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
+    unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
+    functions, plain Lambda) for the socket layer; it needs an always-on process.
+  - **Affordable platforms to start:** a small always-on **Node** instance + **managed Postgres**.
+    Recommended default **Fly.io** (runs the process as a long-lived VM, holds WS, region-pinnable next
+    to the DB, a few $/mo) **+ Neon** (serverless PG, scale-to-zero, branching, built-in pooler) - or
+    **Railway** for both if one dashboard is preferred. **Supabase** is tempting because it could also
+    supply auth (replacing the stubbed token). **Cloudflare Durable Objects / PartyKit** is the
+    odd-one-out: purpose-built stateful per-key "rooms" (each project = one addressable actor), the
+    cleanest fit for the model below, but a Cloudflare tie and a non-Node (Workers) runtime, so reach
+    for it only if per-project rooms dominate. Avoid API-Gateway-WebSockets-on-Lambda (awkward).
+  - **The project is the shard unit at every layer.** A project's edit stream is a single ordered log,
+    so multiplayer needs exactly **one authority per project** (assigns order/`seq`, applies, broadcasts).
+    That same `projectId` partitions all three layers: (1) **WS routing** - a stateless gateway routes a
+    client for project P to P's owning instance (consistent hashing on `projectId`, or a directory;
+    Durable Objects/PartyKit do this natively via `idFromName(projectId)`); (2) **in-memory authority** -
+    the owner holds P's replay/CRDT state and fans out to P's peers, with **failover** cheap because any
+    instance can reload P from Postgres (keyframe + replay - the path already built) and take ownership;
+    (3) **DB sharding** - only when a single vertically-scaled PG (with pooling, read replicas, and
+    `edits` partitioned by `projectId`) is outgrown, shard by `projectId`/`ownerId`; a project never
+    spans a shard. This is clean **only because** the schema is already owner-/project-scoped with no
+    cross-project joins ("multi-user later is a change of principal, not of queries"). Ephemeral state
+    (presence, cursors, live MIDI) stays in the room's memory / a pub-sub bus, never the DB - so PG write
+    load stays proportional to authored edits. The one code change scaling assumes: the **server** assigns
+    `seq` (not the client, as today), the multiplayer/authoritative-log change.
+  - **A project is single-region at a time (consequence, acceptable).** One authority per project means
+    that authority - and ideally its DB shard - lives in **one region** at any instant. The *service* is
+    multi-region (different projects homed in different regions; a project's ownership can **migrate**
+    regions on failover/rebalance, e.g. toward its active collaborators), but a single project is **not**
+    simultaneously authoritative in two regions - that would break the single total order. This is not a
+    latency problem in practice: with **optimistic local apply** (apply instantly, reconcile on server
+    ack), the authority's region only affects when the authoritative order/conflict-resolution *confirms*,
+    not the felt responsiveness of editing. The only way to make one project genuinely multi-region
+    (multi-primary, no central order) is a **CRDT** (yjs/automerge), which drops the single-`seq`
+    authority for conflict-free merge - a real fork we are deliberately *not* taking now (we lean
+    single-authority + server-assigned `seq`). So: single region per project unless/until a CRDT model is
+    adopted; revisit only if globally-distributed collaborators on one project become a real need.
 
 **Security hardening (from a review of the sync service):**
 
