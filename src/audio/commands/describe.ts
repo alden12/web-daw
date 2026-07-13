@@ -41,6 +41,7 @@ const DESCRIBE: DescribeMap = {
   applyPatch: (command, ctx) => `Applied ${command.name ? `"${command.name}"` : "patch"}${on(ctx, command.trackId)}`,
   createAudioTrack: (command, ctx) => `Added audio track${on(ctx, command.id, "")}`,
   addAudioTrack: (command) => `Imported ${command.name ?? "audio"}`,
+  renameProject: (command) => `Renamed project to "${command.name}"`,
   removeTrack: () => "Removed track",
   setTrack: (command, ctx) => {
     const name = on(ctx, command.trackId, "");

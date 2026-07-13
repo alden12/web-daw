@@ -44,6 +44,7 @@ const APPLY: ApplyMap = {
       },
       { id: command.id, groupId: command.groupId },
     ),
+  renameProject: (project, command) => project.renameProject(command.name),
   removeTrack: (project, command) => project.removeTrack(command.trackId),
   setTrack: (project, command) => {
     if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);

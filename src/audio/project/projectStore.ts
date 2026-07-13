@@ -148,6 +148,8 @@ export type Track = InstrumentTrack | AudioTrack;
 
 /** Stable structural view for the UI (no child stores). */
 export interface ProjectStructure {
+  /** The project's display name (renamed via the `renameProject` edit, so it syncs live). */
+  name: string;
   groups: GroupMeta[];
   tracks: TrackMeta[];
   tempoBpm: number;
@@ -163,6 +165,7 @@ export interface ProjectStructure {
 }
 
 export class ProjectStore {
+  private projectName = "Untitled";
   private tracks: Track[] = [];
   private groups: Group[] = [];
   private tempoBpm = 120;
@@ -211,6 +214,7 @@ export class ProjectStore {
 
   private rebuild(): void {
     this.cached = buildStructure(this.tracks, this.groups, {
+      name: this.projectName,
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
@@ -256,6 +260,18 @@ export class ProjectStore {
   }
   get loopStart(): number {
     return this.loopStartBeats;
+  }
+  get name(): string {
+    return this.projectName;
+  }
+
+  /** Rename the project (empty falls back to "Untitled"). Applied via the `renameProject` edit, so it
+   *  rides undo/redo, the activity feed, and multiplayer sync like any other edit. */
+  renameProject(name: string): void {
+    const next = name.trim() || "Untitled";
+    if (this.projectName === next) return;
+    this.projectName = next;
+    this.emit();
   }
 
   // --- groups ---------------------------------------------------------------
@@ -1241,6 +1257,7 @@ export class ProjectStore {
   // --- persistence / sync ---
   snapshot(): ProjectData {
     return snapshotProject(this.tracks, this.groups, {
+      name: this.projectName,
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
@@ -1335,6 +1352,7 @@ export class ProjectStore {
   load(data: ProjectData): void {
     // Register the project's custom device schemas first, so tracks resolve them below.
     this.syncCustomDevices(data);
+    this.projectName = data.name ?? "Untitled";
     const projLen = data.lengthBeats ?? 16;
     this.groups = (data.groups ?? []).map((group) => ({
       id: group.id,
