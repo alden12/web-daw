@@ -1807,15 +1807,50 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   is embedded in the document) -> **catalog versioning** -> **built-in params** -> deep `EditCommand`.
   Full declarative conversion of built-ins is the separate gated declarative-DSP initiative (section
   16), not a validation lever (built-ins would still be referenced by id from a shared catalog).
-- **Realtime multiplayer: the contract is the easy part, concurrency is the hard part.** Live
-  multi-user editing needs conflict resolution (CRDT/OT) and an ephemeral-vs-durable split (presence +
-  live MIDI are never persisted; an edit is both broadcast *and* committed) - a state-sync toolbox
-  (yjs / liveblocks / partykit / automerge), separate from the message contract. Design principle:
-  **transport edits as semantic `EditCommand`s, not document snapshots** - the codebase already models
-  edits as a command layer (the union behind `commands/diff.ts|history.ts|editLog.ts` and the
-  semantic-edit commit DAG), and that same command is the natural unit for local apply, WS broadcast,
-  persisted commit, and later the CRDT op. That convergence is when `editCommandSchema` graduates from
-  structural to first-class typed. Keep WS messages small and intent-based so this door stays open.
+- **Realtime multiplayer - chosen strategy (design decided; the next major slice).** Live multi-user
+  editing. The transport, authority, conflict model, and offline stance are settled below; the build is
+  a distinct slice.
+  - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
+    ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
+    server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample
+    transfer, and bundle export stay HTTP. Transport edits as semantic `EditCommand`s, never document
+    snapshots - the command is the one unit for local apply, WS broadcast, persisted delta, and commit.
+  - **Server becomes the authority (the "dumb blob store -> smart authority" shift).** Per project, one
+    authority instance holds the in-memory replay state, assigns the authoritative `seq`, applies, and
+    broadcasts `editApplied` to peers. History/keyframe/commit logic moves **server-side** (the server
+    now owns the replay engine, so the deferred server-side-keyframe and commit-referencing items land
+    here). Client traffic collapses to *semantic commands out, broadcasts in* (+ presence) - no more
+    whole-`project.json` uploads or client-computed keyframes. This is the deliberate departure from the
+    thin `(projectId, path) -> bytes` store; the `BundleStore` seam already permits a smart backend.
+  - **Conflict resolution: server-authoritative total order + optimistic apply + rebase** (NOT OT, NOT
+    CRDT). The client applies a command optimistically to its local replica and sends it tagged with the
+    last authoritative `seq` it saw + a client op-id; the server appends it at the next `seq`, applies to
+    HEAD, and broadcasts; a client that had in-flight ops **rebases** (roll back optimistic ops, apply
+    the authoritative ones in order, re-apply its pending ops on top). Rationale: our edits are coarse
+    **semantic** commands that mostly target *different* objects, so they commute and the authority need
+    only *order* them; the rare **same-target** clash (two users on one knob/note) resolves
+    **last-writer-wins by `seq`**, which matches expectation. OT is rejected (a ~50x50 transform matrix);
+    CRDT is rejected *for now* because its value is authority-free multi-primary merge, which we do not
+    need (single authority per project, single region at a time) and which would reshape `ProjectStore`
+    and lose semantic intent. CRDT stays the escape hatch only if offline-collaboration or
+    multi-region-per-project ever becomes a hard requirement. Two requirements this imposes: (1)
+    **`applyEdit` must no-op gracefully on a stale target** (e.g. `addNote` to a track another user just
+    deleted) instead of throwing; (2) **client op-ids** so reconnect/retry never double-applies. This is
+    when `editCommandSchema` graduates from structural to first-class typed and server-assigned `seq`
+    replaces the client-stamped `seq`.
+  - **Ephemeral vs durable split.** Presence (cursors, who's online) and live MIDI are **never
+    persisted** - they live in the room instance's memory / a pub-sub bus. Only authored `EditCommand`s
+    hit Postgres, so write load stays proportional to real edits.
+  - **Offline stance: solo-offline kept, live-collab requires a connection.** Solo editing stays
+    **local-first** (OPFS working copy, queue commands, flush on reconnect - one writer, so the server
+    sequences the queue with nothing to conflict against). Live collaboration requires a connection;
+    brief disconnects are absorbed by the optimistic queue (reconnect -> replay pending -> rebase). We do
+    **not** go Onshape-online-only (solo offline is cheap and valuable) nor full offline-first (that
+    effectively demands CRDT). **Offline *during* active collaboration is deferred** - the genuinely hard
+    merge; when wanted, prefer **branch-and-merge** (an offline session becomes a branch, reconnect does a
+    3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
+  - See the hosting/scaling entry above: the authority is **per-project** (the shard unit), so a project
+    is single-region at a time; server-assigned `seq` is the enabling change.
 - **Hosting & scaling (deferred, recorded for the multiplayer slice).**
   - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
     unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
