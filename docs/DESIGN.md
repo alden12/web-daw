@@ -1659,11 +1659,25 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   present fields, with zod's default key-stripping so evolving fields don't break saves); deep
   per-parameter validation stays at the client/MCP boundary where the param schema lives. A test
   runs a real project snapshot through the schemas to guard against over-strictness.
-- **Migrations (the rule changed).** The old "discard old data on a format change" shortcut was
-  scoped to disposable local-only data; hosted data can't be discarded, so migration is now
-  required and forward-only: DB schema via `drizzle-kit` (versioned SQL in `drizzle/`), and the
-  project document via upcasters in `src/audio/project/documentMigration.ts` (empty registry today;
-  `ProjectRepository.load` chains them and heals the bundle).
+- **Migrations - the paradigm shifted, and it is now in force (slice 81 deploy).** The old "discard
+  old data on a format change" shortcut was scoped to disposable local-only data. With the app now
+  **deployed to a live hosted database** (Fly + Neon), that shortcut is **retired**: there is real
+  persisted user data, so every schema change must carry it forward. **Migrations are forward-only and
+  additive-preserving** - we never discard or reshape data destructively in place. Two independent axes:
+  - **DB schema (Drizzle):** edit `server/db/schema.ts` -> `yarn db:generate` (versioned SQL in
+    `drizzle/`) -> deploy. `applyMigrations` runs pending SQL **on boot**, idempotently. Because a
+    migration runs while the previous machine is still serving (rolling deploy), new SQL must be safe
+    against the running code too, so a destructive change (drop/rename) is done **expand -> contract**
+    across two deploys, never in one.
+  - **Project document (`project.json` / command blobs, opaque to Drizzle):** bump `PROJECT_SCHEMA` +
+    add a `fromVersion -> fromVersion + 1` upcaster in `src/audio/project/documentMigration.ts`;
+    `ProjectRepository.load` chains them and heals each bundle lazily on load. CI fails on a gap
+    (`firstMissingUpcaster`); `findStaleProjects` flags stored docs below the current version.
+  - **Safety:** Neon keeps point-in-time history; take a **Neon branch** (copy-on-write clone of prod)
+    as a rollback point and test a risky migration against it before deploying. Operational runbook:
+    `docs/DEPLOY.md` ("Migrations on a live database").
+  The "discard on change" mindset (still referenced in the older local-only notes above and in the
+  slice-70 dev-DB refresh) applied **only** while data was disposable; it does not apply to hosted data.
 
 **Roadmap (deferred):**
 
