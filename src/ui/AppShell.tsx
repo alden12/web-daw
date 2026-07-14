@@ -29,6 +29,7 @@ import { ActivityRail, type LibraryView } from "./ActivityRail";
 import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { SharePanel } from "./SharePanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
 import { AuthorColorsProvider } from "./authorColorsContext";
@@ -119,6 +120,8 @@ export function AppShell() {
   const [search, setSearch] = useState("");
   const [dragging, setDragging] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The project being shared (its id + name), or null when the Share panel is closed.
+  const [share, setShare] = useState<{ id: string; name: string } | null>(null);
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
@@ -337,6 +340,7 @@ export function AppShell() {
               activeView={libView}
               search={search}
               onSearch={onSearch}
+              onOpenShare={(id, name) => setShare({ id, name })}
             />
           )}
           <CenterWorkbench
@@ -410,6 +414,7 @@ export function AppShell() {
             onClose={() => setSettingsOpen(false)}
           />
         )}
+        {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
         {!started && <StartDialog onStart={handleStart} />}
       </div>
     </AuthorColorsProvider>

@@ -9,6 +9,10 @@ import { files, projects } from "../server/db/schema";
 const put = (app: Awaited<ReturnType<typeof makeSyncEnv>>["app"], path: string, body: string) =>
   app.request(`/projects/${path}`, { method: "PUT", body });
 
+/** The project ids from a `GET /projects` response (the list now carries name/modifiedAt/role too). */
+const listedIds = async (res: Response): Promise<string[]> =>
+  ((await res.json()) as { projects: { id: string }[] }).projects.map((project) => project.id);
+
 // Minimal but validly-shaped bundle documents (the server shape-checks JSON writes).
 const PROJECT = JSON.stringify({ groups: [], tracks: [], tempoBpm: 120, lengthBeats: 16, selectedTrackId: null });
 const commit = (id: string) =>
@@ -27,12 +31,12 @@ const commit = (id: string) =>
 describe("sync API routes", () => {
   it("creates a project on first file write and lists it", async () => {
     const { app } = await makeSyncEnv();
-    expect(await (await app.request("/projects")).json()).toEqual({ ids: [] });
+    expect(await listedIds(await app.request("/projects"))).toEqual([]);
 
     const res = await put(app, "p1/files/project.json", PROJECT);
     expect(res.status).toBe(204);
 
-    expect(await (await app.request("/projects")).json()).toEqual({ ids: ["p1"] });
+    expect(await listedIds(await app.request("/projects"))).toEqual(["p1"]);
   });
 
   it("reads back written content and reports existence via HEAD", async () => {
@@ -114,7 +118,7 @@ describe("sync API routes", () => {
     await put(app, "p1/files/project.json", PROJECT);
 
     expect((await app.request("/projects/p1", { method: "DELETE" })).status).toBe(204);
-    expect(await (await app.request("/projects")).json()).toEqual({ ids: [] });
+    expect(await listedIds(await app.request("/projects"))).toEqual([]);
 
     // The row is retained (recoverable), and deletedAt is stamped.
     const fileRows = await db.select().from(files).where(eq(files.projectId, "p1"));
@@ -192,8 +196,8 @@ describe("sync API routes", () => {
     const appB = createApp(db, { ownerId: "b" });
     await appA.request("/projects/p1/files/project.json", { method: "PUT", body: PROJECT });
 
-    expect(await (await appA.request("/projects")).json()).toEqual({ ids: ["p1"] });
-    expect(await (await appB.request("/projects")).json()).toEqual({ ids: [] });
+    expect(await listedIds(await appA.request("/projects"))).toEqual(["p1"]);
+    expect(await listedIds(await appB.request("/projects"))).toEqual([]);
   });
 
   it("enforces the bearer token when set", async () => {
@@ -261,8 +265,8 @@ describe("sync API routes", () => {
         headers: await auth("alice"),
       });
 
-      expect(await (await app.request("/projects", { headers: await auth("alice") })).json()).toEqual({ ids: ["p1"] });
-      expect(await (await app.request("/projects", { headers: await auth("bob") })).json()).toEqual({ ids: [] });
+      expect(await listedIds(await app.request("/projects", { headers: await auth("alice") }))).toEqual(["p1"]);
+      expect(await listedIds(await app.request("/projects", { headers: await auth("bob") }))).toEqual([]);
     });
   });
 });

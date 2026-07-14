@@ -171,6 +171,7 @@ export function LibraryPanel({
   activeView,
   search,
   onSearch,
+  onOpenShare,
 }: {
   projectStore: ProjectStore;
   editLog: EditLog;
@@ -179,6 +180,7 @@ export function LibraryPanel({
   activeView: LibraryView;
   search: string;
   onSearch: (query: string) => void;
+  onOpenShare: (projectId: string, projectName: string) => void;
 }) {
   const project = useProject(projectStore);
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
@@ -583,6 +585,7 @@ export function LibraryPanel({
         projectStore={projectStore}
         editLog={editLog}
         versionStore={versionStore}
+        onOpenShare={onOpenShare}
       />
       <div className="flex-1 min-h-0 overflow-y-auto">{views[activeView]()}</div>
 

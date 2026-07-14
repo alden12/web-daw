@@ -1,17 +1,51 @@
 /**
- * The data operations behind the sync API - all owner-scoped, so multi-user later is
- * a change of principal, not of queries. The HTTP layer (api/app.ts) validates and maps
- * these to status codes; here lives the actual SQL intent:
- *  - listing hides soft-deleted projects; delete is soft (recoverable).
- *  - a first write to an unknown project id creates its row (owner-stamped).
+ * The data operations behind the sync API. Access is "owner OR member": a project is reachable by its
+ * owner and by anyone whose (lowercased) email matches a `project_members` row for it - so most reads
+ * and writes take an {@link Accessor} (`{ userId, email }`) and gate on {@link accessibleWhere} rather
+ * than a bare owner id. The HTTP layer (api/app.ts) validates and maps these to status codes; here lives
+ * the actual SQL intent:
+ *  - listing hides soft-deleted projects; delete is soft (recoverable) and owner-only.
+ *  - a first write to an unknown project id creates its row (owner-stamped); a later write is allowed for
+ *    the owner or any member (never re-stamping the owner), else forbidden.
  *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
  *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
  */
-import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "./types";
-import { edits, files, projects, users } from "./schema";
+import { edits, files, projectMembers, projects, users } from "./schema";
 
 export type WriteResult = { ok: true } | { ok: false; reason: "conflict" | "forbidden" };
+
+/** A caller's identity for access checks: their user id (owner match) plus best-effort email (member
+ *  match). The room persists as the project's real owner, so it passes `{ userId: ownerId }` (no email). */
+export type Accessor = { userId: string; email?: string | null };
+
+const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+
+/**
+ * SQL predicate: this `projects` row is accessible to `who` - they own it, or a member row matches their
+ * lowercased email. Drops in wherever a query was previously `eq(projects.ownerId, ownerId)`. With no
+ * email on the accessor it degrades to the plain owner check.
+ */
+function accessibleWhere(who: Accessor) {
+  const owner = eq(projects.ownerId, who.userId);
+  const email = who.email ? normalizeEmail(who.email) : "";
+  if (!email) return owner;
+  return or(
+    owner,
+    sql`exists (select 1 from ${projectMembers} where ${projectMembers.projectId} = ${projects.id} and ${projectMembers.email} = ${email})`,
+  );
+}
+
+/** Whether `who` may access an existing project (owner or member). */
+async function canAccess(db: Db, who: Accessor, projectId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), accessibleWhere(who)))
+    .limit(1);
+  return rows.length > 0;
+}
 
 /** A bundle file's content: JSON text entries as parsed JSON, binary entries as bytes. */
 export type FilePayload = { kind: "json"; json: unknown } | { kind: "binary"; bytes: Uint8Array };
@@ -59,14 +93,25 @@ export async function findStaleProjects(db: Db, currentVersion: number): Promise
     .orderBy(projects.projectSchema);
 }
 
-/** Ids of the owner's non-deleted projects (newest first). */
-export async function listProjectIds(db: Db, ownerId: string): Promise<string[]> {
+/** The caller's role on a project in a listing: their own, or one shared with them. */
+export type ProjectRole = "owner" | "editor";
+/** A project as returned to the client's library list: enough to render it without a per-project read
+ *  (name + modifiedAt mirror meta.json), plus the caller's role so the UI can gate owner-only actions. */
+export type ProjectListing = { id: string; name: string; modifiedAt: string; role: ProjectRole };
+
+/** The caller's accessible (owned + shared, non-deleted) projects, newest first. */
+export async function listProjects(db: Db, who: Accessor): Promise<ProjectListing[]> {
   const rows = await db
-    .select({ id: projects.id })
+    .select({ id: projects.id, name: projects.name, modifiedAt: projects.modifiedAt, ownerId: projects.ownerId })
     .from(projects)
-    .where(and(eq(projects.ownerId, ownerId), isNull(projects.deletedAt)))
+    .where(and(accessibleWhere(who), isNull(projects.deletedAt)))
     .orderBy(sql`${projects.modifiedAt} desc`);
-  return rows.map((row) => row.id);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    modifiedAt: row.modifiedAt instanceof Date ? row.modifiedAt.toISOString() : String(row.modifiedAt),
+    role: row.ownerId === who.userId ? "owner" : "editor",
+  }));
 }
 
 /** Soft-delete: stamp deletedAt so the project drops out of listings but its files remain. */
@@ -77,34 +122,34 @@ export async function softDeleteProject(db: Db, ownerId: string, projectId: stri
     .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)));
 }
 
-/** A file's content (JSON or binary), or null if absent / not the owner's. */
-export async function readFile(db: Db, ownerId: string, projectId: string, path: string): Promise<FilePayload | null> {
+/** A file's content (JSON or binary), or null if absent / not accessible to the caller. */
+export async function readFile(db: Db, who: Accessor, projectId: string, path: string): Promise<FilePayload | null> {
   const rows = await db
     .select({ json: files.json, bytes: files.bytes })
     .from(files)
     .innerJoin(projects, eq(files.projectId, projects.id))
-    .where(and(eq(files.projectId, projectId), eq(files.path, path), eq(projects.ownerId, ownerId)))
+    .where(and(eq(files.projectId, projectId), eq(files.path, path), accessibleWhere(who)))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
   return row.bytes != null ? { kind: "binary", bytes: row.bytes } : { kind: "json", json: row.json };
 }
 
-/** Whether a file exists for the owner (drives BundleStore.exists / sample dedup). */
-export async function fileExists(db: Db, ownerId: string, projectId: string, path: string): Promise<boolean> {
+/** Whether a file exists and is accessible to the caller (drives BundleStore.exists / sample dedup). */
+export async function fileExists(db: Db, who: Accessor, projectId: string, path: string): Promise<boolean> {
   const rows = await db
     .select({ path: files.path })
     .from(files)
     .innerJoin(projects, eq(files.projectId, projects.id))
-    .where(and(eq(files.projectId, projectId), eq(files.path, path), eq(projects.ownerId, ownerId)))
+    .where(and(eq(files.projectId, projectId), eq(files.path, path), accessibleWhere(who)))
     .limit(1);
   return rows.length > 0;
 }
 
-/** Upsert a bundle file. Creates the project row on first write; enforces owner + append-only. */
+/** Upsert a bundle file. Creates the project row on first write; enforces owner-or-member + append-only. */
 export async function writeFile(
   db: Db,
-  ownerId: string,
+  who: Accessor,
   projectId: string,
   path: string,
   payload: FilePayload,
@@ -112,10 +157,10 @@ export async function writeFile(
   // Exactly one payload column is set (mirrors the CHECK constraint).
   const columns = payload.kind === "json" ? { json: payload.json, bytes: null } : { json: null, bytes: payload.bytes };
   return db.transaction(async (tx) => {
-    // First write to this id creates the project (owner-stamped); a repeat is a no-op.
-    await tx.insert(projects).values({ id: projectId, ownerId }).onConflictDoNothing();
-    const owned = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId));
-    if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+    // First write to this id creates the project (stamped to the writer as owner); a repeat is a no-op,
+    // so an existing project keeps its real owner and a member's write never re-stamps it.
+    await tx.insert(projects).values({ id: projectId, ownerId: who.userId }).onConflictDoNothing();
+    if (!(await canAccess(tx, who, projectId))) return { ok: false, reason: "forbidden" };
 
     if (isCommitPath(path)) {
       // Commits are immutable (append-only history). Insert, never update: the (projectId, path)
@@ -151,20 +196,19 @@ export async function writeFile(
  */
 export async function appendEdits(
   db: Db,
-  ownerId: string,
+  who: Accessor,
   projectId: string,
   entries: EditEntryInput[],
 ): Promise<{ ok: true; maxSeq: number } | { ok: false; reason: "forbidden" }> {
   return db.transaction(async (tx) => {
-    await tx.insert(projects).values({ id: projectId, ownerId }).onConflictDoNothing();
-    const owned = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId));
-    if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+    await tx.insert(projects).values({ id: projectId, ownerId: who.userId }).onConflictDoNothing();
+    if (!(await canAccess(tx, who, projectId))) return { ok: false, reason: "forbidden" };
 
     if (entries.length > 0) {
       // Upsert by (projectId, seq): the working edit log is MUTABLE - a coalescing edit (a knob
       // drag) folds into its entry in place without a new seq, so a re-send must update it. This
-      // is distinct from the write-once *commit* history (which stays append-only). Owner-scoped,
-      // so a client can only ever rewrite its own working log.
+      // is distinct from the write-once *commit* history (which stays append-only). Access is
+      // gated above (owner or member), so only a collaborator on the project can touch its log.
       await tx
         .insert(edits)
         .values(
@@ -199,13 +243,13 @@ export async function appendEdits(
 }
 
 /**
- * The owner's authored edits with `seq > sinceSeq`, oldest first (the delta tail / feed window).
- * With `limit`, returns the most recent N (order desc + limit, then reversed to oldest-first) so the
- * caller gets a bounded recent window rather than the unbounded history.
+ * The accessible project's authored edits with `seq > sinceSeq`, oldest first (the delta tail / feed
+ * window). With `limit`, returns the most recent N (order desc + limit, then reversed to oldest-first) so
+ * the caller gets a bounded recent window rather than the unbounded history.
  */
 export async function readEdits(
   db: Db,
-  ownerId: string,
+  who: Accessor,
   projectId: string,
   sinceSeq: number,
   limit?: number,
@@ -222,7 +266,7 @@ export async function readEdits(
       })
       .from(edits)
       .innerJoin(projects, eq(edits.projectId, projects.id))
-      .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId), gt(edits.seq, sinceSeq)));
+      .where(and(eq(edits.projectId, projectId), accessibleWhere(who), gt(edits.seq, sinceSeq)));
   const rows =
     limit != null
       ? (await select().orderBy(desc(edits.seq)).limit(limit)).reverse()
@@ -247,6 +291,63 @@ export async function maxEditSeq(db: Db, ownerId: string, projectId: string): Pr
     .innerJoin(projects, eq(edits.projectId, projects.id))
     .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId)));
   return Number(rows[0]?.maxSeq ?? -1);
+}
+
+/** The project's real owner + whether `who` may open it, for the realtime room. Keyed by project id, so
+ *  the room persists under the true owner (not whoever connects first). A not-yet-existing project is
+ *  creatable by anyone (first-write-creates), with `who` as its owner. */
+export type ProjectAccess = { allowed: boolean; ownerId: string };
+export async function resolveProjectAccess(db: Db, who: Accessor, projectId: string): Promise<ProjectAccess> {
+  const rows = await db.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId)).limit(1);
+  const ownerId = rows[0]?.ownerId;
+  if (ownerId == null) return { allowed: true, ownerId: who.userId };
+  if (ownerId === who.userId) return { allowed: true, ownerId };
+  return { allowed: await canAccess(db, who, projectId), ownerId };
+}
+
+/** The project's owner id, or null when it doesn't exist / is deleted. Drives the owner-only gate on
+ *  member management (only the owner may share a project). */
+export async function getProjectOwner(db: Db, projectId: string): Promise<string | null> {
+  const rows = await db
+    .select({ ownerId: projects.ownerId })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
+    .limit(1);
+  return rows[0]?.ownerId ?? null;
+}
+
+/** A project collaborator as returned to the owner's Share panel. */
+export type MemberRecord = { email: string; role: string };
+
+/** The project's members (excludes the owner), oldest invite first. */
+export async function listMembers(db: Db, projectId: string): Promise<MemberRecord[]> {
+  return db
+    .select({ email: projectMembers.email, role: projectMembers.role })
+    .from(projectMembers)
+    .where(eq(projectMembers.projectId, projectId))
+    .orderBy(projectMembers.createdAt);
+}
+
+/** Add (or re-role) a member by email. Email is normalized lowercase to match the token email at query
+ *  time. Idempotent: re-inviting the same address updates the role. */
+export async function addMember(
+  db: Db,
+  projectId: string,
+  email: string,
+  role: string,
+  invitedBy: string,
+): Promise<void> {
+  await db
+    .insert(projectMembers)
+    .values({ projectId, email: normalizeEmail(email), role, invitedBy })
+    .onConflictDoUpdate({ target: [projectMembers.projectId, projectMembers.email], set: { role } });
+}
+
+/** Remove a member by email (a no-op if they were not a member). */
+export async function removeMember(db: Db, projectId: string, email: string): Promise<void> {
+  await db
+    .delete(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.email, normalizeEmail(email))));
 }
 
 /** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */
