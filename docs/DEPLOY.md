@@ -64,13 +64,33 @@ the existing Supabase project.
    ```
 
 6. **Point Supabase at the deploy origin**: Supabase dashboard -> Authentication -> URL Configuration ->
-   set **Site URL** to `https://web-daw.fly.dev` and add it to **Redirect URLs**. The GitHub/Google OAuth
-   apps stay pointed at Supabase's callback (`https://<project-ref>.supabase.co/auth/v1/callback`) - they
-   do not change; only Supabase's allowlist of app origins does.
+   set **Site URL** to `https://web-daw.fly.dev` and add it to **Redirect URLs**. The Google OAuth app
+   stays pointed at Supabase's callback (`https://<project-ref>.supabase.co/auth/v1/callback`) - it does
+   not change; only Supabase's allowlist of app origins does.
 
 7. **Verify**: open `https://web-daw.fly.dev` (expect a few-second cold start on the first hit), sign in
-   with Google/GitHub, make an edit, reload - it persists. Share a project with a second account and
-   confirm live multiplayer edits, distinct per-account colours, and live rename propagation.
+   with Google, make an edit, reload - it persists. Share a project with a second (whitelisted) account
+   and confirm live multiplayer edits, distinct per-account colours, and live rename propagation.
+
+## Access: invite-only (Google, testing mode)
+
+During the dev window the app is **invite-only**, gated two ways with no custom allowlist code:
+
+- **Google only.** The login screen shows a single "Continue with Google" button
+  (`GITHUB_ENABLED = false` in `src/ui/AuthGate.tsx`), and the **GitHub provider is disabled** in the
+  Supabase dashboard (Authentication -> Providers). GitHub OAuth would accept any GitHub user - an open
+  signup surface while the app is still unhardened (no per-owner quotas / rate-limiting yet) - so it stays
+  off for now.
+- **Google's "Testing" publishing mode is the whitelist.** In the Google Cloud console
+  (APIs & Services -> OAuth consent screen), keep the app in **Testing** and add each tester's email under
+  **Test users** (up to 100). Only those accounts can complete Google sign-in; everyone else is refused by
+  Google before a token is ever issued. Adding/removing a tester is a console edit, no deploy.
+
+**Re-enabling GitHub later** (once everything is verified): flip `GITHUB_ENABLED = true` in
+`src/ui/AuthGate.tsx` **and** re-enable the GitHub provider in the Supabase dashboard - both are needed.
+For broader public Google sign-in, move the Google OAuth consent screen from Testing to **Published**
+(may require Google verification depending on scopes). A server-side email allowlist
+(`ALLOWED_EMAILS` in the JWT resolver) is a possible defence-in-depth follow-up, not yet implemented.
 
 ## Redeploying
 
