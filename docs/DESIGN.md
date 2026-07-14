@@ -1897,14 +1897,24 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     in dev). Auth composes with the existing `VITE_DAW_API_URL` gate; local/OPFS mode ignores tokens.
     Tested: `test/client.test.ts` (the token-getter is evaluated per request); the gate/login/supabase
     wrapper are verified live (client runs in Vitest's node env - no jsdom - so no component tests).
-    **Auth-C:** a **membership/sharing** table (who may open a project) + "owner or member?" guards + a
-    share UI - "two users on one project" only means something once a project is shared with specific
-    accounts. Fold in **Project index -> the `projects` table** (the `meta.json`-redundancy cleanup):
-    list from the table's `name`/`modifiedAt` (already columns) via a richer `GET /projects`, have the
-    **authority update `projects.name`** when it applies a `renameProject` edit, and retire server-side
-    `meta.json` (kept only as the OPFS/offline fallback index). Done here because this slice reworks that
-    table (ownership/sharing) and the list endpoint anyway - the index consolidation lands once. `name`
-    stays in `project.json` as synced state; only the *index* copy moves. Then retire `DAW_API_TOKEN`.
+    **Auth-C (slice 79, done):** **membership/sharing** end to end. New `project_members` table
+    (`(projectId, email)` PK, role, invitedBy) - a member is keyed by **email** (the invited identity,
+    stored lowercase), never a FK into `users`, so an owner can invite someone who hasn't signed up yet
+    and the grant takes effect the moment they sign in with a provider account whose verified email
+    matches. The single-owner filter in `server/db/store.ts` became **owner-or-member**: an `accessibleWhere`
+    predicate (`ownerId == me OR EXISTS a member row for my token email`) drops in wherever a query was
+    `eq(ownerId)`; writes gate the same way (create-if-absent still owner-stamps, but a member's write never
+    re-stamps the owner). Owner-only member endpoints (`GET/POST/DELETE /projects/:id/members`, zod
+    `z.email()` at the boundary) + a `SharePanel` reached from the project menu (shown only for a project
+    you own). This also **closed the WS room-authorization gap** flagged in Auth-A: `RoomRegistry.get` now
+    takes the principal, resolves the project's *real* owner from the table, authorizes owner-or-member
+    before handing back the room, and loads/persists the room under that real owner - so a shared project
+    is one room keyed by `projectId` and a member's edits persist under the owner (an unauthorized subscribe
+    is refused, closing 1008). And the **project index moved onto the `projects` table**: `GET /projects`
+    returns `{ id, name, modifiedAt, role }[]` (the `ProjectStorage` seam's `listProjectIds -> listProjects`),
+    killing the per-project `meta.json` read on the remote path. Deferred to a **cleanup follow-up**: retire
+    `DAW_API_TOKEN` end to end, and the fuller server-side `meta.json` retirement (have the authority update
+    `projects.name` on a `renameProject` edit; `meta.json` stays only as the OPFS/offline fallback index).
     Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
     Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
     (solo-offline PWA).
