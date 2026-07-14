@@ -60,6 +60,13 @@ function GateCard({ children }: { children: ReactNode }) {
   );
 }
 
+// Invite-only during the deploy/dev window. GitHub OAuth accepts any GitHub user, which is an open-signup
+// surface while the app is still unhardened (no per-owner quotas / rate-limiting yet - see DESIGN.md). So
+// we ship Google-only: Google's "Testing" publishing mode is itself a whitelist (only test-user emails
+// added in the Google Cloud console can sign in). To re-enable GitHub once things are verified: flip this
+// flag AND re-enable the GitHub provider in the Supabase dashboard (both are needed).
+const GITHUB_ENABLED = false;
+
 function LoginScreen() {
   return (
     <GateCard>
@@ -70,10 +77,10 @@ function LoginScreen() {
         Your projects sync to your account. Sign in to pick up where you left off, from any device.
       </p>
       <div className="mt-1 flex flex-col gap-2 w-full">
-        <ProviderButton provider="github" label="Continue with GitHub" />
         <ProviderButton provider="google" label="Continue with Google" />
+        {GITHUB_ENABLED && <ProviderButton provider="github" label="Continue with GitHub" />}
         <p className="text-[11px] text-faint leading-relaxed">
-          Google sign-in is limited to invited test accounts for now - use GitHub if you're not on the list.
+          Sign-in is invite-only during development. Ask to have your Google account added to the test list.
         </p>
       </div>
     </GateCard>

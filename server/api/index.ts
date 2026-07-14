@@ -4,6 +4,7 @@
  * different port. Config via .env (DATABASE_URL, API_PORT, SUPABASE_JWKS_URL/ISSUER for auth).
  */
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import type { Server } from "node:http";
 import { createApp } from "./app";
 import { attachWsServer } from "./wsServer";
@@ -41,6 +42,16 @@ if (auth) console.log(`[web-daw] auth: verifying JWTs against ${auth.issuer}`);
 // Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
 const verbose = process.env.NODE_ENV !== "production";
 const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose });
+
+// Single-origin deploy: this same server serves the built client (dist/) alongside the API and /ws, so
+// there is one URL, no CORS, and same-origin wss. Registered AFTER the API routes, so `/projects/*` (and
+// its auth gate) win first. The first handler serves any real file in dist/ by path - hashed /assets/*,
+// but also root files like /favicon.svg and /icons.svg and / itself (index.html); serveStatic calls
+// next() when no file matches, so the second handler is the SPA fallback, serving index.html for
+// client-side routes. In dev the client is served by Vite instead, so dist/ may be absent - serveStatic
+// simply falls through then, which is fine (nobody hits the API server's root in dev).
+app.get("*", serveStatic({ root: "./dist" }));
+app.get("*", serveStatic({ path: "./dist/index.html" }));
 
 // The realtime multiplayer socket shares the HTTP server/port (path /ws), so it is one origin.
 const server = serve({ fetch: app.fetch, port }) as Server;

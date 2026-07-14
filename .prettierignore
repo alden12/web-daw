@@ -12,3 +12,6 @@ yarn.lock
 
 # Prose docs are hand-formatted; reformatting reflows them noisily
 *.md
+
+# Design mockups are hand-crafted, self-contained artifacts; leave them byte-for-byte
+docs/mockups

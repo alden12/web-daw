@@ -110,6 +110,11 @@ export function createApp(db: Db, options: AppOptions = {}) {
       // CORS next, so even a 401 carries the headers the browser needs to read the response.
       .use("*", cors({ origin: corsOrigin, allowMethods: ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"] }))
       .use("*", async (c, next) => {
+        // Only the API is gated. When this app also serves the built client (single-origin deploy, see
+        // server/api/index.ts), the static asset + SPA-fallback routes are appended after this middleware,
+        // so requests outside the `/projects` API surface must pass through un-authed (else index.html/JS
+        // would 401 in auth mode). Every API route lives under `/projects`.
+        if (!c.req.path.startsWith("/projects")) return next();
         const principal = await resolvePrincipal(bearer(c.req.header("Authorization")));
         if (!principal) return c.json({ error: "unauthorized" }, 401);
         c.set("ownerId", principal.userId);
