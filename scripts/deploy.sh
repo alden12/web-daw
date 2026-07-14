@@ -10,12 +10,17 @@ set -uo pipefail
 
 APP=web-daw
 ATTEMPTS=8
+# flyctl talks to several hosts; the DNS flake can hit any of them.
+FLY_HOSTS="api.fly.io api.machines.dev registry.fly.io"
+# Force flyctl (Go) to use the system (cgo/getaddrinfo) resolver so it shares the macOS DNS cache we
+# flush + prime below, instead of its pure-Go resolver that queries the flaky nameserver directly.
+export GODEBUG=netdns=cgo
 
 for attempt in $(seq 1 "$ATTEMPTS"); do
   echo "=== deploy attempt ${attempt}/${ATTEMPTS} ($(date +%H:%M:%S)) ==="
-  # Clear any cached negative DNS result and warm a fresh lookup before trying.
+  # Clear any cached negative DNS results and warm a fresh lookup of each Fly host before trying.
   dscacheutil -flushcache 2>/dev/null || true
-  nslookup api.fly.io >/dev/null 2>&1 || true
+  for host in $FLY_HOSTS; do nslookup "$host" >/dev/null 2>&1 || true; done
 
   if fly deploy -a "$APP"; then
     echo "=== deploy succeeded (attempt ${attempt}) ==="
