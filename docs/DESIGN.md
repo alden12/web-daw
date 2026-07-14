@@ -1881,10 +1881,22 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     Supabase). **NOTE - authentication only:** per-project *authorization* (may this user open this
     project?) still needs the membership model and lands in Auth-C; until then the owner is the only real
     user and there is no login UI, so nothing can exploit it yet.
-    **Auth-B (next):** the login UI - `@supabase/supabase-js` in one client auth module, a login screen,
-    Google/GitHub OAuth; `currentUser` becomes the authenticated identity (retire the temporary A3a
-    identity setter); feed the live access token into `createApiClient`/`createWsClient` **as a getter,
-    not a snapshot** (token refresh - the capture-once at `remoteStore.ts` / `client.ts` is the fix).
+    **Auth-B (slice 78, done):** the browser login. New `src/auth/session.ts` (the only importer of
+    `@supabase/supabase-js`) wraps Supabase Auth behind two seams: `getAccessToken()` (the credential for
+    the clients - the live session JWT, or the static `VITE_DAW_API_TOKEN` when auth is off) and a
+    `readAuthState`/`subscribeAuth` store fed by `onAuthStateChange`. `src/ui/AuthGate.tsx` wraps
+    `AppShell` in `App.tsx`: when `authEnabled` (both `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set)
+    it shows a loading card / a login screen (Continue with Google/GitHub, styled like `StartDialog`) /
+    the app by session status - gating *above* AppShell so the audio engine doesn't build behind the
+    login. The token became a lazy `TokenSource` (`string | (() => string | undefined)`) on
+    `createApiClient` (per-request `authHeaders()`) and `createWsClient` (URL rebuilt inside `connect()`,
+    so a reconnect picks up a refreshed token); `RemoteProjectStorage`/`bundleStore`/AppShell feed
+    `getAccessToken`. On sign-in the gate bridges the session's display name into `currentUser` (author =
+    a readable name, deliberately distinct from the server principal = JWT `sub`); the A3a dev identity
+    field in `AuthorColorSettings` is now auth-aware (static name + Sign out when authed, editable handle
+    in dev). Auth composes with the existing `VITE_DAW_API_URL` gate; local/OPFS mode ignores tokens.
+    Tested: `test/client.test.ts` (the token-getter is evaluated per request); the gate/login/supabase
+    wrapper are verified live (client runs in Vitest's node env - no jsdom - so no component tests).
     **Auth-C:** a **membership/sharing** table (who may open a project) + "owner or member?" guards + a
     share UI - "two users on one project" only means something once a project is shared with specific
     accounts. Fold in **Project index -> the `projects` table** (the `meta.json`-redundancy cleanup):
