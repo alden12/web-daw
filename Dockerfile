@@ -42,5 +42,8 @@ COPY --from=build /app/package.json /app/yarn.lock ./
 COPY --from=build /app/tsconfig.json /app/tsconfig.app.json /app/tsconfig.node.json /app/tsconfig.server.json ./
 COPY --from=build /app/drizzle.config.ts ./
 EXPOSE 8080
-# `yarn start` = `tsx server/api/index.ts`: applies migrations, then serves API + client + /ws on API_PORT.
-CMD ["yarn", "start"]
+# Run tsx directly, NOT via `yarn start`: the runner stage has no corepack cache, so invoking `yarn` here
+# makes corepack download yarn on every boot (a network fetch + multi-second delay) - fatal for
+# scale-to-zero, where it repeats on every cold start. The tsx bin needs no yarn. It runs
+# server/api/index.ts: apply migrations, then serve API + client + /ws on API_PORT.
+CMD ["node_modules/.bin/tsx", "server/api/index.ts"]
