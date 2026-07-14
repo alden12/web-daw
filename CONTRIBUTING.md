@@ -92,7 +92,7 @@ New source files should carry a short SPDX header:
 
 ```ts
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Copyright (C) 2026 web-daw contributors
+// Copyright (C) 2026 Alden Laslett
 ```
 
 The SPDX identifier is what tooling reads; the full license text lives in

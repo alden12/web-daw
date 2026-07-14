@@ -2010,3 +2010,88 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 - **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
   untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
   key is a prototype-pollution vector only if the client merges it carelessly).
+
+## Licensing & business model (open source, trademark, contributions)
+
+Direction as the project goes from disposable local tool to a hosted product with an ideal of being
+the **sole provider**. Current state: **AGPL-3.0-or-later** (`package.json` + a full `LICENSE`), a
+**DCO** in `CONTRIBUTING.md`, SPDX headers crediting **Alden Laslett** (sole copyright), repo public
+(`alden12/web-daw`). Not legal advice - decisions to revisit at launch.
+
+**The keystone insight: three different tools solve three different problems - don't conflate them.**
+
+- **The licence (AGPL vs BSL)** governs what *users* may do. This is where any "traction cost" lives.
+- **A trademark** governs who may use the *name/brand*. Compatible with open source (Firefox/WordPress
+  model). This is the real "sole provider" lever.
+- **A CLA/DCO** governs what *contributors* grant *you*. Invisible to users; costs nothing in adoption.
+  This is what preserves (or fails to preserve) your ability to relicense later.
+
+A single scenario maps to each cell, and the common mistake is expecting one tool to cover another's
+job:
+
+| Threat | AGPL | Trademark | Source-available (BSL/SSPL) |
+| --- | --- | --- | --- |
+| Competitor forks, improves privately, out-hosts you | **blocks** (must publish changes) | - | blocks |
+| Someone hosts your code & charges, under *their* name | allows | - | **blocks** |
+| Someone hosts it and calls it *your* product | - | **blocks** | - |
+
+The "host my code and charge as their own" cell is the one **AGPL + trademark leaves open**. Only a
+source-available licence closes it, and that means giving up the OSI "open source" label (the OSI
+definition forbids field-of-use restrictions, so no OSI licence can bar hosting).
+
+**Why AGPL now (not BSL).** AGPL is *more* valuable once hosted: it closes the SaaS loophole (anyone
+running a modified version as a service must publish their changes), which deters the *dangerous*
+competitor - a funded, closed, differentiated fork. The naive "rehost verbatim and charge" copycat is
+not a real threat pre-traction: they run a stale snapshot with no roadmap, support, brand, or your
+users (accounts/multiplayer/sync are the actual moat), always behind your HEAD. Strip-mining targets
+proven-demand infrastructure (DBs/search), not a pre-revenue creator app.
+
+**Timing is inverted - the reason not to "BSL during development."** The intuition "protect while
+building, open up at launch" is backwards on both axes: rehosting **risk is ~zero pre-launch and
+grows with traction**, while BSL's **cost (contributor friction, non-OSS label, credibility) is
+highest during the growth phase**. BSL-during-dev buys protection you don't need and pays for it when
+it hurts most. The industry playbook is the reverse: start open, and *if* you become a genuine
+strip-mining target, apply BSL to **new versions then** (Sentry/CockroachDB/HashiCorp). That works
+despite old versions staying open, because stale forks don't compete - so "AGPL is forever" is much
+softer in practice than it sounds. Reversibility asymmetry still favours caution (you own 100% of the
+copyright, so stricter->looser is trivial; looser->stricter needs the CLA below), but it is not a
+reason to pre-emptively restrict.
+
+**BSL, if ever adopted**, is the MariaDB BSL 1.1 template with an *Additional Use Grant* carving out
+"no competing hosted service" (self-hosting/non-prod/forking still allowed) and a *Change Date*
+converting each version to AGPL after ~4 years. `package.json` would use the SPDX id `BUSL-1.1` (or
+`"SEE LICENSE IN LICENSE"`), with the Additional Use Grant + Change Date living in the `LICENSE` file -
+the SPDX id alone does not encode those parameters.
+
+**Contributions: DCO preserves provenance, NOT relicensing.** The DCO certifies a contributor had the
+right to submit under AGPL (inbound = outbound); it gives *you* no right to relicense their code. So
+DCO does **not** keep the BSL door open. What does is a real **CLA** (copyright assignment or a broad
+grant including the right to relicense). **But while sole author you already have full relicensing
+freedom** - you own everything - so no CLA is needed yet; DCO is correct low-friction hygiene. The
+**trigger** to decide is the *first non-trivial outside contribution*, at which point that slice becomes
+AGPL-locked unless you first: (a) add a lightweight "CLA-lite" clause to `CONTRIBUTING.md` (inbound
+under AGPL **plus** a grant to relicense under future project licences - middle path, low friction), or
+(b) adopt a full CLA + signing bot (max optionality, max friction), or (c) accept AGPL-lock and move on.
+Keep the SPDX copyright as the sole holder (not "contributors") to keep this clean.
+
+**Trademark: territorial, defer to traction.** A trademark is national/regional - a UK mark protects
+only the UK; there is no world trademark. You don't register everywhere up front, and waiting is safe
+because of two treaties: **Paris Convention priority** (file UK, then within 6 months foreign filings
+can back-date to the UK date) and the **Madrid Protocol** (one WIPO application off the UK "home" mark,
+add countries later). Meanwhile there is free/cheap cover: UK "passing off", US **first-to-use** common-
+law rights, and grabbing the domain + handles at naming time (the real early squatting vector). UK IPO:
+~£170 first class + £50/extra, classes 9 (software) + 42 (SaaS) (+ maybe 41), ~3-4 months if unopposed.
+EU is efficient (one EUTM covers all 27, ~€850+); US via USPTO (~$250-350/class). **Sequencing:** cheap
+brand hygiene now (distinctive, invented/arbitrary name - descriptive marks like "web-daw" are largely
+unregistrable/unenforceable; grab domain+handles) -> file UK at public launch under the brand -> within
+6 months add EU/US *if traction warrants* -> Madrid for further countries reactively.
+
+**Decisions / triggers (deferred, not blocking):**
+
+- **Licence:** stay AGPL through development and launch. Revisit BSL only on real traction + genuine
+  rehosting-target status, applied to new versions.
+- **CLA:** none needed while solo. Decide at the first non-trivial outside PR (CLA-lite vs full CLA vs
+  accept AGPL-lock). Preserve sole-copyright SPDX headers until then.
+- **Trademark:** no action until public launch under the brand. Actionable now only: pick a distinctive
+  name and grab domain + handles at naming time.
+- Related memory: `web-daw-licensing`.
