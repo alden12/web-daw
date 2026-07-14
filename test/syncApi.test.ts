@@ -105,12 +105,26 @@ describe("sync API routes", () => {
     expect((await put(app, "p-demo/files/project.json", PROJECT)).status).toBe(204);
   });
 
-  it("syncs project name from a meta.json write", async () => {
+  it("stores a meta.json write but does not sync the name column (retired; the authority owns the index)", async () => {
     const { app, db } = await makeSyncEnv();
-    await put(app, "p1/files/meta.json", JSON.stringify({ name: "My Beat", modifiedAt: "2026-01-01T00:00:00.000Z" }));
+    // meta.json is still accepted + stored (the client OPFS/export path uses it), but syncMeta is retired:
+    // projects.name is maintained by the realtime authority (setProjectName on a renameProject edit), not
+    // by a client meta.json PUT, so the queryable name stays the default here.
+    expect(
+      (
+        await put(
+          app,
+          "p1/files/meta.json",
+          JSON.stringify({ name: "My Beat", modifiedAt: "2026-01-01T00:00:00.000Z" }),
+        )
+      ).status,
+    ).toBe(204);
 
     const rows = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, "p1"));
-    expect(rows[0]?.name).toBe("My Beat");
+    expect(rows[0]?.name).toBe("Untitled");
+    // The file itself is retrievable (still a valid bundle file for OPFS/export round-trips).
+    const back = await app.request("/projects/p1/files/meta.json");
+    expect(JSON.parse(await back.text()).name).toBe("My Beat");
   });
 
   it("soft-deletes: the project drops from listings but its files remain", async () => {

@@ -19,18 +19,25 @@ import type { ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
 import {
   appendEdits,
+  deleteEditsBelow,
   ensureUser,
   maxEditSeq,
   readEdits,
   readFile,
   resolveProjectAccess,
   setProjectName,
+  writeFile,
   type Accessor,
   type EditEntryInput,
 } from "../db/store";
 
 /** How many recent entries a `snapshot` carries (bounded feed window; matches MAX_PERSISTED_ENTRIES). */
 const SNAPSHOT_WINDOW = 2000;
+
+/** Write a keyframe every this many edits since the last one, to bound room-reload replay. Mirrors the
+ *  client's `KEYFRAME_EDIT_INTERVAL` (src/audio/persistence.ts); far below `SNAPSHOT_WINDOW`, so
+ *  compaction only ever prunes once a project's log exceeds the retained feed window. */
+const KEYFRAME_INTERVAL = 100;
 
 /** A connected client - anything the room can push a server message to. */
 export interface RoomClient {
@@ -59,19 +66,31 @@ export class Room {
   readonly projectId: string;
   private readonly store: ProjectStore;
   private maxSeq: number;
+  /** The `seq` the last persisted keyframe (`project.json`) reflects; the replay floor. Seeded from the
+   *  loaded keyframe's `headSeq`, advanced when the authority writes a new keyframe. */
+  private lastKeyframeSeq: number;
 
   // Explicit field assignment (no constructor parameter-properties: erasableSyntaxOnly forbids them).
-  private constructor(db: Db, ownerId: string, projectId: string, store: ProjectStore, maxSeq: number) {
+  private constructor(
+    db: Db,
+    ownerId: string,
+    projectId: string,
+    store: ProjectStore,
+    maxSeq: number,
+    lastKeyframeSeq: number,
+  ) {
     this.db = db;
     this.ownerId = ownerId;
     this.projectId = projectId;
     this.store = store;
     this.maxSeq = maxSeq;
+    this.lastKeyframeSeq = lastKeyframeSeq;
   }
 
   /** Load a project's current HEAD into a fresh room: keyframe (`project.json`, if any) + replay the
-   *  edit tail after its `headSeq`. With no keyframe, replays the whole stream from empty (still HEAD;
-   *  Phase B adds server-written keyframes to bound the replay). */
+   *  edit tail after its `headSeq`. The authority writes those keyframes (see `persistKeyframe`), so the
+   *  replayed tail stays bounded; with no keyframe yet it replays the whole stream from empty (still HEAD).
+   *  `headSeq` seeds `lastKeyframeSeq` so the keyframe cadence carries across reloads. */
   static async load(db: Db, ownerId: string, projectId: string): Promise<Room> {
     // Guarantee the owner exists before we persist any owner-stamped edit (the `projects.owner_id` FK).
     // In production the principal seam already provisioned it; this keeps the authority self-consistent
@@ -91,16 +110,39 @@ export class Room {
       if (isReplayable(entry.kind)) applyEdit(store, entry.command as EditCommand, entry.author as Author);
     }
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
-    return new Room(db, ownerId, projectId, store, maxSeq);
+    return new Room(db, ownerId, projectId, store, maxSeq, headSeq);
   }
 
   get connectionCount(): number {
     return this.clients.size;
   }
 
-  /** The working snapshot (for tests / a Phase-B server keyframe). */
+  /** The current in-memory HEAD (what `persistKeyframe` writes; also handy in tests). */
   snapshot(): ProjectData {
     return this.store.snapshot();
+  }
+
+  /**
+   * Persist a keyframe: write `project.json` (the HEAD snapshot + an embedded `headSeq`), then compact the
+   * working edit log behind it. `Room.load` reads this keyframe and replays only the tail after `headSeq`,
+   * so this bounds cold-start replay. `lastKeyframeSeq` is advanced synchronously (before the await) so a
+   * concurrent edit crossing the cadence doesn't double-write. Best-effort: the delta log is the durable
+   * truth, so a failed keyframe just means the next load replays a little more.
+   */
+  private async persistKeyframe(): Promise<void> {
+    const headSeq = this.maxSeq;
+    if (headSeq <= this.lastKeyframeSeq) return;
+    const snapshot = this.store.snapshot();
+    this.lastKeyframeSeq = headSeq;
+    await writeFile(this.db, { userId: this.ownerId }, this.projectId, "project.json", {
+      kind: "json",
+      json: { ...snapshot, headSeq },
+    });
+    // Compact: prune entries at/below the keyframe, but keep the most-recent SNAPSHOT_WINDOW so the
+    // catch-up feed still has history. `headSeq - SNAPSHOT_WINDOW` is strictly below the keyframe, so the
+    // load replay (which reads seq > headSeq) never needs a pruned entry.
+    const pruneFloor = headSeq - SNAPSHOT_WINDOW;
+    if (pruneFloor >= 0) await deleteEditsBelow(this.db, this.projectId, pruneFloor);
   }
 
   /** Add a client and send it the catch-up `snapshot` (head + recent stream). */
@@ -159,6 +201,9 @@ export class Room {
     // Keep the queryable index name current on a rename, so every collaborator's listing reflects it
     // without the renamer pushing meta.json (a peer never writes the owner's meta.json).
     if (edit.command.type === "renameProject") await setProjectName(this.db, this.projectId, this.store.name);
+    // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a bounded
+    // tail. Runs after the broadcast, so it never delays peers seeing the edit.
+    if (this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
     return applied;
   }
 
