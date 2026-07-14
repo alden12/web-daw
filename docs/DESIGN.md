@@ -1277,18 +1277,51 @@ land in either order, or not at all if the local-first single-user shape stays t
   cheap groundwork that keeps the longer-term tablet / mobile goal (the Mobile / responsive bullet
   below) reachable without a rewrite, and it is why the timeline-usability batch above specifies a
   touch path for each new action.
-- **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
-  + timeline) assumes a wide screen; small screens need a different shape - collapse to a
-  single focused region with a bottom tab/drawer bar to switch between library, the selected
-  track's workbench, the timeline, and the agent. Touch interactions are the real work: the
-  knob's vertical-drag gesture, note drawing, and group/clip drag all need touch handlers and
-  larger hit targets. The agent pane leans toward a slide-over sheet on phones. Being web-first
-  is the advantage here - it should run on a tablet/phone, which also makes the AI-co-author
-  pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
-  (Converse/Produce) maps naturally onto how much screen the agent takes.
+- **Mobile / responsive layout (an epic; direction settled 2026-07-14).** The four-region video-editor
+  grid assumes a wide screen; touch devices need a different shape. Guiding decisions:
+  - **Swap the shell, not the app.** The stores (`projectStore`, `editLog`, the param schema) and the
+    leaf components (`PianoRoll`, `Knob`, `LibraryPanel`, mixer, agent) are already UI-agnostic. Only the
+    desktop `[grid-area:...]` shell doesn't map. So below a breakpoint, render a `MobileShell` that
+    re-hosts the same panels - mobile is another projection of the same stores, not a fork.
+  - **Tier by device, don't build one "mobile."** Phone = play / tweak / **agent-driven** creation
+    (not full arrangement editing by finger); tablet (esp. landscape + Pencil) = a genuine editing
+    surface approaching desktop. Detect with `pointer: coarse` / `pointerType`, not just width.
+  - **Navigation:** a thumb-reachable **bottom tab bar** (reuse the data-driven `ActivityRail` view
+    list: Arrange / Edit / Mix / Library / Agent) + a **persistent transport bar** pinned top +
+    **slide-up sheets** for transient tasks (add instrument, edit a param) so you don't lose your place.
+    **Long-press replaces right-click** (no hover, no secondary click).
+  - **The editing surfaces are the real work, and the keystone is migrating drag logic to the**
+    **Pointer Events API** (`pointerdown/move/up`, one path for mouse/touch/Pencil, `touch-action:none`
+    to own gestures) - do it once and every pointer surface benefits. Then layer: **pinch-zoom +
+    two-finger pan** on both axes; an **explicit tool model** (draw / select / erase) to disambiguate a
+    drag without modifier keys; **hit-target floors** (min note height + resize handles, fixed keyboard
+    edge); heavier reliance on **grid snap/quantize**.
+  - **Agent-forward is the mobile superpower.** Precise multi-track touch editing is inherently painful;
+    describing intent is not. On mobile the agent shifts from assistant to the **primary creation path**
+    ("add a four-on-the-floor kick," "harmonize in the project key"), with touch for auditioning and
+    fine-tuning. Notes-as-prompt (play a phrase, attach it) is especially strong here.
+  - **Platform gotchas:** iOS Safari / WKWebView has **no Web MIDI** (the on-screen keyboard/pads become
+    the only input - invest there, velocity via touch-y/force); **AudioContext needs a user-gesture to
+    unlock**; handle safe-area insets.
+  - **Suggested sequencing:** (1) spike - render + navigate at phone width (`MobileShell` + tabs +
+    transport); (2) Pointer Events refactor of roll/timeline/knobs (no desktop behaviour change); (3)
+    touch gesture + tool layer; (4) agent-forward flow + on-screen keyboard/pads; (5) PWA packaging.
+
+- **Native packaging - PWA first, then Tauri v2 (which now does mobile).** The real gating risk is not
+  the shell tech but whether an **OS webview can deliver acceptable real-time AudioWorklet audio** on
+  mobile - and that risk is shared by every webview approach (PWA, Tauri, Capacitor), since all three use
+  WKWebView / Android WebView. So: ship a **PWA first** (installable, zero native shell, free) to validate
+  webview audio on real devices and get an offline-capable app now; then **Tauri v2** for app-store
+  presence + native niceties - it added first-class iOS/Android targets, so one Tauri project can cover
+  desktop *and* mobile (a point in its favour over a native rewrite, which would abandon the shared web
+  codebase). Tauri-mobile is younger than its desktop story and its mobile plugin ecosystem is thinner, so
+  **Capacitor** is the fallback if Tauri-mobile plugins fall short (more proven web-to-mobile wrapper, same
+  webview + audio caveats). Only reach for React Native / Flutter / native if the webview proves it can't
+  carry the audio - which the PWA step will tell us cheaply.
 
 **Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
-shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow).
+shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow), with
+**Tauri v2 mobile** as the same-codebase path to the app stores (see the native-packaging bullet above).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
