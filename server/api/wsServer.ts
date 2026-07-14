@@ -20,14 +20,12 @@ import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipa
 
 export interface WsOptions {
   db: Db;
-  /** Real auth: verify a Supabase/OIDC JWT (from `?token=`) against this JWKS/issuer. When set it
-   *  replaces the shared-token gate and the principal is the token's user; when unset, dev-stub mode. */
+  /** Real auth: verify a Supabase/OIDC JWT (from `?token=`) against this JWKS/issuer. When set the
+   *  principal is the token's user; when unset, dev-stub mode (the single `ownerId` below, open). */
   auth?: AuthConfig;
-  /** Inject a pre-built principal resolver (tests). Takes precedence over `auth`/`token`/`ownerId`. */
+  /** Inject a pre-built principal resolver (tests). Takes precedence over `auth`/`ownerId`. */
   resolvePrincipal?: ResolvePrincipal;
-  /** Dev-stub: shared bearer token; empty/unset = open (local dev). */
-  token?: string;
-  /** Dev-stub: the single principal every connection maps to (until real auth supplies it). */
+  /** Dev-stub: the single principal every connection maps to (local dev / tests; default "local"). */
   ownerId?: string;
   /** Trace connection lifecycle + each message to the console. On in dev, off in prod. */
   log?: boolean;
@@ -40,7 +38,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
     options.resolvePrincipal ??
     (options.auth
       ? makeJwtResolver(options.db, options.auth)
-      : makeDevResolver(options.db, { token: options.token, devUserId: options.ownerId }));
+      : makeDevResolver(options.db, { devUserId: options.ownerId }));
   const registry = new RoomRegistry(options.db);
   const wss = new WebSocketServer({ server, path: channels.main.path });
   const log = options.log ? (message: string) => console.log(`[web-daw ws] ${message}`) : () => {};

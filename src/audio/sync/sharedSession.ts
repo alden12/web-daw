@@ -55,6 +55,9 @@ export interface SharedSessionOptions {
   newOpId?: () => string;
   /** Surface a rejected edit / transport note to the UI. */
   onError?: (message: string) => void;
+  /** Fired when a *peer's* new edit is applied (not our own echoes). Lets the UI react to remote changes
+   *  beyond the store - e.g. refresh the project-list label on a `renameProject`. */
+  onRemoteEdit?: (command: EditCommand, author: Author) => void;
 }
 
 /** Only pure-forward edits replay through `applyEdit`; notes / undo-redo markers are skipped. */
@@ -67,6 +70,7 @@ export class SharedSession {
   private readonly projectId: string;
   private readonly newOpId: () => string;
   private readonly onError?: (message: string) => void;
+  private readonly onRemoteEdit?: (command: EditCommand, author: Author) => void;
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
   private readonly base: ProjectStore;
@@ -83,6 +87,7 @@ export class SharedSession {
     this.projectId = options.projectId;
     this.newOpId = options.newOpId ?? (() => crypto.randomUUID());
     this.onError = options.onError;
+    this.onRemoteEdit = options.onRemoteEdit;
     this.headSeq = options.baseSeq ?? -1;
 
     // Seed `base` from the client's already-loaded HEAD, so a peer rebase replays onto real state
@@ -187,6 +192,7 @@ export class SharedSession {
     } else if (isNew) {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
       this.editLog.recordRemote(message.command as EditCommand, message.author); // narrate it in the feed
+      this.onRemoteEdit?.(message.command as EditCommand, message.author); // let the UI react (e.g. list label)
     }
   }
 

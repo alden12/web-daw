@@ -5,7 +5,7 @@ import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
 import { VersionStore } from "../src/audio/commands/history";
 import { attachAutosave } from "../src/audio/persistence";
-import { listProjects } from "../src/audio/projects/library";
+import { listProjects, patchProjectName, refreshProjects, subscribeProjects } from "../src/audio/projects/library";
 import {
   initProjects,
   createProject,
@@ -117,5 +117,25 @@ describe("MemoryProjectStorage enumerate + delete", () => {
     await storage.deleteProject("a");
     expect(await ids()).toEqual(["b"]);
     expect(await storage.bundle("a").readText("project.json")).toBeNull();
+  });
+});
+
+describe("patchProjectName (live rename propagation)", () => {
+  it("updates the cached label in place and notifies subscribers", async () => {
+    const storage = new MemoryProjectStorage();
+    setProjectStorage(storage);
+    await storage.bundle("p1").writeText("meta.json", JSON.stringify({ name: "Old" }));
+    await refreshProjects(storage);
+    expect(listProjects().find((meta) => meta.id === "p1")?.name).toBe("Old");
+
+    let notified = 0;
+    const unsub = subscribeProjects(() => (notified += 1));
+    patchProjectName("p1", "New");
+    expect(listProjects().find((meta) => meta.id === "p1")?.name).toBe("New");
+    expect(notified).toBe(1);
+
+    patchProjectName("missing", "x"); // no-op: not in the cache, no notification
+    expect(notified).toBe(1);
+    unsub();
   });
 });

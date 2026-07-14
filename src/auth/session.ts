@@ -7,8 +7,8 @@
  * is what makes the provider swappable later (only this file imports `@supabase/supabase-js`).
  *
  * Auth is OPT-IN via env: with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` unset the app runs exactly
- * as before real auth (no gate; the static `VITE_DAW_API_TOKEN` is the credential). No React here - the
- * UI bridges this store to `currentUser` and renders the gate.
+ * as before real auth (no gate, no credential - the dev-stub server is open, a single "local" owner). No
+ * React here - the UI bridges this store to `currentUser` and renders the gate.
  */
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -59,9 +59,10 @@ function apply(session: Session | null): void {
 // load (the stored session or null), plus SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED.
 if (supabase) supabase.auth.onAuthStateChange((_event, session) => apply(session));
 
-/** The credential for the API/WS clients: the live session JWT, or the static dev token when auth is off. */
+/** The credential for the API/WS clients: the live session JWT when auth is on, else none (the dev-stub
+ *  server is open). */
 export function getAccessToken(): string | undefined {
-  return authEnabled ? token : import.meta.env?.VITE_DAW_API_TOKEN;
+  return authEnabled ? token : undefined;
 }
 
 /** Current auth state (a stable snapshot; changes only alongside a `subscribeAuth` notification). */
