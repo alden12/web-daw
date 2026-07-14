@@ -1813,6 +1813,16 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     broadcast `editApplied` anyway - the replay engine stops being extra coupling and becomes core.
     So server-side keyframing (and edit-log compaction) is best built *with* the multiplayer slice,
     not before it. The `BundleStore` seam already permits a "smart backend" variant when that lands.
+    **Done (slice 82, Phase B1):** now that the realtime authority (`server/api/rooms.ts`) already owns
+    the reducer (it replays `edits` through `applyEdit` and holds the live `ProjectStore`), it writes a
+    keyframe itself: every `KEYFRAME_INTERVAL` (100) edits `Room.persistKeyframe` writes `project.json`
+    (HEAD snapshot + embedded `headSeq`) and then compacts the working `edits` log via
+    `deleteEditsBelow`, pruning entries below `headSeq - SNAPSHOT_WINDOW` (kept strictly below the
+    keyframe so `Room.load`'s tail replay stays exact, and retaining the 2000-entry feed window). This
+    bounds cold-start replay under scale-to-zero. `meta.json` sync (`syncMeta`) was retired server-side
+    at the same time - `projects.name`/`modifiedAt` is maintained by the authority (`setProjectName` on a
+    `renameProject` edit); `meta.json` stays only as a client OPFS/export bundle file. Still client-side
+    and deferred to **B2/B3**: the commit/version DAG (`VersionStore`) and MCP server-side history.
 - **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
   covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
   command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
