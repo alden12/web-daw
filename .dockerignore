@@ -1,0 +1,14 @@
+# Keep the build context small and never ship local env or build artifacts into the image.
+node_modules
+dist
+dist-ssr
+.git
+.env
+.env.*
+!.env.example
+test
+e2e
+playwright-report
+test-results
+*.log
+.DS_Store

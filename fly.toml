@@ -1,0 +1,33 @@
+# Fly.io config: one scale-to-zero machine serving the built client + Hono API + /ws (single origin).
+# Full runbook in docs/DEPLOY.md. Cost is bounded by resources, not a spend cap (Fly has no hard cutoff):
+# a single shared-cpu-1x / 256mb machine, capped at 1, with no volume -> ~$2-3/mo worst case (runs 24/7),
+# near-$0 while idle. Set a $5 billing alert in the Fly dashboard as a backstop.
+#
+# `app` must be globally unique; `fly launch` may append a suffix. Whatever subdomain you land on, the
+# client must be built with VITE_DAW_API_URL = https://<that-app>.fly.dev (see the deploy runbook).
+app = "web-daw"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  API_PORT = "8080"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero: stop the machine when idle, start it on the next request. Our authority rebuilds a room
+  # by replaying the edits table on load and the client reconnects/gap-fills, so a cold start (a few
+  # seconds for the first visitor after idle) is the only cost - no data loss. For a scheduled live
+  # co-editing session, set min_machines_running = 1 and auto_stop_machines = "off" to avoid the wait.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  # Cost ceiling: never run more than one (paid) machine.
+  max_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

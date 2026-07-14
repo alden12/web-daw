@@ -1984,7 +1984,18 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
   - See the hosting/scaling entry above: the authority is **per-project** (the shard unit), so a project
     is single-region at a time; server-assigned `seq` is the enabling change.
-- **Hosting & scaling (deferred, recorded for the multiplayer slice).**
+- **Hosting & scaling.**
+  - **First deploy - DONE (slice 81):** the recommended shape below is now realized as a concrete,
+    repeatable deploy (runbook in `docs/DEPLOY.md`). **Single origin:** one Node process serves the built
+    client (`dist/`), the Hono API, and `/ws` from one URL (the server gained static + SPA-fallback
+    serving in `server/api/index.ts`; the auth gate is scoped to `/projects` so static assets aren't
+    401'd). **Fly.io** runs it as a **scale-to-zero** machine (`fly.toml`: one `shared-cpu-1x`/256 MB,
+    `max_machines_running = 1`, no volume - bounds cost to ~$2-3/mo worst case, near-$0 idle) + **Neon**
+    free Postgres; migrations apply on boot. Scale-to-zero is safe here because a room rebuilds by
+    replaying the `edits` table and clients reconnect/gap-fill (slice 76) - the only cost is a few-second
+    cold start after idle; flip `min_machines_running = 1` for a live session. Deployed with **auth on**
+    (the Supabase JWT stack, slices 77-80). The scaling model below (per-project sharding, single-region)
+    still stands as the growth path; nothing here forecloses it.
   - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
     unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
     functions, plain Lambda) for the socket layer; it needs an always-on process.
@@ -2037,11 +2048,12 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
      `insert(...).onConflictDoNothing().returning()`: the `(projectId, path)` unique constraint lets
      exactly one concurrent insert win, and the loser (no row returned) is a 409 - no check-then-upsert
      for two writers to race.
-- **Before any deploy / multi-user (a coherent "harden for hosting" slice):** the token **defaults
-  to open** (empty = no auth), is a single shared secret with **no rate-limiting / brute-force
-  protection** and a timing-unsafe compare, and the owner is a hardcoded `"local"` (any caller can
-  touch every project) - all need real per-user accounts + auth. Plus **per-owner quotas** (projects
-  / files / bytes) against storage abuse, and narrowing **CORS** from `*` to the app origin.
+- **Harden for hosting - mostly DONE (auth epic, slices 77-80 + deploy slice 81).** The old shared
+  token (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is **retired**;
+  real per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every
+  request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
+  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse, and
+  rate-limiting on the auth/JWT path.
 - **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
   untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
   key is a prototype-pollution vector only if the client merges it carelessly).
