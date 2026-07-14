@@ -92,18 +92,12 @@ describe("makeJwtResolver", () => {
 });
 
 describe("makeDevResolver (dev-stub)", () => {
-  it("maps to the configured principal and provisions it", async () => {
+  it("maps any request to the configured principal (open) and provisions it", async () => {
     const { db } = await makeSyncEnv();
     const resolve = makeDevResolver(db, { devUserId: "local" });
+    // No credential required - the dev stub is open (local dev / tests).
     expect(await resolve(undefined)).toEqual({ userId: "local" });
+    expect(await resolve("anything")).toEqual({ userId: "local" });
     expect(await db.select().from(users).where(eq(users.id, "local"))).toHaveLength(1);
-  });
-
-  it("enforces a shared token gate when set", async () => {
-    const { db } = await makeSyncEnv();
-    const resolve = makeDevResolver(db, { token: "secret", devUserId: "local" });
-    expect(await resolve("secret")).toEqual({ userId: "local" });
-    expect(await resolve("wrong")).toBeNull();
-    expect(await resolve(undefined)).toBeNull();
   });
 });

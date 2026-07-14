@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
+import { projects } from "../server/db/schema";
 import type { ServerMessage } from "../src/contract/ws";
 import type { EditCommand } from "../src/audio/commands/types";
 
@@ -76,6 +78,17 @@ describe("Room (realtime authority)", () => {
       expect(snapshot.headSeq).toBe(1);
       expect(snapshot.entries.map((e) => e.seq)).toEqual([0, 1]);
     }
+  });
+
+  it("keeps projects.name current when it applies a renameProject edit", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await room.applyIncoming({ command: { type: "renameProject", name: "My Beat" } as EditCommand, opId: "op-1" });
+
+    // The authority mirrors the rename into the queryable index, so every collaborator's listing reflects
+    // it - no dependence on the renamer pushing meta.json.
+    const rows = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, "p1"));
+    expect(rows[0]?.name).toBe("My Beat");
   });
 
   it("converges on a stale-target edit (add to a just-removed track no-ops, no crash)", async () => {

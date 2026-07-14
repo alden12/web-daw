@@ -8,8 +8,9 @@
  *    JWKS). Checks the signature, issuer, and audience; the principal is the token's `sub`. Any failure
  *    (bad signature, expired, wrong iss/aud, malformed, absent) resolves to `null` = unauthorised. This
  *    is the production path.
- *  - `makeDevResolver` - the pre-auth stub kept for local dev and tests: an optional shared bearer-token
- *    gate and a single configured principal (default "local"). No real identity.
+ *  - `makeDevResolver` - the pre-auth stub kept for local dev and tests: a single configured principal
+ *    (default "local"), no credential required. No real identity. (Local dev runs open; production always
+ *    sets the JWT config, so the real gate is always on where it matters.)
  *
  * Either way a resolved principal is provisioned just-in-time (`ensureUser`), so the `projects.owner_id`
  * FK is satisfied before any owner-stamped write. Keeping verification here (not inline in app.ts) is
@@ -62,12 +63,10 @@ export function makeJwtResolver(db: Db, config: AuthConfig, getKey?: JWTVerifyGe
   };
 }
 
-/** The pre-auth stub: an optional shared-token gate + a single configured principal. */
-export function makeDevResolver(db: Db, options: { token?: string; devUserId?: string } = {}): ResolvePrincipal {
-  const token = options.token ?? "";
+/** The pre-auth stub: a single configured principal (default "local"), no credential required. */
+export function makeDevResolver(db: Db, options: { devUserId?: string } = {}): ResolvePrincipal {
   const devUserId = options.devUserId ?? "local";
-  return async (credential) => {
-    if (token && credential !== token) return null;
+  return async () => {
     await ensureUser(db, devUserId);
     return { userId: devUserId };
   };

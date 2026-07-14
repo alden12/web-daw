@@ -34,6 +34,21 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Patch one project's cached name in place (and notify subscribers). Used when a `renameProject` edit
+ * arrives from a collaborator: the peer already applied it to the live store, so we update the list label
+ * straight from the edit rather than re-reading the server (race-free, instant). A no-op if the id isn't
+ * in the cache yet (a later refresh will pick it up from the now-authoritative `projects.name`).
+ */
+export function patchProjectName(id: string, name: string): void {
+  const next = name.trim() || "Untitled";
+  let changed = false;
+  cache = cache.map((meta) =>
+    meta.id === id && meta.name !== next ? ((changed = true), { ...meta, name: next }) : meta,
+  );
+  if (changed) emit();
+}
+
 /** Ask the storage for its listings, sort newest-first, update + notify the cache. */
 export async function refreshProjects(storage: ProjectStorage = getProjectStorage()): Promise<ProjectMeta[]> {
   const metas = await storage.listProjects();

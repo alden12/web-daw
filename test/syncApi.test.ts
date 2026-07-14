@@ -200,10 +200,9 @@ describe("sync API routes", () => {
     expect(await listedIds(await appB.request("/projects"))).toEqual([]);
   });
 
-  it("enforces the bearer token when set", async () => {
-    const { app } = await makeSyncEnv({ token: "secret" });
-    expect((await app.request("/projects")).status).toBe(401);
-    expect((await app.request("/projects", { headers: { Authorization: "Bearer secret" } })).status).toBe(200);
+  it("runs open in dev-stub mode (no credential required)", async () => {
+    const { app } = await makeSyncEnv();
+    expect((await app.request("/projects")).status).toBe(200);
   });
 
   it("sends CORS headers so the browser app (a different origin) can read responses", async () => {
