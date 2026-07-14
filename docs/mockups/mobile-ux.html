@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>web-daw - mobile &amp; tablet UX concept</title>
+  <!-- Self-contained design mockup (concept only, not a working build). Open directly in a browser.
+       Layout + interaction model for touch; palette from src/index.css. See docs/DESIGN.md. -->
+  <style>html,body{margin:0;padding:0;background:#0b0d10}</style>
+</head>
+<body>
+<style>
+  :root {
+    /* web-daw design tokens (from src/index.css) */
+    --ground: #101216;
+    --rail: #14171c;
+    --panel: #1a1d24;
+    --card: #2b313c;
+    --line: #363d49;
+    --line-soft: #282e38;
+    --ink: #e8e6e0;
+    --bright: #ffffff;
+    --muted: #868c99;
+    --faint: #5c626e;
+    --you: #56c7c2;     /* teal  - the user */
+    --claude: #d9775a;  /* coral - Claude over MCP */
+    --agent: #a884f3;   /* violet - the in-app agent */
+    --canvas: #0b0d10;  /* page behind the device frames */
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  .page {
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #16202a 0%, transparent 60%),
+      var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    min-height: 100%;
+    padding: 48px 24px 72px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  /* ---- header ---- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--you);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-size: clamp(28px, 4.5vw, 46px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 16px;
+    color: var(--bright);
+    font-weight: 650;
+  }
+  h1 .dim { color: var(--muted); font-weight: 400; }
+  .lead { max-width: 60ch; color: var(--muted); font-size: 16px; margin: 0 0 22px; }
+  .lead b { color: var(--ink); font-weight: 600; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 8px; }
+  .key { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* ---- section headers ---- */
+  .sec { margin-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 32px; }
+  .sec-num { font-family: var(--mono); font-size: 13px; color: var(--you); }
+  .sec-title { font-size: 20px; color: var(--bright); margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  .sec-sub { color: var(--faint); font-size: 14px; margin-left: auto; font-family: var(--mono); }
+
+  /* ---- principles strip ---- */
+  .principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .prin { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 12px; padding: 16px 18px; }
+  .prin h3 { margin: 0 0 6px; font-size: 14px; color: var(--bright); font-weight: 600; }
+  .prin p { margin: 0; font-size: 13px; color: var(--muted); }
+  .prin .tag { font-family: var(--mono); font-size: 11px; color: var(--you); display: block; margin-bottom: 8px; letter-spacing: 0.1em; }
+
+  /* ---- device frames ---- */
+  .phones { display: flex; flex-wrap: wrap; gap: 40px 32px; justify-content: center; }
+  .col { width: 300px; max-width: 100%; }
+  .device {
+    background: #05070a;
+    border: 1px solid #23272f;
+    border-radius: 34px;
+    padding: 10px;
+    box-shadow: 0 30px 60px -30px #000, inset 0 0 0 1px #ffffff08;
+  }
+  .screen {
+    background: var(--ground);
+    border-radius: 25px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 620px;
+    position: relative;
+  }
+  .notch { height: 26px; display: flex; align-items: center; justify-content: center; }
+  .notch::after { content: ""; width: 92px; height: 7px; border-radius: 6px; background: #05070a; }
+
+  /* transport bar (persistent, top) */
+  .transport {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .tbtn { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; background: var(--card); color: var(--ink); font-size: 11px; }
+  .tbtn.rec { color: var(--claude); }
+  .tbtn.play { color: var(--you); }
+  .tclock { font-family: var(--mono); font-size: 13px; color: var(--bright); margin-left: 2px; }
+  .tmeta { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: auto; }
+
+  /* body of each screen */
+  .body { flex: 1; overflow: hidden; position: relative; }
+
+  /* bottom tab bar */
+  .tabs { display: flex; background: var(--rail); border-top: 1px solid var(--line-soft); padding-bottom: 6px; }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 0 4px; color: var(--faint); font-size: 10px; }
+  .tab .ic { width: 20px; height: 20px; display: grid; place-items: center; }
+  .tab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .tab.active { color: var(--you); }
+  .tab.active .ic { position: relative; }
+
+  .scr-label { position: absolute; top: 8px; right: 10px; font-family: var(--mono); font-size: 10px; color: var(--faint); z-index: 3; }
+
+  /* ---- ARRANGE view ---- */
+  .ruler { display: flex; height: 18px; border-bottom: 1px solid var(--line-soft); background: var(--panel); }
+  .ruler span { flex: 1; font-family: var(--mono); font-size: 9px; color: var(--faint); padding: 3px 0 0 5px; border-right: 1px solid var(--line-soft); }
+  .lane { display: flex; align-items: center; height: 52px; border-bottom: 1px solid var(--line-soft); }
+  .lane-head { width: 74px; padding: 0 8px; font-size: 11px; color: var(--ink); border-right: 1px solid var(--line-soft); height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 3px; flex: none; }
+  .lane-head .nm { font-weight: 600; }
+  .lane-head .grp { font-size: 9px; color: var(--faint); font-family: var(--mono); }
+  .lane-clips { flex: 1; position: relative; height: 100%; }
+  .clip { position: absolute; top: 9px; height: 34px; border-radius: 6px; border: 1px solid #ffffff22; display: flex; align-items: center; padding: 0 7px; font-size: 9.5px; color: #0c0e12; font-weight: 600; overflow: hidden; }
+  .clip.you { background: color-mix(in srgb, var(--you) 82%, #000); }
+  .clip.cl { background: color-mix(in srgb, var(--claude) 82%, #000); }
+  .clip.ag { background: color-mix(in srgb, var(--agent) 78%, #000); }
+  .clip .wave { position: absolute; inset: auto 0 4px 0; height: 10px; opacity: .35; }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--bright); left: 38%; box-shadow: 0 0 8px #fff8; }
+
+  /* ---- EDIT / piano roll view ---- */
+  .rolltools { display: flex; gap: 6px; padding: 7px 10px; background: var(--panel); border-bottom: 1px solid var(--line-soft); align-items: center; }
+  .tool { font-size: 11px; padding: 4px 10px; border-radius: 7px; background: var(--card); color: var(--muted); border: 1px solid transparent; }
+  .tool.on { color: var(--ground); background: var(--you); font-weight: 600; }
+  .rolltools .clipnm { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .roll { display: flex; height: calc(100% - 34px - 64px); }
+  .keys { width: 34px; flex: none; background: var(--panel); border-right: 1px solid var(--line); }
+  .keys .k { height: 15.5px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); font-size: 7px; color: var(--faint); padding-left: 3px; }
+  .keys .k.blk { background: #0c0e12; }
+  .grid { flex: 1; position: relative; background:
+      repeating-linear-gradient(90deg, transparent 0 24.6px, var(--line-soft) 24.6px 25px),
+      repeating-linear-gradient(0deg, transparent 0 15px, #ffffff08 15px 15.5px);
+  }
+  .note { position: absolute; height: 12px; border-radius: 3px; border: 1px solid #ffffff33; }
+  .note.you { background: var(--you); }
+  .note.cl { background: var(--claude); }
+  .note.sel { outline: 2px solid var(--bright); outline-offset: 1px; }
+  .aicursor { position: absolute; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--claude); background: #d9775a33; }
+  .aicursor::after { content: "claude"; position: absolute; top: -15px; left: 0; font-family: var(--mono); font-size: 8px; color: var(--claude); }
+  .pinch { position: absolute; bottom: 8px; right: 8px; font-family: var(--mono); font-size: 9px; color: var(--muted); background: #0c0e12cc; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line-soft); }
+  .kbd { height: 64px; border-top: 1px solid var(--line); display: flex; background: var(--panel); }
+  .kbd .wk { flex: 1; border-right: 1px solid var(--line-soft); position: relative; }
+  .kbd .bk { position: absolute; top: 0; width: 60%; height: 60%; background: #05070a; right: -30%; z-index: 2; border-radius: 0 0 3px 3px; }
+
+  /* ---- AGENT view ---- */
+  .chat { display: flex; flex-direction: column; gap: 12px; padding: 14px 12px; height: 100%; overflow: hidden; }
+  .msg { max-width: 82%; padding: 9px 12px; border-radius: 13px; font-size: 12.5px; }
+  .msg.u { align-self: flex-end; background: color-mix(in srgb, var(--you) 22%, var(--panel)); border: 1px solid color-mix(in srgb, var(--you) 40%, transparent); border-bottom-right-radius: 4px; }
+  .msg.a { align-self: flex-start; background: var(--panel); border: 1px solid var(--line-soft); border-bottom-left-radius: 4px; }
+  .msg .who { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; margin-bottom: 4px; text-transform: uppercase; }
+  .msg.u .who { color: var(--you); }
+  .msg.a .who { color: var(--agent); }
+  .editchip { align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); background: #0c0e12; border: 1px solid var(--line-soft); border-radius: 8px; padding: 6px 10px; }
+  .editchip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--agent); }
+  .composer { margin-top: auto; display: flex; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 11px; padding: 8px 10px; }
+  .composer .ph { color: var(--faint); font-size: 12px; flex: 1; }
+  .composer .send { color: var(--you); font-size: 15px; }
+  .composer .note-attach { color: var(--agent); font-size: 14px; }
+
+  /* ---- annotations under each frame ---- */
+  .anno { margin-top: 18px; }
+  .anno .cap { font-size: 13px; color: var(--bright); font-weight: 600; margin: 0 0 8px; }
+  .anno ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .anno li { display: flex; gap: 9px; font-size: 12px; color: var(--muted); }
+  .anno .n { font-family: var(--mono); font-size: 10px; color: var(--you); border: 1px solid var(--line); border-radius: 5px; min-width: 18px; height: 18px; display: grid; place-items: center; flex: none; margin-top: 1px; }
+
+  /* ---- tablet ---- */
+  .tabletwrap { display: flex; justify-content: center; }
+  .tablet { background: #05070a; border: 1px solid #23272f; border-radius: 26px; padding: 12px; box-shadow: 0 30px 60px -30px #000, inset 0 0 0 1px #ffffff08; width: 100%; max-width: 940px; }
+  .tablet .screen { height: 560px; border-radius: 16px; flex-direction: column; }
+  .tb-main { flex: 1; display: flex; overflow: hidden; }
+  .tb-left { width: 190px; flex: none; border-right: 1px solid var(--line-soft); background: var(--panel); display: flex; flex-direction: column; }
+  .tb-railcol { display: flex; height: 100%; }
+  .mini-rail { width: 38px; flex: none; background: var(--rail); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 4px; }
+  .mini-rail .r { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--faint); }
+  .mini-rail .r.on { color: var(--you); background: #ffffff0d; }
+  .mini-rail svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .libcol { flex: 1; padding: 10px; }
+  .libcol .h { font-family: var(--mono); font-size: 9px; letter-spacing: .12em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
+  .libitem { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink); padding: 6px 4px; border-bottom: 1px solid var(--line-soft); }
+  .libitem .d { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .tb-center { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .devchain { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line-soft); align-items: center; }
+  .dev-node { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; font-size: 11px; min-width: 76px; }
+  .dev-node .t { color: var(--bright); font-weight: 600; margin-bottom: 5px; font-size: 11px; }
+  .dev-node .knobs { display: flex; gap: 8px; }
+  .knob { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); position: relative; }
+  .knob::after { content: ""; position: absolute; width: 2px; height: 7px; background: var(--you); left: 8px; top: 1px; transform-origin: bottom; transform: rotate(35deg); }
+  .arrow { color: var(--faint); font-size: 13px; }
+  .tb-rollarea { flex: 1; display: flex; min-height: 0; }
+  .tb-timeline { height: 92px; border-top: 1px solid var(--line); background: var(--panel); }
+
+  .footnote { margin-top: 56px; border-top: 1px solid var(--line); padding-top: 22px; color: var(--muted); font-size: 13px; }
+  .footnote b { color: var(--ink); }
+  .footnote .path { font-family: var(--mono); color: var(--you); font-size: 12px; }
+  .disclaim { color: var(--faint); font-size: 12px; margin-top: 10px; }
+
+  @media (max-width: 520px) { .page { padding: 32px 14px 56px; } .col { width: 100%; max-width: 320px; } }
+</style>
+
+<div class="page">
+  <div class="wrap">
+
+    <p class="eyebrow">UX Design · Concept</p>
+    <h1>web-daw on touch <span class="dim">— phone &amp; tablet</span></h1>
+    <p class="lead">
+      The desktop is a four-region grid you see all at once. On touch, that becomes <b>one focused region at a
+      time</b>, navigated from a thumb-reachable tab bar, with the transport always present and the AI as a
+      first-class way to make the edits that fingers are bad at. Same stores, same two-voice colour — a new
+      shell, not a new app.
+    </p>
+
+    <div class="legend">
+      <span class="key"><span class="swatch" style="background:var(--you)"></span> You</span>
+      <span class="key"><span class="swatch" style="background:var(--claude)"></span> Claude (MCP)</span>
+      <span class="key"><span class="swatch" style="background:var(--agent)"></span> In-app agent</span>
+      <span class="key" style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)">tokens from src/index.css</span>
+    </div>
+
+    <!-- PRINCIPLES -->
+    <div class="sec">
+      <div class="principles">
+        <div class="prin"><span class="tag">STRUCTURE</span><h3>Swap the shell</h3><p>Below a breakpoint, a MobileShell re-hosts the same panels. Stores &amp; leaf components are untouched.</p></div>
+        <div class="prin"><span class="tag">NAVIGATE</span><h3>Tabs + sheets</h3><p>Bottom tab bar (thumb zone), persistent transport up top, slide-up sheets for transient tasks.</p></div>
+        <div class="prin"><span class="tag">INPUT</span><h3>Pointer-events touch</h3><p>One drag path for mouse/touch/Pencil. Pinch-zoom, explicit draw/select/erase tools, big hit targets.</p></div>
+        <div class="prin"><span class="tag">CREATE</span><h3>Agent-forward</h3><p>Describing beats poking. On mobile the agent is the primary way to build; touch is for fine-tuning.</p></div>
+      </div>
+    </div>
+
+    <!-- PHONE -->
+    <div class="sec">
+      <div class="sec-head">
+        <span class="sec-num">01</span>
+        <h2 class="sec-title">Phone — portrait</h2>
+        <span class="sec-sub">play · tweak · agent-driven creation</span>
+      </div>
+
+      <div class="phones">
+
+        <!-- FRAME A: ARRANGE -->
+        <div class="col">
+          <div class="device"><div class="screen">
+            <div class="notch"></div>
+            <div class="transport">
+              <span class="tbtn play">▶</span><span class="tbtn">■</span><span class="tbtn rec">●</span>
+              <span class="tclock">002.1.3</span>
+              <span class="tmeta">124 BPM</span>
+            </div>
+            <div class="body">
+              <span class="scr-label">ARRANGE</span>
+              <div class="ruler"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+              <div class="lane">
+                <div class="lane-head"><span class="nm">Kick</span><span class="grp">Drums</span></div>
+                <div class="lane-clips">
+                  <div class="clip you" style="left:2%;width:44%">loop A</div>
+                  <div class="clip you" style="left:50%;width:46%">loop A</div>
+                  <div class="playhead"></div>
+                </div>
+              </div>
+              <div class="lane">
+                <div class="lane-head"><span class="nm">Bass</span><span class="grp">Low</span></div>
+                <div class="lane-clips"><div class="clip cl" style="left:14%;width:60%">sub line</div><div class="playhead"></div></div>
+              </div>
+              <div class="lane">
+                <div class="lane-head"><span class="nm">Lead</span><span class="grp">Synths</span></div>
+                <div class="lane-clips"><div class="clip ag" style="left:26%;width:40%">hook v2</div><div class="playhead"></div></div>
+              </div>
+              <div class="lane">
+                <div class="lane-head"><span class="nm">Pad</span><span class="grp">Synths</span></div>
+                <div class="lane-clips"><div class="clip you" style="left:2%;width:94%">bed</div><div class="playhead"></div></div>
+              </div>
+            </div>
+            <div class="tabs">
+              <div class="tab active"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></span>Arrange</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M13 9h4"/></svg></span>Edit</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M6 4v16M12 4v16M18 4v16"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="8" r="2"/></svg></span>Mix</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h13l3 3v11H4z"/><path d="M8 5v4h6"/></svg></span>Library</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg></span>Agent</div>
+            </div>
+          </div></div>
+          <div class="anno">
+            <p class="cap">Arrange — the overview</p>
+            <ol>
+              <li><span class="n">1</span> Transport is <b>always docked</b> up top; never a tab away.</li>
+              <li><span class="n">2</span> Clips are chunky touch targets, coloured by who authored them.</li>
+              <li><span class="n">3</span> Tab bar reuses the data-driven view list from ActivityRail.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- FRAME B: EDIT / ROLL -->
+        <div class="col">
+          <div class="device"><div class="screen">
+            <div class="notch"></div>
+            <div class="transport">
+              <span class="tbtn play">▶</span><span class="tbtn">■</span><span class="tbtn rec">●</span>
+              <span class="tclock">002.1.3</span>
+              <span class="tmeta">Lead</span>
+            </div>
+            <div class="body">
+              <span class="scr-label">EDIT</span>
+              <div class="rolltools">
+                <span class="tool on">Draw</span><span class="tool">Select</span><span class="tool">Erase</span>
+                <span class="clipnm">hook v2 · 1 bar</span>
+              </div>
+              <div class="roll">
+                <div class="keys">
+                  <div class="k">C5</div><div class="k blk">B4</div><div class="k">A4</div><div class="k blk">G4</div>
+                  <div class="k">F4</div><div class="k">E4</div><div class="k blk">D4</div><div class="k">C4</div>
+                  <div class="k blk">B3</div><div class="k">A3</div><div class="k blk">G3</div><div class="k">F3</div>
+                </div>
+                <div class="grid">
+                  <div class="note you" style="left:3%;top:30px;width:20%"></div>
+                  <div class="note you sel" style="left:26%;top:46px;width:14%"></div>
+                  <div class="note you" style="left:42%;top:30px;width:20%"></div>
+                  <div class="note cl" style="left:64%;top:76px;width:32%"></div>
+                  <div class="note cl" style="left:64%;top:107px;width:32%"></div>
+                  <div class="aicursor" style="left:70%;top:70px"></div>
+                  <div class="pinch">⇔ pinch to zoom · long-press = menu</div>
+                </div>
+              </div>
+              <div class="kbd">
+                <div class="wk"><div class="bk"></div></div><div class="wk"><div class="bk"></div></div>
+                <div class="wk"></div><div class="wk"><div class="bk"></div></div><div class="wk"><div class="bk"></div></div>
+                <div class="wk"><div class="bk"></div></div><div class="wk"></div>
+              </div>
+            </div>
+            <div class="tabs">
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></span>Arrange</div>
+              <div class="tab active"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M13 9h4"/></svg></span>Edit</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M6 4v16M12 4v16M18 4v16"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="8" r="2"/></svg></span>Mix</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h13l3 3v11H4z"/><path d="M8 5v4h6"/></svg></span>Library</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg></span>Agent</div>
+            </div>
+          </div></div>
+          <div class="anno">
+            <p class="cap">Edit — the touch piano roll</p>
+            <ol>
+              <li><span class="n">1</span> <b>Tool toggle</b> (draw/select/erase) replaces the modifier keys you don't have.</li>
+              <li><span class="n">2</span> <b>Pinch-zoom + two-finger pan</b> on both axes; the key column stays fixed.</li>
+              <li><span class="n">3</span> Claude's notes + <b>live AI cursor</b> render in coral — you see what it touches.</li>
+              <li><span class="n">4</span> A playable keyboard docks at the bottom (the only note input on iOS — no Web MIDI).</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- FRAME C: AGENT -->
+        <div class="col">
+          <div class="device"><div class="screen">
+            <div class="notch"></div>
+            <div class="transport">
+              <span class="tbtn play">▶</span><span class="tbtn">■</span><span class="tbtn rec">●</span>
+              <span class="tclock">002.1.3</span>
+              <span class="tmeta">124 BPM</span>
+            </div>
+            <div class="body">
+              <span class="scr-label">AGENT</span>
+              <div class="chat">
+                <div class="msg u"><div class="who">You</div>Add a four-on-the-floor kick and a clap on 2 &amp; 4.</div>
+                <div class="msg a"><div class="who">Agent</div>Done — added Kick and Clap to the Drums group, 124 BPM.</div>
+                <div class="editchip"><span class="dot"></span> +2 tracks, +32 notes · tap to review</div>
+                <div class="msg u"><div class="who">You</div>Make the pad warmer and harmonise it in the project key.</div>
+                <div class="msg a"><div class="who">Agent</div>Lowered the filter cutoff and added thirds above — auditioning now.</div>
+                <div class="composer">
+                  <span class="note-attach">♪</span>
+                  <span class="ph">Describe an edit, or attach a phrase…</span>
+                  <span class="send">↑</span>
+                </div>
+              </div>
+            </div>
+            <div class="tabs">
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></span>Arrange</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M13 9h4"/></svg></span>Edit</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M6 4v16M12 4v16M18 4v16"/><circle cx="6" cy="9" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="18" cy="8" r="2"/></svg></span>Mix</div>
+              <div class="tab"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h13l3 3v11H4z"/><path d="M8 5v4h6"/></svg></span>Library</div>
+              <div class="tab active"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg></span>Agent</div>
+            </div>
+          </div></div>
+          <div class="anno">
+            <p class="cap">Agent — the mobile superpower</p>
+            <ol>
+              <li><span class="n">1</span> Complex, multi-track edits by <b>description</b>, not by finger.</li>
+              <li><span class="n">2</span> Each edit lands live + <b>reviewable</b>; nothing is a black box.</li>
+              <li><span class="n">3</span> <b>Attach a played phrase</b> (♪) as prompt input — notes-as-prompt.</li>
+            </ol>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- TABLET -->
+    <div class="sec">
+      <div class="sec-head">
+        <span class="sec-num">02</span>
+        <h2 class="sec-title">Tablet — landscape</h2>
+        <span class="sec-sub">master / detail · a real editing surface</span>
+      </div>
+
+      <div class="tabletwrap">
+        <div class="tablet"><div class="screen">
+          <div class="transport">
+            <span class="tbtn play">▶</span><span class="tbtn">■</span><span class="tbtn rec">●</span>
+            <span class="tclock">002.1.3</span>
+            <span class="tmeta" style="margin-left:16px">124 BPM · Lead selected</span>
+            <span class="tmeta" style="margin-left:auto">Arrange · Edit · Mix · Library · Agent</span>
+          </div>
+          <div class="tb-main">
+            <div class="tb-left">
+              <div class="tb-railcol">
+                <div class="mini-rail">
+                  <div class="r on"><svg viewBox="0 0 24 24"><path d="M4 5h13l3 3v11H4z"/></svg></div>
+                  <div class="r"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5v14"/></svg></div>
+                  <div class="r"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h14"/></svg></div>
+                  <div class="r"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-4 4z"/></svg></div>
+                </div>
+                <div class="libcol">
+                  <div class="h">Tracks</div>
+                  <div class="libitem"><span class="d" style="background:var(--you)"></span> Kick</div>
+                  <div class="libitem"><span class="d" style="background:var(--claude)"></span> Bass</div>
+                  <div class="libitem"><span class="d" style="background:var(--agent)"></span> Lead</div>
+                  <div class="libitem"><span class="d" style="background:var(--you)"></span> Pad</div>
+                </div>
+              </div>
+            </div>
+            <div class="tb-center">
+              <div class="devchain">
+                <div class="dev-node"><div class="t">Nimbus</div><div class="knobs"><span class="knob"></span><span class="knob"></span><span class="knob"></span></div></div>
+                <span class="arrow">▸</span>
+                <div class="dev-node"><div class="t">Filter</div><div class="knobs"><span class="knob"></span><span class="knob"></span></div></div>
+                <span class="arrow">▸</span>
+                <div class="dev-node"><div class="t">Delay</div><div class="knobs"><span class="knob"></span><span class="knob"></span></div></div>
+              </div>
+              <div class="tb-rollarea">
+                <div class="roll" style="height:100%;width:100%">
+                  <div class="keys">
+                    <div class="k">C5</div><div class="k blk">B4</div><div class="k">A4</div><div class="k blk">G4</div>
+                    <div class="k">F4</div><div class="k">E4</div><div class="k blk">D4</div><div class="k">C4</div>
+                    <div class="k blk">B3</div><div class="k">A3</div><div class="k blk">G3</div><div class="k">F3</div>
+                  </div>
+                  <div class="grid">
+                    <div class="note you" style="left:2%;top:30px;width:9%"></div>
+                    <div class="note you" style="left:12%;top:46px;width:9%"></div>
+                    <div class="note you" style="left:22%;top:30px;width:9%"></div>
+                    <div class="note ag" style="left:40%;top:76px;width:18%"></div>
+                    <div class="note ag" style="left:40%;top:107px;width:18%"></div>
+                    <div class="note cl" style="left:70%;top:15px;width:12%"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="tb-timeline"></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+      <div class="anno" style="max-width:820px;margin:22px auto 0">
+        <p class="cap">Landscape earns two panels at once</p>
+        <ol>
+          <li><span class="n">1</span> <b>Master/detail</b>: rail + track list beside the selected track's workbench — closer to desktop.</li>
+          <li><span class="n">2</span> The <b>device chain</b> (instrument → effects) is horizontal, knobs enlarged for touch / Pencil.</li>
+          <li><span class="n">3</span> Roll + a slim <b>timeline strip</b> coexist; transport &amp; the same tab set stay put.</li>
+          <li><span class="n">4</span> Detect a stylus/mouse via <span style="font-family:var(--mono);color:var(--you)">pointerType</span> and give it the precise interactions.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <b>Packaging path:</b> ship a <b>PWA first</b> (installable, offline, free — and it tells us whether an OS
+      webview can carry real-time AudioWorklet audio, the one real risk), then <b>Tauri v2</b> for the app
+      stores — one project covers desktop <i>and</i> mobile. Capacitor is the fallback if Tauri-mobile plugins
+      fall short.
+      <p class="disclaim">Concept mockup — layout &amp; interaction model only, not a working build. Tokens and two-voice colour pulled from <span class="path">src/index.css</span>; full write-up in <span class="path">docs/DESIGN.md</span> (Mobile / responsive layout).</p>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

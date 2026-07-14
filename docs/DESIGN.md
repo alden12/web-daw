@@ -1278,7 +1278,8 @@ land in either order, or not at all if the local-first single-user shape stays t
   below) reachable without a rewrite, and it is why the timeline-usability batch above specifies a
   touch path for each new action.
 - **Mobile / responsive layout (an epic; direction settled 2026-07-14).** The four-region video-editor
-  grid assumes a wide screen; touch devices need a different shape. Guiding decisions:
+  grid assumes a wide screen; touch devices need a different shape. A concept mockup of the phone + tablet
+  layouts lives at `docs/mockups/mobile-ux.html` (self-contained, open in a browser). Guiding decisions:
   - **Swap the shell, not the app.** The stores (`projectStore`, `editLog`, the param schema) and the
     leaf components (`PianoRoll`, `Knob`, `LibraryPanel`, mixer, agent) are already UI-agnostic. Only the
     desktop `[grid-area:...]` shell doesn't map. So below a breakpoint, render a `MobileShell` that
