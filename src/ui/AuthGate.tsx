@@ -64,6 +64,9 @@ function LoginScreen() {
       <div className="mt-1 flex flex-col gap-2 w-full">
         <ProviderButton provider="github" label="Continue with GitHub" />
         <ProviderButton provider="google" label="Continue with Google" />
+        <p className="text-[11px] text-faint leading-relaxed">
+          Google sign-in is limited to invited test accounts for now - use GitHub if you're not on the list.
+        </p>
       </div>
     </GateCard>
   );
