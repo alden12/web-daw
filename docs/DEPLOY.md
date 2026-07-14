@@ -109,6 +109,36 @@ intermittently fail to resolve `api.fly.io`. A bare `fly deploy` works too - it 
 args from `fly.toml`, so no `--build-arg` flags are needed. To re-point the deploy (rename, new Supabase
 project), edit `[build.args]` in `fly.toml` and redeploy.
 
+## Observability and logging
+
+The app is a **single service** today - one Node process (API + WS authority + static serving) plus two
+managed dependencies (Neon, Supabase). There is no service-to-service mesh, so **distributed tracing is not
+worth its weight yet**: there are no inter-service hops to correlate. A **request/connection correlation id
+in structured logs** gives essentially all the debug value for a monolith. Revisit OpenTelemetry tracing
+when the architecture splits (a separate agent/worker service, or per-region sharded authorities) or when
+you need to profile latency across DB/external calls at scale - and keep logs trace-ready so a request-id
+field migrates cleanly to a trace id.
+
+**Fly captures stdout/stderr automatically** -> `fly logs` (`yarn fly:logs`). So "logging" just means writing
+good structured lines to stdout. Fly retains a recent buffer; for searchable history add a **log drain**
+(Fly ships stdout to an external sink - Better Stack / Axiom / Datadog) when we want it (not needed for
+basic debugging).
+
+**Current gap:** request/WS logging is **off in production** (`verbose = NODE_ENV !== "production"` in
+`server/api/index.ts`), so `fly logs` shows only startup lines + crashes. Near-term plan (a small
+"observability" slice, not yet built):
+
+- **Structured JSON logs to stdout, leveled** (info/warn/error) with a `LOG_LEVEL` env. `pino` is the
+  standard lightweight choice; a tiny `console` wrapper keeps it dep-free.
+- **Request logging on in prod:** method, path, status, duration, a **request-id**, and the **principal
+  (user id)** so one user's activity can be followed.
+- **Domain-event logs:** WS connect/disconnect (principal + projectId), room load/evict, edit applied
+  (seq, author, command type), auth refusals (HTTP 401 / WS close 1008 with reason), migrations on boot.
+- **Robust error logging:** a Hono `onError` handler + process-level `unhandledRejection` /
+  `uncaughtException` handlers, so a crash always leaves a trace in `fly logs`.
+- **Adjacent:** a `/health` endpoint; Fly's built-in machine metrics (CPU/mem via the dashboard/Grafana).
+  App-level metrics (Prometheus/Grafana) are a later concern.
+
 ## Migrations on a live database
 
 Projects are now stored in a hosted Postgres, so **data cannot be discarded on a format change** -

@@ -2102,6 +2102,13 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
   calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse, and
   rate-limiting on the auth/JWT path.
+- **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
+  tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
+  stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),
+  domain-event logs (WS connect/disconnect, room load/evict, edit applied, auth refusals), and error
+  handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
+  retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
+  or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
 - **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
   untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
   key is a prototype-pollution vector only if the client merges it carelessly).
