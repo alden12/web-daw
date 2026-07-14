@@ -1715,11 +1715,42 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 
 **Roadmap (deferred):**
 
-- **Offline-first / PWA.** Today it is remote-*or*-local; a set `VITE_DAW_API_URL` with the server
-  down means writes fail. The next step is a **local cache + queued writes**: keep OPFS as the
-  working copy, queue mutations while offline, and flush to the server on reconnect (last-write-wins
-  per file, with the commit DAG as the reconciliation story). That plus a service worker + manifest
-  makes it an installable **PWA** that works offline and syncs when back online.
+- **Offline-first / PWA + backend interchangeability (the target working model; direction firmed up
+  2026-07-15).** The north star: online and offline are the *same app* degrading gracefully, with local
+  and remote storage **almost interchangeable** and a **trivial sync on reconnect** - not two builds.
+  - **Where we are.** All project data goes through one seam (`BundleStore`/`ProjectStorage`,
+    `getProjectStorage()`), with three backends: **RemoteProjectStorage** (HTTP + WS authority ->
+    Postgres/Neon), **OpfsBundleStore** (browser OPFS bundle), and **MemoryBundleStore** (tests). But the
+    backend is chosen **at build time** by `VITE_DAW_API_URL`, so it is online-*or*-offline: remote mode
+    writes **no** OPFS cache, so a server it can't reach just fails; local mode syncs nowhere. (Small
+    non-project state - `currentUser`, current-project key, author colours, agent chat - lives in
+    `localStorage` regardless.)
+  - **Why we are well-positioned.** The **edit log is the universal currency**: both backends model
+    persistence as "append `seq`-ordered `EditCommand`s + replay to materialize HEAD," identical in
+    `edits.json` (OPFS) and the `edits` table + WS (remote). Sync is therefore a *sequencing* problem, and
+    the hard part is already solved - the authority is **`opId`-idempotent** and `SharedSession` already
+    does optimistic apply + rebase + **reconnect gap-fill** (slice 76). So **an offline session is just a
+    peer that has been away longer**: on reconnect, replay the queued local edits through the authority
+    (dedup by `opId`), it assigns authoritative `seq`s, and LWW-by-`seq` rebase converges - no CRDT (same
+    decision as multiplayer). Content-addressed samples (sha256) sync by "push the hashes the server
+    lacks," dedup for free.
+  - **The work to get there.** (1) **Always keep an OPFS working copy**, even in remote mode
+    (write-through cache), so there is local state to render + mutate when the network drops; (2) a
+    **durable offline write-queue** (append edits with `opId`s + provisional local `seq`s to OPFS, flush
+    through `SharedSession` on reconnect - the gap-fill extended to a long gap); (3) **runtime online/
+    offline switching** (a "cache + queue" wrapper at the `BundleStore` seam, not a build-time flag); (4)
+    **service worker + manifest** for the installable PWA. The one subtlety is **`seq`-space
+    reconciliation** - solo-offline is a clean replay (no peers); multi-user-with-offline rides the
+    existing LWW-by-`seq` rebase.
+  - **This reshapes how history/commits (Phase B2) should be built.** Under this model a commit is best a
+    **syncable authored entry in the same log** (authorable offline, synced on reconnect like any edit),
+    NOT a server-only `POST` the client cannot perform offline. So establish the always-local-cache +
+    edit-log-sync substrate *before or with* B2, or B2 will need rework. Likewise agent-session
+    persistence rides the same substrate.
+  - **Per-backend index note.** Each backend needs a cheap listing index: remote uses the `projects`
+    table columns; OPFS uses each bundle's `meta.json` (a small name-card, so the library needn't parse
+    every `project.json`). That is why `meta.json` survives client-side after B1 retired it server-side -
+    whatever unifies the backends still wants a lightweight per-project index on each side.
 - **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
   samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
   for true multiplayer) - all fit behind the current seams.
