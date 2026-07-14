@@ -17,6 +17,12 @@ import type { ErrorBody } from "./errors";
 
 type ProjectList = z.infer<(typeof routes.listProjects)["response"]>;
 
+/** The bearer credential: either a fixed string, or a getter re-read per request/reconnect (so a
+ *  refreshed auth token takes effect without rebuilding the client). Evaluated lazily via `resolveToken`. */
+export type TokenSource = string | (() => string | undefined);
+const resolveToken = (token: TokenSource | undefined): string | undefined =>
+  typeof token === "function" ? token() : token;
+
 /** An authored edit as carried over the wire (the structural contract shape). */
 export type WireEditEntry = z.infer<(typeof routes.getEdits)["response"]>["entries"][number];
 
@@ -37,9 +43,13 @@ export interface ApiClient {
   getEdits(id: string, since?: number, limit?: number): Promise<WireEditEntry[]>;
 }
 
-export function createApiClient(config: { baseUrl: string; token?: string }): ApiClient {
+export function createApiClient(config: { baseUrl: string; token?: TokenSource }): ApiClient {
   const baseUrl = config.baseUrl.replace(/\/$/, "");
-  const authHeaders: Record<string, string> = config.token ? { Authorization: `Bearer ${config.token}` } : {};
+  // Re-evaluated per request, so a refreshed token is used without rebuilding the client.
+  const authHeaders = (): Record<string, string> => {
+    const token = resolveToken(config.token);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   // Path with each segment encoded but the separators preserved (matches the `:path{.+}` route).
   const fileUrl = (id: string, path: string): string => {
@@ -51,7 +61,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
   };
 
   const getFile = async (id: string, path: string): Promise<Response | null> => {
-    const res = await fetch(fileUrl(id, path), { headers: authHeaders });
+    const res = await fetch(fileUrl(id, path), { headers: authHeaders() });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`sync: read ${path} failed (${res.status})`);
     return res;
@@ -59,7 +69,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
 
   return {
     async listProjects() {
-      const res = await fetch(`${baseUrl}${routes.listProjects.path}`, { headers: authHeaders });
+      const res = await fetch(`${baseUrl}${routes.listProjects.path}`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`sync: list projects failed (${res.status})`);
       const body = (await res.json()) as ProjectList;
       return body.ids;
@@ -67,7 +77,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
 
     async deleteProject(id) {
       const url = `${baseUrl}${routes.deleteProject.path.replace(":id", encodeURIComponent(id))}`;
-      const res = await fetch(url, { method: "DELETE", headers: authHeaders });
+      const res = await fetch(url, { method: "DELETE", headers: authHeaders() });
       if (!res.ok) throw new Error(`sync: delete ${id} failed (${res.status})`);
     },
 
@@ -82,7 +92,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
     },
 
     async writeFile(id, path, body, contentType) {
-      const headers = { ...authHeaders, "Content-Type": contentType };
+      const headers = { ...authHeaders(), "Content-Type": contentType };
       const res = await fetch(fileUrl(id, path), { method: "PUT", headers, body });
       if (res.ok) return { ok: true };
       let error = res.statusText;
@@ -95,7 +105,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
     },
 
     async fileExists(id, path) {
-      const res = await fetch(fileUrl(id, path), { method: "HEAD", headers: authHeaders });
+      const res = await fetch(fileUrl(id, path), { method: "HEAD", headers: authHeaders() });
       return res.ok;
     },
 
@@ -103,7 +113,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
       const url = `${baseUrl}${routes.appendEdits.path.replace(":id", encodeURIComponent(id))}`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { ...authHeaders, "Content-Type": "application/json" },
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ entries }),
       });
       if (!res.ok) throw new Error(`sync: append edits to ${id} failed (${res.status})`);
@@ -118,7 +128,7 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
       if (limit != null) params.set("limit", String(limit));
       const query = params.toString();
       const url = query ? `${baseUrl}${path}?${query}` : `${baseUrl}${path}`;
-      const res = await fetch(url, { headers: authHeaders });
+      const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) throw new Error(`sync: get edits for ${id} failed (${res.status})`);
       const body = (await res.json()) as z.infer<(typeof routes.getEdits)["response"]>;
       return body.entries;
@@ -143,14 +153,13 @@ export function wsBaseFromApiUrl(apiUrl: string): string {
  *  its unconfirmed edits. Thin transport glue over the contract's message unions. The token rides the
  *  query string because a browser `WebSocket` cannot set an Authorization header (the server reads
  *  `?token=` at the upgrade, mirroring the HTTP bearer gate). */
-export function createWsClient(config: { baseUrl: string; token?: string }): {
+export function createWsClient(config: { baseUrl: string; token?: TokenSource }): {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   onOpen(handler: () => void): void;
   close(): void;
 } {
   const base = `${config.baseUrl.replace(/\/$/, "")}${channels.main.path}`;
-  const url = config.token ? `${base}?token=${encodeURIComponent(config.token)}` : base;
   const RECONNECT_BASE_MS = 500;
   const RECONNECT_MAX_MS = 10_000;
 
@@ -165,6 +174,10 @@ export function createWsClient(config: { baseUrl: string; token?: string }): {
   let retries = 0;
 
   const connect = (): void => {
+    // Rebuild the URL per (re)connect so a refreshed token is picked up (the reconnect from slice 76
+    // is also what re-applies it after a token rotation).
+    const token = resolveToken(config.token);
+    const url = token ? `${base}?token=${encodeURIComponent(token)}` : base;
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
       retries = 0;

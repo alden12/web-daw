@@ -11,6 +11,7 @@
  * enumerate/delete them; the repository singleton points at the current project.
  */
 import { RemoteProjectStorage } from "./remoteStore";
+import { getAccessToken } from "../auth/session";
 import type { EditEntry } from "./commands/types";
 
 export interface BundleStore {
@@ -273,7 +274,9 @@ export function getProjectStorage(): ProjectStorage {
   if (!storageSingleton) {
     const apiUrl = import.meta.env?.VITE_DAW_API_URL;
     if (apiUrl) {
-      storageSingleton = new RemoteProjectStorage(apiUrl, import.meta.env?.VITE_DAW_API_TOKEN);
+      // Pass the token *getter* (not a snapshot) so a live Supabase session token is read per request;
+      // it falls back to the static VITE_DAW_API_TOKEN when auth is off.
+      storageSingleton = new RemoteProjectStorage(apiUrl, getAccessToken);
     } else if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) {
       storageSingleton = new OpfsProjectStorage();
     } else {
