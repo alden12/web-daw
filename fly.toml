@@ -10,6 +10,13 @@ primary_region = "lhr"
 
 [build]
   dockerfile = "Dockerfile"
+  # Client build-time config, baked into the bundle by Vite. All three are public (the app ships them to
+  # every visitor), so they live here rather than in a secret - `fly deploy` then needs no --build-arg.
+  # To re-point the deploy (rename, new Supabase project), edit these and redeploy.
+  [build.args]
+    VITE_DAW_API_URL = "https://web-daw.fly.dev"
+    VITE_SUPABASE_URL = "https://jthcrhyuktstilsafcfa.supabase.co"
+    VITE_SUPABASE_ANON_KEY = "sb_publishable_izCdzE_P1N0wSnZFeAUEnw_8-2N-Hzu"
 
 [env]
   API_PORT = "8080"

@@ -92,16 +92,53 @@ For broader public Google sign-in, move the Google OAuth consent screen from Tes
 (may require Google verification depending on scopes). A server-side email allowlist
 (`ALLOWED_EMAILS` in the JWT resolver) is a possible defence-in-depth follow-up, not yet implemented.
 
-## Redeploying
+## Everyday commands
 
-After the first setup, a redeploy is just step 5 again (secrets and Supabase config persist):
+After first-time setup, the build-time client vars live in `fly.toml` `[build.args]` and the runtime
+secrets persist, so day-to-day ops are just:
 
 ```sh
-fly deploy \
-  --build-arg VITE_DAW_API_URL='https://web-daw.fly.dev' \
-  --build-arg VITE_SUPABASE_URL='https://<project-ref>.supabase.co' \
-  --build-arg VITE_SUPABASE_ANON_KEY='<anon-public-key>'
+yarn deploy        # build + deploy (retries through the intermittent api.fly.io DNS flake)
+yarn fly:logs      # tail the live logs
+yarn fly:status    # machine states / health
+yarn fly:restart   # rolling restart of the app's machine(s)
 ```
+
+`yarn deploy` wraps `fly deploy` in a flush-DNS-and-retry loop (`scripts/deploy.sh`) because some networks
+intermittently fail to resolve `api.fly.io`. A bare `fly deploy` works too - it reads the `VITE_*` build
+args from `fly.toml`, so no `--build-arg` flags are needed. To re-point the deploy (rename, new Supabase
+project), edit `[build.args]` in `fly.toml` and redeploy.
+
+## Migrations on a live database
+
+Projects are now stored in a hosted Postgres, so **data cannot be discarded on a format change** -
+migrations are forward-only and must preserve existing data. There are two independent schema axes:
+
+**1. Database schema (Drizzle) - tables / columns / indexes.**
+- Edit `server/db/schema.ts`, then `yarn db:generate` to emit a versioned SQL file under `drizzle/`.
+  Commit it.
+- On the next `yarn deploy`, `applyMigrations` (`server/api/index.ts`) runs any pending `drizzle/*.sql`
+  on boot - idempotent (Drizzle tracks what's applied), so no manual migrate step.
+- **Rule: additive / backwards-compatible only.** A migration runs on boot while the old machine is still
+  serving (rolling deploy), so the new SQL must be safe against the currently-running code too. For a
+  destructive change (drop/rename a column), use **expand -> contract** across two deploys: (1) add the
+  new shape + backfill, ship code that reads the new shape; (2) a later deploy drops the old shape. Never
+  drop data in one step.
+- A failed migration crashes the *new* machine on boot (fail-fast); Fly keeps the old one running, so the
+  app stays up. Fix forward and redeploy.
+
+**2. Project-document schema (`project.json` + command blobs).**
+- These JSON blobs are opaque to Drizzle. On a shape change, bump `PROJECT_SCHEMA` and add a
+  `fromVersion -> fromVersion + 1` upcaster in `src/audio/project/documentMigration.ts`;
+  `ProjectRepository.load` chains them and heals each bundle lazily on load. Forward-only. CI fails if the
+  upcaster registry has a gap (`findStaleProjects` / `firstMissingUpcaster` guard).
+
+**Backups / safety (Neon).**
+- Neon keeps automatic history (point-in-time restore). Before a risky migration, create a **Neon branch**
+  from current state as a cheap rollback point - and test the migration against that branch first
+  (branches are copy-on-write clones of prod data).
+- Because migrations apply on deploy-boot, always test locally first: `yarn db:generate`, run against a
+  local or branch DB, verify, then `yarn deploy`.
 
 ## Cost lever: scale-to-zero vs always-on
 
