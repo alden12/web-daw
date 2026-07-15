@@ -11,6 +11,7 @@
  * enumerate/delete them; the repository singleton points at the current project.
  */
 import { RemoteProjectStorage } from "./remoteStore";
+import { CachedProjectStorage } from "./cachedStore";
 import { getAccessToken } from "../auth/session";
 import type { EditEntry } from "./commands/types";
 
@@ -29,6 +30,10 @@ export interface BundleStore {
 
 /** The parent directory (under the OPFS root) that holds every project bundle. */
 const PROJECTS_DIR = "projects";
+
+/** Where the remote-mode read-through cache mirrors bundles it has seen (a sibling of `projects/`, so a
+ *  cached remote copy never collides with a locally-authored project of the same id). */
+const REMOTE_CACHE_DIR = "remote-cache";
 
 /**
  * The file-backed authored stream (used by the OPFS / in-memory stores): the one seq-ordered log of
@@ -200,14 +205,21 @@ async function readBundleListing(store: BundleStore, id: string): Promise<Projec
 }
 
 class OpfsProjectStorage implements ProjectStorage {
+  /** The directory (under the OPFS root) that holds this instance's bundles. Defaults to the primary
+   *  `projects/` tree; the remote-mode read-through cache points a second instance at its own dir so a
+   *  cached mirror never collides with locally-authored projects. */
+  private readonly rootDir: string;
+  constructor(rootDir: string = PROJECTS_DIR) {
+    this.rootDir = rootDir;
+  }
   bundle(projectId: string): BundleStore {
-    return new OpfsBundleStore([PROJECTS_DIR, projectId]);
+    return new OpfsBundleStore([this.rootDir, projectId]);
   }
   async listProjects(): Promise<ProjectListing[]> {
     let ids: string[] = [];
     try {
       const root = await navigator.storage.getDirectory();
-      const dir = await root.getDirectoryHandle(PROJECTS_DIR, { create: false });
+      const dir = await root.getDirectoryHandle(this.rootDir, { create: false });
       // `entries()` is an async iterator on the directory handle (FileSystem Access API);
       // the DOM lib doesn't type it, so reach it through a narrow cast.
       const entries = (dir as unknown as { entries(): AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
@@ -222,7 +234,7 @@ class OpfsProjectStorage implements ProjectStorage {
   async deleteProject(projectId: string): Promise<void> {
     try {
       const root = await navigator.storage.getDirectory();
-      const dir = await root.getDirectoryHandle(PROJECTS_DIR, { create: false });
+      const dir = await root.getDirectoryHandle(this.rootDir, { create: false });
       await dir.removeEntry(projectId, { recursive: true });
     } catch {
       // nothing to delete
@@ -300,11 +312,15 @@ let storageSingleton: ProjectStorage | null = null;
 export function getProjectStorage(): ProjectStorage {
   if (!storageSingleton) {
     const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+    const hasOpfs = typeof navigator !== "undefined" && !!navigator.storage?.getDirectory;
     if (apiUrl) {
       // Pass the token *getter* (not a snapshot) so a live Supabase session token is read per request;
       // it yields undefined when auth is off (the dev-stub server is open).
-      storageSingleton = new RemoteProjectStorage(apiUrl, getAccessToken);
-    } else if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) {
+      const remote = new RemoteProjectStorage(apiUrl, getAccessToken);
+      // Front the remote with an OPFS read-through cache so a seen project loads / renders offline. With
+      // no OPFS (old browser) fall back to remote-only, exactly as before.
+      storageSingleton = hasOpfs ? new CachedProjectStorage(remote, new OpfsProjectStorage(REMOTE_CACHE_DIR)) : remote;
+    } else if (hasOpfs) {
       storageSingleton = new OpfsProjectStorage();
     } else {
       storageSingleton = new MemoryProjectStorage();
