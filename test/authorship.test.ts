@@ -101,6 +101,43 @@ describe("authorship through dispatch + snapshot", () => {
   });
 });
 
+describe("authorship reactivity - the tint refreshes on a change of voice", () => {
+  it("notifies subscribers when a human takes over an agent-set param (so the colour flips immediately)", () => {
+    const store = new ProjectStore();
+    const log = new EditLog(store);
+    log.dispatch({ type: "createTrack", id: "t1", instrumentType: "subtractive" }, "you");
+    // The agent sets a param; then a human re-sets the same param. The second edit must emit so the
+    // slider re-renders with the human colour, rather than staying on the agent colour until an
+    // unrelated re-render (e.g. pressing play) happens to refresh it.
+    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "claude");
+
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => (notifications += 1));
+    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.7 }, "you");
+    unsubscribe();
+
+    expect(notifications).toBeGreaterThan(0);
+    expect(store.authorOf(paramKey("t1", "amp.level"))).toBe("you");
+  });
+
+  it("does not emit when the same author re-stamps a key (a knob drag stays rebuild-free per frame)", () => {
+    const store = new ProjectStore();
+    const log = new EditLog(store);
+    log.dispatch({ type: "createTrack", id: "t1", instrumentType: "subtractive" }, "you");
+    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.3 }, "you");
+
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => (notifications += 1));
+    // Re-stamp the same "you" author repeatedly (as consecutive drag frames do): authorship is
+    // unchanged, so no emit fires from the authorship seam.
+    store.setAuthor(paramKey("t1", "amp.level"), "you");
+    store.setAuthor(paramKey("t1", "amp.level"), "you");
+    unsubscribe();
+
+    expect(notifications).toBe(0);
+  });
+});
+
 describe("colorForAuthor", () => {
   it("uses the voice default when unset and a config override when set", () => {
     expect(colorForAuthor("you", {})).toBe(DEFAULT_VOICE_COLORS.you);

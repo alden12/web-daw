@@ -11,7 +11,8 @@
 import { ProjectStore } from "../project/projectStore";
 import type { EditLog } from "../commands/editLog";
 import type { VersionStore } from "../commands/history";
-import { getRepository, setCurrentProject, currentProjectId } from "../projectRepository";
+import type { ProjectData } from "../project/types";
+import { getRepository, setCurrentProject, currentProjectId, ProjectRepository } from "../projectRepository";
 import { getProjectStorage, type ProjectStorage } from "../bundleStore";
 import { newProjectId, refreshProjects } from "./library";
 
@@ -95,6 +96,32 @@ export async function createProject(
 ): Promise<string> {
   await flush(deps);
   const id = await seedNewProject(deps, name);
+  await refreshProjects(storage);
+  return id;
+}
+
+/**
+ * Fork a new project seeded from a given snapshot (not the live store). Used by the reconnect
+ * conflict flow's "keep mine as a copy": the copy carries this client's optimistic (offline) state,
+ * leaving the original to converge on the peer's. The copy starts with a fresh history (the snapshot is
+ * its first keyframe) and is owned by the creator, unshared. Does NOT flush or load the live store - the
+ * caller reloads into the new id afterwards - so the current project is left untouched.
+ */
+export async function forkProjectFromSnapshot(
+  snapshot: ProjectData,
+  name: string,
+  storage: ProjectStorage = getProjectStorage(),
+): Promise<string> {
+  const id = newProjectId();
+  const seed = new ProjectStore(false);
+  seed.load(snapshot);
+  seed.renameProject(name); // carry the copy's name in project.json (state), like seedNewProject
+  // Write through a standalone repository (not the live singleton) so the bundle gets the canonical
+  // manifest + keyframe layout without repointing the current project. Empty history: the snapshot is
+  // the copy's first keyframe.
+  const repo = new ProjectRepository(storage.bundle(id), id);
+  await repo.setName(name);
+  await repo.save(seed.snapshot(), [], []);
   await refreshProjects(storage);
   return id;
 }

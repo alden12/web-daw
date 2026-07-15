@@ -75,10 +75,11 @@ short list of coding conventions to follow throughout the codebase.
 - `build`, `test`, `test:e2e`, and `tsc` (via `build` + `check:server`) run in GitHub
   Actions (`.github/workflows/ci.yml`) on every push to `main` and every PR. Keep them
   green; a red gate blocks the merge.
-- **Running `test:e2e` locally: move `.env` aside first.** A local `.env` with
-  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` set turns the auth gate on, so Playwright
-  gets stuck on the login screen and every test times out. CI has no `.env`, so it's green
-  there. Locally: `mv .env .env.bak; yarn test:e2e; mv .env.bak .env`.
+- **Running `test:e2e` locally: just `yarn test:e2e`** - no `.env` juggling. Playwright starts
+  the dev server with `vite --mode test`, which loads the committed `.env.test` (blank
+  `VITE_SUPABASE_*`/`VITE_DAW_API_URL`) *after* `.env`, so a local `.env` can no longer flip the
+  auth gate on and strand every test at the login screen. (The old `mv .env .env.bak` dance is
+  retired; if you add a new build-time `VITE_*` that must be off in e2e, blank it in `.env.test`.)
 
 ## General
 
