@@ -20,6 +20,8 @@ import { patchProjectName, listProjects, subscribeProjects } from "../audio/proj
 import { currentProjectId } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
+import { bundleLocalMirror } from "../audio/sync/localMirror";
+import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleStore";
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
 import { getAccessToken } from "../auth/session";
@@ -208,6 +210,8 @@ export function AppShell() {
     let active = true;
     let disposePersistence = () => {};
     let disposeCheckpoints = () => {};
+    // Best-effort: keep the offline cache + write-queue from being evicted under storage pressure.
+    void requestPersistentStorage();
     void initProjects({ projectStore, editLog, versionStore })
       .then(() => {
         if (!active) return;
@@ -227,12 +231,16 @@ export function AppShell() {
           transport.onStatus((status) => {
             if (active) setSyncStatus(status);
           });
+          // Durable OPFS mirror (cache-only) so offline edits survive a reload and the confirmed stream
+          // replays offline. Null when OPFS is unavailable (remote-only, no offline durability).
+          const cacheBundle = getLocalCacheBundle(currentProjectId());
           const session = new SharedSession({
             projectStore,
             editLog,
             transport,
             projectId: currentProjectId(),
             baseSeq,
+            localMirror: cacheBundle ? bundleLocalMirror(cacheBundle) : undefined,
             onError: (message) => console.warn(`[web-daw] sync: ${message}`),
             // A peer's edit: mark the project collaborative (so the offline banner warns), and on a rename
             // update our library-list label straight from the edit (the store already applied it) so the

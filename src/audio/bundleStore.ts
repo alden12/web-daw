@@ -333,3 +333,32 @@ export function getProjectStorage(): ProjectStorage {
 export function setProjectStorage(storage: ProjectStorage): void {
   storageSingleton = storage;
 }
+
+/**
+ * The OPFS mirror bundle for one project, for **cache-only** offline-durability writes - the pending
+ * write-queue and the confirmed edit stream - that must NOT round-trip to the server (it owns its own
+ * keyframes). Points at the same `remote-cache/<id>` tree the read-through cache mirrors into, so the
+ * confirmed stream lands in the one local edit log an offline reload replays. Null unless in remote +
+ * OPFS mode (local mode already persists to OPFS directly; no-OPFS has nowhere durable to mirror).
+ */
+export function getLocalCacheBundle(projectId: string): BundleStore | null {
+  const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+  const hasOpfs = typeof navigator !== "undefined" && !!navigator.storage?.getDirectory;
+  if (!apiUrl || !hasOpfs) return null;
+  return new OpfsBundleStore([REMOTE_CACHE_DIR, projectId]);
+}
+
+/**
+ * Ask the browser to make OPFS / IndexedDB persistent, so the offline cache + write-queue are not
+ * evicted under storage pressure (Safari/iOS evict aggressively). Best-effort and idempotent; resolves
+ * to whether persistence is in effect. A no-op (false) where the Storage API is unavailable.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.storage?.persist) return false;
+  try {
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}

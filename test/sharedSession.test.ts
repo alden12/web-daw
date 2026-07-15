@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
-import { SharedSession, type SyncTransport } from "../src/audio/sync/sharedSession";
+import { SharedSession, type SyncTransport, type LocalMirror, type PendingOp } from "../src/audio/sync/sharedSession";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
-import type { EditCommand } from "../src/audio/commands/types";
+import type { EditCommand, EditEntry } from "../src/audio/commands/types";
 import type { ClientMessage, ServerMessage } from "../src/contract/ws";
 
 // A deterministic, fully controllable transport harness. Client -> server messages queue on a shared
@@ -120,6 +120,7 @@ class Client {
 const createTrack = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
 
 describe("SharedSession (client optimistic + rebase)", () => {
+  // (durable-mirror tests below use their own lightweight stubs; these use the full Room harness)
   it("applies a local edit optimistically and propagates it to a peer through the authority", async () => {
     const { db } = await makeSyncEnv();
     const harness = new Harness(await Room.load(db, "local", "p1"));
@@ -344,5 +345,109 @@ describe("SharedSession (client optimistic + rebase)", () => {
     a.flush();
     expect(a.trackIds()).toEqual(["t-a"]);
     expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
+  });
+});
+
+// A controllable transport + an in-memory LocalMirror, to exercise the durable offline queue + confirmed
+// stream in isolation (no Room needed - we drive the authority's messages by hand).
+class StubTransport implements SyncTransport {
+  readonly sent: ClientMessage[] = [];
+  private messageHandler: (message: ServerMessage) => void = () => {};
+  private openHandler: () => void = () => {};
+  send(message: ClientMessage): void {
+    this.sent.push(message);
+  }
+  onMessage(handler: (message: ServerMessage) => void): void {
+    this.messageHandler = handler;
+  }
+  onOpen(handler: () => void): void {
+    this.openHandler = handler;
+  }
+  close(): void {}
+  open(): void {
+    this.openHandler();
+  }
+  deliver(message: ServerMessage): void {
+    this.messageHandler(message);
+  }
+}
+
+class FakeMirror implements LocalMirror {
+  pending: PendingOp[] = [];
+  readonly confirmed: EditEntry[] = [];
+  constructor(private readonly initial: PendingOp[] = []) {}
+  async loadPending(): Promise<PendingOp[]> {
+    return this.initial;
+  }
+  async savePending(pending: PendingOp[]): Promise<void> {
+    this.pending = [...pending];
+  }
+  async appendConfirmed(entry: EditEntry): Promise<void> {
+    this.confirmed.push(entry);
+  }
+}
+
+/** Flush the microtask + timer queue so a fire-and-forget mirror restore completes. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const applied = (seq: number, command: EditCommand, opId: string): ServerMessage => ({
+  type: "editApplied",
+  projectId: "p1",
+  seq,
+  command,
+  author: "you",
+  opId,
+});
+
+describe("SharedSession durable offline mirror", () => {
+  function makeSession(mirror: FakeMirror) {
+    const store = new ProjectStore(false);
+    const editLog = new EditLog(store);
+    const transport = new StubTransport();
+    let counter = 0;
+    const session = new SharedSession({
+      projectStore: store,
+      editLog,
+      transport,
+      projectId: "p1",
+      localMirror: mirror,
+      newOpId: () => `op-${counter++}`,
+    });
+    session.attach();
+    return { store, editLog, transport, session };
+  }
+
+  it("persists an enqueued op, then drains it and records the confirmed entry on the echo", async () => {
+    const mirror = new FakeMirror();
+    const { editLog, transport } = makeSession(mirror);
+    transport.open();
+
+    editLog.dispatch(createTrack("t-a"));
+    expect(mirror.pending).toHaveLength(1); // durable before the round-trip, so a reload keeps it
+
+    transport.deliver(applied(0, createTrack("t-a"), "op-0"));
+    expect(mirror.pending).toHaveLength(0); // confirmed -> drained from the queue
+    expect(mirror.confirmed.map((entry) => entry.seq)).toEqual([0]); // and appended to the offline stream
+  });
+
+  it("restores a persisted queue on load: re-applies it to the live store and re-sends it", async () => {
+    const mirror = new FakeMirror([{ opId: "op-x", command: createTrack("t-restored"), author: "you" }]);
+    const { store, transport } = makeSession(mirror);
+    transport.open();
+    await settle(); // let the fire-and-forget restore run
+
+    expect(store.snapshot().tracks.map((track) => track.id)).toEqual(["t-restored"]); // re-applied optimistically
+    expect(transport.sent.some((message) => message.type === "edit" && message.opId === "op-x")).toBe(true); // re-sent
+  });
+
+  it("appends a peer's confirmed edit to the offline stream (so a reload replays it)", async () => {
+    const mirror = new FakeMirror();
+    const { transport } = makeSession(mirror);
+    transport.open();
+
+    // An edit we never sent (a peer's), with a fresh seq: folded into base AND mirrored for offline reload.
+    transport.deliver(applied(0, createTrack("t-peer"), "op-peer"));
+    expect(mirror.confirmed.map((entry) => entry.seq)).toEqual([0]);
+    expect(mirror.pending).toHaveLength(0); // not ours, so nothing queued
   });
 });

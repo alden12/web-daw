@@ -23,7 +23,7 @@
 import { ProjectStore } from "../project/projectStore";
 import { applyEdit } from "../commands/applyEdit";
 import type { EditLog } from "../commands/editLog";
-import type { Author, EditCommand } from "../commands/types";
+import type { Author, EditCommand, EditEntry } from "../commands/types";
 import type { ClientMessage, ServerMessage } from "../../contract/ws";
 
 /** A typed, ordered message pipe to the authority. `createWsClient` (src/contract/client.ts) is one. */
@@ -37,10 +37,25 @@ export interface SyncTransport {
 }
 
 /** One optimistic edit awaiting the authority's `seq`, matched back by `opId`. */
-interface PendingOp {
+export interface PendingOp {
   opId: string;
   command: EditCommand;
   author: Author;
+}
+
+/**
+ * The durable local mirror (OPFS, cache-only) that makes offline work survive a reload:
+ * - the pending write-queue (`loadPending`/`savePending`) - unconfirmed ops re-applied to the live
+ *   store on reload and re-sent on reconnect;
+ * - the confirmed edit stream (`appendConfirmed`) - each authoritative `editApplied` appended to the
+ *   local edit log so an offline reload replays it back to the correct HEAD.
+ * All writes are best-effort: the server remains the source of truth, so a failed mirror write only
+ * means the next reload reconstructs a little less. Absent (undefined) in remote-without-OPFS / local.
+ */
+export interface LocalMirror {
+  loadPending(): Promise<PendingOp[]>;
+  savePending(pending: PendingOp[]): Promise<void>;
+  appendConfirmed(entry: EditEntry): Promise<void>;
 }
 
 export interface SharedSessionOptions {
@@ -58,6 +73,8 @@ export interface SharedSessionOptions {
   /** Fired when a *peer's* new edit is applied (not our own echoes). Lets the UI react to remote changes
    *  beyond the store - e.g. refresh the project-list label on a `renameProject`. */
   onRemoteEdit?: (command: EditCommand, author: Author) => void;
+  /** Durable local mirror (OPFS) for the pending queue + confirmed stream; omit for no offline durability. */
+  localMirror?: LocalMirror;
 }
 
 /** Only pure-forward edits replay through `applyEdit`; notes / undo-redo markers are skipped. */
@@ -71,6 +88,7 @@ export class SharedSession {
   private readonly newOpId: () => string;
   private readonly onError?: (message: string) => void;
   private readonly onRemoteEdit?: (command: EditCommand, author: Author) => void;
+  private readonly localMirror?: LocalMirror;
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
   private readonly base: ProjectStore;
@@ -88,6 +106,7 @@ export class SharedSession {
     this.newOpId = options.newOpId ?? (() => crypto.randomUUID());
     this.onError = options.onError;
     this.onRemoteEdit = options.onRemoteEdit;
+    this.localMirror = options.localMirror;
     this.headSeq = options.baseSeq ?? -1;
 
     // Seed `base` from the client's already-loaded HEAD, so a peer rebase replays onto real state
@@ -100,6 +119,24 @@ export class SharedSession {
     // edits missed while disconnected) and re-send unconfirmed pending ops. The first connect is just its
     // first firing, so subscribe rides one code path.
     this.transport.onOpen(() => this.resync());
+    // Restore any durable pending ops from a previous (offline) session and re-apply them to the live
+    // store, so an offline reload does not lose unsent edits. Fire-and-forget: `resync` re-sends them
+    // once connected (and if the socket is already open, `restorePending` sends them itself).
+    if (this.localMirror) void this.restorePending();
+  }
+
+  /** Re-load unsent ops persisted before a reload, re-apply them on top of `base`, and (if already
+   *  connected) re-send them. Idempotent by `opId` at the authority, so a later `resync` re-send is safe. */
+  private async restorePending(): Promise<void> {
+    const saved = await this.localMirror!.loadPending();
+    if (this.closed || saved.length === 0) return;
+    // Drop any we already hold (a race with fresh enqueues), then prepend the restored ops in order.
+    const held = new Set(this.pending.map((op) => op.opId));
+    const restored = saved.filter((op) => !held.has(op.opId));
+    if (restored.length === 0) return;
+    this.pending = restored.concat(this.pending);
+    this.rebuildLive();
+    for (const op of restored) this.sendEdit(op);
   }
 
   /** Attach to an `EditLog` as its remote sink: every locally-dispatched edit is enqueued for the
@@ -117,7 +154,19 @@ export class SharedSession {
     if (this.closed) return;
     const op: PendingOp = { opId: this.newOpId(), command, author };
     this.pending.push(op);
+    this.persistPending(); // durable before send, so an offline edit survives a reload
     this.sendEdit(op);
+  }
+
+  /** Persist the current pending queue to the local mirror (best-effort; the queue is small). */
+  private persistPending(): void {
+    void this.localMirror?.savePending(this.pending).catch(() => {});
+  }
+
+  /** Append a confirmed authoritative entry to the local edit-log mirror, so an offline reload replays
+   *  it back into `base`. Best-effort; `appendEdits` is idempotent by seq so a re-append is a no-op. */
+  private mirrorConfirmed(command: EditCommand, author: Author, seq: number): void {
+    void this.localMirror?.appendConfirmed({ seq, command, author, time: Date.now(), kind: "edit" }).catch(() => {});
   }
 
   /** Wire one pending op to the authority. `baseSeq` reflects the latest confirmed head (informational
@@ -164,6 +213,7 @@ export class SharedSession {
     for (const entry of message.entries) {
       if (entry.seq <= this.headSeq) continue;
       if (isReplayable(entry.kind)) applyEdit(this.base, entry.command as EditCommand, entry.author);
+      this.mirrorConfirmed(entry.command as EditCommand, entry.author, entry.seq); // persist for offline reload
       this.headSeq = entry.seq;
       advanced = true;
     }
@@ -183,11 +233,13 @@ export class SharedSession {
     const isNew = message.seq > this.headSeq;
     if (isNew) {
       applyEdit(this.base, message.command as EditCommand, message.author);
+      this.mirrorConfirmed(message.command as EditCommand, message.author, message.seq); // persist for offline reload
       this.headSeq = message.seq;
     }
     const index = this.pending.findIndex((op) => op.opId === message.opId);
     if (index >= 0) {
       this.pending.splice(index, 1); // ours: confirmed
+      this.persistPending(); // durable queue drained of the now-confirmed op
       if (!isNew) this.rebuildLive(); // already in `base` (snapshot-recovered): drop the redundant pending copy
     } else if (isNew) {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
@@ -201,6 +253,7 @@ export class SharedSession {
     const index = this.pending.findIndex((op) => op.opId === message.opId);
     if (index < 0) return;
     this.pending.splice(index, 1);
+    this.persistPending(); // drop the rejected op from the durable queue too
     this.rebuildLive();
     this.onError?.(`Edit rejected: ${message.reason}`);
   }
