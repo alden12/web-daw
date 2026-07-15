@@ -1276,20 +1276,33 @@ export class ProjectStore {
     return this.authorship[key];
   }
 
-  /** Record who last edited an object key. Called from the applyEdit seam; the caller emits. */
+  /** Record who last edited an object key. Emits only when the author actually changes, so the
+   *  last-editor tint refreshes the instant a new voice takes over (e.g. a human grabbing an
+   *  agent-set knob) without a full rebuild on every re-stamp of the same author (a knob drag
+   *  re-stamps "you" every frame; only the first frame flips the colour and needs a notify). */
   setAuthor(key: string, author: ClipAuthor): void {
+    if (this.authorship[key] === author) return;
     this.authorship[key] = author;
+    this.emit();
   }
 
-  /** Forget authorship for removed objects, by exact key or by `prefix:` (drops every key under it). */
+  /** Forget authorship for removed objects, by exact key or by `prefix:` (drops every key under it).
+   *  Emits only when something was actually removed. */
   dropAuthors(keysOrPrefixes: string[]): void {
+    let removed = false;
     for (const entry of keysOrPrefixes) {
       if (entry.endsWith(":")) {
-        for (const key of Object.keys(this.authorship)) if (key.startsWith(entry)) delete this.authorship[key];
-      } else {
+        for (const key of Object.keys(this.authorship))
+          if (key.startsWith(entry)) {
+            delete this.authorship[key];
+            removed = true;
+          }
+      } else if (entry in this.authorship) {
         delete this.authorship[entry];
+        removed = true;
       }
     }
+    if (removed) this.emit();
   }
 
   // --- custom devices (user/AI-authored declarative instruments & effects) ---

@@ -14,6 +14,7 @@ import type { z } from "zod";
 import { routes } from "./http";
 import { channels, parseServerMessage, type ClientMessage, type ServerMessage } from "./ws";
 import type { ErrorBody } from "./errors";
+import { IdleController } from "./idleController";
 
 type ProjectList = z.infer<(typeof routes.listProjects)["response"]>;
 /** One project in the library listing (id + name + modifiedAt + the caller's role). */
@@ -196,7 +197,13 @@ export function wsBaseFromApiUrl(apiUrl: string): string {
  *  its unconfirmed edits. Thin transport glue over the contract's message unions. The token rides the
  *  query string because a browser `WebSocket` cannot set an Authorization header (the server reads
  *  `?token=` at the upgrade, mirroring the HTTP bearer gate). */
-export function createWsClient(config: { baseUrl: string; token?: TokenSource }): {
+export function createWsClient(config: {
+  baseUrl: string;
+  token?: TokenSource;
+  /** Override the idle / hidden-grace suspend thresholds (defaults live in `idleController.ts`). */
+  idleMs?: number;
+  hiddenGraceMs?: number;
+}): {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   onOpen(handler: () => void): void;
@@ -216,6 +223,19 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
   let closed = false;
   let retries = 0;
 
+  // Suspend the socket when the session goes idle or the tab is hidden, so an open connection does not
+  // pin the scale-to-zero server awake. `onWake` reopens; the open handler re-runs `resync`, so a
+  // suspend/resume is just a short-lived disconnect the session already self-heals from.
+  const idle = new IdleController({
+    idleMs: config.idleMs,
+    hiddenGraceMs: config.hiddenGraceMs,
+    onSuspend: () => socket?.close(),
+    onWake: () => {
+      retries = 0;
+      connect();
+    },
+  });
+
   const connect = (): void => {
     // Rebuild the URL per (re)connect so a refreshed token is picked up (the reconnect from slice 76
     // is also what re-applies it after a token rotation).
@@ -224,6 +244,7 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
       retries = 0;
+      idle.onOpen(); // fresh idle countdown per connection
       for (const handler of openHandlers) handler();
       for (const message of backlog) socket.send(JSON.stringify(message));
       backlog.length = 0;
@@ -234,6 +255,7 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
     });
     socket.addEventListener("close", () => {
       if (closed) return; // deliberate close(): do not reconnect
+      if (!idle.shouldReconnectAfterClose()) return; // suspended (idle) or hidden: wake on activity/visible
       const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** retries);
       retries += 1;
       setTimeout(connect, delay);
@@ -243,6 +265,7 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
 
   return {
     send(message) {
+      idle.activity(); // reset the idle countdown; reopens the socket first if it was suspended
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
       else backlog.push(message);
     },
@@ -254,6 +277,7 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
     },
     close() {
       closed = true;
+      idle.dispose();
       socket.close();
     },
   };
