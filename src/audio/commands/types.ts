@@ -11,6 +11,7 @@
 import type { ServerToBrowser } from "../mcp/protocol";
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
+import type { ProjectData } from "../project/types";
 
 // Who authored an edit. `"claude"` = the MCP / Claude Code driver; `"agent"` = the built-in in-app
 // agent (model-agnostic) - two reserved AI voices. `"you"` is the default solo user; any other value is
@@ -141,6 +142,18 @@ export type LocalEdit =
       // edits between it and the previous marker). No mutable HEAD pointer, so concurrent commits can't
       // race. See docs/DESIGN.md (Phase B2).
       type: "commit";
+      message: string;
+    }
+  | {
+      // A version-history *revert*: jump the whole project back to a past version's state. Unlike a
+      // commit marker (a no-op pointer), a revert changes state - so it carries the target `project`
+      // snapshot inline and `applyEdit` replays it with `project.load`. Embedding the snapshot keeps it a
+      // plain forward edit: it rides the sync pipeline, applies optimistically, replays on peers, and
+      // self-anchors on replay, with zero special-casing in the realtime authority. Rare + explicit, so
+      // the snapshot payload is acceptable (unlike frequent commits, which stay lightweight markers). It
+      // is also a history node: `message` names it ("Revert to ..."). See docs/DESIGN.md (Phase B2).
+      type: "loadSnapshot";
+      project: ProjectData;
       message: string;
     };
 

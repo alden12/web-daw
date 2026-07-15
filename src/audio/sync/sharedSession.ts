@@ -84,6 +84,9 @@ export interface SharedSessionOptions {
    *  meantime. The held edits are NOT sent; the live store shows the peer's state. The UI resolves by
    *  calling `discardPending` (take theirs) or forking a copy from `myState` (keep mine). */
   onConflict?: (info: ConflictInfo, myState: ProjectData) => void;
+  /** Fired whenever the authoritative log advances (a confirmed edit, commit, or revert - ours or a
+   *  peer's), so the remote-mode `VersionStore` re-reads history from the freshly-mirrored log. */
+  onConfirmed?: () => void;
   /** Durable local mirror (OPFS) for the pending queue + confirmed stream; omit for no offline durability. */
   localMirror?: LocalMirror;
 }
@@ -100,6 +103,7 @@ export class SharedSession {
   private readonly onError?: (message: string) => void;
   private readonly onRemoteEdit?: (command: EditCommand, author: Author) => void;
   private readonly onConflict?: (info: ConflictInfo, myState: ProjectData) => void;
+  private readonly onConfirmed?: () => void;
   private readonly localMirror?: LocalMirror;
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
@@ -126,6 +130,7 @@ export class SharedSession {
     this.onError = options.onError;
     this.onRemoteEdit = options.onRemoteEdit;
     this.onConflict = options.onConflict;
+    this.onConfirmed = options.onConfirmed;
     this.localMirror = options.localMirror;
     this.headSeq = options.baseSeq ?? -1;
 
@@ -262,6 +267,8 @@ export class SharedSession {
     }
     // The authority's head can exceed the window we were sent; trust it as the floor for future edits.
     this.headSeq = Math.max(this.headSeq, message.headSeq);
+    // Folded catch-up entries: the log advanced, so let history re-read (markers may have arrived).
+    if (missed.length > 0) this.onConfirmed?.();
 
     // A reconnect can clash: held offline edits vs the peer edits we just folded. Compare only edits
     // authored by someone else - an entry authored by us is our own op recovered via the snapshot (its
@@ -332,6 +339,8 @@ export class SharedSession {
       this.editLog.recordRemote(message.command as EditCommand, message.author); // narrate it in the feed
       this.onRemoteEdit?.(message.command as EditCommand, message.author); // let the UI react (e.g. list label)
     }
+    // The authoritative log advanced (ours or a peer's): let history re-read the freshly-mirrored markers.
+    if (isNew) this.onConfirmed?.();
   }
 
   /** The authority refused one of our edits: drop the optimistic op and roll it out of the live store. */

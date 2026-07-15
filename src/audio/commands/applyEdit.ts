@@ -48,6 +48,9 @@ const APPLY: ApplyMap = {
   // A version-history commit marker: changes no project state (its presence in the log is the version
   // point). No-op on replay; history derives commits from these markers. See docs/DESIGN.md (Phase B2).
   commit: () => {},
+  // A revert: replace the whole project with the target version's embedded snapshot. A plain forward
+  // edit (load the carried state), so replay + sync need no special-casing; self-anchoring on replay.
+  loadSnapshot: (project, command) => project.load(command.project),
   removeTrack: (project, command) => project.removeTrack(command.trackId),
   setTrack: (project, command) => {
     if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);

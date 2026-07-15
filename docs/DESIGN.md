@@ -1178,6 +1178,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   feedback, so the loop becomes play-an-idea -> agent develops it -> you hear it and keep or
   reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
   reusing the exact shapes already flowing through `dispatch`/MCP.
+- **Validate model responses with zod, not hand-rolled parsing.** The provider layer
+  (`src/audio/agent/provider.ts`, `loop.ts`) currently pulls apart the model's HTTP response
+  imperatively - `JSON.parse(raw)` then a chain of `(data as { choices?: unknown }).choices`
+  casts and `typeof` guards to reach `finish_reason`, `usage`, `tool_calls`, streamed tool-call
+  argument fragments, and error bodies. A model response is an **untrusted boundary** like any
+  other (MCP inputs, loaded bundles), so it should go through zod: define a response schema per
+  provider shape and `parse`/`safeParse` the payload, surfacing a clear message on a malformed
+  reply instead of an `undefined`-shaped crash downstream. This also matches the keystone rule -
+  the tool-call `arguments` string is already validated against the tool's zod schema on dispatch,
+  so validating the *envelope* the same way closes the last hand-parsed gap. **General rule:
+  parsing any unknown/untrusted object shape uses zod** (`safeParse` at the edge, typed value
+  inward), never `as`-cast + `typeof` ladders. Cheap, self-contained; do it when the provider
+  layer is next touched.
 
 **Collaboration & multi-user (options, not a decided direction)**
 
@@ -1907,17 +1920,43 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
       `SharedSession.postCommit`. A named commit is authored into the log, queued offline, seq'd by the
       `Room`, broadcast to peers - no new message types, no Room change. Concurrent commits land as
       distinct ordered markers (the HEAD race is gone by construction). Tested in `sharedSession.test.ts`.
-    - **Decided - auto-checkpoints move server-side, on the edit cadence.** The periodic unnamed
-      checkpoints (today a client-side debounce) become **authority-emitted**: the `Room` appends an
-      auto-commit marker (authored `system`, `auto: true`) every N authoritative edits, like the B1
-      keyframe cadence. One cadence per room - no duplicate auto-commits from each client. Named commits
-      stay explicit user actions.
-    - **Remaining (step 3, land together):** the client `VersionStore` remote-mode read rework +
-      the server auto-checkpoint should land **as one coherent piece** - an auto-commit marker is only
-      useful (and only non-noisy in the feed) once the history UI reads markers from the log. Read source:
-      the **already-locally-mirrored authoritative log** (`edits.json` from the inc-3b confirmed-stream
-      mirror) - scan markers, replay from a keyframe for `materialize`/`diff`, offline-capable, page to
-      `getEdits` only for history older than the local window. `commit()` -> `postCommit`; HEAD derived.
+    - **Done (step 3) - client reads history from the log + commit-pinned keyframes + revert-as-marker.**
+      The remote `VersionStore` (`src/audio/commands/history.ts`) now derives history from the authoritative
+      log instead of the client file-DAG: `history()` scans the mirrored log for `commit` / `loadSnapshot`
+      markers (HEAD = the latest marker's `seq`, derived); `commit()` -> `session.postCommit`; `revertTo()`
+      dispatches a `loadSnapshot`; `diff` materialises from pinned keyframes. The **local file-DAG is
+      untouched** (`repoOverride` seam / `setRemote(null)`), and the client-side auto-checkpoint is a no-op
+      in remote mode. Reactivity: `SharedSession.onConfirmed` fires when the log advances (ours or a peer's)
+      -> `onLogAdvanced()` re-reads, so a peer's commit appears live. Covered by `history.test.ts` (remote
+      suite) + `room.test.ts`.
+      - **Server writes a keyframe per commit.** On a `commit` marker the `Room` snapshots HEAD
+        *synchronously* at seq-assignment (exact under concurrency) to `history/keyframes/<seq>.json` (a
+        `ProjectData` snapshot, distinct prefix + schema from the `commitSchema` file-DAG nodes). Materialise
+        = load that keyframe, **zero replay**, exact however old. Markers are exempt from log compaction
+        (`deleteEditsBelow`), so the commit list stays enumerable forever.
+      - **Revert = a `loadSnapshot` marker carrying the target snapshot.** Unlike a commit (a no-op
+        pointer), a revert changes state, so it embeds the target `ProjectData` and `applyEdit` replays it
+        with `project.load`. Because the state is *in the command*, it is a plain forward edit: rides sync,
+        applies optimistically, replays on peers, self-anchors on replay - **zero special-casing** in the
+        realtime authority. Acceptable payload because reverts are rare + explicit (the reason we don't
+        embed snapshots in frequent commits). It is also a history node (`message` = `Revert to "..."`).
+    - **Design revision from the "keyframe budget" discussion - auto-checkpoints are keyframes, not
+      commits.** We separated two concerns the earlier plan conflated: *durability/undo* (never lose work,
+      scrub recent history) vs *version history* (deliberate milestones). Keyframes only ever serve two
+      jobs - cold-start/initial load, and reconstructing a specific commit - so pin them to those: **one
+      keyframe per commit** (few, user-driven) gives full, cheap time-travel to any commit; a **rolling
+      keyframe on the edit cadence** is the durability/undo safety net. This **supersedes the earlier
+      "auto-commit on edit cadence" decision**: auto-checkpoints become *keyframes* (invisible in the
+      version list -> no feed noise), and commits are **entirely user-driven** (fewer, meaningful nodes).
+      Numbers: N=100 edit cadence, one pinned keyframe per commit, a rolling window of ~M=10 head keyframes
+      (~1000 edits of fine-grained reach). Ctrl-Z undo is a separate in-memory stack, unaffected.
+      - **Deferred (no consumer yet):** the **rolling head-keyframe window (M)** + its GC, and
+        *arbitrary uncommitted-seq* scrubbing. Commit-pinned keyframes are self-contained, so commit
+        diff/revert needs zero replay *without* the rolling window - M only bounds replay for scrubbing to
+        an uncommitted point, which no UI does yet. Build it when a timeline-scrubber lands. For now the
+        single cold-start `project.json` keyframe + the retained recent log cover load + recent undo.
+      - **Verify live (pending):** two accounts - a named commit appears for both; revert converges both;
+        diff reads correctly; cold-start after a commit loads fast + exact.
   - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
     ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
     would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern

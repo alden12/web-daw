@@ -43,6 +43,7 @@ const DESCRIBE: DescribeMap = {
   addAudioTrack: (command) => `Imported ${command.name ?? "audio"}`,
   renameProject: (command) => `Renamed project to "${command.name}"`,
   commit: (command) => `Saved version: ${command.message}`,
+  loadSnapshot: (command) => command.message,
   removeTrack: () => "Removed track",
   setTrack: (command, ctx) => {
     const name = on(ctx, command.trackId, "");
