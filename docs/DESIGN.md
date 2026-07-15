@@ -236,6 +236,20 @@ a free tier or a local model can drive tests; default Claude Sonnet), and keep t
 rate-limiting before any non-localhost deploy. The agent reasons on symbolic data and cannot
 hear its output; **audio-analysis tools** give it "ears" (see the roadmap).
 
+**Consolidate the two tool surfaces (roadmap, worth doing).** The "one shared tool catalog"
+above is the intent, but today the MCP server (`server/mcpServer.ts`) and the in-app agent
+(`src/audio/agent/tools/`) declare their tools *separately* - two sets of names + schemas +
+handlers. The **edit semantics are already shared** (both route through `dispatch` -> `applyEdit`
+and validate against the same catalogs), so the duplication is only in the tool *declarations*.
+They diverged because they execute in different processes: the agent calls the store directly
+in-browser, while MCP runs in Node and forwards each edit over the WS bridge to a live tab. The
+consolidation is a single declarative tool catalog (name + description + zod args + the
+`EditCommand` it produces) that *projects* to both surfaces - MCP registration (handler = forward
+over WS) and agent tool (handler = direct dispatch) - matching the param-schema keystone pattern.
+Non-trivial mainly because the **read paths** differ (MCP reads query the tab over the bridge;
+agent reads hit the local store synchronously) and the toolsets aren't strictly 1:1 today; a real
+refactor, not a quick change, but it removes a standing source of drift.
+
 Note: Claude Code / Claude Desktop over MCP already gives a capable agent on your existing
 subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
 general "just open the app" user.
@@ -763,6 +777,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   - *Bug: note-drag snapping.* Dragging a note in the piano roll doesn't always land its start on a
     grid line - the onset can end up off-grid. The snap should apply to the note onset consistently
     (audit the `snapBeat` / drag-origin math in the roll).
+  - *Bug: clip playhead ignores arrangement position.* The piano roll / step grid draw a playhead in
+    the selected clip whenever the transport is playing, even when playing from the timeline and the
+    global playhead hasn't reached (a placement of) this clip yet - so a clip that isn't sounding
+    still shows a moving cursor. The clip playhead should track the arrangement: only show (and only
+    advance) while the transport is inside a placement of *this* clip, offset by where in the clip
+    that placement is playing (and hidden otherwise). Today `PianoRoll` / `StepGrid` derive it
+    straight from `scheduler.getPositionBeats() % clip.lengthBeats`, which assumes the clip is always
+    the thing playing.
   - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
     length in one gesture (today a click adds a fixed-length note).
   - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
