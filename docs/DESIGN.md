@@ -1903,6 +1903,21 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     isolates it); this reworks the *remote* path. This is a meaty rework of the commit model (seq-space
     unification + marker-in-log), not a drop-in - it was always going to need it (the design flagged
     "B2 will need rework" without the substrate; the offline foundation is that substrate, now shipped).
+    - **Done (steps 1-2):** the `commit` edit command (message; `applyEdit` no-ops it) +
+      `SharedSession.postCommit`. A named commit is authored into the log, queued offline, seq'd by the
+      `Room`, broadcast to peers - no new message types, no Room change. Concurrent commits land as
+      distinct ordered markers (the HEAD race is gone by construction). Tested in `sharedSession.test.ts`.
+    - **Decided - auto-checkpoints move server-side, on the edit cadence.** The periodic unnamed
+      checkpoints (today a client-side debounce) become **authority-emitted**: the `Room` appends an
+      auto-commit marker (authored `system`, `auto: true`) every N authoritative edits, like the B1
+      keyframe cadence. One cadence per room - no duplicate auto-commits from each client. Named commits
+      stay explicit user actions.
+    - **Remaining (step 3, land together):** the client `VersionStore` remote-mode read rework +
+      the server auto-checkpoint should land **as one coherent piece** - an auto-commit marker is only
+      useful (and only non-noisy in the feed) once the history UI reads markers from the log. Read source:
+      the **already-locally-mirrored authoritative log** (`edits.json` from the inc-3b confirmed-stream
+      mirror) - scan markers, replay from a keyframe for `materialize`/`diff`, offline-capable, page to
+      `getEdits` only for history older than the local window. `commit()` -> `postCommit`; HEAD derived.
   - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
     ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
     would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
