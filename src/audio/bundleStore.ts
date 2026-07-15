@@ -51,20 +51,60 @@ async function readEditsFromFile(store: BundleStore, sinceSeq: number, limit?: n
   return limit != null ? matching.slice(-limit) : matching;
 }
 
+/** Concat new entries onto the existing log, dropping any whose `seq` is already present (idempotent). */
+function mergeEdits(existingRaw: string | null, entries: EditEntry[]): EditEntry[] {
+  const all = existingRaw ? (JSON.parse(existingRaw) as EditEntry[]) : [];
+  const seen = new Set(all.map((entry) => entry.seq));
+  return all.concat(entries.filter((entry) => !seen.has(entry.seq)));
+}
+
 async function appendEditsToFile(store: BundleStore, entries: EditEntry[]): Promise<void> {
   if (entries.length === 0) return;
-  const raw = await store.readText(EDIT_LOG_PATH);
-  const all = raw ? (JSON.parse(raw) as EditEntry[]) : [];
-  const seen = new Set(all.map((entry) => entry.seq));
-  const merged = all.concat(entries.filter((entry) => !seen.has(entry.seq)));
+  const merged = mergeEdits(await store.readText(EDIT_LOG_PATH), entries);
   await store.writeText(EDIT_LOG_PATH, JSON.stringify(merged));
 }
 
-/** Origin Private File System backend: the bundle is a real directory tree rooted at `root`. */
+/**
+ * Serialize OPFS writes to the SAME file, keyed by absolute path and shared across every
+ * `OpfsBundleStore` instance. OPFS `createWritable` is copy-on-write: two overlapping writes to one file
+ * each branch from the current contents and swap their own version in on `close()`, so the *last to
+ * finish* wins - which is NOT the last one issued. A rapid burst (the offline pending-queue saves a
+ * growing array on every op during a note drag) could therefore leave a stale, shorter snapshot on disk,
+ * and an offline reload would then replay the pre-drop state and re-send it as authoritative. Chaining
+ * each write behind the previous one for its path makes issue-order == write-order, so the newest state
+ * always lands last. The map is module-level (not per-instance) because two `OpfsBundleStore`s can point
+ * at the same file - e.g. the read-through cache and the offline mirror both touching a project's
+ * `edits.json`. It is bounded by the file set per project.
+ */
+const opfsWriteChains = new Map<string, Promise<unknown>>();
+
+/** Run `op` after any in-flight write to `absPath` completes, and record it as the new tail of that
+ *  path's chain (swallowing errors so one failed write doesn't wedge the path). Exported for tests. */
+export function serializeOpfsWrite<T>(absPath: string, op: () => Promise<T>): Promise<T> {
+  const run = (opfsWriteChains.get(absPath) ?? Promise.resolve()).then(op, op);
+  opfsWriteChains.set(
+    absPath,
+    run.then(
+      () => {},
+      () => {},
+    ),
+  );
+  return run;
+}
+
+/** Origin Private File System backend: the bundle is a real directory tree rooted at `root`. Writes to a
+ *  given file serialize (see `serializeOpfsWrite`); reads don't - OPFS `getFile()` returns a whole-file
+ *  snapshot, so a concurrent read sees either the old or the new complete contents, both valid. */
 export class OpfsBundleStore implements BundleStore {
   private readonly root: string[];
   constructor(root: string[]) {
     this.root = root;
+  }
+
+  /** Absolute OPFS path (root + relative), the serialization key so writes across instances to the same
+   *  underlying file share one chain. */
+  private absPath(path: string): string {
+    return [...this.root, path].join("/");
   }
 
   /** Walk (optionally creating) the directory chain for `parts` under the bundle root. */
@@ -100,12 +140,8 @@ export class OpfsBundleStore implements BundleStore {
     }
   }
 
-  async writeText(path: string, text: string): Promise<void> {
-    const h = await this.fileHandle(path, true);
-    if (!h) throw new Error(`bundle: cannot write ${path}`);
-    const w = await h.createWritable();
-    await w.write(text);
-    await w.close();
+  writeText(path: string, text: string): Promise<void> {
+    return serializeOpfsWrite(this.absPath(path), () => this.rawWrite(path, text));
   }
 
   async readBlob(path: string): Promise<ArrayBuffer | null> {
@@ -118,11 +154,17 @@ export class OpfsBundleStore implements BundleStore {
     }
   }
 
-  async writeBlob(path: string, blob: Blob): Promise<void> {
+  writeBlob(path: string, blob: Blob): Promise<void> {
+    return serializeOpfsWrite(this.absPath(path), () => this.rawWrite(path, blob));
+  }
+
+  /** The actual OPFS write, un-serialized: callers reach it only through the per-path chain above (and
+   *  `appendEdits`, which is itself already inside the chain), so writes to one file never overlap. */
+  private async rawWrite(path: string, data: string | Blob): Promise<void> {
     const h = await this.fileHandle(path, true);
     if (!h) throw new Error(`bundle: cannot write ${path}`);
     const w = await h.createWritable();
-    await w.write(blob);
+    await w.write(data);
     await w.close();
   }
 
@@ -130,8 +172,14 @@ export class OpfsBundleStore implements BundleStore {
     return (await this.fileHandle(path, false)) !== null;
   }
 
+  /** Read-concat-write as one unit under the log path's chain, so concurrent appends (a burst of
+   *  confirmed edits, or the cache mirroring in parallel) can't lose each other's entries. */
   appendEdits(entries: EditEntry[]): Promise<void> {
-    return appendEditsToFile(this, entries);
+    if (entries.length === 0) return Promise.resolve();
+    return serializeOpfsWrite(this.absPath(EDIT_LOG_PATH), async () => {
+      const merged = mergeEdits(await this.readText(EDIT_LOG_PATH), entries);
+      await this.rawWrite(EDIT_LOG_PATH, JSON.stringify(merged));
+    });
   }
   readEdits(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
     return readEditsFromFile(this, sinceSeq, limit);
@@ -345,6 +393,9 @@ export function getLocalCacheBundle(projectId: string): BundleStore | null {
   const apiUrl = import.meta.env?.VITE_DAW_API_URL;
   const hasOpfs = typeof navigator !== "undefined" && !!navigator.storage?.getDirectory;
   if (!apiUrl || !hasOpfs) return null;
+  // A distinct instance from the read-through cache's bundle for this project, but writes to the same
+  // underlying files (pending.json, edits.json) still serialize: `OpfsBundleStore` keys its write chain
+  // by absolute OPFS path, shared module-wide, so both instances share one chain per file.
   return new OpfsBundleStore([REMOTE_CACHE_DIR, projectId]);
 }
 
