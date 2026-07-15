@@ -266,7 +266,12 @@ project through the **sync authority** (server-side, addressed by `projectId` + 
 principal) instead of a localhost socket, gated by the same JWT auth. This overlaps heavily with
 the in-app agent panel (the client-side agent loop over the shared tool catalog), which is the
 more natural "hosted agent" path; build the panel first and treat server-side MCP as the
-power-user API onto the same authority. Not needed while local MCP suffices.
+power-user API onto the same authority. Not needed while local MCP suffices. **Concrete shape (see
+the B3-reframe under the roadmap):** MCP is already a mirror-`ProjectStore`-fed-by-sync + edit-emitter
+whose peer is the tab; server-side MCP just swaps that peer for the `Room` - a **headless
+`SharedSession` in Node** reusing the tool catalog - so it needs no per-feature HTTP endpoints, only
+the existing `createApiClient` bootstrap. A new HTTP write endpoint per MCP capability is an
+anti-pattern; reach for the WS authority + shared tool catalog.
 
 ## 10. Proposed on-disk project format (the concrete next step)
 
@@ -1876,6 +1881,38 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     at the same time - `projects.name`/`modifiedAt` is maintained by the authority (`setProjectName` on a
     `renameProject` edit); `meta.json` stays only as a client OPFS/export bundle file. Still client-side
     and deferred to **B2/B3**: the commit/version DAG (`VersionStore`) and MCP server-side history.
+  - **B2 - server-authoritative history (the current slice, WS-first).** Commits are *already* persisted
+    server-side (bundle writes reach the DB, and `history/commits/*` is write-once), but the DAG is
+    **authored independently by each client**: every client runs its own debounced auto-checkpoint and
+    advances `refs.json` - a single mutable HEAD pointer - so concurrent committers **race and clobber
+    HEAD**, peers don't see each other's commits without a reload, and there's redundant per-client
+    auto-commit churn. B2 makes commit creation **authoritative**, through the realtime authority
+    (`Room`) rather than a new HTTP path: the client commits/reverts **over the existing WS session**
+    (reuses the open pipe; a commit is ordered against edits for free; the commit's HEAD *is* the Room's
+    store at that seq - no stateless-handler coordination), a `historyChanged` broadcast keeps peers'
+    history live, and **auto-checkpoints move server-side** off the edit cadence (reusing the B1 keyframe
+    machinery) so there are no per-client races. The DAG-authoring core (snapshot/delta, keyframe
+    cadence, refs) ports from `history.ts` into a shared server module. The **local/offline backend keeps
+    authoring its own DAG** unchanged (the `repoOverride` seam isolates it). Reads (`list_history` /
+    `diff` / get-commit) are side-effect-free HTTP GETs shared by any caller. Chose WS over an HTTP commit
+    endpoint deliberately: the browser already holds the session, so HTTP would only add a second
+    round-trip + a second, uncoordinated notion of HEAD - no concrete benefit for a subscribed client.
+  - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
+    ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
+    would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
+    where every future capability wants its own endpoint. The insight: MCP is *already shaped like a sync
+    client* - `server/mcpServer.ts` keeps a `mirror` `ProjectStore` fed by sync messages and emits edits;
+    its peer today is just the **tab** (over the local bridge), not the server. "Server-side MCP" done
+    right = **swap the peer**: run a headless `SharedSession` (Node) against the `Room`, authenticated by
+    the same JWT and addressed by `projectId`. Then reads are local to the synced store, edits + commits +
+    reverts ride the same WS authority the browser uses, and it needs **essentially no new endpoints** -
+    only the stateless bootstrap `createApiClient` already provides (list/open projects, file reads).
+    This **converges with the tool-surface consolidation** (§9): browser-agent and server-MCP become the
+    same core - one tool catalog + `dispatch` -> `applyEdit` + a `SharedSession` - differing only in
+    frontend (LLM loop vs stdio) and host (browser vs Node). So server-side MCP is its **own future
+    slice**, built as this sync client; until then MCP stays tab-coupled (fine for the tinkerer audience,
+    per §9). Guard against the anti-pattern: a new per-feature HTTP write endpoint for MCP is a smell -
+    reach for the WS authority + shared tool catalog instead.
 - **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
   covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
   command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
