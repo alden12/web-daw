@@ -790,6 +790,25 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     that placement is playing (and hidden otherwise). Today `PianoRoll` / `StepGrid` derive it
     straight from `scheduler.getPositionBeats() % clip.lengthBeats`, which assumes the clip is always
     the thing playing.
+  - *Bug: default/unattributed objects show a hashed hue (looks like the agent colour), not the user's.*
+    A newly-created track's default clip and unedited instrument params (including the seeded default
+    project) render in a wrong accent instead of the creating user's colour. Cause: those defaults carry
+    the literal placeholder author `"you"` (the seed clip in `ProjectStore.addTrack` hardcodes
+    `author: "you"`; the `Knob` param fallback is `author ?? "you"`), but once signed in the viewer's
+    `self` is their real id (email), so `colorForAuthor("you", …, self)` fails the `author === self` test
+    and **hashes** `"you"` to a palette swatch (a blue/violet - reads as the agent hue). When solo
+    (`self === "you"`) it correctly reads teal, which is why it only shows once authenticated. This
+    collides with a **deliberate** design choice (authorColors.test.ts: a literal `"you"` from a non-self
+    viewer is treated as a distinct peer, not teal), so the fix needs a small decision, not a one-liner:
+    - *Params* (clean, design-safe): fall back unattributed params to the **viewer** - `Knob`
+      `author ?? presence.self` - so an unedited control reads as "mine" (teal). No `colorForAuthor` change.
+    - *Default clip / seed* (needs the decision): the placeholder `"you"` should resolve to the local user.
+      Either make `"you"` a **reserved absolute local-user voice** (always teal, like `agent`/`claude` are
+      absolute) - simplest, but update the peer-"you" test + comment - **or** attribute the default clip to
+      its actual creator (thread the dispatching author into `addTrack`'s seed clip; the pre-auth boot seed
+      stays unattributed -> viewer). Recommend the reserved-voice route: `"you"` is already `DEFAULT_USER`
+      with label "You" and its own hex, so treating it as the local-user voice is consistent, and real
+      collaborators have real ids (no one is literally "you" under auth).
   - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
     length in one gesture (today a click adds a fixed-length note).
   - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
