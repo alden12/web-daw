@@ -90,6 +90,21 @@ describe("createAgentTools - writes go through dispatch", () => {
     ).rejects.toThrow();
   });
 
+  it("list_parameters returns a drum kit's pad -> note -> sound map (its own layout)", async () => {
+    const { trackId } = (await tool("create_track").run({ instrument: "drumkit" })) as { trackId: string };
+    const result = (await tool("list_parameters").run({ track: trackId })) as {
+      pads?: { pad: number; note: number; noteName: string; sound: string }[];
+      parameters: { id: string }[];
+    };
+
+    expect(result.pads && result.pads.length).toBeGreaterThan(0);
+    // Pad 1 is the kick and follows the General MIDI drum map: note 36 (C2 in the app's
+    // C4 = 60 octave numbering).
+    expect(result.pads![0]).toMatchObject({ pad: 1, note: 36, noteName: "C2", sound: "Kick" });
+    // Unloaded pad slots are filtered out of the raw param list (keeps it lean).
+    expect(result.parameters.some((param) => param.id.startsWith("pad32."))).toBe(false);
+  });
+
   it("set_tempo updates the project tempo", async () => {
     await tool("set_tempo").run({ bpm: 128 });
     expect(store.tempo).toBe(128);

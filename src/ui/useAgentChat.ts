@@ -6,7 +6,7 @@
  * tools ran (for the activity chips). See docs/AGENT.md.
  */
 import { useCallback, useMemo, useState } from "react";
-import { createGeminiProvider, ProviderError } from "../audio/agent/geminiProvider";
+import { createProvider } from "../audio/agent/provider";
 import { runAgent } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
@@ -15,6 +15,9 @@ const SYSTEM_PROMPT = [
   "You can inspect and edit the project by calling the provided tools; prefer acting over just describing.",
   "Call list_tracks first to learn track ids, the tempo, and the instrument palette before editing.",
   "Times are in beats: 4 beats = 1 bar. Pitches are MIDI numbers, C4 = 60. Velocity is 0..1.",
+  "A drum kit maps each pad to a specific MIDI note. It follows the General MIDI drum map by default " +
+    "(kick=36, snare=38, closed hat=42, open hat=46, ...), but pads can be remapped and custom samples may differ, " +
+    "so call list_parameters on that track and use the `pads` map (each pad's note + sound) to pick pitches.",
   "Make small, purposeful edits, then briefly tell the user what you did.",
   "If a tool returns an error, read it and adjust - do not repeat the same failing call.",
 ].join(" ");
@@ -32,17 +35,21 @@ export interface ChatTurn {
 
 export interface ChatError {
   message: string;
-  /** When a retry is allowed again (epoch ms), from a rate-limit cooldown. */
-  retryAt?: number;
 }
 
 export function useAgentChat(
   tools: AgentTool[],
   turns: ChatTurn[],
   setTurns: (turns: ChatTurn[]) => void,
-  provider?: AgentProvider,
+  options?: {
+    /** Override the default (BYOK) provider - used by tests. */
+    provider?: AgentProvider;
+    /** A fresh per-turn context line (e.g. the current selection) prepended to the prompt. */
+    getContext?: () => string;
+  },
 ) {
-  const agent = useMemo(() => provider ?? createGeminiProvider(), [provider]);
+  const { provider, getContext } = options ?? {};
+  const agent = useMemo(() => provider ?? createProvider(), [provider]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
 
@@ -52,8 +59,10 @@ export function useAgentChat(
     async (history: ChatTurn[]) => {
       setError(null);
       setPending(true);
+      const context = getContext?.();
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },
+        ...(context ? [{ role: "system" as const, content: context }] : []),
         ...history.map((turn): ChatMessage => ({ role: turn.role, content: turn.content })),
       ];
       try {
@@ -74,7 +83,7 @@ export function useAgentChat(
         setPending(false);
       }
     },
-    [agent, tools, setTurns],
+    [agent, tools, setTurns, getContext],
   );
 
   const send = useCallback(
@@ -98,7 +107,5 @@ export function useAgentChat(
 }
 
 function toChatError(err: unknown): ChatError {
-  const message = err instanceof Error ? err.message : "Something went wrong talking to the agent.";
-  const cooldown = err instanceof ProviderError ? err.retryAfterSeconds : undefined;
-  return { message, retryAt: cooldown ? Date.now() + cooldown * 1000 : undefined };
+  return { message: err instanceof Error ? err.message : "Something went wrong talking to the agent." };
 }

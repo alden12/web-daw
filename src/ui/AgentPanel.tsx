@@ -1,18 +1,23 @@
 /**
  * The agent panel (right): the in-app AI collaborator. It chats with the model (via the
- * key-proxy) and can inspect and edit the project by calling tools - the reason-act loop
+ * user's own key, BYOK) and can inspect and edit the project by calling tools - the reason-act loop
  * runs its tools through the same `dispatch` the UI uses, so its edits show up live in
  * the arrangement and in the activity feed. Conversations are saved as switchable
  * sessions (persisted). See docs/AGENT.md. Collapsed by default, mounts only when
  * expanded; the expand control lives in the workbench tab bar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
 import { useAgentSessions } from "./agentSessions";
 import { createAgentTools } from "../audio/agent/tools";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
+
+// Markdown rendering (react-markdown + highlight.js) is a few hundred KB, and only
+// assistant replies need it, so load it lazily - the panel shows the raw text first, then
+// upgrades to rendered markdown once the chunk arrives (and stays cached after).
+const Markdown = lazy(() => import("./Markdown").then((module) => ({ default: module.Markdown })));
 
 /** HH:MM in local time, for a message timestamp. */
 function formatClock(ms: number): string {
@@ -26,44 +31,49 @@ function formatTokens(count: number): string {
   return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
 }
 
+/** A one-line description of the user's current selection, prepended to each turn so the
+ *  agent knows what "this track"/"here"/"this clip" refer to without a tool call. */
+function selectionContext(projectStore: ProjectStore): string {
+  const id = projectStore.selectedId;
+  const track = id ? projectStore.getTrack(id) : undefined;
+  if (!track) return "Current selection: no track selected.";
+  const instrument = track.kind === "instrument" ? `, ${track.instrumentType}` : "";
+  const clip = track.clips.find((entry) => entry.id === track.activeClipId);
+  const clipPart = clip ? `; active clip "${clip.name}" (id ${clip.id})` : "; no clip open";
+  return (
+    `Current selection: track "${track.name}" (id ${track.id}${instrument})${clipPart}. ` +
+    `When the user says "this track", "here", "this clip" or similar, they mean this unless they say otherwise.`
+  );
+}
+
 export function AgentPanel({
   onCollapse,
   projectStore,
   dispatch,
   scheduler,
+  hasApiKey,
+  onOpenSettings,
 }: {
   onCollapse: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
   scheduler: Scheduler;
+  /** Whether a BYOK key is set; drives the empty-state prompt to open Settings. */
+  hasApiKey: boolean;
+  onOpenSettings: () => void;
 }) {
   const tools = useMemo(
     () => createAgentTools({ projectStore, dispatch, scheduler }),
     [projectStore, dispatch, scheduler],
   );
   const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
-  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns);
+  const getContext = useCallback(() => selectionContext(projectStore), [projectStore]);
+  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns, { getContext });
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const currentTitle = sessions.find((session) => session.id === currentId)?.title ?? "New chat";
-
-  // Live rate-limit cooldown: tick each second while a retry-at is in the future.
-  const [now, setNow] = useState(() => Date.now());
-  const retryAt = error?.retryAt;
-  useEffect(() => {
-    if (!retryAt) return;
-    const tick = () => setNow(Date.now());
-    const immediate = setTimeout(tick, 0); // refresh now without a synchronous setState in the effect body
-    const interval = setInterval(tick, 500);
-    return () => {
-      clearTimeout(immediate);
-      clearInterval(interval);
-    };
-  }, [retryAt]);
-  const cooldownLeft = retryAt ? Math.max(0, Math.ceil((retryAt - now) / 1000)) : 0;
-  const coolingDown = cooldownLeft > 0;
 
   // A failed message is a user turn with no assistant reply after it (only the last turn
   // can dangle); offer a retry on it.
@@ -77,7 +87,7 @@ export function AgentPanel({
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || pending || coolingDown) return;
+    if (!text || pending) return;
     setDraft("");
     void send(text);
   };
@@ -156,21 +166,28 @@ export function AgentPanel({
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 p-4">
-        {turns.length === 0 && !pending && (
+        {turns.length === 0 && !pending && !hasApiKey && (
+          <div className="m-auto max-w-[16rem] text-center flex flex-col items-center gap-2.5">
+            <p className="text-faint font-mono text-[11.5px] leading-relaxed">
+              Add your own API key to start chatting - it stays in this browser.
+            </p>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-bright hover:bg-agent/25 cursor-pointer"
+            >
+              Open settings
+            </button>
+          </div>
+        )}
+        {turns.length === 0 && !pending && hasApiKey && (
           <p className="m-auto max-w-[16rem] text-center text-faint font-mono text-[11.5px] leading-relaxed">
             Ask the agent to inspect or change your project - create tracks, write notes, add effects, tweak the mix.
           </p>
         )}
         {turns.map((turn, index) => (
-          <div
-            key={index}
-            className={
-              turn.role === "user"
-                ? "self-end max-w-[85%] rounded-lg border border-you/40 bg-you/10 px-3 py-2"
-                : "self-start max-w-[85%] rounded-lg border border-line bg-card px-3 py-2"
-            }
-          >
-            <div className="mb-0.5 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
+          <div key={index} className={`w-full border-l-2 pl-3 ${turn.role === "user" ? "border-you" : "border-agent"}`}>
+            <div className="mb-1 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
               <span className={turn.role === "user" ? "text-you" : "text-agent"}>
                 {turn.role === "user" ? "You" : "Agent"}
               </span>
@@ -197,18 +214,26 @@ export function AgentPanel({
                 ))}
               </div>
             )}
-            {turn.content && (
-              <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
-            )}
+            {turn.content &&
+              (turn.role === "user" ? (
+                <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+              ) : (
+                <Suspense
+                  fallback={
+                    <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+                  }
+                >
+                  <Markdown>{turn.content}</Markdown>
+                </Suspense>
+              ))}
             {index === turns.length - 1 && canRetry && (
               <button
                 type="button"
                 onClick={retry}
-                disabled={coolingDown}
-                title={coolingDown ? `Wait ${cooldownLeft}s before retrying` : "Retry this message"}
-                className="mt-1.5 font-mono text-[10px] rounded border border-line px-1.5 py-0.5 text-muted hover:text-ink hover:border-agent/55 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                title="Retry this message"
+                className="mt-1.5 font-mono text-[10px] rounded border border-line px-1.5 py-0.5 text-muted hover:text-ink hover:border-agent/55 cursor-pointer"
               >
-                ↻ {coolingDown ? `Retry in ${cooldownLeft}s` : "Retry"}
+                ↻ Retry
               </button>
             )}
           </div>
@@ -219,7 +244,6 @@ export function AgentPanel({
       {error && (
         <div className="mx-4 mb-2 shrink-0 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
           {error.message}
-          {coolingDown && <span className="block mt-0.5 text-warn/80">You can try again in {cooldownLeft}s.</span>}
         </div>
       )}
 
@@ -241,7 +265,7 @@ export function AgentPanel({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || draft.trim() === "" || coolingDown}
+          disabled={pending || draft.trim() === ""}
           className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           Send

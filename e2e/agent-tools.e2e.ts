@@ -1,12 +1,27 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * The agent's reason-act loop with tools, end to end. The provider is stubbed at the
- * network: the first call returns a create_track tool call, the second returns a text
- * reply. We assert the loop actually ran the tool through the real dispatch - a new
- * track appears in the DAW - and that the chat shows the activity + final text.
+ * The agent's reason-act loop with tools, end to end. The provider (Gemini's
+ * OpenAI-compatible endpoint) is stubbed at the network with a BYOK key seeded in
+ * localStorage: the first call returns a create_track tool call, the second a text reply.
+ * We assert the loop actually ran the tool through the real dispatch - a new track appears
+ * in the DAW - and that the chat shows the activity + final text.
  */
 test.use({ viewport: { width: 1320, height: 900 } });
+
+const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
+
+async function seedKey(page: Page) {
+  await page.addInitScript(
+    ([storageKey]) => {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ provider: "gemini", keys: { gemini: "test-key" }, models: {} }),
+      );
+    },
+    [AGENT_CONFIG_KEY],
+  );
+}
 
 async function dismissStart(page: Page) {
   const start = page.getByRole("button", { name: /start audio/i });
@@ -17,8 +32,9 @@ async function dismissStart(page: Page) {
 }
 
 test("runs a tool call from the model and edits the project", async ({ page }) => {
+  await seedKey(page);
   let calls = 0;
-  await page.route("**/api/agent/chat", (route) => {
+  await page.route("**/chat/completions", (route) => {
     calls += 1;
     const message =
       calls === 1

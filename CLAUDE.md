@@ -75,4 +75,9 @@ short list of coding conventions to follow throughout the codebase.
   the schema/catalog.
 - Keep the Node MCP server DOM-free: pure data (schemas/catalogs) stays in
   `catalog.ts`; anything touching Web Audio stays in `registry.ts`/engine.
+- **Follow MIDI / General MIDI conventions** where a standard exists, so the app
+  interoperates with other tools and matches what an LLM already knows. Notably: C4 = MIDI
+  60; drum kits default their pad notes to the GM drum map (kick = 36, snare = 38, closed
+  hat = 42, open hat = 46, ...), not an ad-hoc layout. Defaults stay data (remappable), but
+  pick the standard as the default.
 - No em-dash characters in committed text (commits, comments, docs).

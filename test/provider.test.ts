@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReply, providerErrorMessage, retryAfterSeconds } from "../src/audio/agent/geminiProvider";
+import { EmptyReplyError, parseReply, providerErrorMessage } from "../src/audio/agent/provider";
 
 describe("parseReply", () => {
   it("pulls assistant text from an OpenAI-shaped response", () => {
@@ -40,17 +40,31 @@ describe("parseReply", () => {
     expect(() => parseReply(JSON.stringify({ choices: [] }))).toThrow(/no choices/);
   });
 
-  it("throws when a choice has neither text nor tool calls", () => {
-    expect(() => parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }))).toThrow(
-      /no assistant text or tool calls/,
-    );
+  it("throws a retryable EmptyReplyError when a choice has neither text nor tool calls", () => {
+    try {
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }));
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmptyReplyError);
+      expect((error as Error).message).toMatch(/empty response/i);
+    }
+  });
+
+  it("maps a finish_reason to a specific empty-reply message", () => {
+    const lengthCase = () =>
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "length" }] }));
+    expect(lengthCase).toThrow(/output tokens/i);
+
+    const malformed = () =>
+      parseReply(JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "MALFORMED_FUNCTION_CALL" }] }));
+    expect(malformed).toThrow(/malformed tool call/i);
   });
 });
 
 describe("providerErrorMessage", () => {
-  it("surfaces the proxy's plain-string error (e.g. the missing-key hint)", () => {
-    const raw = JSON.stringify({ error: "AGENT_API_KEY is not set. Add it to .env (see .env.example)." });
-    expect(providerErrorMessage(raw, 503)).toMatch(/AGENT_API_KEY/);
+  it("surfaces a plain-string error body", () => {
+    const raw = JSON.stringify({ error: "Service temporarily unavailable." });
+    expect(providerErrorMessage(raw, 503)).toMatch(/temporarily unavailable/i);
   });
 
   it("surfaces an upstream OpenAI-style { error: { message } }", () => {
@@ -62,16 +76,11 @@ describe("providerErrorMessage", () => {
     expect(providerErrorMessage("boom", 502)).toBe("The agent request failed (HTTP 502).");
   });
 
-  it("gives 429 a friendly rate-limit message instead of the quota dump", () => {
+  it("gives 429 a friendly rate-limit message (naming the daily cap) instead of the quota dump", () => {
     const raw = JSON.stringify({ error: { code: 429, message: "You exceeded your current quota, blah blah" } });
     const message = providerErrorMessage(raw, 429);
     expect(message).toMatch(/rate limited/i);
+    expect(message).toMatch(/per-day|daily/i);
     expect(message).not.toMatch(/quota/i);
-  });
-
-  it("extracts a retry cooldown (seconds) from a 429 body, or falls back to a default", () => {
-    expect(retryAfterSeconds("Please retry in 33.2s")).toBe(34);
-    expect(retryAfterSeconds(JSON.stringify({ error: { details: [{ retryDelay: "12s" }] } }))).toBe(12);
-    expect(retryAfterSeconds("no hint here")).toBe(30);
   });
 });

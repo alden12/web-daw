@@ -21,6 +21,9 @@ export interface BuiltinSample {
   id: string;
   /** Human-readable name for the picker and MCP. */
   name: string;
+  /** General MIDI drum note this sound conventionally sits on; used to seed a drum kit
+   *  pad's default note so the kit follows the GM drum map. */
+  gmNote?: number;
 }
 
 /**
@@ -35,14 +38,16 @@ export interface SampleAsset {
   source?: string;
 }
 
+// gmNote is the General MIDI drum number (unambiguous); the app displays it in C4 = 60
+// octave numbering, so 36 shows as "C2", etc.
 export const BUILTIN_SAMPLES: BuiltinSample[] = [
-  { id: "kick", name: "Kick" },
-  { id: "snare", name: "Snare" },
-  { id: "hat-closed", name: "Closed Hat" },
-  { id: "hat-open", name: "Open Hat" },
-  { id: "clap", name: "Clap" },
-  { id: "rim", name: "Rim" },
-  { id: "tom", name: "Tom" },
+  { id: "kick", name: "Kick", gmNote: 36 }, // Bass Drum 1
+  { id: "snare", name: "Snare", gmNote: 38 }, // Acoustic Snare
+  { id: "hat-closed", name: "Closed Hat", gmNote: 42 }, // Closed Hi-Hat
+  { id: "hat-open", name: "Open Hat", gmNote: 46 }, // Open Hi-Hat
+  { id: "clap", name: "Clap", gmNote: 39 }, // Hand Clap
+  { id: "rim", name: "Rim", gmNote: 37 }, // Side Stick
+  { id: "tom", name: "Tom", gmNote: 45 }, // Low Tom
 ];
 
 export type SampleRef = { kind: "none" } | { kind: "builtin"; id: string } | { kind: "asset"; id: string };

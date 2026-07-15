@@ -3,9 +3,23 @@ import { test, expect, type Page } from "@playwright/test";
 /**
  * Agent chat sessions: a conversation is saved, "New chat" starts a fresh one, the
  * switcher swaps between them, and they survive a reload (localStorage). The provider is
- * stubbed at the network so replies are deterministic.
+ * stubbed at the network (with a BYOK key seeded) so replies are deterministic.
  */
 test.use({ viewport: { width: 1320, height: 900 } });
+
+const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
+
+async function seedKey(page: Page) {
+  await page.addInitScript(
+    ([storageKey]) => {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({ provider: "gemini", keys: { gemini: "test-key" }, models: {} }),
+      );
+    },
+    [AGENT_CONFIG_KEY],
+  );
+}
 
 async function dismissStart(page: Page) {
   const start = page.getByRole("button", { name: /start audio/i });
@@ -16,7 +30,7 @@ async function dismissStart(page: Page) {
 }
 
 async function stubReply(page: Page, text: string) {
-  await page.route("**/api/agent/chat", (route) =>
+  await page.route("**/chat/completions", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -26,6 +40,7 @@ async function stubReply(page: Page, text: string) {
 }
 
 async function openAgent(page: Page) {
+  await seedKey(page);
   await page.goto("/");
   await dismissStart(page);
   await page.getByRole("button", { name: /expand agent panel/i }).click();

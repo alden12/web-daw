@@ -126,7 +126,7 @@ flowchart TB
     subgraph brain["Brain (src/audio/agent)"]
         LOOP["agentLoop()<br/>the ReAct loop, ~80 lines"]
         PROV["AgentProvider interface<br/>chat(messages, tools) -> text | toolCalls"]
-        GEM["GeminiProvider"]
+        GEM["Provider<br/>(Gemini / OpenAI / Anthropic)"]
     end
     subgraph toollayer["Tool layer (src/audio/agent/tools)"]
         REG["ToolRegistry<br/>AgentTool[] built from the catalogs"]
@@ -196,10 +196,7 @@ classDiagram
         <<interface>>
         +chat(messages, tools) Promise~ProviderReply~
     }
-    class GeminiProvider {
-        +chat(...) 
-    }
-    class ClaudeProvider {
+    class Provider {
         +chat(...)
     }
     class ProviderReply {
@@ -207,31 +204,46 @@ classDiagram
         +string text
         +ToolCall toolCalls
     }
-    AgentProvider <|.. GeminiProvider
-    AgentProvider <|.. ClaudeProvider : later
+    AgentProvider <|.. Provider
     AgentProvider ..> ProviderReply
 ```
 
-We start with `GeminiProvider` (free tier, native function-calling). Its request/response
-shape differs slightly from Claude's/OpenAI's; that difference is absorbed *inside*
-`GeminiProvider` so `agentLoop` stays clean.
+One generic `Provider` covers Gemini, OpenAI, and Anthropic: all three expose an
+OpenAI-compatible `/chat/completions` endpoint, so the only per-vendor differences (base
+URL, default model, and Anthropic's browser-access header) are **data** in a small
+registry, not code. If a future vendor needs a genuinely different dialect, it becomes its
+own `AgentProvider` implementation behind the same `chat(messages, tools)` seam and the
+loop never notices.
 
-**3. The key-proxy.** A model key in browser JS is exposed to anyone with devtools, so
-the provider never calls Gemini directly from the tab - it calls a tiny proxy endpoint
-that holds the key server-side and forwards the request. Building this from day one
-means the browser never sees a secret and swapping providers is a proxy config change.
+**3. The key: bring-your-own-key (BYOK), multi-provider.** The app is local-first and,
+hosted, has no server we run - so there is nowhere to keep a shared secret, and we do not
+want to pay for or police everyone's inference in v1. Instead the user brings their **own**
+provider key. Every supported provider's endpoint allows CORS from the browser (verified:
+Gemini and OpenAI reflect the origin; Anthropic allows it with the
+`anthropic-dangerous-direct-browser-access` header), so the provider calls it **directly**
+from the tab. This makes local == deployed: there is no proxy to run.
 
-> **Built** ([server/agentProxy.ts](../server/agentProxy.ts)): a Vite dev middleware at
-> `/api/agent/chat`, configured by `AGENT_API_KEY` / `AGENT_BASE_URL` / `AGENT_MODEL` in
-> a gitignored `.env` (copy from [.env.example](../.env.example)). It is provider-agnostic
-> via the OpenAI-compatible base URL (Gemini by default), owns the model server-side, and
-> relays the upstream reply. `buildUpstreamRequest` is a pure, unit-tested helper. A real
-> deployment needs a hosted endpoint with auth + rate limiting (follow-on).
+> **Built** ([providers.ts](../src/audio/agent/providers.ts) + [config.ts](../src/audio/agent/config.ts)):
+> a data-driven registry of providers (id, label, base URL, default + suggested models,
+> key URL, extra headers). Config in `localStorage` (`web-daw:agent-config:v2`) holds the
+> selected provider plus a **key and model per provider**, so several can be saved at once
+> and switched between. A Settings dialog ([AgentSettings.tsx](../src/ui/AgentSettings.tsx),
+> opened from the gear at the bottom of the activity rail) has the provider selector, the
+> key field, and a free-text model field (suggestions via `datalist`).
+> [provider.ts](../src/audio/agent/provider.ts) reads the active provider + key and POSTs
+> to its `/chat/completions` with a `Bearer` header (plus any extra headers); with no key
+> it returns a friendly "open Settings" error. Keys are sent only to the chosen provider,
+> never to any server we run. (An earlier dev-only Vite key-proxy has been removed in
+> favour of this.)
+>
+> Tradeoff, named honestly: a key in `localStorage` is exposed to any XSS on our origin -
+> the standard local-first risk. It is the user's own key (scoped + revocable), the
+> Settings copy says where it is stored, and we never log it. A hosted "our key, metered +
+> billed" option is a much larger follow-on (accounts, quotas, Stripe), not v1.
 
 ```mermaid
 flowchart LR
-    GEM["GeminiProvider<br/>(browser)"] -->|"POST /api/agent/chat"| PROXY["key-proxy<br/>(holds GEMINI_API_KEY)"]
-    PROXY -->|"with key"| GAPI["Gemini API"]
+    P["Provider<br/>(browser)"] -->|"Bearer &lt;user key&gt; from localStorage"| API["Gemini / OpenAI / Anthropic<br/>OpenAI-compatible, CORS-enabled"]
 ```
 
 **4. The panel.** `AgentPanel` ([ui/AgentPanel.tsx](../src/ui/AgentPanel.tsx)) is a
@@ -244,10 +256,10 @@ same way, and builds the `ToolRegistry` from them.
 
 > **Built** (bare chat): [AgentPanel.tsx](../src/ui/AgentPanel.tsx) now hosts a plain
 > chat driven by [useAgentChat.ts](../src/ui/useAgentChat.ts) over
-> [geminiProvider.ts](../src/audio/agent/geminiProvider.ts) - the first visible end of
+> [provider.ts](../src/audio/agent/provider.ts) - the first visible end of
 > the pipeline. No tools yet, so it does not receive `dispatch`/`projectStore`; those
 > arrive with the `ToolRegistry`. The shared contract (`ChatMessage`, `AgentProvider`,
-> the endpoint path) lives in [agent/types.ts](../src/audio/agent/types.ts).
+> `ProviderReply`) lives in [agent/types.ts](../src/audio/agent/types.ts).
 
 ---
 
@@ -310,7 +322,10 @@ These are the promises phase 1 must keep so phase 2 is additive, not a rewrite:
    inherits undo, history, autosave, and engine reconciliation for free.
 5. **Tool schemas are derived from the catalogs, never hand-listed.** One action space;
    adding a cataloged instrument/effect extends the agent automatically.
-6. **Secrets stay server-side** behind the key-proxy. The browser never holds a key.
+6. **The model key is the user's own (BYOK), held only in the browser.** It is sent only
+   to the provider, never to a server we run, and never committed. Provider access still
+   goes through the one `AgentProvider` seam, so a future hosted/metered key path is a
+   provider swap, not a loop change.
 7. **Tool arguments and results are plain, serializable data** - structured-clone-safe:
    no functions, no live `AudioBuffer`, no store handles. This is the one actor
    restriction we adopt on day one: it is free in-process, and it is exactly what
@@ -335,14 +350,16 @@ queue is needed to make them look alike.
 
 | Phase | What | Status |
 |------|------|--------|
-| 1 | Provider interface + `GeminiProvider` + key-proxy; `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
+| 1 | Provider interface + one generic BYOK provider (Gemini / OpenAI / Anthropic, direct-to-provider, user's key); `agentLoop`; `ToolRegistry` from the catalogs; `AgentPanel` chat in the right rail | done (starter tool set; more tools are `defineTool` entries) |
 | 2 | "Ears": `render_and_analyze` tool backed by an audio-analysis Web Worker (actor) | design only |
 | 3 | Multi-agent: sub-agents / a listener-critic as async tools | idea |
-| - | Streaming replies, richer tool-result rendering, per-project session scoping | polish / follow-on |
+| - | Streaming replies, richer tool-result rendering, per-project session scoping, a native Anthropic `/v1/messages` provider, Mermaid diagrams (lazy-load `mermaid`, render `mermaid` code blocks) | polish / follow-on |
 
 Done alongside phase 1: a distinct **`agent` authorship voice** (violet) for the built-in
-agent, separate from `claude` (the MCP driver); and **switchable chat sessions**
-persisted to localStorage ([agentSessions.ts](../src/ui/agentSessions.ts)).
+agent, separate from `claude` (the MCP driver); **switchable chat sessions** persisted to
+localStorage ([agentSessions.ts](../src/ui/agentSessions.ts)); and full-width chat turns
+with **Markdown rendering** of replies (GFM + highlighted code via react-markdown, lazily
+loaded - see [Markdown.tsx](../src/ui/Markdown.tsx)).
 
 Each phase is its own stacked slice. Phase 1 is the only one with a concrete build; the
 rest are captured here so the direction is legible, not because they are next.
