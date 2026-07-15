@@ -381,21 +381,6 @@ export function ArrangementTimeline({
                 },
               ],
             },
-            {
-              label: "Input device",
-              submenu: [
-                {
-                  label: "Default input",
-                  checked: rec.deviceId === null,
-                  onClick: () => recorder.setDevice(null),
-                },
-                ...rec.devices.map((device) => ({
-                  label: device.label || "Microphone",
-                  checked: rec.deviceId === device.deviceId,
-                  onClick: () => recorder.setDevice(device.deviceId),
-                })),
-              ],
-            },
             { separator: true },
             // Groove: project-wide swing/feel applied at playback (non-destructive).
             {

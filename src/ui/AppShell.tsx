@@ -12,6 +12,8 @@ import { AudioEngine } from "../audio/engine/AudioEngine";
 import { Scheduler } from "../audio/sequencer/scheduler";
 import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
 import { Recorder } from "../audio/recording/recorder";
+import { LiveNotes } from "../audio/live/liveNotes";
+import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects } from "../audio/projects/operations";
 import { VersionStore } from "../audio/commands/history";
@@ -30,6 +32,8 @@ import { ResizeHandle } from "./ResizeHandle";
 import { StartDialog } from "./StartDialog";
 import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "./usePersistent";
 import { readAutoQuantize } from "./quantizeSettings";
+import { readRecordOffsetMs } from "./recordOffset";
+import { readOutputDeviceId } from "./outputDevice";
 
 // Layout bounds. The activity rail is always shown on the left; the library panel
 // beside it collapses to that rail. The agent pane collapses away entirely (its
@@ -63,7 +67,20 @@ export function AppShell() {
   const [started, setStarted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
-  const [recorder] = useState(() => new Recorder(engine, scheduler, projectStore, editLog.dispatch, readAutoQuantize));
+  const [recorder] = useState(
+    () => new Recorder(engine, scheduler, projectStore, editLog.dispatch, readAutoQuantize, readRecordOffsetMs),
+  );
+  // Live-note routing (selected instrument + recorder + sustain), shared by the
+  // computer keyboard and hardware MIDI so both get velocity and pedal handling.
+  const [liveNotes] = useState(() => new LiveNotes(engine, projectStore, recorder));
+  const [midiInput] = useState(
+    () =>
+      new MidiInput({
+        onNoteOn: (note, velocity) => liveNotes.noteOn(note, velocity),
+        onNoteOff: (note) => liveNotes.noteOff(note),
+        onSustain: (down) => liveNotes.setSustain(down),
+      }),
+  );
   const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
   const dispatch = editLog.dispatch;
 
@@ -159,11 +176,12 @@ export function AppShell() {
 
   useEffect(
     () => () => {
+      midiInput.disable();
       recorder.dispose();
       scheduler.dispose();
       engine.dispose();
     },
-    [recorder, scheduler, engine],
+    [midiInput, recorder, scheduler, engine],
   );
 
   useEffect(() => {
@@ -206,10 +224,8 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [scheduler, recorder]);
 
-  // Computer-keyboard plays the selected track's instrument (polyphonic). Each held
-  // key remembers which instrument it started on, so its note-off routes back there
-  // even if you change the selection mid-press (otherwise the held voice rings on).
-  const heldKeys = useRef<Map<number, string>>(new Map());
+  // Computer-keyboard plays the selected track's instrument (polyphonic) through the
+  // shared live-note router, which handles per-note instrument routing and sustain.
   useEffect(() => {
     if (!started) return;
     const onDown = (e: KeyboardEvent) => {
@@ -217,21 +233,11 @@ export function AppShell() {
       const el = e.target as HTMLElement | null;
       if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return; // don't play while typing
       const midi = KEY_MAP[e.key.toLowerCase()];
-      const id = projectStore.selectedId;
-      if (midi === undefined || !id) return;
-      heldKeys.current.set(midi, id);
-      engine.getInstrument(id)?.noteOn(midi);
-      recorder.noteOn(midi); // captured only while a MIDI take is recording
+      if (midi !== undefined) liveNotes.noteOn(midi);
     };
     const onUp = (e: KeyboardEvent) => {
       const midi = KEY_MAP[e.key.toLowerCase()];
-      if (midi === undefined) return;
-      // Release on the instrument the key started on, not the currently-selected one.
-      const id = heldKeys.current.get(midi) ?? projectStore.selectedId;
-      heldKeys.current.delete(midi);
-      if (!id) return;
-      engine.getInstrument(id)?.noteOff(midi);
-      recorder.noteOff(midi);
+      if (midi !== undefined) liveNotes.noteOff(midi);
     };
     window.addEventListener("keydown", onDown);
     window.addEventListener("keyup", onUp);
@@ -239,11 +245,17 @@ export function AppShell() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [started, projectStore, engine, recorder]);
+  }, [started, liveNotes]);
 
   const handleStart = async () => {
     await engine.start(projectStore);
     setStarted(true);
+    // Route to the remembered output device (if any) now that the context exists.
+    const outputId = readOutputDeviceId();
+    if (outputId) void engine.setOutputDevice(outputId);
+    // Best-effort: pick up a plugged-in MIDI keyboard from this user gesture. If the
+    // browser blocks it (or has no Web MIDI), the MIDI settings tab shows the state.
+    void midiInput.enable();
   };
 
   return (
@@ -332,7 +344,14 @@ export function AppShell() {
         />
       </div>
       {settingsOpen && (
-        <SettingsPanel agentConfig={agentConfig} authorColors={authorColors} onClose={() => setSettingsOpen(false)} />
+        <SettingsPanel
+          agentConfig={agentConfig}
+          authorColors={authorColors}
+          midiInput={midiInput}
+          recorder={recorder}
+          engine={engine}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
       {!started && <StartDialog onStart={handleStart} />}
     </div>
