@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { parseReply, providerErrorMessage, retryAfterSeconds } from "../src/audio/agent/geminiProvider";
+
+describe("parseReply", () => {
+  it("pulls assistant text from an OpenAI-shaped response", () => {
+    const raw = JSON.stringify({ choices: [{ message: { role: "assistant", content: "four on the floor" } }] });
+    expect(parseReply(raw)).toEqual({ text: "four on the floor" });
+  });
+
+  it("pulls tool calls (with empty content) from the response", () => {
+    const raw = JSON.stringify({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [{ id: "c1", type: "function", function: { name: "set_tempo", arguments: '{"bpm":128}' } }],
+          },
+        },
+      ],
+    });
+    const reply = parseReply(raw);
+    expect(reply.text).toBe("");
+    expect(reply.toolCalls).toEqual([{ id: "c1", name: "set_tempo", arguments: '{"bpm":128}' }]);
+  });
+
+  it("reads token usage when the response includes it", () => {
+    const raw = JSON.stringify({
+      choices: [{ message: { content: "hi" } }],
+      usage: { prompt_tokens: 100, completion_tokens: 20 },
+    });
+    expect(parseReply(raw).usage).toEqual({ inputTokens: 100, outputTokens: 20 });
+  });
+
+  it("throws on non-JSON", () => {
+    expect(() => parseReply("<html>gateway error</html>")).toThrow(/not valid JSON/);
+  });
+
+  it("throws when there are no choices", () => {
+    expect(() => parseReply(JSON.stringify({ choices: [] }))).toThrow(/no choices/);
+  });
+
+  it("throws when a choice has neither text nor tool calls", () => {
+    expect(() => parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }))).toThrow(
+      /no assistant text or tool calls/,
+    );
+  });
+});
+
+describe("providerErrorMessage", () => {
+  it("surfaces the proxy's plain-string error (e.g. the missing-key hint)", () => {
+    const raw = JSON.stringify({ error: "AGENT_API_KEY is not set. Add it to .env (see .env.example)." });
+    expect(providerErrorMessage(raw, 503)).toMatch(/AGENT_API_KEY/);
+  });
+
+  it("surfaces an upstream OpenAI-style { error: { message } }", () => {
+    const raw = JSON.stringify({ error: { message: "model not found", code: 404 } });
+    expect(providerErrorMessage(raw, 404)).toBe("model not found");
+  });
+
+  it("falls back to a generic message when the body is not JSON", () => {
+    expect(providerErrorMessage("boom", 502)).toBe("The agent request failed (HTTP 502).");
+  });
+
+  it("gives 429 a friendly rate-limit message instead of the quota dump", () => {
+    const raw = JSON.stringify({ error: { code: 429, message: "You exceeded your current quota, blah blah" } });
+    const message = providerErrorMessage(raw, 429);
+    expect(message).toMatch(/rate limited/i);
+    expect(message).not.toMatch(/quota/i);
+  });
+
+  it("extracts a retry cooldown (seconds) from a 429 body, or falls back to a default", () => {
+    expect(retryAfterSeconds("Please retry in 33.2s")).toBe(34);
+    expect(retryAfterSeconds(JSON.stringify({ error: { details: [{ retryDelay: "12s" }] } }))).toBe(12);
+    expect(retryAfterSeconds("no hint here")).toBe(30);
+  });
+});

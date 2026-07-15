@@ -123,7 +123,7 @@ export function loadEffectInstances(effects: ProjectData["tracks"][number]["effe
 
 /** Normalize a stored author tag (defaults to the local user). */
 export function clipAuthor(author: unknown): ClipAuthor {
-  return author === "claude" ? "claude" : "you";
+  return author === "agent" ? "agent" : author === "claude" ? "claude" : "you";
 }
 
 /** Id minters the clip-pool builder needs for its empty-clip / default-placement fallbacks. */

@@ -33,10 +33,13 @@ import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber, usePersistentString } from "./usePersistent";
 import type { SampleAsset } from "../audio/samples/catalog";
 
+// The built-in agent does not need MCP, so a missing connection is not a warning:
+// only "connected" is called out (green + label); otherwise it is a quiet grey dot
+// you can hover for status.
 const MCP_DOT: Record<McpStatus, string> = {
   connected: "bg-good",
-  connecting: "bg-warn",
-  disconnected: "bg-claude",
+  connecting: "bg-faint",
+  disconnected: "bg-faint",
 };
 const MCP_TITLE: Record<McpStatus, string> = {
   connected: "MCP connected",
@@ -493,7 +496,8 @@ export function CenterWorkbench({
   const indicators = (
     <div className="ml-auto self-center flex items-center gap-2 pr-2">
       <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted" title={MCP_TITLE[mcpStatus]}>
-        <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} /> MCP
+        <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} />
+        {mcpStatus === "connected" && "MCP"}
       </span>
       {agentCollapsed && (
         <button

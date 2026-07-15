@@ -10,6 +10,7 @@ import type { EditLog } from "../audio/commands/editLog";
 import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { VersionTimeline } from "./VersionTimeline";
+import { voiceBorder, voiceDot } from "./authorVoice";
 
 export function ActivityView({ editLog, versionStore }: { editLog: EditLog; versionStore: VersionStore }) {
   const { entries, notes } = useEditLog(editLog);
@@ -85,9 +86,9 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                 return (
                   <li
                     key={`n-${n.seq}`}
-                    className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2 ${
-                      n.author === "claude" ? "border-claude" : "border-you"
-                    }`}
+                    className={`flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2 ${voiceBorder(
+                      n.author,
+                    )}`}
                   >
                     <span className="text-[11px] shrink-0 text-muted">“</span>
                     <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
@@ -99,13 +100,11 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
               return (
                 <li
                   key={entry.seq}
-                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${
-                    entry.author === "claude" ? "border-claude" : "border-you"
-                  }`}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2 ${voiceBorder(
+                    entry.author,
+                  )}`}
                 >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${entry.author === "claude" ? "bg-claude" : "bg-you"}`}
-                  />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${voiceDot(entry.author)}`} />
                   <span className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}>
                     {editLog.describe(entry)}
                   </span>

@@ -26,6 +26,7 @@ import { ActivityView } from "./ActivityView";
 import { ProjectView } from "./ProjectView";
 import { LibraryHeader } from "./LibraryHeader";
 import { Menu } from "./Menu";
+import { voiceDot } from "./authorVoice";
 
 /** Read a clip's natural duration without needing the AudioContext to be started. */
 function audioDuration(file: Blob): Promise<number> {
@@ -97,7 +98,7 @@ function PatchLeaf({
   /** Extra left padding when nested under an instrument in the tree. */
   indent?: boolean;
 }) {
-  const dot = patch.builtin ? "bg-line" : patch.author === "claude" ? "bg-claude" : "bg-you";
+  const dot = patch.builtin ? "bg-line" : voiceDot(patch.author);
   return (
     <div className={`group flex items-center w-full ${indent ? "pl-9" : "pl-3.5"} pr-2 hover:bg-you/10`}>
       <button

@@ -1,33 +1,251 @@
 /**
- * The agent panel (right): reserved space for the in-app AI agent. Activity,
- * versions, undo/redo, and the MCP status that used to live here moved to the
- * toolbar-less panel header and the left Activity view; what remains holds the
- * column and the agreed "agent-right" direction until the chat itself lands (a
- * follow-on). It is collapsed by default and mounts only when expanded - the
- * expand control lives in the workbench tab bar, so there is no idle rail.
+ * The agent panel (right): the in-app AI collaborator. It chats with the model (via the
+ * key-proxy) and can inspect and edit the project by calling tools - the reason-act loop
+ * runs its tools through the same `dispatch` the UI uses, so its edits show up live in
+ * the arrangement and in the activity feed. Conversations are saved as switchable
+ * sessions (persisted). See docs/AGENT.md. Collapsed by default, mounts only when
+ * expanded; the expand control lives in the workbench tab bar.
  */
-export function AgentPanel({ onCollapse }: { onCollapse: () => void }) {
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAgentChat } from "./useAgentChat";
+import { useAgentSessions } from "./agentSessions";
+import { createAgentTools } from "../audio/agent/tools";
+import type { ProjectStore } from "../audio/project/projectStore";
+import type { Scheduler } from "../audio/sequencer/scheduler";
+import type { Dispatch } from "../audio/commands/types";
+
+/** HH:MM in local time, for a message timestamp. */
+function formatClock(ms: number): string {
+  const date = new Date(ms);
+  return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+}
+
+/** Compact token count: 340, 1.2k, 15k. */
+function formatTokens(count: number): string {
+  if (count < 1000) return String(count);
+  return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
+}
+
+export function AgentPanel({
+  onCollapse,
+  projectStore,
+  dispatch,
+  scheduler,
+}: {
+  onCollapse: () => void;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
+  scheduler: Scheduler;
+}) {
+  const tools = useMemo(
+    () => createAgentTools({ projectStore, dispatch, scheduler }),
+    [projectStore, dispatch, scheduler],
+  );
+  const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
+  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns);
+  const [draft, setDraft] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const currentTitle = sessions.find((session) => session.id === currentId)?.title ?? "New chat";
+
+  // Live rate-limit cooldown: tick each second while a retry-at is in the future.
+  const [now, setNow] = useState(() => Date.now());
+  const retryAt = error?.retryAt;
+  useEffect(() => {
+    if (!retryAt) return;
+    const tick = () => setNow(Date.now());
+    const immediate = setTimeout(tick, 0); // refresh now without a synchronous setState in the effect body
+    const interval = setInterval(tick, 500);
+    return () => {
+      clearTimeout(immediate);
+      clearInterval(interval);
+    };
+  }, [retryAt]);
+  const cooldownLeft = retryAt ? Math.max(0, Math.ceil((retryAt - now) / 1000)) : 0;
+  const coolingDown = cooldownLeft > 0;
+
+  // A failed message is a user turn with no assistant reply after it (only the last turn
+  // can dangle); offer a retry on it.
+  const lastTurn = turns[turns.length - 1];
+  const canRetry = !pending && lastTurn?.role === "user";
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, pending]);
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text || pending || coolingDown) return;
+    setDraft("");
+    void send(text);
+  };
+
   return (
     <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
-      <div className="flex items-center gap-2 h-11 px-4 border-b border-line shrink-0">
-        <span className="w-2 h-2 rounded-full bg-claude" />
-        <span className="font-semibold text-[13px] text-bright">Agent</span>
+      <div className="relative flex items-center gap-2 h-11 px-3 border-b border-line shrink-0">
+        <span className="w-2 h-2 rounded-full bg-agent shrink-0" />
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-label="Switch chat session"
+          title="Switch chat session"
+          className="min-w-0 flex items-center gap-1 cursor-pointer text-[13px] font-semibold text-bright hover:text-white"
+        >
+          <span className="truncate">{currentTitle}</span>
+          <span className="shrink-0 text-[15px] leading-none text-muted">▾</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            newSession();
+            setDraft("");
+            setMenuOpen(false);
+          }}
+          aria-label="New chat"
+          title="New chat"
+          className="ml-auto shrink-0 text-[16px] leading-none text-muted hover:text-ink cursor-pointer px-1"
+        >
+          +
+        </button>
         <button
           type="button"
           onClick={onCollapse}
           aria-label="Collapse agent panel"
           title="Collapse agent panel"
-          className="ml-auto text-lg leading-none text-muted hover:text-ink cursor-pointer px-1"
+          className="shrink-0 text-lg leading-none text-muted hover:text-ink cursor-pointer px-1"
         >
           »
         </button>
+
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+            <div className="absolute left-3 top-11 z-30 w-64 max-h-80 overflow-y-auto rounded-md border border-line bg-card shadow-lg py-1">
+              {sessions.map((session) => (
+                <div
+                  key={session.id}
+                  onClick={() => {
+                    switchSession(session.id);
+                    setMenuOpen(false);
+                  }}
+                  className={`group flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-ground ${
+                    session.id === currentId ? "text-bright" : "text-muted"
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-agent" />
+                  <span className="flex-1 truncate text-[12px]">{session.title}</span>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteSession(session.id);
+                    }}
+                    aria-label={`Delete chat: ${session.title}`}
+                    title="Delete chat"
+                    className="shrink-0 text-[13px] leading-none text-faint hover:text-warn opacity-0 group-hover:opacity-100 cursor-pointer px-1"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
-      <div className="flex-1 min-h-0 flex items-center justify-center p-6 text-center">
-        <p className="text-faint font-mono text-[11.5px] leading-relaxed">
-          An in-app AI collaborator will live here.
-          <br />
-          For now, drive the session from Claude Code over MCP.
-        </p>
+
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3 p-4">
+        {turns.length === 0 && !pending && (
+          <p className="m-auto max-w-[16rem] text-center text-faint font-mono text-[11.5px] leading-relaxed">
+            Ask the agent to inspect or change your project - create tracks, write notes, add effects, tweak the mix.
+          </p>
+        )}
+        {turns.map((turn, index) => (
+          <div
+            key={index}
+            className={
+              turn.role === "user"
+                ? "self-end max-w-[85%] rounded-lg border border-you/40 bg-you/10 px-3 py-2"
+                : "self-start max-w-[85%] rounded-lg border border-line bg-card px-3 py-2"
+            }
+          >
+            <div className="mb-0.5 flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider">
+              <span className={turn.role === "user" ? "text-you" : "text-agent"}>
+                {turn.role === "user" ? "You" : "Agent"}
+              </span>
+              <span className="ml-auto flex items-center gap-1.5 normal-case tracking-normal text-faint">
+                {turn.usage && turn.usage.inputTokens + turn.usage.outputTokens > 0 && (
+                  <span title="tokens in / out">
+                    {formatTokens(turn.usage.inputTokens)}/{formatTokens(turn.usage.outputTokens)}
+                  </span>
+                )}
+                {turn.at !== undefined && <span>{formatClock(turn.at)}</span>}
+              </span>
+            </div>
+            {turn.activity && turn.activity.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1">
+                {turn.activity.map((step, stepIndex) => (
+                  <span
+                    key={stepIndex}
+                    className={`font-mono text-[9px] rounded px-1.5 py-0.5 border ${
+                      step.ok ? "border-you/40 text-you" : "border-warn/50 text-warn"
+                    }`}
+                  >
+                    {step.ok ? "✓" : "✕"} {step.name}
+                  </span>
+                ))}
+              </div>
+            )}
+            {turn.content && (
+              <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
+            )}
+            {index === turns.length - 1 && canRetry && (
+              <button
+                type="button"
+                onClick={retry}
+                disabled={coolingDown}
+                title={coolingDown ? `Wait ${cooldownLeft}s before retrying` : "Retry this message"}
+                className="mt-1.5 font-mono text-[10px] rounded border border-line px-1.5 py-0.5 text-muted hover:text-ink hover:border-agent/55 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                ↻ {coolingDown ? `Retry in ${cooldownLeft}s` : "Retry"}
+              </button>
+            )}
+          </div>
+        ))}
+        {pending && <div className="self-start font-mono text-[11px] text-faint">Agent is thinking...</div>}
+      </div>
+
+      {error && (
+        <div className="mx-4 mb-2 shrink-0 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+          {error.message}
+          {coolingDown && <span className="block mt-0.5 text-warn/80">You can try again in {cooldownLeft}s.</span>}
+        </div>
+      )}
+
+      <div className="shrink-0 border-t border-line p-3 flex items-end gap-2">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submit();
+            }
+          }}
+          rows={2}
+          placeholder="Message the agent"
+          aria-label="Message the agent"
+          className="flex-1 min-w-0 resize-none rounded-md bg-ground border border-line px-2.5 py-2 text-[12.5px] text-ink placeholder:text-faint focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-1"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={pending || draft.trim() === "" || coolingDown}
+          className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          Send
+        </button>
       </div>
     </div>
   );

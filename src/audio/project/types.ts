@@ -44,8 +44,8 @@ export interface GroupMeta {
 
 export type TrackKind = "instrument" | "audio";
 
-/** Who authored a piece of durable state (two-voice presence). Mirrors commands/types Author. */
-export type ClipAuthor = "you" | "claude";
+/** Who authored a piece of durable state (voice presence). Mirrors commands/types Author. */
+export type ClipAuthor = "you" | "claude" | "agent";
 
 /**
  * A placement of a clip on a track's arrangement timeline. The same clip can be
