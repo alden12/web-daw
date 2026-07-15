@@ -395,12 +395,14 @@ function InstrumentEditor({
   scheduler,
   recorder,
   dispatch,
+  projectStore,
 }: {
   track: InstrumentTrack;
   samples: SampleAsset[];
   scheduler: Scheduler;
   recorder: Recorder;
   dispatch: Dispatch;
+  projectStore: ProjectStore;
 }) {
   const isDrumkit = track.instrumentType === "drumkit";
   const [mode, setMode] = usePersistentString<DrumEditor>(`web-daw:drum-editor:${track.id}`, "keys", DRUM_EDITORS);
@@ -441,6 +443,7 @@ function InstrumentEditor({
             scheduler={scheduler}
             recorder={recorder}
             dispatch={dispatch}
+            projectStore={projectStore}
           />
         ) : (
           <PianoRoll
@@ -450,6 +453,7 @@ function InstrumentEditor({
             recorder={recorder}
             trackId={track.id}
             dispatch={dispatch}
+            projectStore={projectStore}
           />
         )}
       </div>
@@ -579,6 +583,7 @@ export function CenterWorkbench({
             scheduler={scheduler}
             recorder={recorder}
             dispatch={dispatch}
+            projectStore={projectStore}
           />
         ) : (
           <AudioClipPanel
@@ -631,6 +636,7 @@ export function CenterWorkbench({
                       dispatch={dispatch}
                       samples={project.samples}
                       onRevealSamples={onRevealSamples}
+                      projectStore={projectStore}
                     />
                   ) : (
                     <InstrumentPanel
@@ -640,6 +646,7 @@ export function CenterWorkbench({
                       dispatch={dispatch}
                       samples={project.samples}
                       onRevealSamples={onRevealSamples}
+                      projectStore={projectStore}
                     />
                   )}
                   {selectedTrack.effects.length > 0 ? <FlowArrow /> : null}

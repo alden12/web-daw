@@ -9,6 +9,7 @@ import type { ProjectStore } from "../audio/project/projectStore";
 import { useProject } from "../audio/project/useProject";
 import { effectCatalogEntry, effectSchema } from "../audio/effects/catalog";
 import type { Dispatch } from "../audio/commands/types";
+import { effectParamKey } from "../audio/commands/authorship";
 import { Knob } from "./Knob";
 
 /** The signal-flow arrow. Placed to the RIGHT of an outputting device (and kept in the
@@ -128,6 +129,7 @@ export function EffectChain({
                         value,
                       })
                     }
+                    author={projectStore.authorOf(effectParamKey(trackId, fx.id, spec.id))}
                   />
                 ))}
               </div>

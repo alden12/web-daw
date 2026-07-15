@@ -12,6 +12,7 @@ import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
 import { pitchName } from "./noteNames";
+import { voiceFill, voiceIndicator } from "./authorVoice";
 
 /** Extra context the `sample` control needs (the project library + import action);
  *  optional, since only instrument panels with a sample param supply it. */
@@ -72,7 +73,17 @@ function NoteSelect({
 /** A horizontal fader for a number param - label on the left, value on the right, track
  *  stretching between. Used in the compact drum-pad layout. Snaps to `spec.step` via the
  *  store's coercion. */
-function NumberHSlider({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+function NumberHSlider({
+  spec,
+  store,
+  onChange,
+  author,
+}: {
+  spec: NumberSpec;
+  store: ParamStore;
+  onChange: OnChange;
+  author?: string;
+}) {
   const [value] = useParam(store, spec.id);
   const drag = useRef<{ startX: number; width: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
@@ -109,7 +120,10 @@ function NumberHSlider({ spec, store, onChange }: { spec: NumberSpec; store: Par
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        <span className="absolute left-0 top-0 bottom-0 rounded-full bg-you/70" style={{ width: `${norm * 100}%` }} />
+        <span
+          className={`absolute left-0 top-0 bottom-0 rounded-full ${voiceFill(author ?? "you")}`}
+          style={{ width: `${norm * 100}%` }}
+        />
         <span
           className="absolute top-1/2 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
           style={{ left: `${norm * 100}%` }}
@@ -122,7 +136,17 @@ function NumberHSlider({ spec, store, onChange }: { spec: NumberSpec; store: Par
   );
 }
 
-function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+function NumberKnob({
+  spec,
+  store,
+  onChange,
+  author,
+}: {
+  spec: NumberSpec;
+  store: ParamStore;
+  onChange: OnChange;
+  author?: string;
+}) {
   const [value] = useParam(store, spec.id);
   const drag = useRef<{ startY: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
@@ -158,7 +182,7 @@ function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamS
         onPointerUp={onPointerUp}
       >
         <span
-          className="absolute left-1/2 bottom-1/2 w-0.5 h-4 bg-you rounded-full origin-bottom"
+          className={`absolute left-1/2 bottom-1/2 w-0.5 h-4 rounded-full origin-bottom ${voiceIndicator(author ?? "you")}`}
           style={{ transform: `translateX(-50%) rotate(${angle}deg)` }}
         />
       </div>
@@ -170,7 +194,17 @@ function NumberKnob({ spec, store, onChange }: { spec: NumberSpec; store: ParamS
 
 /** A vertical fader for a number param - the same drag logic as the knob, drawn as a
  *  slider so sectioned instrument panels read like a hardware synth. */
-function NumberSlider({ spec, store, onChange }: { spec: NumberSpec; store: ParamStore; onChange: OnChange }) {
+function NumberSlider({
+  spec,
+  store,
+  onChange,
+  author,
+}: {
+  spec: NumberSpec;
+  store: ParamStore;
+  onChange: OnChange;
+  author?: string;
+}) {
   const [value] = useParam(store, spec.id);
   const drag = useRef<{ startY: number; startNorm: number } | null>(null);
   const norm = toNormalized(spec, value as number);
@@ -205,7 +239,7 @@ function NumberSlider({ spec, store, onChange }: { spec: NumberSpec; store: Para
         onPointerUp={onPointerUp}
       >
         <span
-          className="absolute left-0 right-0 bottom-0 rounded-full bg-you/70"
+          className={`absolute left-0 right-0 bottom-0 rounded-full ${voiceFill(author ?? "you")}`}
           style={{ height: `${norm * 100}%` }}
         />
         <span
@@ -226,6 +260,7 @@ export function Knob({
   sampleContext,
   variant = "knob",
   hideLabel,
+  author,
 }: {
   spec: ParamSpec;
   store: ParamStore;
@@ -237,6 +272,8 @@ export function Knob({
   variant?: "knob" | "slider" | "row";
   /** Drop the control's own label (the surrounding layout supplies it). */
   hideLabel?: boolean;
+  /** Last editor of this param; tints the fill/pointer. Omit to leave it the default voice. */
+  author?: string;
 }) {
   const [value] = useParam(store, spec.id);
 
@@ -247,11 +284,11 @@ export function Knob({
       (spec as NumberSpec).format === "note" ? (
         <NoteSelect spec={spec as NumberSpec} store={store} onChange={onChange} hideLabel={hideLabel} />
       ) : variant === "row" ? (
-        <NumberHSlider spec={spec as NumberSpec} store={store} onChange={onChange} />
+        <NumberHSlider spec={spec as NumberSpec} store={store} onChange={onChange} author={author} />
       ) : variant === "slider" ? (
-        <NumberSlider spec={spec as NumberSpec} store={store} onChange={onChange} />
+        <NumberSlider spec={spec as NumberSpec} store={store} onChange={onChange} author={author} />
       ) : (
-        <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} />
+        <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} author={author} />
       ),
     enum: () => (
       <label className="flex flex-col items-center gap-1.5 w-14">

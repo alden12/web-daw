@@ -207,5 +207,12 @@ export interface ProjectData {
   grooveAmount?: number;
   /** The imported-sample library (referenced by Sampler params). Optional: defaults to []. */
   samples?: SampleAsset[];
+  /**
+   * Who last edited each object, for the last-editor colour tint: an object key -> author map
+   * with keys like `track:<id>`, `note:<id>`, `param:<trackId>:<paramId>`. Derived at the single
+   * applyEdit seam and carried in the snapshot, so it survives undo/redo/reload the same way the
+   * rest of the project does. Optional: absent snapshots start empty.
+   */
+  authorship?: Record<string, ClipAuthor>;
   selectedTrackId: string | null;
 }

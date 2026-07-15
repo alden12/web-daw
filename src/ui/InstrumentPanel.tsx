@@ -10,6 +10,8 @@
 import type { ParamStore } from "../audio/params/store";
 import { instrumentSchema, catalogEntry } from "../audio/instruments/catalog";
 import type { Dispatch } from "../audio/commands/types";
+import type { ProjectStore } from "../audio/project/projectStore";
+import { paramKey } from "../audio/commands/authorship";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
 import { Knob, type SampleContext } from "./Knob";
@@ -22,6 +24,7 @@ export function InstrumentPanel({
   dispatch,
   samples,
   onRevealSamples,
+  projectStore,
 }: {
   params: ParamStore;
   instrumentType: string;
@@ -31,6 +34,8 @@ export function InstrumentPanel({
   samples: SampleAsset[];
   /** Reveal the Samples library view (offered by an empty sample picker). */
   onRevealSamples?: () => void;
+  /** Supplies per-param last-editor authorship for the knob tint. */
+  projectStore: ProjectStore;
 }) {
   const sections = toSections(instrumentSchema(instrumentType));
   const label = catalogEntry(instrumentType).label;
@@ -64,6 +69,7 @@ export function InstrumentPanel({
                   variant="slider"
                   onChange={(id, value) => dispatch({ type: "setParam", trackId, id, value })}
                   sampleContext={sampleContext}
+                  author={projectStore.authorOf(paramKey(trackId, spec.id))}
                 />
               ))}
             </div>
