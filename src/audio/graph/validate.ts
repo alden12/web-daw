@@ -6,7 +6,24 @@
  */
 import type { ParamSchema } from "../params/types";
 import type { Graph } from "./types";
-import { collectParamIds } from "./build";
+import { isKnownKind, isAudioParam } from "./vocabulary";
+
+/**
+ * Every parameter id a graph references (for building bindings + validation). Pure - kept
+ * here (not in the DOM-ful interpreter) so the validator + zod + the Node server can use it.
+ */
+export function collectParamIds(graph: Graph): string[] {
+  const ids = new Set<string>();
+  const walk = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) return value.forEach(walk);
+    const record = value as Record<string, unknown>;
+    if (typeof record.param === "string") ids.add(record.param);
+    for (const nested of Object.values(record)) walk(nested);
+  };
+  graph.nodes.forEach(walk);
+  return [...ids];
+}
 
 /** Return a list of problems (empty = valid). `reserved` are the allowed non-node endpoints. */
 export function validateGraph(schema: ParamSchema, graph: Graph, reserved: readonly string[]): string[] {
@@ -15,12 +32,27 @@ export function validateGraph(schema: ParamSchema, graph: Graph, reserved: reado
   for (const id of collectParamIds(graph)) {
     if (!schemaIds.has(id)) errors.push(`binds unknown parameter "${id}"`);
   }
-  const nodeIds = new Set(graph.nodes.map((node) => node.id));
-  const known = (id: string): boolean => nodeIds.has(id) || reserved.includes(id);
+  // Node id -> kind, checking each kind is in the vocabulary.
+  const kindById = new Map<string, string>();
+  for (const node of graph.nodes) {
+    kindById.set(node.id, node.kind);
+    if (!isKnownKind(node.kind)) errors.push(`node "${node.id}" has unknown kind "${node.kind}"`);
+  }
+  const known = (id: string): boolean => kindById.has(id) || reserved.includes(id);
   for (const [from, to] of graph.connections) {
     if (!known(from)) errors.push(`connection from unknown node "${from}"`);
-    const toId = to.split(".")[0];
-    if (!known(toId)) errors.push(`connection to unknown node "${to}"`);
+    const [toId, toParam] = to.split(".");
+    if (!known(toId)) {
+      errors.push(`connection to unknown node "${to}"`);
+      continue;
+    }
+    // A `nodeId.param` target must name a real modulatable AudioParam of that kind.
+    if (toParam !== undefined) {
+      const kind = kindById.get(toId);
+      if (!kind || !isKnownKind(kind) || !isAudioParam(kind, toParam)) {
+        errors.push(`connection targets unknown parameter "${to}"`);
+      }
+    }
   }
   return errors;
 }

@@ -51,6 +51,10 @@ const APPLY: ApplyMap = {
     if (command.name !== undefined) project.renameTrack(command.trackId, command.name);
   },
   setInstrument: (project, command) => project.setInstrument(command.trackId, command.instrumentType),
+  addCustomInstrument: (project, command) => project.addCustomInstrument(command.def),
+  removeCustomInstrument: (project, command) => project.removeCustomInstrument(command.deviceType),
+  addCustomEffect: (project, command) => project.addCustomEffect(command.def),
+  removeCustomEffect: (project, command) => project.removeCustomEffect(command.deviceType),
   setAudioClip: (project, command) => project.setAudioClip(command.trackId, command.clipId, command.patch),
   addAudioClip: (project, command) => project.addAudioClip(command),
   // A recorded MIDI take: create the clip (with its notes), punch it in over the

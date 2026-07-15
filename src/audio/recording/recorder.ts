@@ -31,6 +31,9 @@ import { encodeWav } from "./wav";
 /** Returns the quantize settings to apply to a take as it's captured, or null to leave it raw. */
 export type AutoQuantize = () => QuantizeSettings | null;
 
+/** Returns the manual recording-latency trim (ms earlier) to apply on top of the auto estimate. */
+export type RecordOffsetMs = () => number;
+
 const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
 const COUNT_IN_LEAD_SEC = 0.12; // small lead so the first click is not clipped
 
@@ -96,6 +99,7 @@ export class Recorder {
   private readonly project: ProjectStore;
   private readonly dispatch: Dispatch;
   private readonly getAutoQuantize: AutoQuantize;
+  private readonly getRecordOffsetMs: RecordOffsetMs;
 
   constructor(
     engine: AudioEngine,
@@ -103,12 +107,14 @@ export class Recorder {
     project: ProjectStore,
     dispatch: Dispatch,
     getAutoQuantize: AutoQuantize = () => null,
+    getRecordOffsetMs: RecordOffsetMs = () => 0,
   ) {
     this.engine = engine;
     this.scheduler = scheduler;
     this.project = project;
     this.dispatch = dispatch;
     this.getAutoQuantize = getAutoQuantize;
+    this.getRecordOffsetMs = getRecordOffsetMs;
   }
 
   subscribe(listener: () => void): () => void {
@@ -194,11 +200,15 @@ export class Recorder {
       for (let i = 0; i < countBeats; i++) {
         this.engine.scheduleClick(t0 + i * interval, i % BEATS_PER_BAR === 0);
       }
+      // The first recorded beat lands one interval after the last count-in click. Anchor the
+      // transport to this exact audio-clock time so its metronome continues the count-in grid
+      // in phase (the JS timer only needs to wake us near it, not define the beat).
+      const downbeatTime = t0 + countBeats * interval;
 
       const beginCapture = () => {
         this.countInTimer = null;
         if (this.state.status === "idle") return; // stopped during the count-in
-        if (!this.scheduler.isPlaying) this.scheduler.play();
+        if (!this.scheduler.isPlaying) this.scheduler.play(countBeats > 0 ? downbeatTime : undefined);
         if (this.mode === "audio") {
           this.startBeat = this.scheduler.beatAtTime(this.engine.startRecording());
         } else {
@@ -211,7 +221,9 @@ export class Recorder {
 
       if (countBeats > 0) {
         this.set({ status: "counting" });
-        this.countInTimer = setTimeout(beginCapture, countBeats * interval * 1000);
+        // Wake at the downbeat itself (include the lead), not countBeats*interval after now -
+        // otherwise capture starts COUNT_IN_LEAD_SEC early and the take lands ahead of the grid.
+        this.countInTimer = setTimeout(beginCapture, (downbeatTime - this.engine.currentTime) * 1000);
       } else {
         beginCapture();
       }
@@ -277,13 +289,25 @@ export class Recorder {
     this.set({ status: "idle", take: null });
     if (!capture || capture.samples.length === 0) return;
 
-    const { samples, sampleRate } = capture;
+    const { sampleRate } = capture;
+    const bps = beatsPerSecond(this.project.tempo);
+    // Pull the take earlier by the auto round-trip estimate plus the user's manual trim so it
+    // lands where it was played. Move the placement where there's room; once it would cross the
+    // timeline start, trim the overhang off the *head of the audio* instead - a clip can't begin
+    // before beat 0, so a take recorded from the downbeat (startBeat ~ 0) can't shift by moving
+    // the placement, which is why the slider appeared to do nothing there. The auto estimate
+    // can't see the interface's input latency, so the manual trim closes the remaining gap.
+    const compensationSec = this.engine.inputLatencySec() + this.getRecordOffsetMs() / 1000;
+    let startBeat = this.startBeat - compensationSec * bps;
+    let samples = capture.samples;
+    if (startBeat < 0) {
+      const trimSamples = Math.min(samples.length, Math.max(0, Math.round((-startBeat / bps) * sampleRate)));
+      samples = samples.subarray(trimSamples);
+      startBeat = 0;
+    }
+    if (samples.length === 0) return; // fully trimmed away (compensation exceeds the take)
     const durationSec = samples.length / sampleRate;
     const fileId = await putAudio(encodeWav(samples, sampleRate));
-    // Shift the take back by the estimated round-trip so it lands where it was
-    // played (clamped to the start). A loopback calibration refines this later.
-    const offsetBeats = this.engine.inputLatencySec() * beatsPerSecond(this.project.tempo);
-    const startBeat = Math.max(0, this.startBeat - offsetBeats);
     const name = this.nextTakeName();
 
     // Record into the target audio track if one is set (and still valid); otherwise

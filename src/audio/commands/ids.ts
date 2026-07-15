@@ -11,3 +11,6 @@ export const newEffectId = () => `fx-${short()}`;
 export const newClipId = () => `c-${short()}`;
 export const newPlacementId = () => `p-${short()}`;
 export const newNoteId = () => crypto.randomUUID();
+// Custom-device type ids are namespaced so they can never collide with a built-in type.
+export const newCustomInstrumentId = () => `ci-${short()}`;
+export const newCustomEffectId = () => `ce-${short()}`;

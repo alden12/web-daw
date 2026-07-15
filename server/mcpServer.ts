@@ -28,6 +28,14 @@ import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
 import { BUILTIN_SAMPLES, builtinRef, assetRef } from "../src/audio/samples/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
+import {
+  parseInstrumentDef,
+  parseEffectDef,
+  instrumentDefInputSchema,
+  effectDefInputSchema,
+} from "../src/audio/graph/zod";
+import { VOCABULARY, NODE_KINDS } from "../src/audio/graph/vocabulary";
+import { INSTRUMENT_RESERVED, EFFECT_RESERVED } from "../src/audio/graph/validate";
 
 const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
@@ -35,6 +43,55 @@ const makeGroupId = () => `g-${randomId().slice(0, 8)}`;
 const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
 const makeClipId = () => `c-${randomId().slice(0, 8)}`;
 const makePlacementId = () => `p-${randomId().slice(0, 8)}`;
+const makeCustomInstrumentId = () => `ci-${randomId().slice(0, 8)}`;
+const makeCustomEffectId = () => `ce-${randomId().slice(0, 8)}`;
+
+/** The declarative device format, as data the AI can read before authoring one. */
+const deviceFormatDoc = () => ({
+  overview:
+    "A custom instrument is { label?, schema, voice }; a custom effect is { label?, schema, graph }. " +
+    "`schema` is the parameter list (the keystone - drives UI/automation/persistence). `voice`/`graph` is a node graph. " +
+    "Include amp.level + env.attack + env.release in an instrument schema for level/envelope control; include `mix` in an effect schema for dry/wet.",
+  nodeKinds: NODE_KINDS.map((kind) => ({
+    kind,
+    audioParams: VOCABULARY[kind].audioParams,
+    properties: VOCABULARY[kind].properties,
+  })),
+  reserved: { instrument: INSTRUMENT_RESERVED, effect: EFFECT_RESERVED },
+  binding:
+    "A node field is a literal, or { param: <schema id>, scale?, offset? } to bind it (value = param*scale + offset). Enum fields (waveform, filterType) are a literal string or a param.",
+  connection:
+    "[from, to]; `to` is a node id (audio input) or `nodeId.param` to modulate that AudioParam. Reserved ids are the amp/in/wet endpoints above.",
+  oscFrequency:
+    "An osc tracks the played note by default; `noteRatio` multiplies the note (FM/sub-oscillator); `frequency` sets an absolute Hz (an LFO).",
+  example: {
+    label: "My Synth",
+    schema: [
+      {
+        id: "filter.cutoff",
+        label: "Cutoff",
+        kind: "number",
+        min: 20,
+        max: 20000,
+        default: 4000,
+        taper: "exponential",
+      },
+      { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 },
+      { id: "env.attack", label: "Attack", kind: "number", min: 1, max: 2000, default: 5, unit: "ms" },
+      { id: "env.release", label: "Release", kind: "number", min: 1, max: 4000, default: 200, unit: "ms" },
+    ],
+    voice: {
+      nodes: [
+        { id: "osc", kind: "osc", waveform: "sawtooth" },
+        { id: "filter", kind: "biquad", filterType: "lowpass", frequency: { param: "filter.cutoff" } },
+      ],
+      connections: [
+        ["osc", "filter"],
+        ["filter", "amp"],
+      ],
+    },
+  },
+});
 
 export interface DawMcp {
   server: McpServer;
@@ -317,6 +374,100 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
       if (!sendToTab({ type: "selectTrack", trackId: r.id })) return fail("No DAW tab connected.");
       mirror.selectTrack(r.id);
       return ok(`Selected track ${r.id}.`);
+    },
+  );
+
+  // --- custom devices (author declarative instruments/effects, stored in the project) ---
+
+  server.registerTool(
+    "describe_device_format",
+    {
+      title: "Describe device format",
+      description:
+        "The declarative format for custom instruments/effects: node kinds and their parameters, plus connection and binding syntax. Read this before create_instrument / create_effect.",
+      inputSchema: {},
+    },
+    async () => ok(JSON.stringify(deviceFormatDoc(), null, 2)),
+  );
+
+  server.registerTool(
+    "create_instrument",
+    {
+      title: "Create custom instrument",
+      description:
+        "Author a custom instrument from a declarative node graph (see describe_device_format) and store it in the project. Returns its type id; use it with create_track.",
+      inputSchema: instrumentDefInputSchema.shape,
+    },
+    async ({ label, schema, voice }) => {
+      const type = makeCustomInstrumentId();
+      const result = parseInstrumentDef({ type, label, schema, voice });
+      if (!result.ok) return fail(`Invalid instrument: ${result.errors.join("; ")}`);
+      if (!sendToTab({ type: "addCustomInstrument", def: result.def })) return fail("No DAW tab connected.");
+      mirror.addCustomInstrument(result.def);
+      return ok(`Created instrument "${label ?? type}" (type ${type}). Use create_track with instrument "${type}".`);
+    },
+  );
+
+  server.registerTool(
+    "create_effect",
+    {
+      title: "Create custom effect",
+      description:
+        "Author a custom effect from a declarative node graph (see describe_device_format; process from `in` to `wet`, include a `mix` param) and store it in the project. Returns its type id; use it with add_effect.",
+      inputSchema: effectDefInputSchema.shape,
+    },
+    async ({ label, schema, graph }) => {
+      const type = makeCustomEffectId();
+      const result = parseEffectDef({ type, label, schema, graph });
+      if (!result.ok) return fail(`Invalid effect: ${result.errors.join("; ")}`);
+      if (!sendToTab({ type: "addCustomEffect", def: result.def })) return fail("No DAW tab connected.");
+      mirror.addCustomEffect(result.def);
+      return ok(`Created effect "${label ?? type}" (type ${type}). Use add_effect with effect "${type}".`);
+    },
+  );
+
+  server.registerTool(
+    "list_custom_devices",
+    {
+      title: "List custom devices",
+      description: "The project's user/AI-authored instruments and effects (declarative devices).",
+      inputSchema: {},
+    },
+    async () => {
+      const describe = (def: { type: string; label?: string; schema: readonly unknown[] }) => ({
+        type: def.type,
+        label: def.label ?? def.type,
+        params: def.schema.length,
+      });
+      return ok(
+        JSON.stringify(
+          { instruments: mirror.customInstruments.map(describe), effects: mirror.customEffects.map(describe) },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "remove_custom_device",
+    {
+      title: "Remove custom device",
+      description: "Delete a custom instrument or effect by its type id (see list_custom_devices).",
+      inputSchema: { deviceType: z.string() },
+    },
+    async ({ deviceType }) => {
+      if (mirror.customInstruments.some((def) => def.type === deviceType)) {
+        if (!sendToTab({ type: "removeCustomInstrument", deviceType })) return fail("No DAW tab connected.");
+        mirror.removeCustomInstrument(deviceType);
+        return ok(`Removed custom instrument ${deviceType}.`);
+      }
+      if (mirror.customEffects.some((def) => def.type === deviceType)) {
+        if (!sendToTab({ type: "removeCustomEffect", deviceType })) return fail("No DAW tab connected.");
+        mirror.removeCustomEffect(deviceType);
+        return ok(`Removed custom effect ${deviceType}.`);
+      }
+      return fail(`No custom device with type "${deviceType}". Use list_custom_devices.`);
     },
   );
 

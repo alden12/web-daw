@@ -25,6 +25,8 @@ import type {
 } from "./types";
 import type { Track, Group, NoteClip, EffectInstance, EffectHost } from "./projectStore";
 import type { SampleAsset } from "../samples/catalog";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { DEVICE_FORMAT_VERSION } from "../graph/zod";
 
 /** Serialize an effect chain (its params snapshotted) for persistence. */
 function snapshotEffects(host: EffectHost): EffectData[] {
@@ -47,6 +49,9 @@ export interface TransportState {
   samples: SampleAsset[];
   /** Last-editor map; only the persistable snapshot carries it (the reactive structure omits it). */
   authorship?: Record<string, ClipAuthor>;
+  /** User-authored declarative devices embedded in the project (see ProjectData). */
+  customInstruments?: GraphInstrumentDef[];
+  customEffects?: GraphEffectDef[];
 }
 
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
@@ -113,6 +118,9 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     samples: transport.samples.map((sample) => ({ ...sample })),
     // Copy so undo checkpoints don't alias the live map (stamping mutates it in place).
     authorship: { ...(transport.authorship ?? {}) },
+    customInstruments: (transport.customInstruments ?? []).map((def) => ({ ...def })),
+    customEffects: (transport.customEffects ?? []).map((def) => ({ ...def })),
+    deviceFormatVersion: DEVICE_FORMAT_VERSION,
   };
 }
 

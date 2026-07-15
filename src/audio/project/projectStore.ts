@@ -28,10 +28,14 @@ import {
   hasInstrument,
   catalogEntry,
   instrumentSchema,
+  registerInstrument,
+  unregisterInstrument,
   DEFAULT_INSTRUMENT,
   EMPTY_INSTRUMENT,
 } from "../instruments/catalog";
-import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
+import { hasEffect, effectSchema, registerEffect, unregisterEffect, DEFAULT_EFFECT } from "../effects/catalog";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
@@ -159,6 +163,11 @@ export class ProjectStore {
    *  place at the applyEdit seam via setAuthor; snapshot() copies it out and load() restores it,
    *  so it rides undo/redo/reload like the rest of the project. */
   private authorship: Record<string, ClipAuthor> = {};
+  // User-authored devices (declarative graphs) embedded in the project. Their schemas are
+  // (un)registered in the catalogs as they load/change so tracks resolve them; the engine
+  // registers the audio factories (it owns Web Audio, keeping this store DOM-free).
+  private customInstrumentDefs: GraphInstrumentDef[] = [];
+  private customEffectDefs: GraphEffectDef[] = [];
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: ProjectStructure;
@@ -1131,6 +1140,8 @@ export class ProjectStore {
       grooveAmount: this.grooveAmount,
       samples: this.samples,
       authorship: this.authorship,
+      customInstruments: this.customInstrumentDefs,
+      customEffects: this.customEffectDefs,
     });
   }
 
@@ -1155,7 +1166,66 @@ export class ProjectStore {
     }
   }
 
+  // --- custom devices (user/AI-authored declarative instruments & effects) ---
+
+  get customInstruments(): GraphInstrumentDef[] {
+    return this.customInstrumentDefs;
+  }
+  get customEffects(): GraphEffectDef[] {
+    return this.customEffectDefs;
+  }
+
+  private registerInstrumentDef(def: GraphInstrumentDef): void {
+    registerInstrument({ type: def.type, label: def.label ?? def.type, schema: def.schema, family: "Custom" });
+  }
+  private registerEffectDef(def: GraphEffectDef): void {
+    registerEffect({ type: def.type, label: def.label ?? def.type, schema: def.schema });
+  }
+
+  /**
+   * Validate + (re)register the project's custom device schemas, replacing any previously
+   * registered set (so switching/reloading a project can't leak the old project's devices).
+   * Invalid defs are dropped by parseCustomDevices. Called at the top of load(), before tracks
+   * build their param stores from these schemas.
+   */
+  private syncCustomDevices(data: ProjectData): void {
+    for (const def of this.customInstrumentDefs) unregisterInstrument(def.type);
+    for (const def of this.customEffectDefs) unregisterEffect(def.type);
+    const { instruments, effects } = parseCustomDevices(data);
+    this.customInstrumentDefs = instruments;
+    this.customEffectDefs = effects;
+    for (const def of instruments) this.registerInstrumentDef(def);
+    for (const def of effects) this.registerEffectDef(def);
+  }
+
+  /** Add (or replace by type) a custom instrument, registering its schema. The def is validated at
+   *  the boundary (MCP / project load); this is also the authored command's replay path. */
+  addCustomInstrument(def: GraphInstrumentDef): void {
+    this.customInstrumentDefs = [...this.customInstrumentDefs.filter((existing) => existing.type !== def.type), def];
+    this.registerInstrumentDef(def);
+    this.emit();
+  }
+  removeCustomInstrument(type: string): void {
+    if (!this.customInstrumentDefs.some((def) => def.type === type)) return;
+    this.customInstrumentDefs = this.customInstrumentDefs.filter((def) => def.type !== type);
+    unregisterInstrument(type);
+    this.emit();
+  }
+  addCustomEffect(def: GraphEffectDef): void {
+    this.customEffectDefs = [...this.customEffectDefs.filter((existing) => existing.type !== def.type), def];
+    this.registerEffectDef(def);
+    this.emit();
+  }
+  removeCustomEffect(type: string): void {
+    if (!this.customEffectDefs.some((def) => def.type === type)) return;
+    this.customEffectDefs = this.customEffectDefs.filter((def) => def.type !== type);
+    unregisterEffect(type);
+    this.emit();
+  }
+
   load(data: ProjectData): void {
+    // Register the project's custom device schemas first, so tracks resolve them below.
+    this.syncCustomDevices(data);
     const projLen = data.lengthBeats ?? 16;
     this.groups = (data.groups ?? []).map((group) => ({
       id: group.id,

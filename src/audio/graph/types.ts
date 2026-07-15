@@ -12,6 +12,21 @@
  */
 import type { ParamSchema } from "../params/types";
 
+// Local unions (not the DOM-lib OscillatorType/BiquadFilterType/OverSampleType) so this file -
+// the def format - stays DOM-free and can be imported by the Node MCP server. The Web Audio
+// builders (nodes.ts) cast these to the DOM types when setting a node property.
+export type OscWaveform = "sine" | "sawtooth" | "square" | "triangle";
+export type FilterKind =
+  | "lowpass"
+  | "highpass"
+  | "bandpass"
+  | "lowshelf"
+  | "highshelf"
+  | "peaking"
+  | "notch"
+  | "allpass";
+export type Oversample = "none" | "2x" | "4x";
+
 /** A parameter reference: the param value, optionally scaled/offset (value*scale + offset). */
 export interface ParamRef {
   param: string;
@@ -30,7 +45,7 @@ export type EnumField<T extends string> = T | ParamRef;
 export interface OscNodeSpec {
   id: string;
   kind: "osc";
-  waveform?: EnumField<OscillatorType>;
+  waveform?: EnumField<OscWaveform>;
   frequency?: NumberField;
   noteRatio?: NumberField;
   detune?: NumberField;
@@ -45,7 +60,7 @@ export interface GainNodeSpec {
 export interface BiquadNodeSpec {
   id: string;
   kind: "biquad";
-  filterType?: BiquadFilterType;
+  filterType?: FilterKind;
   frequency?: NumberField;
   q?: NumberField;
   gain?: NumberField;
@@ -65,7 +80,7 @@ export type ShaperShape = "classic";
 export interface ShaperNodeSpec {
   id: string;
   kind: "shaper";
-  oversample?: OverSampleType;
+  oversample?: Oversample;
   curve: { shape: ShaperShape; amount: NumberField };
 }
 
@@ -86,6 +101,8 @@ export interface Graph {
 /** An instrument as data: its schema (the keystone) + a per-voice graph. */
 export interface GraphInstrumentDef {
   type: string;
+  /** Human-facing name for the library/palette (defaults from the catalog entry). */
+  label?: string;
   schema: ParamSchema;
   voice: Graph;
 }
@@ -93,6 +110,7 @@ export interface GraphInstrumentDef {
 /** An effect as data: its schema (incl. the uniform `mix`) + a graph over `in`/`wet`. */
 export interface GraphEffectDef {
   type: string;
+  label?: string;
   schema: ParamSchema;
   graph: Graph;
 }

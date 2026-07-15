@@ -40,19 +40,8 @@ export function resolveLinear(raw: number, ref: { scale?: number; offset?: numbe
   return raw * (ref.scale ?? 1) + (ref.offset ?? 0);
 }
 
-/** Every parameter id a graph references (for building bindings + validation). */
-export function collectParamIds(graph: Graph): string[] {
-  const ids = new Set<string>();
-  const walk = (value: unknown): void => {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) return value.forEach(walk);
-    const record = value as Record<string, unknown>;
-    if (typeof record.param === "string") ids.add(record.param);
-    for (const nested of Object.values(record)) walk(nested);
-  };
-  graph.nodes.forEach(walk);
-  return [...ids];
-}
+// collectParamIds lives in validate.ts (pure, DOM-free); re-exported here for the runtimes.
+export { collectParamIds } from "./validate";
 
 export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
   const { ctx, reserved } = context;

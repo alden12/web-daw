@@ -26,4 +26,14 @@ export interface Instrument {
 export interface VoiceHandle {
   amp: GainNode;
   sources: AudioScheduledSourceNode[];
+  /**
+   * Attack envelope bookkeeping the base fills in at note-on (level = the sustain gain,
+   * attackStart/attackEnd = the attack ramp window). Release reads these to anchor the
+   * gain at its true value before ramping down, instead of relying on cancelAndHoldAtTime
+   * (whose Chrome bug leaves the following ramp starting from the wrong value - an instant
+   * step to ~0, i.e. the note-off click).
+   */
+  level?: number;
+  attackStart?: number;
+  attackEnd?: number;
 }

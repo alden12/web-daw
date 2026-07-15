@@ -163,6 +163,66 @@ export const organSchema: ParamSchema = [
   },
 ] as const;
 
+// Mellotron Flute: a warm, breathy tape-flute (the Strawberry Fields sound), built as a
+// declarative graph (graph/mellotronFlute.ts). Two triangle oscillators spread apart for
+// the tape chorus, a unison sine for body, a shared vibrato LFO, and a mellow lowpass.
+export const mellotronFluteSchema: ParamSchema = [
+  {
+    id: "tone.warmth",
+    label: "Warmth",
+    kind: "number",
+    min: 300,
+    max: 8000,
+    default: 2400,
+    unit: "Hz",
+    taper: "exponential",
+    smoothMs: 20,
+  },
+  { id: "tone.spread", label: "Chorus", kind: "number", min: 0, max: 30, default: 10, unit: "cents", smoothMs: 25 },
+  { id: "body.level", label: "Body", kind: "number", min: 0, max: 1, default: 0.35, taper: "linear", smoothMs: 20 },
+  {
+    id: "vibrato.rate",
+    label: "Vibrato Rate",
+    kind: "number",
+    min: 0.1,
+    max: 8,
+    default: 4.8,
+    unit: "Hz",
+    smoothMs: 30,
+  },
+  {
+    id: "vibrato.depth",
+    label: "Vibrato Depth",
+    kind: "number",
+    min: 0,
+    max: 40,
+    default: 7,
+    unit: "cents",
+    smoothMs: 30,
+  },
+  { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.85, taper: "linear", smoothMs: 10 },
+  {
+    id: "env.attack",
+    label: "Attack",
+    kind: "number",
+    min: 1,
+    max: 2000,
+    default: 95,
+    unit: "ms",
+    taper: "exponential",
+  },
+  {
+    id: "env.release",
+    label: "Release",
+    kind: "number",
+    min: 1,
+    max: 4000,
+    default: 480,
+    unit: "ms",
+    taper: "exponential",
+  },
+] as const;
+
 // Morphing wavetable synth (AudioWorklet). Param ids match the processor's AudioParam
 // names so WorkletInstrument binds them generically; smoothMs keeps the morph zipper-free.
 export const wavetableSchema: ParamSchema = [
@@ -433,6 +493,11 @@ export function registerInstrument(info: InstrumentInfo): void {
   REGISTRY.set(info.type, info);
 }
 
+/** Remove a registered instrument (custom, project-scoped devices are unregistered on unload). */
+export function unregisterInstrument(type: string): void {
+  REGISTRY.delete(type);
+}
+
 /** Every registered instrument, in registration order (iterate this, never hardcode). */
 export function instrumentInfos(): InstrumentInfo[] {
   return [...REGISTRY.values()];
@@ -469,6 +534,7 @@ registerInstrument({ type: "subtractive", label: "Subtractive", schema: subtract
 registerInstrument({ type: "fm", label: "FM", schema: fmSchema, family: "Bass" });
 registerInstrument({ type: "supersaw", label: "Supersaw", schema: supersawSchema, family: "Synths" });
 registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family: "Keys" });
+registerInstrument({ type: "mellotron", label: "Mellotron Flute", schema: mellotronFluteSchema, family: "Keys" });
 registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
 registerInstrument({ type: "nimbus", label: "Nimbus", schema: nimbusSchema, family: "Synths" });
 registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });

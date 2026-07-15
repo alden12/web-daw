@@ -17,10 +17,12 @@
  */
 import type { ProjectStore, EffectInstance } from "../project/projectStore";
 import type { AudioClipData } from "../project/types";
-import { createInstrument } from "../instruments/registry";
+import { createInstrument, registerInstrumentFactory } from "../instruments/registry";
 import type { Instrument } from "../instruments/types";
-import { createEffect } from "../effects/registry";
+import { createEffect, registerEffectFactory } from "../effects/registry";
 import type { Effect } from "../effects/types";
+import { GraphInstrument } from "../graph/GraphInstrument";
+import { GraphEffect } from "../graph/GraphEffect";
 import { getAudioBuffer } from "../audioStore";
 import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
@@ -76,6 +78,8 @@ export class AudioEngine {
   private readonly audioBuffers = new Map<string, AudioBuffer>();
   private readonly decoding = new Set<string>();
   private project: ProjectStore | null = null;
+  /** Custom-device types whose audio factory is already registered (idempotent sync in reconcile). */
+  private readonly registeredCustomTypes = new Set<string>();
   private unsubscribe: (() => void) | null = null;
 
   get started(): boolean {
@@ -118,10 +122,29 @@ export class AudioEngine {
     await ctx.resume();
   }
 
+  /** Register a GraphInstrument/GraphEffect factory for each of the project's custom defs (once). */
+  private registerCustomFactories(project: ProjectStore): void {
+    for (const def of project.customInstruments) {
+      if (this.registeredCustomTypes.has(def.type)) continue;
+      registerInstrumentFactory(def.type, (ctx, store) => new GraphInstrument(ctx, store, def));
+      this.registeredCustomTypes.add(def.type);
+    }
+    for (const def of project.customEffects) {
+      if (this.registeredCustomTypes.has(def.type)) continue;
+      registerEffectFactory(def.type, (ctx, store) => new GraphEffect(ctx, store, def));
+      this.registeredCustomTypes.add(def.type);
+    }
+  }
+
   private reconcile(): void {
     const ctx = this.ctx;
     const project = this.project;
     if (!ctx || !project || !this.master) return;
+
+    // Register audio factories for the project's custom (declarative) devices before building
+    // nodes, so createInstrument/createEffect can realize a custom type. The store already
+    // registered their schemas; this is the Web Audio half, kept here (the store stays DOM-free).
+    this.registerCustomFactories(project);
 
     const groups = project.getGroups();
     const tracks = project.getTracks();
@@ -399,6 +422,32 @@ export class AudioEngine {
     return devices
       .filter((device) => device.kind === "audioinput")
       .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  }
+
+  /** Enumerate audio output devices (labels require a prior media-permission grant). */
+  async listOutputDevices(): Promise<{ deviceId: string; label: string }[]> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === "audiooutput")
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  }
+
+  /** Whether output-device routing (AudioContext.setSinkId) is available in this browser. */
+  get canSelectOutput(): boolean {
+    return typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
+  }
+
+  /** Route master output to a device by id ("" / null = system default). Chrome-only; a
+   *  bad id is ignored so playback stays on the current sink. */
+  async setOutputDevice(deviceId: string | null): Promise<void> {
+    const ctx = this.ctx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!ctx?.setSinkId) return;
+    try {
+      await ctx.setSinkId(deviceId ?? "");
+    } catch {
+      // invalid/unavailable device - keep the current output
+    }
   }
 
   /**
