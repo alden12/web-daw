@@ -221,6 +221,8 @@ export function createWsClient(config: {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   onOpen(handler: () => void): void;
+  /** Fires when the socket drops or is suspended (idle), so the session can stop sending and hold edits. */
+  onClose(handler: () => void): void;
   /** Subscribe to connection-state changes; the handler fires immediately with the current status. */
   onStatus(handler: (status: WsStatus) => void): void;
   close(): void;
@@ -238,6 +240,7 @@ export function createWsClient(config: {
   // Handlers registered once, re-bound onto each socket instance across reconnects.
   const messageHandlers: Array<(message: ServerMessage) => void> = [];
   const openHandlers: Array<() => void> = [];
+  const closeHandlers: Array<() => void> = [];
   const statusHandlers: Array<(status: WsStatus) => void> = [];
   let status: WsStatus = "connecting";
   const setStatus = (next: WsStatus): void => {
@@ -309,6 +312,7 @@ export function createWsClient(config: {
   const drop = (): void => {
     if (dropped || closed) return;
     dropped = true;
+    for (const handler of closeHandlers) handler(); // let the session stop sending / hold edits
     stopHeartbeat();
     try {
       socket.close();
@@ -371,6 +375,9 @@ export function createWsClient(config: {
     },
     onOpen(handler) {
       openHandlers.push(handler);
+    },
+    onClose(handler) {
+      closeHandlers.push(handler);
     },
     onStatus(handler) {
       statusHandlers.push(handler);

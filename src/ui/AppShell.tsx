@@ -15,15 +15,18 @@ import { Recorder } from "../audio/recording/recorder";
 import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
-import { initProjects } from "../audio/projects/operations";
+import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operations";
 import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
-import { currentProjectId } from "../audio/projectRepository";
+import { currentProjectId, setCurrentProject } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
+import type { ConflictInfo } from "../audio/sync/conflict";
+import type { ProjectData } from "../audio/project/types";
 import { bundleLocalMirror } from "../audio/sync/localMirror";
 import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleStore";
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
+import { ConflictDialog } from "./ConflictDialog";
 import { getAccessToken } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
@@ -115,6 +118,10 @@ export function AppShell() {
   const [syncStatus, setSyncStatus] = useState<WsStatus | null>(null);
   const [projectLoaded, setProjectLoaded] = useState(false);
   const [sawPeerEdit, setSawPeerEdit] = useState(false);
+  // A reconnect conflict awaiting the user's choice (remote mode only). Held by the shared session; the
+  // dialog resolves it. `sessionRef` lets the dialog call back into the live session.
+  const [conflict, setConflict] = useState<{ info: ConflictInfo; myState: ProjectData } | null>(null);
+  const sessionRef = useRef<SharedSession | null>(null);
   const projectList = useSyncExternalStore(subscribeProjects, listProjects);
   // Shared = someone shared it with us (role "editor") or we have seen a peer edit this session (so an
   // owner with active collaborators warns too). Owner-with-idle-members isn't caught yet - a cheap
@@ -249,9 +256,18 @@ export function AppShell() {
               if (active) setSawPeerEdit(true);
               if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
             },
+            // A reconnect clash: the session is holding our offline edits and showing the peer's state.
+            // Raise it to the dialog, which resolves via `discardPending` (take theirs) or a fork (keep mine).
+            onConflict: (info, myState) => {
+              if (active) setConflict({ info, myState });
+            },
           });
           session.attach();
-          disposePersistence = () => session.close();
+          sessionRef.current = session;
+          disposePersistence = () => {
+            sessionRef.current = null;
+            session.close();
+          };
         } else {
           disposePersistence = attachAutosave(projectStore, editLog);
         }
@@ -458,6 +474,30 @@ export function AppShell() {
         {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} />}
         {!projectLoaded && <LoadingOverlay />}
+        {conflict && (
+          <ConflictDialog
+            info={conflict.info}
+            onTakeTheirs={() => {
+              sessionRef.current?.discardPending(); // drop our held edits; converge on the peer's version
+              setConflict(null);
+            }}
+            onKeepMine={() => {
+              const { myState } = conflict;
+              void (async () => {
+                try {
+                  // Fork a copy carrying our offline edits, then converge the shared project on the peer's
+                  // version and reload into the copy (a fresh session attaches to the new project).
+                  const id = await forkProjectFromSnapshot(myState, `${myState.name} (copy)`);
+                  await sessionRef.current?.discardPending(); // durably clear the original's held queue first
+                  setCurrentProject(id);
+                  window.location.reload();
+                } catch (error) {
+                  console.warn("[web-daw] keep-mine fork failed:", error);
+                }
+              })();
+            }}
+          />
+        )}
       </div>
     </AuthorColorsProvider>
   );

@@ -22,8 +22,11 @@
  */
 import { ProjectStore } from "../project/projectStore";
 import { applyEdit } from "../commands/applyEdit";
+import { describeCommand } from "../commands/describe";
+import { detectConflict, type ConflictInfo } from "./conflict";
 import type { EditLog } from "../commands/editLog";
 import type { Author, EditCommand, EditEntry } from "../commands/types";
+import type { ProjectData } from "../project/types";
 import type { ClientMessage, ServerMessage } from "../../contract/ws";
 
 /** A typed, ordered message pipe to the authority. `createWsClient` (src/contract/client.ts) is one. */
@@ -33,6 +36,10 @@ export interface SyncTransport {
   /** Fires each time the socket (re)opens, including the first connect. The session uses it to
    *  (re-)subscribe and re-send unconfirmed edits, so a dropped connection self-heals on reconnect. */
   onOpen(handler: () => void): void;
+  /** Fires when the socket drops (offline) or is suspended (idle). The session uses it to stop sending,
+   *  so edits made while disconnected are HELD locally (not handed to the transport backlog) until a
+   *  reconnect can conflict-check them against any peer edits missed in the meantime. */
+  onClose(handler: () => void): void;
   close(): void;
 }
 
@@ -73,6 +80,10 @@ export interface SharedSessionOptions {
   /** Fired when a *peer's* new edit is applied (not our own echoes). Lets the UI react to remote changes
    *  beyond the store - e.g. refresh the project-list label on a `renameProject`. */
   onRemoteEdit?: (command: EditCommand, author: Author) => void;
+  /** Fired on reconnect when this client's held (offline) edits clash with a peer's edits made in the
+   *  meantime. The held edits are NOT sent; the live store shows the peer's state. The UI resolves by
+   *  calling `discardPending` (take theirs) or forking a copy from `myState` (keep mine). */
+  onConflict?: (info: ConflictInfo, myState: ProjectData) => void;
   /** Durable local mirror (OPFS) for the pending queue + confirmed stream; omit for no offline durability. */
   localMirror?: LocalMirror;
 }
@@ -88,6 +99,7 @@ export class SharedSession {
   private readonly newOpId: () => string;
   private readonly onError?: (message: string) => void;
   private readonly onRemoteEdit?: (command: EditCommand, author: Author) => void;
+  private readonly onConflict?: (info: ConflictInfo, myState: ProjectData) => void;
   private readonly localMirror?: LocalMirror;
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
@@ -97,6 +109,13 @@ export class SharedSession {
   /** Highest `seq` folded into `base`. */
   private headSeq: number;
   private closed = false;
+  /** True once we've subscribed and folded the authority's catch-up `snapshot`, so pending edits may be
+   *  sent. False while disconnected/suspended - edits made then are HELD (not handed to the transport)
+   *  until the next `snapshot` can conflict-check them. Also false during a `conflictHold`. */
+  private flushable = false;
+  /** True while a reconnect conflict is awaiting the user's choice: the live store shows the peer's state
+   *  (pending replayed OFF), and pending is neither sent nor dropped until resolved. */
+  private conflictHold = false;
 
   constructor(options: SharedSessionOptions) {
     this.projectStore = options.projectStore;
@@ -106,6 +125,7 @@ export class SharedSession {
     this.newOpId = options.newOpId ?? (() => crypto.randomUUID());
     this.onError = options.onError;
     this.onRemoteEdit = options.onRemoteEdit;
+    this.onConflict = options.onConflict;
     this.localMirror = options.localMirror;
     this.headSeq = options.baseSeq ?? -1;
 
@@ -115,18 +135,23 @@ export class SharedSession {
     this.base.load(this.projectStore.snapshot());
 
     this.transport.onMessage((message) => this.onMessage(message));
-    // Every (re)open re-runs `resync`: subscribe (the authority replies with a `snapshot` that folds any
-    // edits missed while disconnected) and re-send unconfirmed pending ops. The first connect is just its
-    // first firing, so subscribe rides one code path.
+    // Every (re)open re-runs `resync`: subscribe so the authority replies with a `snapshot` folding any
+    // edits missed while disconnected. Pending ops are flushed only AFTER that snapshot (in `onSnapshot`),
+    // once we can conflict-check them - see the send-gating note on `flushable`.
     this.transport.onOpen(() => this.resync());
+    // A drop/suspend stops us sending: edits made while disconnected are held in `pending` (not pushed to
+    // the transport backlog), so the next reconnect can conflict-check them before they reach the authority.
+    this.transport.onClose(() => {
+      this.flushable = false;
+    });
     // Restore any durable pending ops from a previous (offline) session and re-apply them to the live
     // store, so an offline reload does not lose unsent edits. Fire-and-forget: `resync` re-sends them
     // once connected (and if the socket is already open, `restorePending` sends them itself).
     if (this.localMirror) void this.restorePending();
   }
 
-  /** Re-load unsent ops persisted before a reload, re-apply them on top of `base`, and (if already
-   *  connected) re-send them. Idempotent by `opId` at the authority, so a later `resync` re-send is safe. */
+  /** Re-load unsent ops persisted before a reload and re-apply them on top of `base`. They are NOT sent
+   *  here: the next `snapshot` flushes them (after conflict-checking against any peer edits since). */
   private async restorePending(): Promise<void> {
     const saved = await this.localMirror!.loadPending();
     if (this.closed || saved.length === 0) return;
@@ -136,7 +161,6 @@ export class SharedSession {
     if (restored.length === 0) return;
     this.pending = restored.concat(this.pending);
     this.rebuildLive();
-    for (const op of restored) this.sendEdit(op);
   }
 
   /** Attach to an `EditLog` as its remote sink: every locally-dispatched edit is enqueued for the
@@ -155,12 +179,15 @@ export class SharedSession {
     const op: PendingOp = { opId: this.newOpId(), command, author };
     this.pending.push(op);
     this.persistPending(); // durable before send, so an offline edit survives a reload
-    this.sendEdit(op);
+    // Send only when synced with the authority. While disconnected (or awaiting a conflict choice) the op
+    // stays held in `pending` and is flushed by `onSnapshot` on the next reconnect, after conflict-checking.
+    if (this.flushable && !this.conflictHold) this.sendEdit(op);
   }
 
-  /** Persist the current pending queue to the local mirror (best-effort; the queue is small). */
-  private persistPending(): void {
-    void this.localMirror?.savePending(this.pending).catch(() => {});
+  /** Persist the current pending queue to the local mirror (best-effort; the queue is small). Returns the
+   *  write promise so a caller that must not race it (a fork-then-reload) can await the queue clearing. */
+  private persistPending(): Promise<void> {
+    return this.localMirror?.savePending(this.pending).catch(() => {}) ?? Promise.resolve();
   }
 
   /** Append a confirmed authoritative entry to the local edit-log mirror, so an offline reload replays
@@ -183,16 +210,14 @@ export class SharedSession {
   }
 
   /**
-   * (Re-)establish the session on a transport (re)open: subscribe, then re-send every still-pending op.
-   * The subscribe draws a `snapshot` whose `onSnapshot` folds any edits missed while disconnected (the
-   * gap-fill), and the re-sends recover local edits whose `editApplied` we may have missed. Both are
-   * idempotent by `opId` at the authority, so an op that did reach it before the drop re-echoes its
-   * original `seq` instead of double-applying.
+   * (Re-)establish the session on a transport (re)open: subscribe. The authority replies with a
+   * `snapshot` whose `onSnapshot` folds any edits missed while disconnected (the gap-fill) and THEN,
+   * once a conflict check has passed, flushes still-pending ops. Deferring the flush to after the
+   * snapshot is what lets a reconnect hold clashing offline edits back instead of blindly merging them.
    */
   private resync(): void {
     if (this.closed) return;
     this.transport.send({ type: "subscribe", projectId: this.projectId });
-    for (const op of this.pending) this.sendEdit(op);
   }
 
   private onMessage(message: ServerMessage): void {
@@ -207,19 +232,69 @@ export class SharedSession {
     handlers[message.type]();
   }
 
-  /** Catch-up on subscribe: fold any authoritative entries we do not already have into `base`. */
+  /**
+   * Catch-up on subscribe: fold authoritative entries we do not already have into `base`, then either
+   * flush our held pending ops or - if they clash with a peer's edits since we last synced - hold them
+   * and raise the conflict for the UI to resolve.
+   */
   private onSnapshot(message: Extract<ServerMessage, { type: "snapshot" }>): void {
-    let advanced = false;
+    // My optimistic state right now (base + pending) is the "keep mine" fork source - capture it before
+    // folding the peer's edits shifts `base`.
+    const myState = this.projectStore.snapshot();
+    const missed: { command: EditCommand; author: Author }[] = [];
     for (const entry of message.entries) {
       if (entry.seq <= this.headSeq) continue;
       if (isReplayable(entry.kind)) applyEdit(this.base, entry.command as EditCommand, entry.author);
       this.mirrorConfirmed(entry.command as EditCommand, entry.author, entry.seq); // persist for offline reload
       this.headSeq = entry.seq;
-      advanced = true;
+      missed.push({ command: entry.command as EditCommand, author: entry.author });
     }
     // The authority's head can exceed the window we were sent; trust it as the floor for future edits.
     this.headSeq = Math.max(this.headSeq, message.headSeq);
-    if (advanced) this.rebuildLive();
+
+    // A reconnect can clash: held offline edits vs the peer edits we just folded. Compare only edits
+    // authored by someone else - an entry authored by us is our own op recovered via the snapshot (its
+    // echo was missed before the drop), not a peer's, so it must never count as a conflict against itself.
+    const mineAuthors = new Set(this.pending.map((op) => op.author));
+    const peerEdits = missed.filter((entry) => !mineAuthors.has(entry.author));
+    const held = this.pending.map((op) => ({ command: op.command, author: op.author }));
+    const conflict = this.conflictHold ? null : detectConflict(peerEdits, held, this.describe);
+    if (conflict) {
+      this.conflictHold = true; // live shows the peer's state; pending neither sent nor dropped yet
+      this.rebuildLive();
+      this.onConflict?.(conflict, myState);
+      return;
+    }
+    if (this.conflictHold) {
+      // A re-sync arrived while the user is still choosing: keep holding (show the latest peer state,
+      // don't flush the held ops out from under the open dialog).
+      this.rebuildLive();
+      return;
+    }
+    this.rebuildLive();
+    this.flushable = true; // synced: send held ops (and let live edits send immediately from here on)
+    for (const op of this.pending) this.sendEdit(op);
+  }
+
+  /** Human phrase for a command (for the conflict dialog), resolving ids to current track/group names. */
+  private readonly describe = (command: EditCommand): string =>
+    describeCommand(command, {
+      name: (id) => this.projectStore.getTrack(id)?.name ?? this.projectStore.getGroup(id)?.name,
+    });
+
+  /**
+   * Resolve a held conflict by taking the peer's edits: drop this client's held ops (also from the
+   * durable queue) and rebuild the live store as the peer's state. "Keep mine as a copy" is the UI's job
+   * (fork a new project from the `myState` it received) and then calls this to converge the shared one.
+   */
+  discardPending(): Promise<void> {
+    this.pending = [];
+    this.conflictHold = false;
+    this.flushable = true;
+    this.rebuildLive();
+    // Return the mirror-clear write: "keep mine as a copy" reloads right after, and must not race it or
+    // the original project's `pending.json` would still hold the discarded ops and resurrect them.
+    return this.persistPending();
   }
 
   /**
@@ -258,11 +333,13 @@ export class SharedSession {
     this.onError?.(`Edit rejected: ${message.reason}`);
   }
 
-  /** Rebuild the live store as `base` with `pending` replayed on top (leaving `base` pristine). */
+  /** Rebuild the live store as `base` with `pending` replayed on top (leaving `base` pristine). During a
+   *  conflict hold, pending is NOT replayed, so the live store shows the peer's (authoritative) state
+   *  while the user decides. */
   private rebuildLive(): void {
     const scratch = new ProjectStore(false);
     scratch.load(this.base.snapshot());
-    for (const op of this.pending) applyEdit(scratch, op.command, op.author);
+    if (!this.conflictHold) for (const op of this.pending) applyEdit(scratch, op.command, op.author);
     this.projectStore.load(scratch.snapshot());
   }
 

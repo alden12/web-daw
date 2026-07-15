@@ -5,6 +5,8 @@ import { SharedSession, type SyncTransport, type LocalMirror, type PendingOp } f
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
 import type { EditCommand, EditEntry } from "../src/audio/commands/types";
+import type { ProjectData } from "../src/audio/project/types";
+import type { ConflictInfo } from "../src/audio/sync/conflict";
 import type { ClientMessage, ServerMessage } from "../src/contract/ws";
 
 // A deterministic, fully controllable transport harness. Client -> server messages queue on a shared
@@ -42,8 +44,11 @@ class Client {
   readonly session: SharedSession;
   readonly inbox: ServerMessage[] = [];
   readonly sent: ClientMessage[] = [];
+  /** Reconnect conflicts raised to the UI (the held edits clashed with a peer's). */
+  readonly conflicts: { info: ConflictInfo; myState: ProjectData }[] = [];
   private deliver: (message: ServerMessage) => void = () => {};
   private reopen: () => void = () => {};
+  private closed: () => void = () => {};
   /** Whether the socket is "connected": a disconnect drops outbound sends (and stops broadcasts, since
    *  the room removes the client), modelling a real network drop until `reconnect()`. */
   private connected = true;
@@ -68,6 +73,9 @@ class Client {
       onOpen: (handler) => {
         this.reopen = handler;
       },
+      onClose: (handler) => {
+        this.closed = handler;
+      },
       close: () => room.remove(this.roomClient),
     };
     this.session = new SharedSession({
@@ -76,6 +84,7 @@ class Client {
       transport,
       projectId: id,
       newOpId: () => `op-${opCounter++}`,
+      onConflict: (info, myState) => this.conflicts.push({ info, myState }),
     });
     this.session.attach();
     this.reopen(); // initial connect fires onOpen -> the session subscribes
@@ -84,6 +93,7 @@ class Client {
   /** Simulate a network drop: the room stops broadcasting to us and outbound sends are lost. */
   disconnect(): void {
     this.connected = false;
+    this.closed(); // the transport's onClose: the session stops sending and holds edits
     this.room.remove(this.roomClient);
     this.inbox.length = 0;
   }
@@ -127,6 +137,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const a = harness.connect("p1");
     const b = harness.connect("p1");
     await harness.pump(); // process the two subscribes
+    a.flush(); // fold the catch-up snapshot (enables sending pending; empty here)
+    b.flush();
 
     a.editLog.dispatch(createTrack("t-a"));
     // Optimistic: A sees its track before the round-trip; B has not heard yet.
@@ -148,6 +160,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const a = harness.connect("p1");
     const b = harness.connect("p1");
     await harness.pump();
+    a.flush(); // fold the catch-up snapshot so pending may be sent
+    b.flush();
 
     // B reaches the authority first (seq 0), A second (seq 1) - both applied locally first.
     b.editLog.dispatch(createTrack("t-b"));
@@ -172,6 +186,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const a = harness.connect("p1");
     const b = harness.connect("p1");
     await harness.pump();
+    a.flush(); // fold the catch-up snapshot so pending may be sent
+    b.flush();
 
     // Seed a shared track (seq 0) and let it settle everywhere.
     a.editLog.dispatch(createTrack("t-1"));
@@ -202,6 +218,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const a = harness.connect("p1");
     const b = harness.connect("p1");
     await harness.pump();
+    a.flush(); // fold the catch-up snapshot so pending may be sent
+    b.flush();
 
     a.editLog.dispatch(createTrack("t-1"));
     await harness.pump();
@@ -222,6 +240,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const alice = harness.connect("p1", "alice");
     const bob = harness.connect("p1", "bob");
     await harness.pump();
+    alice.flush(); // fold the catch-up snapshot so pending may be sent
+    bob.flush();
 
     alice.editLog.dispatch(createTrack("t-a"));
     await harness.pump();
@@ -245,6 +265,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const a = harness.connect("p1", "alice");
     const b = harness.connect("p1", "bob");
     await harness.pump();
+    a.flush(); // fold the catch-up snapshot so pending may be sent
+    b.flush();
 
     a.editLog.dispatch({ type: "renameProject", name: "Our Track" } as EditCommand);
     expect(a.store.snapshot().name).toBe("Our Track"); // optimistic on A
@@ -262,6 +284,8 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const harness = new Harness(await Room.load(db, "local", "p1"));
     const rejections: string[] = [];
     const a = harness.connect("p1");
+    await harness.pump(); // fold the catch-up snapshot so the edit is sent (gets an opId to reject)
+    a.flush();
     // Route the session's error surface through a spy by re-attaching with an onError is not exposed;
     // instead assert the state rollback (the observable effect of a rejection).
 
@@ -316,10 +340,12 @@ describe("SharedSession (client optimistic + rebase)", () => {
     expect(a.trackIds()).toEqual(["t-a"]); // optimistic locally
     expect(harness.room.snapshot().tracks).toHaveLength(0); // authority never saw it
 
-    // Reconnect re-sends the still-pending op; now the authority applies it and A stays converged.
+    // Reconnect re-subscribes; the snapshot has no peer edits, so the held op flushes (no conflict).
     a.reconnect();
-    await harness.pump();
-    a.flush();
+    await harness.pump(); // subscribe -> catch-up snapshot
+    a.flush(); // fold snapshot -> flush the held op to the authority
+    await harness.pump(); // authority applies it
+    a.flush(); // adopt the echo
     expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
     expect(a.trackIds()).toEqual(["t-a"]);
   });
@@ -359,9 +385,13 @@ describe("SharedSession (client optimistic + rebase)", () => {
     await harness.pump(); // B's move reaches the authority; A's delete is dropped while offline
     b.flush();
 
-    // A reconnects: resync re-sends the delete, the authority orders it, everyone reconciles.
+    // A reconnects: the snapshot carries B's move; both edits share author "you" here, so it is not
+    // flagged as a cross-user conflict - the held delete flushes and the authority orders it last.
     a.reconnect();
-    await harness.pump();
+    await harness.pump(); // subscribe -> catch-up snapshot (folds B's move)
+    a.flush(); // fold snapshot -> flush the held delete
+    b.flush();
+    await harness.pump(); // authority applies the delete
     a.flush();
     b.flush();
 
@@ -389,10 +419,103 @@ describe("SharedSession (client optimistic + rebase)", () => {
     // Reconnect: the snapshot recovers t-a into `base`, and the re-sent op re-echoes its original seq
     // (idempotent by opId) rather than adding a second track. A converges to exactly one t-a.
     a.reconnect();
-    await harness.pump();
-    a.flush();
+    await harness.pump(); // subscribe -> snapshot recovers t-a into base
+    a.flush(); // fold snapshot -> re-send the still-pending op
+    await harness.pump(); // authority re-echoes its original seq (idempotent by opId)
+    a.flush(); // retire the pending op against the re-echo
     expect(a.trackIds()).toEqual(["t-a"]);
     expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
+  });
+
+  // --- reconnect conflict flow (inc 4) ---------------------------------------
+  const noteStart = (store: ProjectStore): number | undefined =>
+    store
+      .getClipStore("t-1")
+      ?.getClip()
+      .notes.find((note) => note.id === "n-1")?.start;
+
+  /** Alice edits a note offline while Bob (a different user) edits the same note online. */
+  async function stagedNoteClash() {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const alice = harness.connect("p1", "alice");
+    const bob = harness.connect("p1", "bob");
+    await harness.pump();
+    alice.flush();
+    bob.flush();
+
+    alice.editLog.dispatch(createTrack("t-1"));
+    alice.editLog.dispatch({
+      type: "addNote",
+      trackId: "t-1",
+      note: { id: "n-1", pitch: 60, start: 0, length: 1, velocity: 0.8 },
+    } as EditCommand);
+    await harness.pump();
+    alice.flush();
+    bob.flush();
+
+    // Alice offline moves the note to 9; Bob online moves the same note to 5.
+    alice.disconnect();
+    alice.editLog.dispatch({
+      type: "editNotes",
+      trackId: "t-1",
+      notes: [{ id: "n-1", pitch: 60, start: 9, length: 1, velocity: 0.8 }],
+    } as EditCommand);
+    bob.editLog.dispatch({
+      type: "editNotes",
+      trackId: "t-1",
+      notes: [{ id: "n-1", pitch: 60, start: 5, length: 1, velocity: 0.8 }],
+    } as EditCommand);
+    await harness.pump();
+    bob.flush();
+
+    // Alice reconnects: the snapshot carries Bob's move, which clashes with her held move.
+    alice.reconnect();
+    await harness.pump();
+    alice.flush();
+    return { harness, alice, bob };
+  }
+
+  it("raises a conflict (not a silent merge) when a held offline edit clashes with a peer's", async () => {
+    const { harness, alice } = await stagedNoteClash();
+
+    expect(alice.conflicts).toHaveLength(1);
+    expect(alice.conflicts[0].info.theirs.length).toBeGreaterThan(0);
+    expect(alice.conflicts[0].info.mine.length).toBeGreaterThan(0);
+    // The held edit was NOT sent: the authority still holds the peer's value, and Alice sees it too.
+    const roomStore = new ProjectStore(false);
+    roomStore.load(harness.room.snapshot());
+    expect(noteStart(roomStore)).toBe(5); // peer's value, un-merged
+    expect(noteStart(alice.store)).toBe(5); // live view shows theirs during the hold
+    // The captured fork source is Alice's own optimistic state (her move to 9).
+    const myState = new ProjectStore(false);
+    myState.load(alice.conflicts[0].myState);
+    expect(noteStart(myState)).toBe(9);
+  });
+
+  it("take theirs: discardPending drops the held edit and stays on the peer's value", async () => {
+    const { harness, alice } = await stagedNoteClash();
+    alice.session.discardPending();
+    await harness.pump(); // nothing to send - the held edit was discarded
+    const roomStore = new ProjectStore(false);
+    roomStore.load(harness.room.snapshot());
+    expect(noteStart(roomStore)).toBe(5);
+    expect(noteStart(alice.store)).toBe(5);
+  });
+
+  it("keeps holding (does not flush) if another re-sync arrives while the dialog is open", async () => {
+    const { harness, alice } = await stagedNoteClash();
+    // A second reconnect (e.g. a blip) while the user is still deciding: it must NOT flush the held edit.
+    alice.reconnect();
+    await harness.pump();
+    alice.flush();
+    await harness.pump();
+    alice.flush();
+
+    expect(alice.conflicts).toHaveLength(1); // not re-raised
+    const roomStore = new ProjectStore(false);
+    roomStore.load(harness.room.snapshot());
+    expect(noteStart(roomStore)).toBe(5); // still the peer's value; the held move never flushed
   });
 });
 
@@ -402,6 +525,7 @@ class StubTransport implements SyncTransport {
   readonly sent: ClientMessage[] = [];
   private messageHandler: (message: ServerMessage) => void = () => {};
   private openHandler: () => void = () => {};
+  private closeHandler: () => void = () => {};
   send(message: ClientMessage): void {
     this.sent.push(message);
   }
@@ -411,9 +535,15 @@ class StubTransport implements SyncTransport {
   onOpen(handler: () => void): void {
     this.openHandler = handler;
   }
+  onClose(handler: () => void): void {
+    this.closeHandler = handler;
+  }
   close(): void {}
   open(): void {
     this.openHandler();
+  }
+  drop(): void {
+    this.closeHandler();
   }
   deliver(message: ServerMessage): void {
     this.messageHandler(message);
@@ -478,14 +608,18 @@ describe("SharedSession durable offline mirror", () => {
     expect(mirror.confirmed.map((entry) => entry.seq)).toEqual([0]); // and appended to the offline stream
   });
 
-  it("restores a persisted queue on load: re-applies it to the live store and re-sends it", async () => {
+  it("restores a persisted queue on load: re-applies it to the live store and re-sends it after sync", async () => {
     const mirror = new FakeMirror([{ opId: "op-x", command: createTrack("t-restored"), author: "you" }]);
     const { store, transport } = makeSession(mirror);
     transport.open();
     await settle(); // let the fire-and-forget restore run
 
     expect(store.snapshot().tracks.map((track) => track.id)).toEqual(["t-restored"]); // re-applied optimistically
-    expect(transport.sent.some((message) => message.type === "edit" && message.opId === "op-x")).toBe(true); // re-sent
+    expect(transport.sent.some((message) => message.type === "edit")).toBe(false); // held until the catch-up snapshot
+
+    // The catch-up snapshot (no peer edits) clears the hold; the restored op then flushes to the authority.
+    transport.deliver({ type: "snapshot", projectId: "p1", headSeq: -1, entries: [] });
+    expect(transport.sent.some((message) => message.type === "edit" && message.opId === "op-x")).toBe(true);
   });
 
   it("appends a peer's confirmed edit to the offline stream (so a reload replays it)", async () => {
