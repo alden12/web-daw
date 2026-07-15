@@ -56,8 +56,8 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await expect(grid).toBeVisible();
   await expect(page.getByTestId("note")).toHaveCount(1);
   // The reserved left gutter (a column beside the notes, not over them) labels the row
-  // with its assigned note + drum name ("C2 Kick" - the GM kick note 36), so you can see
-  // and play the mapping.
+  // with its assigned note + drum name ("C2 Kick" - GM kick is MIDI 36, which the C4 = 60
+  // octave numbering displays as C2), so you can see and play the mapping.
   await expect(page.getByText("C2 Kick", { exact: true })).toBeVisible();
 
   // Back to Pads: the step grid returns with the hit still lit.
