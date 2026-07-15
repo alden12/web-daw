@@ -11,6 +11,10 @@ class FakeWebSocket {
   static OPEN = 1;
   static instances: FakeWebSocket[] = [];
   readyState = 0;
+  readonly sent: string[] = [];
+  /** When true, `close()` does not emit a "close" event - models a browser deferring the close of a
+   *  half-open socket until connectivity returns (e.g. DevTools "Offline"). */
+  deferClose = false;
   private readonly listeners: Record<string, Array<(event?: unknown) => void>> = {};
   constructor(readonly url: string) {
     FakeWebSocket.instances.push(this);
@@ -18,17 +22,27 @@ class FakeWebSocket {
   addEventListener(type: string, handler: (event?: unknown) => void): void {
     (this.listeners[type] ??= []).push(handler);
   }
-  send(): void {}
+  send(data: string): void {
+    this.sent.push(data);
+  }
   close(): void {
     this.readyState = 3;
-    this.emit("close");
+    if (!this.deferClose) this.emit("close");
   }
   open(): void {
     this.readyState = 1;
     this.emit("open");
   }
-  private emit(type: string): void {
-    for (const handler of this.listeners[type] ?? []) handler();
+  /** Deliver a server message to the client (as the transport's message listener would receive it). */
+  deliver(message: unknown): void {
+    this.emit("message", { data: JSON.stringify(message) });
+  }
+  /** Whether a ping frame has been sent. */
+  pinged(): boolean {
+    return this.sent.some((raw) => JSON.parse(raw).type === "ping");
+  }
+  private emit(type: string, event?: unknown): void {
+    for (const handler of this.listeners[type] ?? []) handler(event);
   }
 }
 
@@ -67,5 +81,52 @@ describe("createWsClient connection status", () => {
 
     client.close();
     expect(statuses).toEqual(["connecting", "online"]); // no trailing "offline"
+  });
+});
+
+describe("createWsClient heartbeat (dead-socket detection)", () => {
+  it("pings on a cadence and, when no pong arrives, closes the half-open socket and goes offline", () => {
+    const statuses: WsStatus[] = [];
+    createWsClient({ baseUrl: "ws://x", heartbeatMs: 1000, pongTimeoutMs: 200 }).onStatus((status) =>
+      statuses.push(status),
+    );
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    expect(statuses.at(-1)).toBe("online");
+
+    vi.advanceTimersByTime(1000); // heartbeat fires
+    expect(ws.pinged()).toBe(true);
+
+    vi.advanceTimersByTime(200); // no pong within the grace -> dead socket -> close -> reconnect path
+    expect(statuses.at(-1)).toBe("offline");
+  });
+
+  it("goes offline on a dead socket even when the close event is deferred (half-open)", () => {
+    const statuses: WsStatus[] = [];
+    createWsClient({ baseUrl: "ws://x", heartbeatMs: 1000, pongTimeoutMs: 200 }).onStatus((status) =>
+      statuses.push(status),
+    );
+    const ws = FakeWebSocket.instances[0];
+    ws.deferClose = true; // the browser won't emit "close" until connectivity returns
+    ws.open();
+
+    vi.advanceTimersByTime(1000); // ping
+    vi.advanceTimersByTime(200); // no pong: we must go offline now, not wait for the (deferred) close
+    expect(statuses.at(-1)).toBe("offline");
+  });
+
+  it("stays online when pongs answer the heartbeat", () => {
+    const statuses: WsStatus[] = [];
+    createWsClient({ baseUrl: "ws://x", heartbeatMs: 1000, pongTimeoutMs: 200 }).onStatus((status) =>
+      statuses.push(status),
+    );
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+
+    vi.advanceTimersByTime(1000); // ping
+    ws.deliver({ type: "pong" }); // answered in time
+    vi.advanceTimersByTime(200); // the (cleared) deadline passes harmlessly
+
+    expect(statuses).toEqual(["connecting", "online"]); // never went offline
   });
 });
