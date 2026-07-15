@@ -16,11 +16,12 @@ import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects } from "../audio/projects/operations";
-import { patchProjectName } from "../audio/projects/library";
+import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
 import { currentProjectId } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
-import { createWsClient, wsBaseFromApiUrl } from "../contract/client";
+import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
+import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
 import { getAccessToken } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
@@ -107,6 +108,16 @@ export function AppShell() {
       }),
   );
   const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
+  // Sync-connection state (remote mode only; null in local/no-sync mode). `projectLoaded` gates the
+  // load overlay; `sawPeerEdit` marks the project as collaborative so the offline banner warns.
+  const [syncStatus, setSyncStatus] = useState<WsStatus | null>(null);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [sawPeerEdit, setSawPeerEdit] = useState(false);
+  const projectList = useSyncExternalStore(subscribeProjects, listProjects);
+  // Shared = someone shared it with us (role "editor") or we have seen a peer edit this session (so an
+  // owner with active collaborators warns too). Owner-with-idle-members isn't caught yet - a cheap
+  // server "shared" flag on the listing would close that; deferred to the conflict-flow increment.
+  const isSharedProject = sawPeerEdit || projectList.find((meta) => meta.id === currentProjectId())?.role === "editor";
   const dispatch = editLog.dispatch;
 
   // Resizable, persisted side panels + collapse state. The activity rail chooses
@@ -197,41 +208,51 @@ export function AppShell() {
     let active = true;
     let disposePersistence = () => {};
     let disposeCheckpoints = () => {};
-    void initProjects({ projectStore, editLog, versionStore }).then(() => {
-      if (!active) return;
-      // With a remote backend, edits ride the live WS channel and the authority persists them (the
-      // client no longer appends over HTTP): open a shared session and route each dispatched edit to it.
-      // Local-only backend keeps the HTTP/OPFS autosave. Version-history checkpoints stay client-side
-      // either way until Phase B moves them server-side.
-      const apiUrl = import.meta.env?.VITE_DAW_API_URL;
-      if (apiUrl) {
-        const entries = editLog.getEntries();
-        const notes = editLog.getNotes();
-        const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
-        const transport = createWsClient({
-          baseUrl: wsBaseFromApiUrl(apiUrl),
-          token: getAccessToken, // the live session token (getter), so a reconnect uses a refreshed one
-        });
-        const session = new SharedSession({
-          projectStore,
-          editLog,
-          transport,
-          projectId: currentProjectId(),
-          baseSeq,
-          onError: (message) => console.warn(`[web-daw] sync: ${message}`),
-          // A peer renaming the project: update our library-list label straight from the edit (the store
-          // already applied it), so the dropdown reflects it live without a reload.
-          onRemoteEdit: (command) => {
-            if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
-          },
-        });
-        session.attach();
-        disposePersistence = () => session.close();
-      } else {
-        disposePersistence = attachAutosave(projectStore, editLog);
-      }
-      disposeCheckpoints = versionStore.attach();
-    });
+    void initProjects({ projectStore, editLog, versionStore })
+      .then(() => {
+        if (!active) return;
+        // With a remote backend, edits ride the live WS channel and the authority persists them (the
+        // client no longer appends over HTTP): open a shared session and route each dispatched edit to it.
+        // Local-only backend keeps the HTTP/OPFS autosave. Version-history checkpoints stay client-side
+        // either way until Phase B moves them server-side.
+        const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+        if (apiUrl) {
+          const entries = editLog.getEntries();
+          const notes = editLog.getNotes();
+          const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
+          const transport = createWsClient({
+            baseUrl: wsBaseFromApiUrl(apiUrl),
+            token: getAccessToken, // the live session token (getter), so a reconnect uses a refreshed one
+          });
+          transport.onStatus((status) => {
+            if (active) setSyncStatus(status);
+          });
+          const session = new SharedSession({
+            projectStore,
+            editLog,
+            transport,
+            projectId: currentProjectId(),
+            baseSeq,
+            onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+            // A peer's edit: mark the project collaborative (so the offline banner warns), and on a rename
+            // update our library-list label straight from the edit (the store already applied it) so the
+            // dropdown reflects it live without a reload.
+            onRemoteEdit: (command) => {
+              if (active) setSawPeerEdit(true);
+              if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
+            },
+          });
+          session.attach();
+          disposePersistence = () => session.close();
+        } else {
+          disposePersistence = attachAutosave(projectStore, editLog);
+        }
+        disposeCheckpoints = versionStore.attach();
+      })
+      .catch((error) => console.warn("[web-daw] project load failed:", error))
+      .finally(() => {
+        if (active) setProjectLoaded(true);
+      });
     return () => {
       active = false;
       disposePersistence();
@@ -323,6 +344,7 @@ export function AppShell() {
   return (
     <AuthorColorsProvider value={{ config: authorColors, self: currentUser }}>
       <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink">
+        {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
         <div
           ref={bodyRef}
           className="app-body flex-1 min-h-0 relative"
@@ -360,6 +382,7 @@ export function AppShell() {
             selectedTrack={selectedTrack}
             onRevealSamples={() => selectView("samples")}
             mcpStatus={mcpStatus}
+            syncStatus={syncStatus}
             agentCollapsed={agentCollapsed}
             onExpandAgent={() => setAgentCollapsed(false)}
           />
@@ -426,6 +449,7 @@ export function AppShell() {
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
         {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} />}
+        {!projectLoaded && <LoadingOverlay />}
       </div>
     </AuthorColorsProvider>
   );

@@ -197,6 +197,17 @@ export function wsBaseFromApiUrl(apiUrl: string): string {
  *  its unconfirmed edits. Thin transport glue over the contract's message unions. The token rides the
  *  query string because a browser `WebSocket` cannot set an Authorization header (the server reads
  *  `?token=` at the upgrade, mirroring the HTTP bearer gate). */
+/**
+ * The live connection state, surfaced to the UI (loading spinner + connection chip + offline warning):
+ * - `connecting` - the first connect is in flight (never been open yet).
+ * - `online` - the socket is open.
+ * - `offline` - was online, then dropped unexpectedly; reconnecting in the background.
+ * - `idle` - deliberately suspended (idle timeout / tab hidden); wakes on activity or when shown again.
+ * `idle` is a benign paused state (edits still save locally and it self-heals on wake), distinct from the
+ * `offline` state that warrants a warning on a shared project.
+ */
+export type WsStatus = "connecting" | "online" | "offline" | "idle";
+
 export function createWsClient(config: {
   baseUrl: string;
   token?: TokenSource;
@@ -207,6 +218,8 @@ export function createWsClient(config: {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   onOpen(handler: () => void): void;
+  /** Subscribe to connection-state changes; the handler fires immediately with the current status. */
+  onStatus(handler: (status: WsStatus) => void): void;
   close(): void;
 } {
   const base = `${config.baseUrl.replace(/\/$/, "")}${channels.main.path}`;
@@ -216,6 +229,13 @@ export function createWsClient(config: {
   // Handlers registered once, re-bound onto each socket instance across reconnects.
   const messageHandlers: Array<(message: ServerMessage) => void> = [];
   const openHandlers: Array<() => void> = [];
+  const statusHandlers: Array<(status: WsStatus) => void> = [];
+  let status: WsStatus = "connecting";
+  const setStatus = (next: WsStatus): void => {
+    if (next === status) return;
+    status = next;
+    for (const handler of statusHandlers) handler(status);
+  };
   // Sends made while the socket is not open queue here and flush once it opens (after the open handlers,
   // so a re-subscribe always precedes any queued edit).
   const backlog: ClientMessage[] = [];
@@ -229,9 +249,13 @@ export function createWsClient(config: {
   const idle = new IdleController({
     idleMs: config.idleMs,
     hiddenGraceMs: config.hiddenGraceMs,
-    onSuspend: () => socket?.close(),
+    onSuspend: () => {
+      setStatus("idle");
+      socket?.close();
+    },
     onWake: () => {
       retries = 0;
+      setStatus("connecting");
       connect();
     },
   });
@@ -244,6 +268,7 @@ export function createWsClient(config: {
     socket = new WebSocket(url);
     socket.addEventListener("open", () => {
       retries = 0;
+      setStatus("online");
       idle.onOpen(); // fresh idle countdown per connection
       for (const handler of openHandlers) handler();
       for (const message of backlog) socket.send(JSON.stringify(message));
@@ -256,6 +281,9 @@ export function createWsClient(config: {
     socket.addEventListener("close", () => {
       if (closed) return; // deliberate close(): do not reconnect
       if (!idle.shouldReconnectAfterClose()) return; // suspended (idle) or hidden: wake on activity/visible
+      // A closed/failed socket is "offline" (whether the initial connect never landed or a live one
+      // dropped); it flips back to "online" when a reconnect attempt opens.
+      setStatus("offline");
       const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** retries);
       retries += 1;
       setTimeout(connect, delay);
@@ -274,6 +302,10 @@ export function createWsClient(config: {
     },
     onOpen(handler) {
       openHandlers.push(handler);
+    },
+    onStatus(handler) {
+      statusHandlers.push(handler);
+      handler(status); // fire immediately with the current state
     },
     close() {
       closed = true;

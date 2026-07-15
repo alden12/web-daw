@@ -11,6 +11,8 @@ import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
 import type { McpStatus } from "../audio/mcp/bridge";
+import type { WsStatus } from "../contract/client";
+import { SyncChip } from "./ConnectionStatus";
 import { useProject } from "../audio/project/useProject";
 import { beatsPerSecond } from "../audio/timing";
 import { useAnimationFrame } from "./useAnimationFrame";
@@ -485,6 +487,7 @@ export function CenterWorkbench({
   selectedTrack,
   onRevealSamples,
   mcpStatus,
+  syncStatus,
   agentCollapsed,
   onExpandAgent,
 }: {
@@ -497,6 +500,8 @@ export function CenterWorkbench({
   onRevealSamples?: () => void;
   /** MCP connection status - shown as a dot in the tab bar's indicator area. */
   mcpStatus: McpStatus;
+  /** Sync-server connection status - shown as a chip beside MCP. `null` in local (no-sync) mode. */
+  syncStatus: WsStatus | null;
   /** The agent pane is collapsed away; the tab bar hosts its expand control. */
   agentCollapsed: boolean;
   onExpandAgent: () => void;
@@ -515,10 +520,18 @@ export function CenterWorkbench({
   // agent pane is collapsed away) its expand control - there is no idle rail.
   const indicators = (
     <div className="ml-auto self-center flex items-center gap-2 pr-2">
-      <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted" title={MCP_TITLE[mcpStatus]}>
-        <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} />
-        {mcpStatus === "connected" && "MCP"}
-      </span>
+      {syncStatus && <SyncChip status={syncStatus} />}
+      {/* MCP is a dev/local bridge; show it only when actually connected, so it doesn't sit as a
+          second bare dot beside the sync chip (confusing) the rest of the time. */}
+      {mcpStatus === "connected" && (
+        <span
+          className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted"
+          title={MCP_TITLE[mcpStatus]}
+        >
+          <span className={`w-2 h-2 rounded-full ${MCP_DOT[mcpStatus]}`} />
+          MCP
+        </span>
+      )}
       {agentCollapsed && (
         <button
           type="button"
