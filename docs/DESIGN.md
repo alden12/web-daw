@@ -913,9 +913,38 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   **Worker** (the AudioWorklet can't touch OPFS, `crypto.subtle.digest` is one-shot, `decodeAudioData`
   detaches its buffer); and `navigator.storage.persist()` + a quota meter (OPFS is evicted LRU). The
   **drum rack** + the deferred **per-track groove override** is the next slice (pads reference the
-  same library).
-- **Drum machine + drum-kit sourcing.** Two complementary paths, not either/or (the Sampler above is
-  the shared substrate for the sampled path):
+  same library). Also: the left **Samples view lists only the project's imported assets** - the
+  bundled CC0 built-ins (`BUILTIN_SAMPLES`, offered in the sample picker's "Built-in" group) don't
+  appear there. *Follow-on:* surface the built-in kit as a "Built-in" group in the Samples view too
+  (and make library entries drag-able onto a pad / the Sampler, folding into the `sampleDnd` follow-on).
+- **Drum machine (drum-kit instrument + step grid) - DONE (slice 58).** A **`drumkit`** instrument
+  ([instruments/Drumkit.ts](src/audio/instruments/Drumkit.ts)): a bank of one-shot sample players (up to
+  `DRUMKIT_PADS`) where a played MIDI note *selects a pad* rather than pitching one sample. **Which note
+  fires a pad is itself a param** (`pad{n}.note`, defaulting to a contiguous octave up from
+  `DRUMKIT_BASE_NOTE` = middle C), so the mapping is data - visible in the panel, settable over MCP,
+  remappable to a GM/hardware layout - and `Drumkit` resolves note -> pad from those params at play time
+  (no hardcoded inverse). Each pad is a `sample` ref + note + level + tune (tune snaps to whole
+  semitones via a new `step` on the number spec), all schema-driven (`pad{n}.sample/note/level/tune`),
+  so it needs no per-pad code. Defaults load the built-in CC0 kit into the first pads. The device rack
+  gives the kit its own **[DrumkitPanel](src/ui/DrumkitPanel.tsx)** (chosen the same way as the editors
+  below) instead of the generic knob panel: a compact pad-per-cell layout (note-name selector in the
+  title, sample picker, horizontal Level/Tune faders) that shows only pads in use plus an **Add pad**
+  button, so a fresh kit isn't a wall of blanks.
+  - A drum-kit track edits notes as a **pad x step sequencer grid** ([ui/StepGrid.tsx](src/ui/StepGrid.tsx))
+    or the ordinary **piano roll** - a per-track **Pads | Keys** toggle (default Keys). Both drive the
+    **same note-clip model** (a hit is a note at the pad's assigned note), so a beat is just notes -
+    playable, undoable, sequenced by the same scheduler, editable either way - and the step/playhead
+    lights up as it plays.
+  - "Keys" is the exact same `PianoRoll` (unchanged looping/editing) via a thin
+    [ui/DrumRoll.tsx](src/ui/DrumRoll.tsx) wrapper passing one optional `rows` prop: rows map to pads, so
+    a **reserved left gutter** reads "C4 Kick" (assigned note + drum) beside the notes (not over them,
+    with ellipsis), loaded pads are tinted, and it frames to the assigned notes. The chromatic keyboard
+    is the default `rows` (floating C-labels, no gutter), so every other instrument's roll is untouched.
+  - A drum-kit sound is one shot *per pad*; playing a single sample *chromatically* across the keyboard
+    stays the Sampler's job. *Follow-ups:* per-pad velocity/choke, a 16-step clip default (the grid
+    handles any length today), and the two sourcing/synth paths below.
+- **Drum-kit sourcing + synthesized voices (follow-ons).** Two complementary paths, not either/or (the
+  Sampler + the `drumkit` instrument above are the shared substrate for the sampled path):
   - *Synthesized classic voices (preferred for 808/909/707/606/LinnDrum).* The analog machines are
     very synthesizable (sine + pitch-drop kick; noise + bandpass snare/hats), so model each voice as
     a schema-driven instrument in the catalog/registry rather than shipping static WAVs. This fits the

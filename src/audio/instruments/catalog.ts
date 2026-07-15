@@ -13,7 +13,8 @@
  * "every cataloged type has a factory" check for external extensibility; the
  * factory half lives in registry.ts and is registered alongside.)
  */
-import type { ParamSchema } from "../params/types";
+import type { ParamSchema, ParamSpec } from "../params/types";
+import { BUILTIN_SAMPLES, builtinRef } from "../samples/catalog";
 
 export const WAVEFORMS = ["sine", "sawtooth", "square", "triangle"] as const;
 export type Waveform = (typeof WAVEFORMS)[number];
@@ -319,6 +320,89 @@ export const samplerSchema: ParamSchema = [
   },
 ] as const;
 
+// Drum kit: a multi-pad sample player. A played MIDI note *selects a pad* (it does not
+// pitch the sample); which note fires a pad is a per-pad param (`pad{n}.note`), defaulting
+// to a contiguous low octave from DRUMKIT_BASE_NOTE - so the mapping is data (visible in
+// the panel, settable over MCP, remappable to a GM/hardware layout) rather than hardcoded.
+// Each pad is a `sample` ref + note + level + tune, so the whole kit is schema-driven (no
+// per-pad code) - the sectioned instrument panel renders one section per pad, and
+// MCP/persistence come for free. Defaults load the built-in CC0 kit into the first pads.
+// See Drumkit.ts (which resolves note -> pad from those params at play time).
+// The schema declares the maximum pad slots; the drum panel shows only the pads in use
+// (loaded, plus one you're adding) so a fresh kit isn't a wall of blanks.
+export const DRUMKIT_PADS = 32;
+export const DRUMKIT_BASE_NOTE = 60; // middle C (C4); pad n's default note is 60 + (n - 1), counting up
+
+/** The default MIDI note for a 0-based pad index (the contiguous layout). */
+export const noteForPad = (padIndex: number): number => DRUMKIT_BASE_NOTE + padIndex;
+
+const drumPadSpecs = (): ParamSpec[] =>
+  Array.from({ length: DRUMKIT_PADS }, (_unused, index): ParamSpec[] => {
+    const pad = index + 1;
+    const builtin = BUILTIN_SAMPLES[index]; // seed the first pads with the built-in kit
+    return [
+      { id: `pad${pad}.sample`, label: "Sample", kind: "sample", default: builtin ? builtinRef(builtin.id) : "" },
+      {
+        id: `pad${pad}.note`,
+        label: "Note",
+        kind: "number",
+        min: 0,
+        max: 127,
+        default: noteForPad(index),
+        taper: "linear",
+        format: "note", // shown as a note-name selector (C2, ...), matching the piano roll
+      },
+      {
+        id: `pad${pad}.level`,
+        label: "Level",
+        kind: "number",
+        min: 0,
+        max: 1,
+        default: 0.85,
+        taper: "linear",
+        smoothMs: 10,
+      },
+      {
+        id: `pad${pad}.tune`,
+        label: "Tune",
+        kind: "number",
+        min: -24,
+        max: 24,
+        default: 0,
+        unit: "st",
+        taper: "linear",
+        step: 1, // whole semitones
+      },
+    ];
+  }).flat();
+
+export const drumkitSchema: ParamSchema = [
+  ...drumPadSpecs(),
+  // A short shared amp envelope (pads are one-shots, so these mostly just soften the
+  // very start/end); amp.level is the kit master. env.* are required by the shared voice.
+  {
+    id: "env.attack",
+    label: "Attack",
+    kind: "number",
+    min: 1,
+    max: 2000,
+    default: 1,
+    unit: "ms",
+    taper: "exponential",
+  },
+  {
+    id: "env.release",
+    label: "Release",
+    kind: "number",
+    min: 1,
+    max: 4000,
+    default: 40,
+    unit: "ms",
+    taper: "exponential",
+  },
+  { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.9, taper: "linear", smoothMs: 10 },
+];
+
 export interface InstrumentInfo {
   /** Stable id used on the wire, in persistence, and to address the factory. */
   type: string;
@@ -384,5 +468,6 @@ registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family:
 registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
 registerInstrument({ type: "nimbus", label: "Nimbus", schema: nimbusSchema, family: "Synths" });
 registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });
+registerInstrument({ type: "drumkit", label: "Drum Kit", schema: drumkitSchema, family: "Percussion" });
 // The empty-track sentinel: no params, hidden from the palette, silent factory (registry.ts).
 registerInstrument({ type: EMPTY_INSTRUMENT, label: "No instrument", schema: [], family: "main", hidden: true });

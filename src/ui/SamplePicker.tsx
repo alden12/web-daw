@@ -15,6 +15,7 @@ export function SamplePicker({
   assets,
   onImportFile,
   onReveal,
+  hideLabel,
 }: {
   spec: ParamSpec;
   value: string;
@@ -24,6 +25,8 @@ export function SamplePicker({
   onImportFile?: (file: File) => Promise<string | null>;
   /** Jump to the Samples library view - offered when the picker is empty. */
   onReveal?: () => void;
+  /** Drop the stacked label + fill the available width (the compact drum-pad layout). */
+  hideLabel?: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
@@ -33,8 +36,8 @@ export function SamplePicker({
   };
 
   return (
-    <label className="flex flex-col items-center gap-1.5 w-24">
-      <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
+    <label className={hideLabel ? "flex items-center gap-1 w-full" : "flex flex-col items-center gap-1.5 w-24"}>
+      {!hideLabel && <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>}
       <div className="flex items-center gap-1 w-full">
         <select
           value={value}

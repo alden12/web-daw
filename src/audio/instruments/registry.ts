@@ -16,6 +16,7 @@ import { SupersawInstrument } from "./Supersaw";
 import { OrganInstrument } from "./Organ";
 import { WorkletInstrument } from "./WorkletInstrument";
 import { SamplerInstrument } from "./Sampler";
+import { DrumkitInstrument } from "./Drumkit";
 import { SilentInstrument } from "./Silent";
 import { DEFAULT_INSTRUMENT, EMPTY_INSTRUMENT } from "./catalog";
 
@@ -41,6 +42,7 @@ registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, stor
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));
 registerInstrumentFactory("nimbus", (ctx, store) => new WorkletInstrument(ctx, store, "nimbus-processor"));
 registerInstrumentFactory("sampler", (ctx, store) => new SamplerInstrument(ctx, store));
+registerInstrumentFactory("drumkit", (ctx, store) => new DrumkitInstrument(ctx, store));
 registerInstrumentFactory(EMPTY_INSTRUMENT, (ctx) => new SilentInstrument(ctx));
 
 export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from "./catalog";
