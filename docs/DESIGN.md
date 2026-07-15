@@ -1881,22 +1881,28 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     at the same time - `projects.name`/`modifiedAt` is maintained by the authority (`setProjectName` on a
     `renameProject` edit); `meta.json` stays only as a client OPFS/export bundle file. Still client-side
     and deferred to **B2/B3**: the commit/version DAG (`VersionStore`) and MCP server-side history.
-  - **B2 - server-authoritative history (the current slice, WS-first).** Commits are *already* persisted
-    server-side (bundle writes reach the DB, and `history/commits/*` is write-once), but the DAG is
-    **authored independently by each client**: every client runs its own debounced auto-checkpoint and
-    advances `refs.json` - a single mutable HEAD pointer - so concurrent committers **race and clobber
-    HEAD**, peers don't see each other's commits without a reload, and there's redundant per-client
-    auto-commit churn. B2 makes commit creation **authoritative**, through the realtime authority
-    (`Room`) rather than a new HTTP path: the client commits/reverts **over the existing WS session**
-    (reuses the open pipe; a commit is ordered against edits for free; the commit's HEAD *is* the Room's
-    store at that seq - no stateless-handler coordination), a `historyChanged` broadcast keeps peers'
-    history live, and **auto-checkpoints move server-side** off the edit cadence (reusing the B1 keyframe
-    machinery) so there are no per-client races. The DAG-authoring core (snapshot/delta, keyframe
-    cadence, refs) ports from `history.ts` into a shared server module. The **local/offline backend keeps
-    authoring its own DAG** unchanged (the `repoOverride` seam isolates it). Reads (`list_history` /
-    `diff` / get-commit) are side-effect-free HTTP GETs shared by any caller. Chose WS over an HTTP commit
-    endpoint deliberately: the browser already holds the session, so HTTP would only add a second
-    round-trip + a second, uncoordinated notion of HEAD - no concrete benefit for a subscribed client.
+  - **B2 - server-authoritative history (the current slice): a commit is a syncable log entry.** Commits
+    are *already* persisted server-side (bundle writes reach the DB, `history/commits/*` is write-once),
+    but the DAG is **authored independently by each client**: every client runs its own debounced
+    auto-checkpoint and advances `refs.json` - a single mutable HEAD pointer - so concurrent committers
+    **race and clobber HEAD**, peers don't see each other's commits without a reload, and there's redundant
+    per-client auto-commit churn. The fix, per the offline-first note above, is **not** a WS/HTTP commit
+    *request* (that can't be authored offline and adds a second, uncoordinated notion of HEAD): make a
+    **commit a new authored entry kind in the edit log itself**. A "save version" dispatches a `commit`
+    marker (message + author) that rides `SharedSession` exactly like an edit - queued offline, flushed on
+    reconnect, assigned an authoritative `seq` by the `Room`, and broadcast to peers in the same
+    `editApplied` stream. Consequences: (a) **the `refs.json` race disappears by construction** - HEAD is
+    just the latest `commit` marker in `seq` order, a derived value, not a mutable pointer anyone writes;
+    (b) commits **reference log ranges** (the edits between this marker and the previous one) rather than
+    embedding client-seq copies - resolving the "commit embeds its entries" note below and unifying on the
+    authoritative `seq` space (the client feed's local seq space is retired for history); (c) the server
+    **materializes** snapshots/keyframes on cadence (reusing B1 keyframe machinery) so replay stays
+    bounded; (d) peers' history is live for free (the marker arrives in their edit stream). Reads
+    (`list_history` / `diff` / get-commit) reconstruct from the authoritative log + keyframes - shareable
+    by any caller. The **local/offline backend keeps its file-DAG** unchanged (the `repoOverride` seam
+    isolates it); this reworks the *remote* path. This is a meaty rework of the commit model (seq-space
+    unification + marker-in-log), not a drop-in - it was always going to need it (the design flagged
+    "B2 will need rework" without the substrate; the offline foundation is that substrate, now shipped).
   - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
     ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
     would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
