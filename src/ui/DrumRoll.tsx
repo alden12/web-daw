@@ -24,6 +24,7 @@ export function DrumRoll({
   clipStore,
   params,
   trackId,
+  clipId,
   samples,
   scheduler,
   recorder,
@@ -33,6 +34,7 @@ export function DrumRoll({
   clipStore: ClipStore;
   params: ParamStore;
   trackId: string;
+  clipId: string;
   samples: SampleAsset[];
   scheduler: Scheduler;
   recorder: Recorder;
@@ -73,6 +75,7 @@ export function DrumRoll({
       scheduler={scheduler}
       recorder={recorder}
       trackId={trackId}
+      clipId={clipId}
       dispatch={dispatch}
       projectStore={projectStore}
       rows={rows}

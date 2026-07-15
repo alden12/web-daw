@@ -31,6 +31,7 @@ export function StepGrid({
   clipStore,
   params,
   trackId,
+  clipId,
   samples,
   scheduler,
   dispatch,
@@ -38,6 +39,7 @@ export function StepGrid({
   clipStore: ClipStore;
   params: ParamStore;
   trackId: string;
+  clipId: string;
   samples: SampleAsset[];
   scheduler: Scheduler;
   dispatch: Dispatch;
@@ -56,11 +58,12 @@ export function StepGrid({
   const toggle = (padNote: number, step: number) => {
     const existing = noteAt(padNote, step);
     if (existing) {
-      dispatch({ type: "removeNotes", trackId, ids: [existing.id] });
+      dispatch({ type: "removeNotes", trackId, clipId, ids: [existing.id] });
     } else {
       dispatch({
         type: "addNote",
         trackId,
+        clipId,
         note: { id: newNoteId(), pitch: padNote, start: step * STEP, length: STEP, velocity: 0.85 },
       });
     }

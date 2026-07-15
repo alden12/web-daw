@@ -447,6 +447,7 @@ function InstrumentEditor({
             clipStore={active.store}
             params={track.params}
             trackId={track.id}
+            clipId={active.id}
             samples={samples}
             scheduler={scheduler}
             dispatch={dispatch}
@@ -457,6 +458,7 @@ function InstrumentEditor({
             clipStore={active.store}
             params={track.params}
             trackId={track.id}
+            clipId={active.id}
             samples={samples}
             scheduler={scheduler}
             recorder={recorder}
@@ -470,6 +472,7 @@ function InstrumentEditor({
             scheduler={scheduler}
             recorder={recorder}
             trackId={track.id}
+            clipId={active.id}
             dispatch={dispatch}
             projectStore={projectStore}
           />

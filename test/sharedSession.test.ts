@@ -324,6 +324,54 @@ describe("SharedSession (client optimistic + rebase)", () => {
     expect(a.trackIds()).toEqual(["t-a"]);
   });
 
+  it("converges when one client deletes a note offline while another moves it", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1");
+    const b = harness.connect("p1");
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    // Shared: a track with one note, settled on both.
+    a.editLog.dispatch(createTrack("t-1"));
+    a.editLog.dispatch({
+      type: "addNote",
+      trackId: "t-1",
+      note: { id: "n-1", pitch: 60, start: 0, length: 1, velocity: 0.8 },
+    } as EditCommand);
+    await harness.pump();
+    a.flush();
+    b.flush();
+    const noteIdsOf = (store: ProjectStore) =>
+      (store.getClipStore("t-1")?.getClip().notes ?? []).map((note) => note.id).sort();
+    expect(noteIdsOf(a.store)).toEqual(["n-1"]);
+    expect(noteIdsOf(b.store)).toEqual(["n-1"]);
+
+    // A goes offline and deletes the note; B (online) moves it.
+    a.disconnect();
+    a.editLog.dispatch({ type: "removeNotes", trackId: "t-1", ids: ["n-1"] } as EditCommand);
+    b.editLog.dispatch({
+      type: "editNotes",
+      trackId: "t-1",
+      notes: [{ id: "n-1", pitch: 64, start: 2, length: 1, velocity: 0.8 }],
+    } as EditCommand);
+    await harness.pump(); // B's move reaches the authority; A's delete is dropped while offline
+    b.flush();
+
+    // A reconnects: resync re-sends the delete, the authority orders it, everyone reconciles.
+    a.reconnect();
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    const roomStore = new ProjectStore(false);
+    roomStore.load(harness.room.snapshot());
+    // The exact winner is LWW-by-seq; what matters here is that all three replicas AGREE.
+    expect(noteIdsOf(a.store)).toEqual(noteIdsOf(b.store));
+    expect(noteIdsOf(roomStore)).toEqual(noteIdsOf(a.store));
+  });
+
   it("does not double-apply an edit whose echo it missed before dropping (idempotent re-send)", async () => {
     const { db } = await makeSyncEnv();
     const harness = new Harness(await Room.load(db, "local", "p1"));
