@@ -132,6 +132,16 @@ export type LocalEdit =
       // library's list index. Browser-only for now (no MCP wire message).
       type: "renameProject";
       name: string;
+    }
+  | {
+      // A version-history *commit marker*: a durable "save this version" point in the authored edit
+      // stream. It changes no project state (applyEdit no-ops it), so it rides the sync pipeline like any
+      // edit - queued offline, assigned an authoritative `seq` by the authority, broadcast to peers - and
+      // the commit DAG is derived from these markers (HEAD = the latest marker's seq; a commit spans the
+      // edits between it and the previous marker). No mutable HEAD pointer, so concurrent commits can't
+      // race. See docs/DESIGN.md (Phase B2).
+      type: "commit";
+      message: string;
     };
 
 /** Every durable, authored edit. Serializable by construction. */

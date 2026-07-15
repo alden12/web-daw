@@ -184,6 +184,17 @@ export class SharedSession {
     if (this.flushable && !this.conflictHold) this.sendEdit(op);
   }
 
+  /**
+   * Author a version-history commit marker into the authoritative edit stream. It is a no-op `commit`
+   * edit command, so it rides the exact same path as any edit - queued while offline, flushed on
+   * reconnect, assigned an authoritative `seq` by the authority, and broadcast to peers - which is what
+   * makes the commit DAG derive cleanly from the log (HEAD = the latest marker's seq) with no mutable
+   * pointer to race. The remote-mode `VersionStore` calls this instead of writing commit files.
+   */
+  postCommit(message: string, author: Author): void {
+    this.enqueue({ type: "commit", message }, author);
+  }
+
   /** Persist the current pending queue to the local mirror (best-effort; the queue is small). Returns the
    *  write promise so a caller that must not race it (a fork-then-reload) can await the queue clearing. */
   private persistPending(): Promise<void> {

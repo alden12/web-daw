@@ -45,6 +45,9 @@ const APPLY: ApplyMap = {
       { id: command.id, groupId: command.groupId },
     ),
   renameProject: (project, command) => project.renameProject(command.name),
+  // A version-history commit marker: changes no project state (its presence in the log is the version
+  // point). No-op on replay; history derives commits from these markers. See docs/DESIGN.md (Phase B2).
+  commit: () => {},
   removeTrack: (project, command) => project.removeTrack(command.trackId),
   setTrack: (project, command) => {
     if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);
