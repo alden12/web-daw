@@ -1423,3 +1423,197 @@ trivial first transform (stateless, no new timing) to prove the path end to end;
 **arpeggiator** (rate/mode/gate/octaves/swing) over the range-based transform; (3) MCP tools +
 reuse the `EffectChain` UI for the MIDI chain. Live-input (real-time) arpeggiation is a later
 extension once MIDI device input (section, "Recording & input") lands.
+
+## 16. User-authored instruments & the declarative DSP library (design thinking)
+
+The ambition: a user (usually via an AI) designs their own instruments and effects, saves them
+to a personal cloud library, shares them with friends/collaborators, and can publish to a public
+library (with vetting). The hard constraint on the hosted platform: **untrusted DSP must not be
+able to access anything by design** - not the page, not user data, not other instruments. This
+section records the intended direction, the security reasoning behind it, and a principle for how
+we grow DSP now. It is direction + options, not committed scope; deferred until the hosted
+platform and user libraries exist.
+
+### The direction in one line
+
+Make the **declarative primitive graph the primary instrument/effect format** (data, not code),
+cover as much as possible by **growing a curated primitive vocabulary**, and provide a **WASM
+escape hatch** for custom DSP that is still safe to share. **Never run untrusted AudioWorklets on
+the hosted platform** - raw worklets are for first-party DSP (via PR, reviewed) or local
+self-hosting only.
+
+### The maturity ladder (tiers)
+
+1. **Presets over rich instruments (params only).** The AI picks parameter values against
+   existing schemas. No new format, works today over MCP (a `save_patch`-style verb). Safe,
+   limited ceiling (only sounds the current synths can make).
+2. **Declarative primitive graph (data). <- the layer we invest in.** An instrument/effect is a
+   JSON graph of curated primitives (oscillators, noise, filters, envelopes, LFOs, shapers,
+   mixers, samplers, plus our own DSP primitives) with connections and a derived param schema.
+   The trusted engine instantiates it (native Web Audio nodes + our WASM/worklet primitives).
+   Pure data: safe online with no sandbox, validatable with zod, shareable/persistable as-is
+   (nothing to execute), and a natural fit for the param-schema keystone (UI/MCP/automation/
+   persistence all project from it, exactly like the catalog today).
+3. **WASM custom DSP (the safe escape hatch).** For algorithms the vocabulary can't express,
+   author custom DSP that compiles to a sandboxed WASM guest and appears as a primitive/leaf node
+   in the graph. Safe to share (see security below).
+4. **Raw AudioWorklet (first-party / local only).** Genuinely exotic DSP that needs worklet
+   capabilities: authored by us via PR (reviewed, trusted) or run by a user on a locally-hosted
+   instance. Never accepted as untrusted user-generated content on the hosted platform.
+
+### Why declarative is the keystone-fit composition layer
+
+The app's whole architecture treats the param schema as the keystone (UI, MCP, automation,
+persistence are projections). A JSON primitive graph fits that exactly: it is introspectable data
+with first-class params, the AI emits structured data against a schema (which LLMs do well), and
+it persists/shares as pure data with **nothing to sandbox**. It also unifies local and online:
+first-party instruments can be expressed in the same format, so Claude-in-Claude-Code and
+online-Claude produce the same artifact; compiling a graph to a hand-written class becomes an
+optional performance path, not a separate feature.
+
+### Security: why worklets are out (for sharing) and WASM is in
+
+- **AudioWorklet is capability-reduced, not isolated.** Its global scope has no DOM, no network,
+  no storage - so it can't directly exfiltrate or touch the page. But it still runs in *our*
+  origin and likely *our* process, with a high-resolution sample clock (a side-channel /
+  fingerprinting foothold), a realm shared across all processors on a context (prototype
+  pollution / interference), a real-time thread it can busy-loop to DoS the whole mix, and a
+  message port whose safety depends on our main-thread handling. Acceptable for self-authored
+  personal code; unacceptable for one user's code running in another's browser.
+- **WASM is deny-by-default by design.** A module operates on its own bounds-checked linear
+  memory - no pointers outside its own buffer, so it cannot reach the JS heap, DOM, storage, or
+  other instruments. It has zero ambient authority: it can only call the imports we inject, and
+  no I/O exists unless granted. Architecture: a small **trusted worklet shell** (we author, audit
+  once) instantiates the **untrusted WASM guest**, copies audio + params into its sandboxed memory
+  and audio back out, and grants a minimal import set (math only; no message port, no clock, no
+  SharedArrayBuffer). The user/AI writes only the guest, never the shell. That inversion (deny
+  everything, grant a tiny explicit surface) is the "can't access anything by design" property.
+- **Residual risks WASM doesn't fix, and how we contain them.** CPU/DoS (a bad guest can still
+  glitch audio) - run untrusted instruments on a **dedicated AudioContext**, route their output
+  back into the mix, and watchdog the render, tearing the guest down on overrun/throw. Timing
+  side-channels - **withhold the high-res clock and SharedArrayBuffer** from the guest, removing
+  the practical primitives. Net: WASM makes data access safe by construction; isolation + watchdog
+  handle CPU; withheld imports handle timing.
+
+### Faust: the factory and compile target, not the user-facing format
+
+The **declarative graph** (tier 2) and **Faust** (a mature functional DSP language that compiles
+to WASM) are different layers, easy to conflate. Use Faust, but do not adopt it as the
+composition format:
+
+- **Keep our own declarative format** as the composition/sharing/keystone layer. It is data
+  (shareable with nothing to sandbox), introspectable, param-schema-native, and gives us control
+  over UX, automation, and how instruments compose - none of which a compiled Faust blob offers
+  (params bolt on via metadata; it is opaque code, one monolithic WASM per instrument, a parallel
+  runtime to our node graphs).
+- **Lean on Faust as the primitive factory.** Rather than hand-writing each custom primitive
+  (ladder filter, reverb, pitch-shifter) as a bespoke worklet, author them in Faust and compile
+  to WASM primitives that slot into the vocabulary. Faust's standard library already holds a huge,
+  battle-tested catalog (filters incl. Moog ladder / SVF, oscillators, reverbs, physical models,
+  effects), so this fills the vocabulary far faster and safer than bespoke worklets, without users
+  ever seeing Faust.
+- **Faust is also the natural tier-3 compile target** for user/AI custom DSP: a constrained DSP
+  language (it can't even express I/O - a safety layer above the WASM sandbox) that LLMs write
+  competently. Compile server-side in a hardened build sandbox to a validated `.wasm`; clients
+  only download and run the finished module.
+- Option to revisit later: compiling our graph format down to Faust (one WASM runtime, two
+  authoring levels) unifies the runtime but couples the simple path to the compiler and loses the
+  native-node / pure-data-no-compile properties. Deferred; the hybrid (native nodes + WASM
+  primitives, our own format) is the current lean.
+
+### The shell contract determines what is precluded (design it richly)
+
+Because WASM matches worklets on DSP algorithms, the only things "no untrusted worklet" costs us
+are capabilities we choose not to expose through the trusted shell's fixed contract. So invest in
+a rich contract: **params in** (the schema); **musical/transport context in** (tempo, beat/bar
+position, time signature, sample rate, block time) so tempo-synced devices work; **note/event
+in**; **multi-channel audio in/out including a sidechain/keyed input**; a **bounded
+analysis/visualization out** region (meters, scopes, tuners, spectrum) the shell forwards to the
+trusted UI; and **control-rate signals + modulation routing** in the graph (analysis -> param,
+LFO -> param, envelope -> param), not just audio flow.
+
+What remains genuinely precluded from untrusted content (and routes to PR/local): bespoke
+bidirectional UI protocols beyond the contract, exotic I/O the contract doesn't expose, anything
+needing SharedArrayBuffer / threads / self-timing, and GPU/neural inference (inherent to the audio
+thread - no worklet or WASM audio code gets the GPU; that lives in trusted main-thread/worker
+code). These are plumbing, not sounds: any instrument or effect algorithm is expressible; an
+arbitrary plugin-with-its-own-runtime is not.
+
+### Custom UI: also declarative, a projection of the schema
+
+The UI is already a projection of the param schema (instrument panels render from param specs),
+and custom instruments should inherit that rather than ship their own code. Three levels, mirroring
+the DSP tiers:
+
+- **Auto-generated from the schema (default).** A user instrument declares its params (name, range,
+  unit, kind, grouping, control-type hint) and the app renders a consistent, accessible panel
+  automatically. This is what most instruments need, and it is pure data - the same reason MCP,
+  automation, and the AI can all see and drive the instrument. (Faust's own UI metadata - groups,
+  sliders, knobs - maps straight onto this.)
+- **Declarative layout + a curated widget palette.** For richer panels, a layout description
+  (sections, positions) referencing trusted widget types from a palette: knob, fader, XY pad,
+  envelope editor, step sequencer, wavetable / scope / meter display. Live-data widgets (scope,
+  spectrum, meter, tuner) bind to the **bounded analysis-out channel** from the shell contract -
+  the DSP writes analysis into a bounded buffer and a trusted renderer draws it. Still pure data to
+  place; nothing the author wrote executes.
+- **Arbitrary UI code: same policy as worklets.** Hand-written HTML/JS/canvas is untrusted code
+  touching the DOM - out for hosted/shared instruments (first-party via PR, or local only). Beyond
+  safety, arbitrary UI would fracture the keystone: a custom panel could hide params from
+  MCP/automation/the AI. Keeping UI declarative is what keeps instruments fully agent-controllable.
+
+Symmetry worth keeping: **DSP is a graph of curated primitives; UI is a layout of curated widgets;
+both bind to the same param schema; both are pure data; both grow by adding trusted building
+blocks.**
+
+### Principle to adopt now
+
+Even though the platform is future, bias new DSP work this way today: **grow the reusable,
+composable primitive vocabulary rather than writing a one-off worklet per instrument, and keep
+DSP as pure, parameterized modules** (as `dsp/ladder`, `dsp/oscillators`, `dsp/wavetable` already
+are - thin realtime shells over pure DSP). Prefer general primitives that compose (a pitch
+shifter + a pitch detector + a scale quantizer) over special-purpose features (an "autotune
+node"), because the general ones recombine into many devices.
+
+### Worked example: autotune
+
+Autotune = pitch detection + snap-to-scale + pitch shifting. None of these are native Web Audio
+nodes, so it is **not** expressible in a native-only graph. It **is** expressible in the
+declarative format once the vocabulary includes three reusable primitives: a **pitch detector**
+(autocorrelation / YIN or FFT) emitting a control-rate f0; a **scale/pitch quantizer**
+(control-rate: detected pitch + key/scale + retune-speed -> target shift); and a **pitch shifter**
+(phase vocoder or PSOLA). Wired: input -> pitch-detect -> quantize(key, scale, speed) ->
+pitch-shift(amount) -> output, with params for key, scale, retune speed, and mix. This needs the
+control-rate connections above, and it is the poster child for the principle: those same three
+primitives also compose into a harmonizer, an octaver, formant correction, and a vocoder - so we
+add capabilities that recombine, not a bespoke autotune device. Each primitive is a WASM leaf
+(Faust-authored), safe to ship and share.
+
+### Adoption & sequencing (recommendation)
+
+Adopt the model as direction now, but do not big-bang it:
+
+- **Now (zero-cost):** the principle above - new DSP as reusable pure modules / candidate
+  primitives.
+- **Prove with a vertical slice, not a rewrite:** build the graph runtime + schema + auto-UI and
+  express one or two of the simplest existing instruments in it (Subtractive, FM - purely native
+  nodes), validating format + UI projection + params + persistence + MCP end to end on real
+  instruments. Keep the rest as-is; a declarative instrument is just another cataloged type whose
+  factory is the graph interpreter, so the two systems coexist behind the `Instrument` interface.
+- **Grow demand-driven:** convert more instruments (and grow the primitive vocabulary) only as the
+  format earns it - when user authoring is real, or when a new instrument is genuinely easier as a
+  graph than a class. Populate primitives from real instruments + Faust's stdlib, not a speculative
+  list.
+- **Defer the heavy bits** (WASM/Faust pipeline, UI layout language, sandboxing) until the hosted
+  platform and sharing are actually on the table. The native-node graph + schema-projected UI is
+  the cheap, high-value core; sandboxing is only needed once untrusted code / sharing exists.
+
+Not recommended: converting all instruments now. The current ones work; conversion is churn and
+regression risk with no user-facing benefit today; and Nimbus/wavetable need the WASM-primitive
+path (more infra) regardless. Let real use, not speculation, drive the buildout.
+
+### Status
+
+Direction and options, not committed scope; deferred until the hosted platform and user libraries
+exist. The near-term, no-regret move is the principle above (reusable pure DSP modules; general
+primitives), and - when the declarative graph is built - making tier 2 the format first-party
+instruments are themselves expressed in, so local and online authoring converge on one artifact.
