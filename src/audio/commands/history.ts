@@ -29,6 +29,19 @@ const CHECKPOINT_DEBOUNCE_MS = 4000;
  */
 const KEYFRAME_INTERVAL = 16;
 
+/** Version-history markers in the authored log (remote mode): a named `commit` and a `loadSnapshot`
+ *  revert. History (HEAD, the version list, diffs) is derived by scanning the log for these. */
+const MARKER_TYPES = new Set(["commit", "loadSnapshot"]);
+const isMarker = (entry: EditEntry): boolean => MARKER_TYPES.has(entry.command.type);
+/** A real, forward edit that counts toward a version's change tally (not a marker, not a feed note). */
+const isCountableEdit = (entry: EditEntry): boolean =>
+  (entry.kind === undefined || entry.kind === "edit") && !MARKER_TYPES.has(entry.command.type);
+
+/** The remote sink the remote-mode `VersionStore` authors commits through (a `SharedSession`). */
+export interface RemoteCommitSink {
+  postCommit(message: string, author: Author): void;
+}
+
 /** A commit without its (large) snapshot/entries - for listing history. */
 export interface CommitSummary {
   id: string;
@@ -63,10 +76,44 @@ export class VersionStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
 
+  /**
+   * Remote mode (server-authoritative history). When set, history is derived from the authoritative log's
+   * markers instead of the client file-DAG: `commit()` authors a marker through this sink, `revertTo()`
+   * dispatches a `loadSnapshot`, and reads scan the log + fetch pinned keyframes. The local file-DAG path
+   * (below, untouched) runs when this is null - the `repoOverride` seam keeps offline/local projects on it.
+   */
+  private remoteSink: RemoteCommitSink | null = null;
+  /** Cached derived state for the synchronous `getState()` (recomputed by `onLogAdvanced`). */
+  private remoteHeadId: string | null = null;
+  private remoteHasUncommitted = false;
+
   constructor(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository) {
     this.project = project;
     this.editLog = editLog;
     this.repoOverride = repo ?? null;
+  }
+
+  private get isRemote(): boolean {
+    return this.remoteSink !== null;
+  }
+
+  /** Switch to server-authoritative history: author commits through `sink` and derive history from the
+   *  log. Pass null to return to the local file-DAG. Seeds the derived state. Call on (re)connect. */
+  setRemote(sink: RemoteCommitSink | null): void {
+    this.remoteSink = sink;
+    if (sink) void this.onLogAdvanced();
+  }
+
+  /** The authoritative log advanced (a confirmed edit/commit/revert): recompute derived HEAD +
+   *  uncommitted flags and notify listeners so the history UI re-reads. Wired to `SharedSession`. */
+  async onLogAdvanced(): Promise<void> {
+    if (!this.isRemote) return;
+    const stream = await this.repo.readEditStream(-1);
+    const markers = stream.filter(isMarker);
+    this.remoteHeadId = markers.length > 0 ? String(markers[markers.length - 1].seq) : null;
+    const lastMarkerSeq = markers.length > 0 ? markers[markers.length - 1].seq : -1;
+    this.remoteHasUncommitted = stream.some((entry) => entry.seq > lastMarkerSeq && isCountableEdit(entry));
+    this.emit();
   }
 
   private get repo(): ProjectRepository {
@@ -75,6 +122,8 @@ export class VersionStore {
 
   /** Load refs + HEAD from the bundle. Call after the project is restored. */
   async load(): Promise<void> {
+    // Remote mode derives history from the log (no refs.json); just (re)seed the cached derived state.
+    if (this.isRemote) return this.onLogAdvanced();
     const refs = await this.repo.readRefs();
     if (refs) {
       this.refs = refs;
@@ -96,8 +145,11 @@ export class VersionStore {
     return this.load();
   }
 
-  /** Auto-checkpoint on edit activity (debounced). Returns a disposer. */
+  /** Auto-checkpoint on edit activity (debounced). Returns a disposer. In remote mode there is no client
+   *  auto-checkpoint: commits are explicit user actions and the authority owns keyframes, so this is a
+   *  no-op (the history UI refreshes via `onLogAdvanced`, driven by the sync session). */
   attach(): () => void {
+    if (this.isRemote) return () => {};
     const unsub = this.editLog.subscribe(() => this.schedule());
     return () => {
       unsub();
@@ -116,6 +168,13 @@ export class VersionStore {
    * checkpoint vs a named version.
    */
   async commit(message?: string, author?: Author, auto = false): Promise<CommitSummary | null> {
+    // Remote mode: author a commit marker into the shared log. It gets an authoritative seq + broadcast,
+    // and the confirmation re-reads history via `onLogAdvanced`, so we don't synthesise a summary here.
+    if (this.isRemote) {
+      if (!this.remoteHasUncommitted) return null; // nothing new since the last version
+      this.remoteSink!.postCommit(message?.trim() || "Untitled version", author ?? "you");
+      return null;
+    }
     const entries = this.uncommitted();
     if (entries.length === 0) return null;
     // Sweep in any feed notes posted since the last commit, so the narration is
@@ -163,6 +222,17 @@ export class VersionStore {
    * HEAD). Subsequent edits checkpoint forward from here. No-op if id is unknown.
    */
   async revertTo(commitId: string, author: Author = "you"): Promise<CommitSummary | null> {
+    // Remote mode: a revert rides the shared log as a `loadSnapshot` edit carrying the target snapshot.
+    // Dispatching it through the EditLog applies it optimistically (live jumps now) and forwards it to the
+    // authority, which orders + broadcasts it; peers replay it like any edit. It is also a history node.
+    if (this.isRemote) {
+      const seq = Number(commitId);
+      const target = await this.repo.readKeyframe(seq);
+      if (!target) return null;
+      const label = (await this.history()).find((commit) => commit.id === commitId)?.message ?? `version ${seq}`;
+      this.editLog.dispatch({ type: "loadSnapshot", project: target, message: `Revert to "${label}"` }, author);
+      return null;
+    }
     const target = await this.repo.readCommit(commitId);
     if (!target) return null;
     const snapshot = await this.materialize(commitId); // reconstruct (target may be a delta)
@@ -196,13 +266,24 @@ export class VersionStore {
     return toSummary(commit);
   }
 
-  /** The full commit (with snapshot + entries) by id, or null. */
+  /** The full commit (with snapshot + entries) by id, or null. Remote history has no `Commit` DAG nodes
+   *  (markers + pinned keyframes only), so this is a local-mode read. */
   getCommit(id: string): Promise<Commit | null> {
+    if (this.isRemote) return Promise.resolve(null);
     return this.repo.readCommit(id);
   }
 
   /** Readable, musical changes between two commits ("cutoff 400 -> 800"). */
   async diff(fromId: string, toId: string): Promise<string[]> {
+    // Remote: materialise both versions from their pinned keyframes. The root (no parent) has no `from`.
+    if (this.isRemote) {
+      if (!fromId) return [];
+      const [from, to] = await Promise.all([
+        this.repo.readKeyframe(Number(fromId)),
+        this.repo.readKeyframe(Number(toId)),
+      ]);
+      return from && to ? diffProjects(from, to) : [];
+    }
     const [from, to] = await Promise.all([this.materialize(fromId), this.materialize(toId)]);
     if (!from || !to) return [];
     return diffProjects(from, to);
@@ -210,6 +291,31 @@ export class VersionStore {
 
   /** The commit chain from HEAD back to the root, newest first. */
   async history(limit = 100): Promise<CommitSummary[]> {
+    // Remote: scan the authoritative log for version markers, newest first. Each marker's authoritative
+    // seq is its id; `entryCount` is the real edits between it and the previous marker.
+    if (this.isRemote) {
+      const stream = await this.repo.readEditStream(-1);
+      const summaries: CommitSummary[] = [];
+      let previousSeq = -1;
+      for (const marker of stream.filter(isMarker)) {
+        const entryCount = stream.filter(
+          (entry) => entry.seq > previousSeq && entry.seq < marker.seq && isCountableEdit(entry),
+        ).length;
+        summaries.push({
+          id: String(marker.seq),
+          parent: previousSeq >= 0 ? String(previousSeq) : null,
+          author: marker.author,
+          message: (marker.command as { message?: string }).message ?? "Version",
+          time: marker.time,
+          auto: false,
+          entryCount,
+          noteCount: 0,
+          lastSeq: marker.seq,
+        });
+        previousSeq = marker.seq;
+      }
+      return summaries.reverse().slice(0, limit);
+    }
     const summaries: CommitSummary[] = [];
     let id = this.headId();
     while (id && summaries.length < limit) {
@@ -222,6 +328,7 @@ export class VersionStore {
   }
 
   getState(): VersionState {
+    if (this.isRemote) return { branch: "main", headId: this.remoteHeadId, hasUncommitted: this.remoteHasUncommitted };
     return { branch: this.refs.head, headId: this.headId(), hasUncommitted: this.uncommitted().length > 0 };
   }
 

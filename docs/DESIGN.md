@@ -236,6 +236,20 @@ a free tier or a local model can drive tests; default Claude Sonnet), and keep t
 rate-limiting before any non-localhost deploy. The agent reasons on symbolic data and cannot
 hear its output; **audio-analysis tools** give it "ears" (see the roadmap).
 
+**Consolidate the two tool surfaces (roadmap, worth doing).** The "one shared tool catalog"
+above is the intent, but today the MCP server (`server/mcpServer.ts`) and the in-app agent
+(`src/audio/agent/tools/`) declare their tools *separately* - two sets of names + schemas +
+handlers. The **edit semantics are already shared** (both route through `dispatch` -> `applyEdit`
+and validate against the same catalogs), so the duplication is only in the tool *declarations*.
+They diverged because they execute in different processes: the agent calls the store directly
+in-browser, while MCP runs in Node and forwards each edit over the WS bridge to a live tab. The
+consolidation is a single declarative tool catalog (name + description + zod args + the
+`EditCommand` it produces) that *projects* to both surfaces - MCP registration (handler = forward
+over WS) and agent tool (handler = direct dispatch) - matching the param-schema keystone pattern.
+Non-trivial mainly because the **read paths** differ (MCP reads query the tab over the bridge;
+agent reads hit the local store synchronously) and the toolsets aren't strictly 1:1 today; a real
+refactor, not a quick change, but it removes a standing source of drift.
+
 Note: Claude Code / Claude Desktop over MCP already gives a capable agent on your existing
 subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
 general "just open the app" user.
@@ -252,7 +266,12 @@ project through the **sync authority** (server-side, addressed by `projectId` + 
 principal) instead of a localhost socket, gated by the same JWT auth. This overlaps heavily with
 the in-app agent panel (the client-side agent loop over the shared tool catalog), which is the
 more natural "hosted agent" path; build the panel first and treat server-side MCP as the
-power-user API onto the same authority. Not needed while local MCP suffices.
+power-user API onto the same authority. Not needed while local MCP suffices. **Concrete shape (see
+the B3-reframe under the roadmap):** MCP is already a mirror-`ProjectStore`-fed-by-sync + edit-emitter
+whose peer is the tab; server-side MCP just swaps that peer for the `Room` - a **headless
+`SharedSession` in Node** reusing the tool catalog - so it needs no per-feature HTTP endpoints, only
+the existing `createApiClient` bootstrap. A new HTTP write endpoint per MCP capability is an
+anti-pattern; reach for the WS authority + shared tool catalog.
 
 ## 10. Proposed on-disk project format (the concrete next step)
 
@@ -763,6 +782,33 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   - *Bug: note-drag snapping.* Dragging a note in the piano roll doesn't always land its start on a
     grid line - the onset can end up off-grid. The snap should apply to the note onset consistently
     (audit the `snapBeat` / drag-origin math in the roll).
+  - *Bug: clip playhead ignores arrangement position.* The piano roll / step grid draw a playhead in
+    the selected clip whenever the transport is playing, even when playing from the timeline and the
+    global playhead hasn't reached (a placement of) this clip yet - so a clip that isn't sounding
+    still shows a moving cursor. The clip playhead should track the arrangement: only show (and only
+    advance) while the transport is inside a placement of *this* clip, offset by where in the clip
+    that placement is playing (and hidden otherwise). Today `PianoRoll` / `StepGrid` derive it
+    straight from `scheduler.getPositionBeats() % clip.lengthBeats`, which assumes the clip is always
+    the thing playing.
+  - *Bug: default/unattributed objects show a hashed hue (looks like the agent colour), not the user's.*
+    A newly-created track's default clip and unedited instrument params (including the seeded default
+    project) render in a wrong accent instead of the creating user's colour. Cause: those defaults carry
+    the literal placeholder author `"you"` (the seed clip in `ProjectStore.addTrack` hardcodes
+    `author: "you"`; the `Knob` param fallback is `author ?? "you"`), but once signed in the viewer's
+    `self` is their real id (email), so `colorForAuthor("you", …, self)` fails the `author === self` test
+    and **hashes** `"you"` to a palette swatch (a blue/violet - reads as the agent hue). When solo
+    (`self === "you"`) it correctly reads teal, which is why it only shows once authenticated. This
+    collides with a **deliberate** design choice (authorColors.test.ts: a literal `"you"` from a non-self
+    viewer is treated as a distinct peer, not teal), so the fix needs a small decision, not a one-liner:
+    - *Params* (clean, design-safe): fall back unattributed params to the **viewer** - `Knob`
+      `author ?? presence.self` - so an unedited control reads as "mine" (teal). No `colorForAuthor` change.
+    - *Default clip / seed* (needs the decision): the placeholder `"you"` should resolve to the local user.
+      Either make `"you"` a **reserved absolute local-user voice** (always teal, like `agent`/`claude` are
+      absolute) - simplest, but update the peer-"you" test + comment - **or** attribute the default clip to
+      its actual creator (thread the dispatching author into `addTrack`'s seed clip; the pre-auth boot seed
+      stays unattributed -> viewer). Recommend the reserved-voice route: `"you"` is already `DEFAULT_USER`
+      with label "You" and its own hex, so treating it as the local-user voice is consistent, and real
+      collaborators have real ids (no one is literally "you" under auth).
   - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
     length in one gesture (today a click adds a fixed-length note).
   - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
@@ -1151,6 +1197,19 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   feedback, so the loop becomes play-an-idea -> agent develops it -> you hear it and keep or
   reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
   reusing the exact shapes already flowing through `dispatch`/MCP.
+- **Validate model responses with zod, not hand-rolled parsing.** The provider layer
+  (`src/audio/agent/provider.ts`, `loop.ts`) currently pulls apart the model's HTTP response
+  imperatively - `JSON.parse(raw)` then a chain of `(data as { choices?: unknown }).choices`
+  casts and `typeof` guards to reach `finish_reason`, `usage`, `tool_calls`, streamed tool-call
+  argument fragments, and error bodies. A model response is an **untrusted boundary** like any
+  other (MCP inputs, loaded bundles), so it should go through zod: define a response schema per
+  provider shape and `parse`/`safeParse` the payload, surfacing a clear message on a malformed
+  reply instead of an `undefined`-shaped crash downstream. This also matches the keystone rule -
+  the tool-call `arguments` string is already validated against the tool's zod schema on dispatch,
+  so validating the *envelope* the same way closes the last hand-parsed gap. **General rule:
+  parsing any unknown/untrusted object shape uses zod** (`safeParse` at the edge, typed value
+  inward), never `as`-cast + `typeof` ladders. Cheap, self-contained; do it when the provider
+  layer is next touched.
 
 **Collaboration & multi-user (options, not a decided direction)**
 
@@ -1854,6 +1913,85 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     at the same time - `projects.name`/`modifiedAt` is maintained by the authority (`setProjectName` on a
     `renameProject` edit); `meta.json` stays only as a client OPFS/export bundle file. Still client-side
     and deferred to **B2/B3**: the commit/version DAG (`VersionStore`) and MCP server-side history.
+  - **B2 - server-authoritative history (the current slice): a commit is a syncable log entry.** Commits
+    are *already* persisted server-side (bundle writes reach the DB, `history/commits/*` is write-once),
+    but the DAG is **authored independently by each client**: every client runs its own debounced
+    auto-checkpoint and advances `refs.json` - a single mutable HEAD pointer - so concurrent committers
+    **race and clobber HEAD**, peers don't see each other's commits without a reload, and there's redundant
+    per-client auto-commit churn. The fix, per the offline-first note above, is **not** a WS/HTTP commit
+    *request* (that can't be authored offline and adds a second, uncoordinated notion of HEAD): make a
+    **commit a new authored entry kind in the edit log itself**. A "save version" dispatches a `commit`
+    marker (message + author) that rides `SharedSession` exactly like an edit - queued offline, flushed on
+    reconnect, assigned an authoritative `seq` by the `Room`, and broadcast to peers in the same
+    `editApplied` stream. Consequences: (a) **the `refs.json` race disappears by construction** - HEAD is
+    just the latest `commit` marker in `seq` order, a derived value, not a mutable pointer anyone writes;
+    (b) commits **reference log ranges** (the edits between this marker and the previous one) rather than
+    embedding client-seq copies - resolving the "commit embeds its entries" note below and unifying on the
+    authoritative `seq` space (the client feed's local seq space is retired for history); (c) the server
+    **materializes** snapshots/keyframes on cadence (reusing B1 keyframe machinery) so replay stays
+    bounded; (d) peers' history is live for free (the marker arrives in their edit stream). Reads
+    (`list_history` / `diff` / get-commit) reconstruct from the authoritative log + keyframes - shareable
+    by any caller. The **local/offline backend keeps its file-DAG** unchanged (the `repoOverride` seam
+    isolates it); this reworks the *remote* path. This is a meaty rework of the commit model (seq-space
+    unification + marker-in-log), not a drop-in - it was always going to need it (the design flagged
+    "B2 will need rework" without the substrate; the offline foundation is that substrate, now shipped).
+    - **Done (steps 1-2):** the `commit` edit command (message; `applyEdit` no-ops it) +
+      `SharedSession.postCommit`. A named commit is authored into the log, queued offline, seq'd by the
+      `Room`, broadcast to peers - no new message types, no Room change. Concurrent commits land as
+      distinct ordered markers (the HEAD race is gone by construction). Tested in `sharedSession.test.ts`.
+    - **Done (step 3) - client reads history from the log + commit-pinned keyframes + revert-as-marker.**
+      The remote `VersionStore` (`src/audio/commands/history.ts`) now derives history from the authoritative
+      log instead of the client file-DAG: `history()` scans the mirrored log for `commit` / `loadSnapshot`
+      markers (HEAD = the latest marker's `seq`, derived); `commit()` -> `session.postCommit`; `revertTo()`
+      dispatches a `loadSnapshot`; `diff` materialises from pinned keyframes. The **local file-DAG is
+      untouched** (`repoOverride` seam / `setRemote(null)`), and the client-side auto-checkpoint is a no-op
+      in remote mode. Reactivity: `SharedSession.onConfirmed` fires when the log advances (ours or a peer's)
+      -> `onLogAdvanced()` re-reads, so a peer's commit appears live. Covered by `history.test.ts` (remote
+      suite) + `room.test.ts`.
+      - **Server writes a keyframe per commit.** On a `commit` marker the `Room` snapshots HEAD
+        *synchronously* at seq-assignment (exact under concurrency) to `history/keyframes/<seq>.json` (a
+        `ProjectData` snapshot, distinct prefix + schema from the `commitSchema` file-DAG nodes). Materialise
+        = load that keyframe, **zero replay**, exact however old. Markers are exempt from log compaction
+        (`deleteEditsBelow`), so the commit list stays enumerable forever.
+      - **Revert = a `loadSnapshot` marker carrying the target snapshot.** Unlike a commit (a no-op
+        pointer), a revert changes state, so it embeds the target `ProjectData` and `applyEdit` replays it
+        with `project.load`. Because the state is *in the command*, it is a plain forward edit: rides sync,
+        applies optimistically, replays on peers, self-anchors on replay - **zero special-casing** in the
+        realtime authority. Acceptable payload because reverts are rare + explicit (the reason we don't
+        embed snapshots in frequent commits). It is also a history node (`message` = `Revert to "..."`).
+    - **Design revision from the "keyframe budget" discussion - auto-checkpoints are keyframes, not
+      commits.** We separated two concerns the earlier plan conflated: *durability/undo* (never lose work,
+      scrub recent history) vs *version history* (deliberate milestones). Keyframes only ever serve two
+      jobs - cold-start/initial load, and reconstructing a specific commit - so pin them to those: **one
+      keyframe per commit** (few, user-driven) gives full, cheap time-travel to any commit; a **rolling
+      keyframe on the edit cadence** is the durability/undo safety net. This **supersedes the earlier
+      "auto-commit on edit cadence" decision**: auto-checkpoints become *keyframes* (invisible in the
+      version list -> no feed noise), and commits are **entirely user-driven** (fewer, meaningful nodes).
+      Numbers: N=100 edit cadence, one pinned keyframe per commit, a rolling window of ~M=10 head keyframes
+      (~1000 edits of fine-grained reach). Ctrl-Z undo is a separate in-memory stack, unaffected.
+      - **Deferred (no consumer yet):** the **rolling head-keyframe window (M)** + its GC, and
+        *arbitrary uncommitted-seq* scrubbing. Commit-pinned keyframes are self-contained, so commit
+        diff/revert needs zero replay *without* the rolling window - M only bounds replay for scrubbing to
+        an uncommitted point, which no UI does yet. Build it when a timeline-scrubber lands. For now the
+        single cold-start `project.json` keyframe + the retained recent log cover load + recent undo.
+      - **Verify live (pending):** two accounts - a named commit appears for both; revert converges both;
+        diff reads correctly; cold-start after a commit loads fast + exact.
+  - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
+    ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
+    would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
+    where every future capability wants its own endpoint. The insight: MCP is *already shaped like a sync
+    client* - `server/mcpServer.ts` keeps a `mirror` `ProjectStore` fed by sync messages and emits edits;
+    its peer today is just the **tab** (over the local bridge), not the server. "Server-side MCP" done
+    right = **swap the peer**: run a headless `SharedSession` (Node) against the `Room`, authenticated by
+    the same JWT and addressed by `projectId`. Then reads are local to the synced store, edits + commits +
+    reverts ride the same WS authority the browser uses, and it needs **essentially no new endpoints** -
+    only the stateless bootstrap `createApiClient` already provides (list/open projects, file reads).
+    This **converges with the tool-surface consolidation** (§9): browser-agent and server-MCP become the
+    same core - one tool catalog + `dispatch` -> `applyEdit` + a `SharedSession` - differing only in
+    frontend (LLM loop vs stdio) and host (browser vs Node). So server-side MCP is its **own future
+    slice**, built as this sync client; until then MCP stays tab-coupled (fine for the tinkerer audience,
+    per §9). Guard against the anti-pattern: a new per-feature HTTP write endpoint for MCP is a smell -
+    reach for the WS authority + shared tool catalog instead.
 - **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
   covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
   command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
@@ -2141,8 +2279,11 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   token (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is **retired**;
   real per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every
   request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
-  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse, and
-  rate-limiting on the auth/JWT path.
+  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse;
+  **rate-limiting** on the auth/JWT path; and a **WS ping/pong heartbeat + sweep** to reap half-open
+  sockets (a dropped connection the OS never FIN'd leaves a client in its `Room` forever, holding the room
+  live and broadcasting into the void). A periodic server ping with a pong deadline evicts the dead peer
+  and lets the room free when truly empty.
 - **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
   tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
   stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),

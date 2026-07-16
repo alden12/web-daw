@@ -261,11 +261,18 @@ export function AppShell() {
             onConflict: (info, myState) => {
               if (active) setConflict({ info, myState });
             },
+            // The authoritative log advanced: refresh server-side version history from its markers.
+            onConfirmed: () => void versionStore.onLogAdvanced(),
           });
           session.attach();
+          // Server-authoritative history: author commits/reverts through the session and derive the
+          // version list from the log (not the client file-DAG). Set before `attach()` below so the
+          // client-side auto-checkpoint no-ops in remote mode.
+          versionStore.setRemote(session);
           sessionRef.current = session;
           disposePersistence = () => {
             sessionRef.current = null;
+            versionStore.setRemote(null);
             session.close();
           };
         } else {

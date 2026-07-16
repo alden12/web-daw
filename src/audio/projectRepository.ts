@@ -22,6 +22,7 @@ import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
 import { applyEdit } from "./commands/applyEdit";
+import { commitKeyframePath } from "./history/paths";
 
 /** `project.json` carries this keyframe marker: the edit `seq` the snapshot reflects, so load
  *  knows which log tail to replay on top. A persistence detail (the domain ignores it); the
@@ -401,6 +402,29 @@ export class ProjectRepository {
 
   writeRefs(refs: Refs): Promise<void> {
     return this.store.writeText("history/refs.json", JSON.stringify(refs, null, 2));
+  }
+
+  // ---- server-authoritative history (Phase B2, remote mode) ----
+
+  /**
+   * The authoritative authored stream (edits + version-history markers), oldest first, from `sinceSeq`.
+   * In remote mode the backing store serves it from the server (live) or the offline mirror, so the
+   * remote `VersionStore` derives history from the log's `commit` / `loadSnapshot` markers - each carrying
+   * the authoritative `seq` the authority assigned. No `limit` reads the whole retained log (bounded in
+   * practice: keyframing keeps it to a recent window plus the always-retained markers).
+   */
+  readEditStream(sinceSeq = -1, limit?: number): Promise<EditEntry[]> {
+    return this.store.readEdits(sinceSeq, limit);
+  }
+
+  /** A commit's pinned keyframe (full snapshot at the marker's seq), or null if not written yet. Used to
+   *  materialise a version for diff / revert without replaying the log. */
+  async readKeyframe(seq: number): Promise<ProjectData | null> {
+    const raw = await this.store.readText(commitKeyframePath(seq));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    delete parsed.headSeq; // drop the keyframe marker; the rest is the ProjectData snapshot
+    return parsed as unknown as ProjectData;
   }
 }
 

@@ -288,6 +288,9 @@ const byPath: Record<string, z.ZodType> = {
 export function bundleSchemaForPath(path: string): z.ZodType | null {
   if (byPath[path]) return byPath[path];
   if (path.startsWith("history/commits/") && path.endsWith(".json")) return commitSchema;
+  // Server-authoritative commit-pinned keyframes (Phase B2): a ProjectData snapshot + a headSeq marker
+  // (projectDataSchema is non-strict, so it tolerates the extra key), NOT a Commit DAG node.
+  if (path.startsWith("history/keyframes/") && path.endsWith(".json")) return projectDataSchema;
   return null;
 }
 
