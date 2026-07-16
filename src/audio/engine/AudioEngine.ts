@@ -23,6 +23,7 @@ import { createEffect, registerEffectFactory } from "../effects/registry";
 import type { Effect } from "../effects/types";
 import { createMidiDevice } from "../midi/device/registry";
 import { GraphMidiDevice, type NoteTarget } from "../midi/device/GraphMidiDevice";
+import type { TransportClock } from "../midi/device/clock";
 import { GraphInstrument } from "../graph/GraphInstrument";
 import { GraphEffect } from "../graph/GraphEffect";
 import { getAudioBuffer } from "../audioStore";
@@ -87,6 +88,38 @@ export class AudioEngine {
   /** Custom-device types whose audio factory is already registered (idempotent sync in reconcile). */
   private readonly registeredCustomTypes = new Set<string>();
   private unsubscribe: (() => void) | null = null;
+  /** The transport clock MIDI devices read (set by AppShell once the scheduler exists). */
+  private transport: TransportClock | null = null;
+  private cachedDeviceClock: TransportClock | null = null;
+
+  /** Point MIDI devices at the transport clock (the scheduler implements it). */
+  setTransportClock(clock: TransportClock): void {
+    this.transport = clock;
+  }
+
+  /**
+   * A stable clock handed to every MIDI device: it reads `this.transport` lazily (devices are built in
+   * reconcile, possibly before the scheduler is wired), falling back to sensible stopped-state values.
+   */
+  private get deviceClock(): TransportClock {
+    return (this.cachedDeviceClock ??= this.makeDeviceClock(this));
+  }
+
+  /** Build the shared device clock. `engine` is passed (not aliased) so the getters close over it. */
+  private makeDeviceClock(engine: AudioEngine): TransportClock {
+    return {
+      get playing() {
+        return engine.transport?.playing ?? false;
+      },
+      get currentTime() {
+        return engine.transport?.currentTime ?? engine.currentTime;
+      },
+      get secondsPerBeat() {
+        return engine.transport?.secondsPerBeat ?? 60 / (engine.project?.tempo ?? 120);
+      },
+      continuousBeatAtTime: (time) => engine.transport?.continuousBeatAtTime(time) ?? 0,
+    };
+  }
 
   get started(): boolean {
     return this.ctx !== null;
@@ -310,12 +343,11 @@ export class AudioEngine {
         node.midiDevices.delete(id);
       }
     }
-    const secondsPerBeat = () => 60 / this.project!.tempo;
     for (const instance of track.midiDevices) {
       if (!node.midiDevices.has(instance.id))
         node.midiDevices.set(
           instance.id,
-          createMidiDevice(instance.type, instance.params, node.instrument, secondsPerBeat),
+          createMidiDevice(instance.type, instance.params, node.instrument, this.deviceClock),
         );
     }
     // Relink in the track's order, tail terminating in the instrument.

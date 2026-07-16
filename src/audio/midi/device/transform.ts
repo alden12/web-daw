@@ -30,8 +30,15 @@ export interface NoteTap {
   enabled?: BooleanField;
 }
 
-/** A note transform. Extensible union - `tap` (fan-out) is the only kind so far. */
-export type MidiTransform = { kind: "tap"; taps: NoteTap[] };
+/**
+ * A note transform. Extensible union of kinds; each kind selects a runtime strategy in the
+ * interpreter (GraphMidiDevice). `tap` is a stateless fan-out; `arpeggiate` is a stateful,
+ * clock-driven generator. The fields on `arpeggiate` name the schema param ids the strategy
+ * reads (rate/pattern/octaves/gate), so the def stays pure data like the tap devices.
+ */
+export type MidiTransform =
+  | { kind: "tap"; taps: NoteTap[] }
+  | { kind: "arpeggiate"; rate: string; pattern: string; octaves: string; gate: string };
 
 /** A MIDI device as data: its schema (the keystone) + a note transform. */
 export interface MidiDeviceDef {
@@ -78,7 +85,7 @@ const resolveBoolean = (field: BooleanField | undefined, fallback: boolean, ctx:
  * and schedules the `beats` offset. Notes shifted outside the MIDI range are dropped.
  */
 export function applyTransform(
-  transform: MidiTransform,
+  transform: Extract<MidiTransform, { kind: "tap" }>,
   midi: number,
   velocity: number,
   ctx: TransformContext,

@@ -10,6 +10,7 @@
  */
 import type { AudioEngine } from "../engine/AudioEngine";
 import type { ProjectStore } from "../project/projectStore";
+import type { TransportClock } from "../midi/device/clock";
 import { GRID, type NoteEvent } from "./types";
 import { grooveById } from "../grooves/catalog";
 import { grooveAt } from "./groove";
@@ -122,7 +123,7 @@ export function metronomeClicksInBeatRange(
 // a future feature; 4/4 matches the timeline ruler's DEFAULT_BEATS_PER_BAR.
 const BEATS_PER_BAR = 4;
 
-export class Scheduler {
+export class Scheduler implements TransportClock {
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubscribe: (() => void) | null = null;
   /** When true, the transport schedules a metronome click on every beat. */
@@ -145,6 +146,21 @@ export class Scheduler {
 
   get isPlaying(): boolean {
     return this.timer !== null;
+  }
+
+  // --- TransportClock (read by MIDI devices to place events on the tempo grid) ---
+  get playing(): boolean {
+    return this.timer !== null;
+  }
+  get currentTime(): number {
+    return this.engine.currentTime;
+  }
+  get secondsPerBeat(): number {
+    return 60 / this.project.tempo;
+  }
+  /** Continuous (unlooped) beats since play start at audio-clock `time`, from the live anchor. */
+  continuousBeatAtTime(time: number): number {
+    return this.anchorBeat + (time - this.anchorTime) * this.lastBps;
   }
 
   /** Toggle the metronome click (read by `tick` each lookahead pass). */

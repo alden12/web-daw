@@ -9,10 +9,12 @@
  */
 import type { ParamStore } from "../../params/store";
 import { GraphMidiDevice, type NoteTarget } from "./GraphMidiDevice";
+import type { TransportClock } from "./clock";
 import { octavator } from "./devices/octavator";
+import { arpeggiator } from "./devices/arpeggiator";
 import { DEFAULT_MIDI_DEVICE } from "./catalog";
 
-type MidiDeviceFactory = (store: ParamStore, next: NoteTarget, secondsPerBeat: () => number) => GraphMidiDevice;
+type MidiDeviceFactory = (store: ParamStore, next: NoteTarget, clock: TransportClock) => GraphMidiDevice;
 
 const FACTORIES = new Map<string, MidiDeviceFactory>();
 
@@ -25,16 +27,19 @@ export function createMidiDevice(
   type: string,
   store: ParamStore,
   next: NoteTarget,
-  secondsPerBeat: () => number,
+  clock: TransportClock,
 ): GraphMidiDevice {
   const make = FACTORIES.get(type) ?? FACTORIES.get(DEFAULT_MIDI_DEVICE)!;
-  return make(store, next, secondsPerBeat);
+  return make(store, next, clock);
 }
 
 // --- built-in factories (self-registered) ---------------------------------
+// Every device is the one GraphMidiDevice interpreter over a data def; the def's
+// transform kind (tap / arpeggiate) selects the runtime strategy.
+registerMidiDeviceFactory(octavator.type, (store, next, clock) => new GraphMidiDevice(octavator, store, next, clock));
 registerMidiDeviceFactory(
-  octavator.type,
-  (store, next, secondsPerBeat) => new GraphMidiDevice(octavator, store, next, secondsPerBeat),
+  arpeggiator.type,
+  (store, next, clock) => new GraphMidiDevice(arpeggiator, store, next, clock),
 );
 
 export {
