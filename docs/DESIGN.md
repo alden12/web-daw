@@ -2279,8 +2279,11 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   token (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is **retired**;
   real per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every
   request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
-  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse, and
-  rate-limiting on the auth/JWT path.
+  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse;
+  **rate-limiting** on the auth/JWT path; and a **WS ping/pong heartbeat + sweep** to reap half-open
+  sockets (a dropped connection the OS never FIN'd leaves a client in its `Room` forever, holding the room
+  live and broadcasting into the void). A periodic server ping with a pong deadline evicts the dead peer
+  and lets the room free when truly empty.
 - **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
   tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
   stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),
