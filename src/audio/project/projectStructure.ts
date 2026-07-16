@@ -5,13 +5,18 @@
  * reaches into a live store. Split out of `projectStore.ts`; the store just caches
  * `buildStructure(...)` and re-runs it on every change.
  */
-import type { GroupMeta, TrackMeta } from "./types";
-import type { Track, Group, EffectHost, ProjectStructure } from "./projectStore";
+import type { GroupMeta, TrackMeta, MidiDeviceMeta } from "./types";
+import type { Track, Group, EffectHost, InstrumentTrack, ProjectStructure } from "./projectStore";
 import type { TransportState } from "./projectSerialization";
 
 /** Effect chain as structural meta (no param values). */
 function effectMetas(host: EffectHost): TrackMeta["effects"] {
   return host.effects.map((effect) => ({ id: effect.id, type: effect.type, bypassed: effect.bypassed }));
+}
+
+/** MIDI-device chain as structural meta (no param values). */
+function midiDeviceMetas(track: InstrumentTrack): MidiDeviceMeta[] {
+  return track.midiDevices.map((device) => ({ id: device.id, type: device.type, bypassed: device.bypassed }));
 }
 
 /** A group's structural meta. */
@@ -52,6 +57,7 @@ function trackMeta(track: Track): TrackMeta {
         ...base,
         kind: "instrument",
         instrumentType: track.instrumentType,
+        midiDevices: midiDeviceMetas(track),
         clips: track.clips.map((clip) => ({
           id: clip.id,
           name: clip.name,

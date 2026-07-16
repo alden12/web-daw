@@ -27,6 +27,13 @@ export interface EffectMeta {
   bypassed: boolean;
 }
 
+/** A MIDI device in an instrument track's note chain (structural view, no param values). */
+export interface MidiDeviceMeta {
+  id: string;
+  type: string;
+  bypassed: boolean;
+}
+
 /** A group bus (structural view). `parentId` null means top-level (sums to master). */
 export interface GroupMeta {
   id: string;
@@ -138,6 +145,8 @@ interface BaseTrackMeta {
 export interface InstrumentTrackMeta extends BaseTrackMeta {
   kind: "instrument";
   instrumentType: string;
+  /** Note-transform devices between the note source (live + playback) and the instrument. */
+  midiDevices: MidiDeviceMeta[];
   /** The track's clip pool (note patterns). The active clip is shown in the roll. */
   clips: NoteClipMeta[];
   activeClipId: string;
@@ -163,17 +172,24 @@ export interface EffectData extends EffectMeta {
   params: PatchValues;
 }
 
+/** A MIDI device with its persisted param values. */
+export interface MidiDeviceData extends MidiDeviceMeta {
+  params: PatchValues;
+}
+
 export interface GroupData extends Omit<GroupMeta, "effects"> {
   effects: EffectData[];
 }
 
 export interface InstrumentTrackData extends Omit<
   InstrumentTrackMeta,
-  "effects" | "clips" | "placements" | "activeClipId" | "launchedClipId"
+  "effects" | "midiDevices" | "clips" | "placements" | "activeClipId" | "launchedClipId"
 > {
   /** Track-level sound (synth patch). Optional in the snapshot; defaulted on load. */
   params?: PatchValues;
   effects?: EffectData[];
+  /** Note-transform devices (optional; defaults to none on load). */
+  midiDevices?: MidiDeviceData[];
   clips?: NoteClipData[];
   placements?: Placement[];
   activeClipId?: string;

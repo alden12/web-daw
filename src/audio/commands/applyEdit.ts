@@ -29,6 +29,7 @@ const APPLY: ApplyMap = {
       instrumentType: command.instrumentType,
       params: command.params,
       effects: command.effects,
+      midiDevices: command.midiDevices,
     }),
   createAudioTrack: (project, command) =>
     void project.addEmptyAudioTrack({ id: command.id, name: command.name, groupId: command.groupId }),
@@ -82,6 +83,13 @@ const APPLY: ApplyMap = {
   bypassEffect: (project, command) => project.setEffectBypass(command.hostId, command.effectId, command.bypassed),
   setEffectParam: (project, command) =>
     project.getEffect(command.hostId, command.effectId)?.params.set(command.id, command.value),
+  addMidiDevice: (project, command) => void project.addMidiDevice(command.trackId, command.deviceType, command.id),
+  removeMidiDevice: (project, command) => project.removeMidiDevice(command.trackId, command.deviceId),
+  moveMidiDevice: (project, command) => project.moveMidiDevice(command.trackId, command.deviceId, command.toIndex),
+  bypassMidiDevice: (project, command) =>
+    project.setMidiDeviceBypass(command.trackId, command.deviceId, command.bypassed),
+  setMidiDeviceParam: (project, command) =>
+    project.getMidiDevice(command.trackId, command.deviceId)?.params.set(command.id, command.value),
   // Note edits target a specific clip (defaulting to the active one). addNotes /
   // editNotes both insert-or-replace by id (putNote): a new id adds, an existing
   // id moves/resizes/re-velocities in place. One call, one edit.

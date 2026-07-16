@@ -15,12 +15,14 @@
  * silencing all its descendants. Audio playback is driven by the Scheduler, which
  * calls `scheduleAudioClip` the way it calls `instrument.playNote`.
  */
-import type { ProjectStore, EffectInstance } from "../project/projectStore";
+import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
 import type { AudioClipData } from "../project/types";
 import { createInstrument, registerInstrumentFactory } from "../instruments/registry";
 import type { Instrument } from "../instruments/types";
 import { createEffect, registerEffectFactory } from "../effects/registry";
 import type { Effect } from "../effects/types";
+import { createMidiDevice } from "../midi/device/registry";
+import { GraphMidiDevice, type NoteTarget } from "../midi/device/GraphMidiDevice";
 import { GraphInstrument } from "../graph/GraphInstrument";
 import { GraphEffect } from "../graph/GraphEffect";
 import { getAudioBuffer } from "../audioStore";
@@ -36,6 +38,10 @@ interface TrackNode {
   gain: GainNode;
   /** Effect instances by id; chain order comes from the track's effect list. */
   effects: Map<string, Effect>;
+  /** MIDI-device instances by id; chain order comes from the track's midiDevices list. */
+  midiDevices: Map<string, GraphMidiDevice>;
+  /** Head of the note pipeline (first device, or the instrument if the chain is empty). */
+  noteHead: NoteTarget;
 }
 
 interface AudioTrackNode {
@@ -171,6 +177,7 @@ export class AudioEngine {
     for (const [id, node] of this.nodes) {
       if (!instrumentIds.has(id)) {
         this.disposeEffects(node.effects);
+        for (const device of node.midiDevices.values()) device.dispose();
         node.instrument.dispose();
         node.gain.disconnect();
         this.nodes.delete(id);
@@ -212,7 +219,14 @@ export class AudioEngine {
         if (!node) {
           const gain = ctx.createGain();
           const instrument = createInstrument(track.instrumentType, ctx, track.params);
-          node = { instrument, instrumentType: track.instrumentType, gain, effects: new Map() };
+          node = {
+            instrument,
+            instrumentType: track.instrumentType,
+            gain,
+            effects: new Map(),
+            midiDevices: new Map(),
+            noteHead: instrument,
+          };
           this.nodes.set(track.id, node);
         } else if (node.instrumentType !== track.instrumentType) {
           // The track's instrument was swapped (setInstrument, e.g. assigning one to an
@@ -223,6 +237,8 @@ export class AudioEngine {
         }
         this.reconcileEffects(node.effects, track.effects);
         this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
+        // MIDI devices decorate the note path (no audio), terminating in the instrument.
+        this.reconcileMidiDevices(node, track);
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
         node.gain.gain.setTargetAtTime(mutedTracks.has(track.id) ? 0 : track.volume, ctx.currentTime, 0.01);
@@ -278,6 +294,37 @@ export class AudioEngine {
     for (const fx of chain) {
       if (!live.has(fx.id)) live.set(fx.id, createEffect(fx.type, ctx, fx.params));
     }
+  }
+
+  /**
+   * Sync a track's MIDI-device chain against its instances, then relink the note
+   * pipeline. Devices carry no audio, so this only creates/disposes interpreters and
+   * repoints their `next`: d0 -> d1 -> ... -> instrument. Bypassed devices stay linked
+   * (they pass through internally) so a mid-note bypass never strands held notes.
+   */
+  private reconcileMidiDevices(node: TrackNode, track: InstrumentTrack): void {
+    const want = new Set(track.midiDevices.map((device) => device.id));
+    for (const [id, device] of node.midiDevices) {
+      if (!want.has(id)) {
+        device.dispose();
+        node.midiDevices.delete(id);
+      }
+    }
+    const secondsPerBeat = () => 60 / this.project!.tempo;
+    for (const instance of track.midiDevices) {
+      if (!node.midiDevices.has(instance.id))
+        node.midiDevices.set(
+          instance.id,
+          createMidiDevice(instance.type, instance.params, node.instrument, secondsPerBeat),
+        );
+    }
+    // Relink in the track's order, tail terminating in the instrument.
+    const chain = track.midiDevices.map((instance) => node.midiDevices.get(instance.id)!);
+    chain.forEach((device, index) => {
+      device.bypassed = track.midiDevices[index].bypassed;
+      device.setNext(chain[index + 1] ?? node.instrument);
+    });
+    node.noteHead = chain[0] ?? node.instrument;
   }
 
   /** Rewire source -> active effects (in order) -> dest. Leaves dest's own output. */
@@ -544,6 +591,17 @@ export class AudioEngine {
 
   getInstrument(trackId: string): Instrument | undefined {
     return this.nodes.get(trackId)?.instrument;
+  }
+
+  /**
+   * The head of a track's note pipeline: its MIDI-device chain terminating in the
+   * instrument (or the instrument directly if there are no devices). Note sources
+   * (live input, the scheduler, MCP live notes) drive this instead of the instrument
+   * so devices transform every event; the instrument itself stays reachable via
+   * `getInstrument` for audio wiring.
+   */
+  getNoteTarget(trackId: string): NoteTarget | undefined {
+    return this.nodes.get(trackId)?.noteHead;
   }
 
   dispose(): void {

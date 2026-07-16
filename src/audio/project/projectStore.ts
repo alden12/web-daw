@@ -34,6 +34,7 @@ import {
   EMPTY_INSTRUMENT,
 } from "../instruments/catalog";
 import { hasEffect, effectSchema, registerEffect, unregisterEffect, DEFAULT_EFFECT } from "../effects/catalog";
+import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/device/catalog";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
@@ -48,6 +49,7 @@ import type {
   ClipAuthor,
   ClipContent,
   EffectData,
+  MidiDeviceData,
 } from "./types";
 
 const MIN_BPM = 20;
@@ -72,6 +74,14 @@ export interface EffectInstance {
 /** Anything that owns an ordered effect chain: a track or a group bus. */
 export interface EffectHost {
   effects: EffectInstance[];
+}
+
+/** A MIDI device at runtime: meta + its own ParamStore over the device's schema. */
+export interface MidiDeviceInstance {
+  id: string;
+  type: string;
+  bypassed: boolean;
+  params: ParamStore;
 }
 
 /** A group bus at runtime: meta + its own effect chain. Nests via parentId. */
@@ -114,6 +124,8 @@ export interface InstrumentTrack extends BaseTrack {
   kind: "instrument";
   instrumentType: string;
   params: ParamStore;
+  /** Note-transform devices between the note source and the instrument (ordered). */
+  midiDevices: MidiDeviceInstance[];
   clips: NoteClip[];
   activeClipId: string;
   placements: Placement[];
@@ -186,6 +198,9 @@ export class ProjectStore {
   }
   private nextEffectId(): string {
     return `fx-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  private nextMidiDeviceId(): string {
+    return `md-${crypto.randomUUID().slice(0, 8)}`;
   }
   private nextClipId(): string {
     return `c-${crypto.randomUUID().slice(0, 8)}`;
@@ -391,6 +406,7 @@ export class ProjectStore {
       volume: 0.8,
       params,
       effects: [],
+      midiDevices: [],
       clips: [{ id: clipId, name: "A", author: "you", store: clip }],
       activeClipId: clipId,
       // One placement of the seed clip at the start, so a new track plays its clip.
@@ -407,8 +423,11 @@ export class ProjectStore {
    * Assign (or swap) the instrument on an existing instrument track - e.g. an empty
    * track (`none`) picks one. Rebuilds the ParamStore from the new schema (shared
    * param ids carry over; unknown ones are dropped) and keeps the track's clips,
-   * placements, effects, name, and mix. A pure function of (trackId, type), so delta
-   * replay is deterministic; the engine swaps the node on the next reconcile.
+   * placements, effects, name, and mix. MIDI devices are cleared: they shape how the
+   * chosen instrument is played (an octavator/arp tied to it), so swapping to a new
+   * instrument or patch starts its note chain fresh rather than leaving stale devices.
+   * A pure function of (trackId, type), so delta replay is deterministic; the engine
+   * swaps the node (and disposes the removed devices) on the next reconcile.
    */
   setInstrument(trackId: string, instrumentType: string): void {
     const track = this.getTrack(trackId);
@@ -419,6 +438,7 @@ export class ProjectStore {
     track.params = new ParamStore(instrumentSchema(type));
     track.params.load(carried); // load ignores ids not in the new schema
     track.instrumentType = type;
+    track.midiDevices = [];
     this.emit();
   }
 
@@ -436,11 +456,18 @@ export class ProjectStore {
     instrumentType: string;
     params: PatchValues;
     effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
   }): Track {
     if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
     const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
     if (track.kind === "instrument") {
       track.params.load(spec.params);
+      for (const device of spec.midiDevices ?? []) {
+        const added = this.addMidiDevice(track.id, device.type, device.id);
+        if (!added) continue;
+        added.params.load(device.params);
+        if (device.bypassed) this.setMidiDeviceBypass(track.id, device.id, true);
+      }
       for (const fx of spec.effects) {
         const effect = this.addEffect(track.id, fx.type, fx.id);
         if (!effect) continue;
@@ -468,6 +495,7 @@ export class ProjectStore {
     instrumentType: string;
     params: PatchValues;
     effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
   }): void {
     const track = this.getTrack(spec.trackId);
     if (!track || track.kind !== "instrument") return;
@@ -484,6 +512,14 @@ export class ProjectStore {
       track.params = new ParamStore(schema);
     }
     track.params.load(values);
+    // Replace the MIDI-device chain (the engine reconciles device add/remove by id).
+    for (const device of [...track.midiDevices]) this.removeMidiDevice(track.id, device.id);
+    for (const device of spec.midiDevices ?? []) {
+      const added = this.addMidiDevice(track.id, device.type, device.id);
+      if (!added) continue;
+      added.params.load(device.params);
+      if (device.bypassed) this.setMidiDeviceBypass(track.id, device.id, true);
+    }
     // Replace the effect chain (the engine reconciles effect add/remove by id).
     for (const effect of [...track.effects]) this.removeEffect(track.id, effect.id);
     for (const fx of spec.effects) {
@@ -855,6 +891,22 @@ export class ProjectStore {
     });
   }
 
+  /** Reconcile a MIDI-device chain against a target list IN PLACE (reuse by id, keep state). */
+  private loadMidiDevicesInPlace(track: InstrumentTrack, want: MidiDeviceData[]): void {
+    const byId = new Map(track.midiDevices.map((device) => [device.id, device] as const));
+    track.midiDevices = want.map((wanted) => {
+      const existing = byId.get(wanted.id);
+      if (existing && existing.type === wanted.type) {
+        existing.bypassed = wanted.bypassed;
+        existing.params.load(wanted.params);
+        return existing;
+      }
+      const params = new ParamStore(midiDeviceSchema(wanted.type));
+      if (wanted.params) params.load(wanted.params);
+      return { id: wanted.id, type: wanted.type, bypassed: wanted.bypassed, params };
+    });
+  }
+
   /** The ClipStore for an instrument track's clip (the active one if `clipId` omitted). */
   getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
     const t = this.getTrack(trackId);
@@ -1124,6 +1176,63 @@ export class ProjectStore {
     return this.getEffectHost(hostId)?.effects.find((fx) => fx.id === effectId);
   }
 
+  // --- MIDI-device chain (instrument tracks only) ---------------------------
+  private getMidiHost(trackId: string): InstrumentTrack | undefined {
+    const track = this.getTrack(trackId);
+    return track?.kind === "instrument" ? track : undefined;
+  }
+
+  addMidiDevice(trackId: string, type: string, id?: string): MidiDeviceInstance | undefined {
+    const track = this.getMidiHost(trackId);
+    if (!track) return undefined;
+    const deviceType = hasMidiDevice(type) ? type : DEFAULT_MIDI_DEVICE;
+    if (id) {
+      const existing = track.midiDevices.find((device) => device.id === id);
+      if (existing) return existing;
+    }
+    const device: MidiDeviceInstance = {
+      id: id ?? this.nextMidiDeviceId(),
+      type: deviceType,
+      bypassed: false,
+      params: new ParamStore(midiDeviceSchema(deviceType)),
+    };
+    track.midiDevices.push(device);
+    this.emit();
+    return device;
+  }
+
+  removeMidiDevice(trackId: string, deviceId: string): void {
+    const track = this.getMidiHost(trackId);
+    if (!track) return;
+    const idx = track.midiDevices.findIndex((device) => device.id === deviceId);
+    if (idx === -1) return;
+    track.midiDevices.splice(idx, 1);
+    this.emit();
+  }
+
+  moveMidiDevice(trackId: string, deviceId: string, toIndex: number): void {
+    const track = this.getMidiHost(trackId);
+    if (!track) return;
+    const from = track.midiDevices.findIndex((device) => device.id === deviceId);
+    if (from === -1) return;
+    const to = clamp(toIndex, 0, track.midiDevices.length - 1);
+    if (to === from) return;
+    const [device] = track.midiDevices.splice(from, 1);
+    track.midiDevices.splice(to, 0, device);
+    this.emit();
+  }
+
+  setMidiDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
+    const device = this.getMidiHost(trackId)?.midiDevices.find((d) => d.id === deviceId);
+    if (!device || device.bypassed === bypassed) return;
+    device.bypassed = bypassed;
+    this.emit();
+  }
+
+  getMidiDevice(trackId: string, deviceId: string): MidiDeviceInstance | undefined {
+    return this.getMidiHost(trackId)?.midiDevices.find((device) => device.id === deviceId);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -1279,12 +1388,14 @@ export class ProjectStore {
         instrumentType: stored.instrumentType,
         params,
         effects: reused?.effects ?? [],
+        midiDevices: reused?.midiDevices ?? [],
         clips,
         activeClipId,
         placements,
         launchedClipId,
       };
       this.loadEffectsInPlace(track, sound.effects);
+      this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
       return track;
     });
     // Invariant: every track must belong to a real group; file any orphan into main.

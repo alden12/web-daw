@@ -13,12 +13,13 @@ import type { EditLog } from "../audio/commands/editLog";
 import type { VersionStore } from "../audio/commands/history";
 import { EMPTY_INSTRUMENT, pickableInstrumentInfos } from "../audio/instruments/catalog";
 import { effectInfos } from "../audio/effects/catalog";
+import { midiDeviceInfos } from "../audio/midi/device/catalog";
 import { assetRef } from "../audio/samples/catalog";
 import { importSampleFile } from "../audio/samples/importSample";
 import { audioStorageAvailable, putAudio } from "../audio/audioStore";
 import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
-import { newEffectId, newTrackId } from "../audio/commands/ids";
+import { newEffectId, newMidiDeviceId, newTrackId } from "../audio/commands/ids";
 import { type Patch, listPatches, removePatch, subscribePatches } from "../audio/patches/library";
 import { FACTORY_PATCHES } from "../audio/patches/factory";
 import type { LibraryView } from "./ActivityRail";
@@ -66,7 +67,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
 }
 
 /** A catalog leaf: click to add an instrument track (or attach an effect to the selection). */
-function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: () => void }) {
+function Leaf({ label, fx, tag, onClick }: { label: string; fx?: boolean; tag?: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -76,6 +77,9 @@ function Leaf({ label, fx, onClick }: { label: string; fx?: boolean; onClick: ()
     >
       <span className={`w-1.75 h-1.75 bg-line ${fx ? "rounded-full" : "rounded-sm"}`} />
       <span className="truncate">{label}</span>
+      {tag ? (
+        <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">{tag}</span>
+      ) : null}
     </button>
   );
 }
@@ -194,6 +198,12 @@ export function LibraryPanel({
       name: patch.name,
       instrumentType: patch.instrumentType,
       params: patch.params,
+      midiDevices: (patch.midiDevices ?? []).map((device) => ({
+        id: newMidiDeviceId(),
+        type: device.type,
+        bypassed: device.bypassed,
+        params: device.params,
+      })),
       effects: patch.effects.map((fx) => ({
         id: newEffectId(),
         type: fx.type,
@@ -231,6 +241,12 @@ export function LibraryPanel({
       name: patch.name,
       instrumentType: patch.instrumentType,
       params: patch.params,
+      midiDevices: (patch.midiDevices ?? []).map((device) => ({
+        id: newMidiDeviceId(),
+        type: device.type,
+        bypassed: device.bypassed,
+        params: device.params,
+      })),
       effects: patch.effects.map((fx) => ({
         id: newEffectId(),
         type: fx.type,
@@ -243,6 +259,11 @@ export function LibraryPanel({
   const addEffect = (type: string) => {
     const hostId = projectStore.selectedId;
     if (hostId) dispatch({ type: "addEffect", hostId, effectType: type, id: newEffectId() });
+  };
+
+  const addMidiDevice = (type: string) => {
+    const trackId = projectStore.selectedId;
+    if (trackId) dispatch({ type: "addMidiDevice", trackId, deviceType: type, id: newMidiDeviceId() });
   };
   // Add a Sampler track preloaded with a library sample (mirrors clicking an instrument).
   const addSamplerTrack = (assetId: string) => {
@@ -286,6 +307,7 @@ export function LibraryPanel({
   const query = search.trim().toLowerCase();
   const matches = (label: string) => label.toLowerCase().includes(query);
   const instruments = pickableInstrumentInfos().filter((def) => matches(def.label));
+  const midiDevices = midiDeviceInfos().filter((def) => matches(def.label));
   const effects = effectInfos().filter((def) => matches(def.label));
   const matchedPatches = allPatches.filter((patch) => matches(patch.name));
   const matchedSamples = project.samples.filter((sample) => matches(sample.name));
@@ -296,7 +318,12 @@ export function LibraryPanel({
     search: () =>
       query === "" ? (
         <Hint>Type above to search tracks, instruments, effects, patches, and samples.</Hint>
-      ) : instruments.length + effects.length + matchedPatches.length + matchedSamples.length + matchedTracks.length ===
+      ) : instruments.length +
+          midiDevices.length +
+          effects.length +
+          matchedPatches.length +
+          matchedSamples.length +
+          matchedTracks.length ===
         0 ? (
         <Hint>No matches for “{search.trim()}”.</Hint>
       ) : (
@@ -336,11 +363,26 @@ export function LibraryPanel({
               ))}
             </>
           )}
-          {effects.length > 0 && (
+          {midiDevices.length + effects.length > 0 && (
             <>
               <SectionLabel>Effects</SectionLabel>
+              {midiDevices.map((def) => (
+                <Leaf
+                  key={def.type}
+                  label={def.label}
+                  fx
+                  tag="MIDI"
+                  onClick={() => pickResult(() => addMidiDevice(def.type))}
+                />
+              ))}
               {effects.map((def) => (
-                <Leaf key={def.type} label={def.label} fx onClick={() => pickResult(() => addEffect(def.type))} />
+                <Leaf
+                  key={def.type}
+                  label={def.label}
+                  fx
+                  tag="Audio"
+                  onClick={() => pickResult(() => addEffect(def.type))}
+                />
               ))}
             </>
           )}
@@ -436,8 +478,14 @@ export function LibraryPanel({
     ),
     effects: () => (
       <div className="py-1">
+        {/* MIDI devices (note transforms) and audio effects share one flat list - both are
+            "insert something on the selected track" and go in the same workbench strip. The
+            right-side tag says which kind each is. */}
+        {midiDeviceInfos().map((def) => (
+          <Leaf key={def.type} label={def.label} fx tag="MIDI" onClick={() => addMidiDevice(def.type)} />
+        ))}
         {effectInfos().map((def) => (
-          <Leaf key={def.type} label={def.label} fx onClick={() => addEffect(def.type)} />
+          <Leaf key={def.type} label={def.label} fx tag="Audio" onClick={() => addEffect(def.type)} />
         ))}
       </div>
     ),

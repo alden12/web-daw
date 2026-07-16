@@ -96,6 +96,7 @@ export type LocalEdit =
       instrumentType: string;
       params: PatchValues;
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+      midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
     }
   | {
       // Apply a patch to an EXISTING instrument track (for auditioning a patch on the
@@ -108,6 +109,7 @@ export type LocalEdit =
       instrumentType: string;
       params: PatchValues;
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+      midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
     }
   | {
       // Add an imported sample to the project library. The bytes are already in the

@@ -367,6 +367,60 @@ describe("MCP server (tracks)", () => {
     expect(list.effects[0].bypassed).toBe(true);
   });
 
+  it("add_midi_device forwards, validates the type, and appears in list_midi_devices", async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack("subtractive");
+
+    expect((await call("add_midi_device", { device: "bogus" })).isError).toBe(true);
+
+    const res = await call("add_midi_device", { device: "octavator" });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("addMidiDevice"));
+    const added = messages.find((m) => (m as { type: string }).type === "addMidiDevice") as {
+      trackId: string;
+      deviceType: string;
+    };
+    expect(added.trackId).toBe(trackId);
+    expect(added.deviceType).toBe("octavator");
+
+    const list = parse(await call("list_midi_devices"));
+    expect(list.devices).toHaveLength(1);
+    expect(list.devices[0].type).toBe("octavator");
+    expect(list.available.map((d: { id: string }) => d.id)).toContain("octavator");
+  });
+
+  it("set_midi_device_parameter forwards with track + device id and validates", async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack("subtractive");
+    await call("add_midi_device", { device: "octavator" });
+    const deviceId = parse(await call("list_midi_devices")).devices[0].id as string;
+
+    const okRes = await call("set_midi_device_parameter", { device_id: deviceId, id: "level", value: 0.5 });
+    expect(okRes.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("setMidiDeviceParam"));
+    expect(messages).toContainEqual({
+      type: "setMidiDeviceParam",
+      trackId,
+      deviceId,
+      id: "level",
+      value: 0.5,
+    });
+
+    expect((await call("set_midi_device_parameter", { device_id: deviceId, id: "level", value: 9 })).isError).toBe(
+      true,
+    );
+    expect((await call("set_midi_device_parameter", { device_id: deviceId, id: "nope", value: 1 })).isError).toBe(true);
+    expect((await call("set_midi_device_parameter", { device_id: "md-nope", id: "level", value: 0.5 })).isError).toBe(
+      true,
+    );
+  });
+
+  it("rejects a MIDI device on an audio track", async () => {
+    await connectTab();
+    // No instrument track selected: the tool errors rather than misfiling the device.
+    expect((await call("add_midi_device", { track: "t-nope", device: "octavator" })).isError).toBe(true);
+  });
+
   it("create_track files a track into its instrument family group (librarian)", async () => {
     const messages = await connectTab();
     await call("create_track", { instrument: "subtractive" });
