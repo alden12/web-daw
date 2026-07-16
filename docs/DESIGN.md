@@ -10,6 +10,49 @@ decisions firm up, and trimmed when reality overtakes it.
 
 ---
 
+## Roadmap markers
+
+This doc is the **single source of truth** for the project map. Features carry an inline **marker** next to
+the prose that describes them, so the status lives where you are already writing (nothing separate to keep
+in sync). `scripts/roadmap.ts` scans the doc for these markers; `yarn roadmap:view` renders them as an
+interactive graph, reading this file live: one box per area, tickets laid out left-to-right by dependency,
+coloured by status (or by area), click a node to read its doc block beside the graph. Manual node
+positions persist (localStorage), so you can arrange the map and it stays put across reloads.
+
+**Marker syntax** - one per line, right beside the feature it describes:
+
+```
+`AREA-N` `status` Short title (deps: AREA-M, AREA-K)
+```
+
+- **id** = `AREA-N` - the area prefix + a number (e.g. `HOST-6`). Ids are unique across the doc. A **dotted**
+  id nests: `HOST-6.1` is a sub-ticket of `HOST-6`, and the parent renders as a box containing its children.
+- **status** - one of the fixed set below.
+- **title** - the short label shown on the graph node (the prose in the block below it is the detail).
+- **deps** - optional, a trailing `(deps: ...)` of other ids; each renders as a forward edge (dep -> this
+  ticket), so the graph flows.
+- **block** - the marker heads a block: everything from the marker down to the next marker or heading is that
+  ticket's detail (what the viewer shows when you click it). So give each ticket its own block of prose.
+
+**Statuses** (fixed vocabulary; the app shows each as a coloured icon, and strikes through `done`):
+
+| status | icon | colour | meaning |
+| --- | --- | --- | --- |
+| `done` | ✓ | green | on `main` / shipped |
+| `review` | ◐ | purple | built and working (often deployed), but in an open PR, not yet merged to `main` |
+| `in-progress` | ● | blue | being built on a branch right now |
+| `to-do` | ○ | yellow | designed and ready to build, next up |
+| `planning` | ◌ | deep orange | still being shaped / longer horizon (unplanned) |
+
+**Areas** are open: add a new prefix on the fly and the app picks it up (auto-assigning a colour). The
+current areas: `DAW` core engine and UI · `INST` instruments and DSP · `AGENT` the agent · `HOST` server,
+hosting and sync · `COLLAB` multi-user · `MOBILE` platform and form factor.
+
+`yarn roadmap:list` prints every marker; `yarn roadmap:check` fails (for CI) if an id is duplicated, a
+status is unknown, a dep points at no known id, or a nested id's parent is missing - so the map stays honest.
+
+---
+
 ## 1. The thesis
 
 An open-source, web-based DAW where three ideas reinforce each other:
@@ -49,7 +92,18 @@ fall out of points 1-3.
   so the two ends cannot drift.
 - `src/audio/persistence.ts` - localStorage snapshot/restore (key `web-daw:project:v3`).
 
-Everything below builds on these primitives.
+Everything below builds on these primitives. The shipped foundations, as roadmap markers:
+
+- `DAW-1` `done` Param-schema keystone and catalogs
+- `DAW-2` `done` Tracks, groups, mixer
+- `DAW-3` `done` Clips, variants, launch
+- `DAW-4` `done` Arrangement timeline
+- `DAW-5` `done` Piano roll and step grid
+- `DAW-6` `done` Recording and input
+- `DAW-7` `done` Undo/redo and activity feed
+- `INST-1` `done` Built-in instruments
+- `INST-2` `done` Effects chain
+- `INST-3` `done` Factory patches and sample library
 
 ## 3. Layout & UX
 
@@ -576,11 +630,15 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 
 **Near-term - UI on top of the current model**
 
-- **UI tidy-ups (batch, slices 25-26 + follow-ons).** A pass of small/medium polish, several
-  sharing three reusable primitives built once and reused (an editable/truncating **title**, a
-  kebab **context menu**, and a **draggable resize area**, alongside the existing `ResizeHandle`):
-  - *Editable title everywhere* - one component for inline-rename + truncate-with-full-title-on-hover,
-    applied to track / instrument / effect / clip names (consolidates `InlineRename`). **[foundational]**
+- `DAW-8` `to-do` **UI polish and bug batch**
+
+  A batch of small/medium UI polish and bug fixes, several sharing three reusable primitives built
+  once and reused (an editable/truncating **title**, a kebab **context menu**, and a **draggable
+  resize area**, alongside the existing `ResizeHandle`).
+
+- `DAW-8.1` `done` **Shipped UI tidy-ups (slices 25-42)**
+
+  The already-shipped items from the UI-tidy-ups and timeline-usability batches:
   - *Kebab (⋮) context menus - DONE (slice 26).* A reusable icon-only `Menu` ([ui/Menu.tsx](src/ui/Menu.tsx))
     replaces the track/group/patch × and the "+ Group" button: rows get Delete (Duplicate later), the add
     menu offers Add empty track / Add group. The popover renders in a **portal** (fixed-positioned) so it is
@@ -626,17 +684,28 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
     the panel's top edge and stole drags from the ruler's loop-region markers; it now sits fully above the edge.
   - *Clip-rail width drag-resize - DONE.* The clip pool beside the piano roll is now drag-resizable
     (persisted width via the shared `ResizeHandle`), like the device rack and side panels.
+
+- `DAW-8.2` `to-do` **Editable title primitive everywhere**
+
+  *Editable title everywhere* - one component for inline-rename + truncate-with-full-title-on-hover,
+  applied to track / instrument / effect / clip names (consolidates `InlineRename`). **[foundational]**
+
+- `DAW-8.3` `to-do` **Per-track timeline row height**
+
   - *Per-track timeline row height (deferred to its own slice)* - confirmed **per-track** (each lane its own
     height + bottom-edge handle, persisted by track id), not a uniform lane height. Not a plain `ResizeHandle`
     reuse: the arrangement bakes a fixed `ROW_PX` into its lane layout (`contentH = RULER_H + rows.length *
-    ROW_PX`), placement offsets, playhead, and ruler math, so variable row heights ripple through all of that.
-    **[foundational]**
+    ROW_PX`), placement offsets, playhead, and ruler math, so variable row heights ripple through all of
+    that. **[foundational]**
   - *Resize handles: keep `ResizeHandle`, don't build a heavyweight `ResizableBox`.* The pointer-drag/axis/
     body-cursor primitive (`ResizeHandle`) is the right shared layer; what sits above it (where the size lives,
     grid offset vs flex child vs scroll-anchored divider, persistence) genuinely differs per site, so one box
     would accrete props. Low-hanging cleanup instead: fold the arrangement header-column divider (still bespoke)
     onto `ResizeHandle`, and optionally extract a tiny `useResizable` hook pairing `usePersistentNumber` with the
     `clientPos - rect.left/top` math that repeats across the workbench handles.
+
+- `DAW-8.4` `to-do` **Small UI polish batch**
+
   - *Clip delete always available* - show the × even on the last clip; deleting the last one replaces
     it with a fresh empty clip (ids minted in the UI, so replay stays deterministic).
   - *Feed: committed vs uncommitted styling* - drop the separate "autosaved" marker; render committed
@@ -647,50 +716,154 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   - *Remove the instrument family chip* in the library (added then judged unnecessary).
   - *Selected track-header opacity* - a selected track header used a translucent tint, letting the
     lane's clip notes bleed through the sticky header column; use an opaque teal-tinted panel color.
+
+- `DAW-8.5` `to-do` **Master gain + live level meter**
+
   - *Master gain* - a project-level master gain (the engine already has the master `GainNode`); a slider
     in the timeline's top-left above the track headers, plus model/persistence (+ MCP).
-  - *Library drag-and-drop (feature, own slice)* - drag an instrument / patch / effect onto a track, the
-    empty lane area, or the instrument slot to create (or replace) a track's device, with a confirm
-    dialog when replacing an existing instrument + effects.
-- **Group/track selection + group-FX editing in the workbench** (next, small). Select a
-  group or track and edit its effect rack in the center workbench; generalize selection
-  beyond "the selected track". Model/audio/MCP already support group effects (host-addressed).
-- **Patches (instrument presets) - DONE (slice 24).** Save an instrument track's
-  sound - its instrument type, parameter values, and effect chain - as a named **patch**
-  in the library tree, then add a new track from it like a built-in instrument. Patches are
-  **global** (cross-project), so they live in localStorage (`src/audio/patches/library.ts`),
-  not the project bundle. Applying one is a single authored `createTrackFromPatch` edit that
-  carries pre-minted effect ids, so it is undoable, two-voice, and replay-deterministic like
-  any other; `ProjectStore.addTrackFromPatch` loads the values through the same coercing
-  setters. The library tree restructured to a collapsible **Instruments** section that lists the
-  catalog (each leaf chipped with its `family` - Synths / Bass / Keys - iterated, not hardcoded)
-  with a nested **Patches** sub-section, and an **Effects** section beside it. **MCP patch tools**
-  let Claude drive the library too - `list_patches` / `save_patch` / `apply_patch` ride a
-  `patchRequest`/`patchReply` RPC (the same shape as the history RPC, since patches live in the
-  tab's localStorage): `save` captures a track's live sound authored `claude`, `apply` dispatches
-  a `createTrackFromPatch` edit (coral, undoable). Patch row dots are two-voice colored by author.
-- **Transport & grid:** ~~time signature, metronome, timeline beat markers~~. Metronome (slice 27)
-  and beat markers (slices 33, the audio-clip ruler) are DONE; **changeable time signature** remains.
-  - *Time signature (own slice).* Today `BEATS_PER_BAR = 4` is hardcoded in the scheduler and the
-    rulers. Make it a transport-level project value (`{ numerator, denominator }` on `ProjectData`,
-    default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. It threads through
-    the metronome accent (downbeat per `numerator`), every bar/beat `Ruler`, the arrangement grid
-    snap, and `beatsToSeconds`/loop math. Keystone-friendly: one transport value projected into the
-    scheduler, the rulers, and MCP - no per-site hardcoding.
-  - *Timeline loop enable/disable toggle.* The arrangement has a loop **region** (start/length handles)
-    but no way to turn looping off - the scheduler always wraps at `loopStart + loopLen`. Add a
-    transport-level `loopEnabled` flag (a loop button by the transport, the region handles dim when
-    off) so playback can run straight through to the arrangement end. Transient-vs-durable: lean
-    durable (persist it with the project) like the loop region itself.
-- **Mixer controls.** Track + group headers carry an adjoined **Mute/Solo** group (solo is a
-  per-track/group flag; the engine silences anything not solo-active - see `engine/mix.ts`) and a
-  low-profile **fader** (a line with a triangle ticker; `ui/MixerControls.tsx`). *Pending:* a
-  **live level meter** overlaid on the fader (red when clipping) - the `Fader` already accepts
-  `level`/`clip`; needs per-bus metering in the `AudioEngine` (AnalyserNodes) + a rAF read loop.
-  *Includes live input/mic monitoring:* when an audio track is armed, feed its capture stream
-  through the same metering so the fader shows the incoming mic level (pre-record, no audio routed
-  to output - input monitoring stays hardware/direct per section 12), giving a visual "is it
-  hot / is it clipping" check while setting levels before a take.
+  - *Live level meter (pending part of Mixer controls).* a **live level meter** overlaid on the fader
+    (red when clipping) - the `Fader` already accepts `level`/`clip`; needs per-bus metering in the
+    `AudioEngine` (AnalyserNodes) + a rAF read loop. *Includes live input/mic monitoring:* when an audio
+    track is armed, feed its capture stream through the same metering so the fader shows the incoming mic
+    level (pre-record, no audio routed to output - input monitoring stays hardware/direct per section 12),
+    giving a visual "is it hot / is it clipping" check while setting levels before a take.
+
+- `DAW-8.6` `to-do` **Library drag-and-drop**
+
+  *Library drag-and-drop (feature, own slice)* - drag an instrument / patch / effect onto a track, the
+  empty lane area, or the instrument slot to create (or replace) a track's device, with a confirm
+  dialog when replacing an existing instrument + effects.
+
+- `DAW-8.7` `to-do` **Timeline & clip editing gaps**
+
+  A set of arrangement / piano-roll interaction gaps and small features. Several are touch-shaped by design
+  (see the touch-first note under Platform & form factor): every new action wants a right-click menu *and* a
+  tap-reachable equivalent.
+  - *Drag placements between tracks.* Today `movePlacement` only changes `startBeat`, so a placed
+    clip can move along its lane but not onto another track. Extend it (or add a cross-track move) so
+    a MIDI / audio placement drags onto any same-kind track's lane, mirroring the existing rail-drop
+    copy path.
+  - *Split from a lane context menu.* Splitting is double-click-only today. Add a "Split here" item to
+    a lane's right-click (and touch three-dots) menu, acting at the lane's selection marker. This
+    needs **clicking a track to also drop the selection marker on it** (today a click only selects the
+    track), so the marker is where the split lands.
+  - *Clip layering / stacking (promote the overlap).* Overlapping placements on one lane already
+    "just work"; make it an intended feature - MIDI / audio clips may stack on the same track, drawn
+    **semi-transparent** so lower clips / notes / audio read through. Needs: a **replace-vs-stack
+    prompt on clip drop**; **multi-select of tracks** (shift-click, plus a multi-select mode in the
+    timeline-options menu for touch); and a **merge / combine-tracks** action (right-click /
+    three-dots) that flattens the selected tracks' clips into one.
+  - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
+    length in one gesture (today a click adds a fixed-length note).
+  - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
+    a placement's `offset` (where the clip starts) can't be moved off 0 from the UI. Add a start
+    handle so the clip's start point is draggable.
+  - *Don't auto-place a blank clip.* Creating a track / instrument should not drop an empty clip on
+    the timeline; the pool clip exists, and the user drags it onto a lane intentionally.
+  - *Context menus on clips + tracks.* Both the timeline and the panel give clips and tracks a
+    right-click context menu, plus a **persistent three-dots (⋮) affordance** (not hover-only) so the
+    same actions are reachable by touch.
+
+- `DAW-8.8` `to-do` **Bug: note-drag snapping off-grid**
+
+  *Bug: note-drag snapping.* Dragging a note in the piano roll doesn't always land its start on a
+  grid line - the onset can end up off-grid. The snap should apply to the note onset consistently
+  (audit the `snapBeat` / drag-origin math in the roll).
+
+- `DAW-8.9` `to-do` **Bug: clip playhead ignores arrangement position**
+
+  *Bug: clip playhead ignores arrangement position.* The piano roll / step grid draw a playhead in
+  the selected clip whenever the transport is playing, even when playing from the timeline and the
+  global playhead hasn't reached (a placement of) this clip yet - so a clip that isn't sounding
+  still shows a moving cursor. The clip playhead should track the arrangement: only show (and only
+  advance) while the transport is inside a placement of *this* clip, offset by where in the clip
+  that placement is playing (and hidden otherwise). Today `PianoRoll` / `StepGrid` derive it
+  straight from `scheduler.getPositionBeats() % clip.lengthBeats`, which assumes the clip is always
+  the thing playing.
+
+- `DAW-8.10` `to-do` **Bug: default objects show a hashed hue, not the user's colour**
+
+  *Bug: default/unattributed objects show a hashed hue (looks like the agent colour), not the user's.*
+  A newly-created track's default clip and unedited instrument params (including the seeded default
+  project) render in a wrong accent instead of the creating user's colour. Cause: those defaults carry
+  the literal placeholder author `"you"` (the seed clip in `ProjectStore.addTrack` hardcodes
+  `author: "you"`; the `Knob` param fallback is `author ?? "you"`), but once signed in the viewer's
+  `self` is their real id (email), so `colorForAuthor("you", …, self)` fails the `author === self` test
+  and **hashes** `"you"` to a palette swatch (a blue/violet - reads as the agent hue). When solo
+  (`self === "you"`) it correctly reads teal, which is why it only shows once authenticated. This
+  collides with a **deliberate** design choice (authorColors.test.ts: a literal `"you"` from a non-self
+  viewer is treated as a distinct peer, not teal), so the fix needs a small decision, not a one-liner:
+  - *Params* (clean, design-safe): fall back unattributed params to the **viewer** - `Knob`
+    `author ?? presence.self` - so an unedited control reads as "mine" (teal). No `colorForAuthor` change.
+  - *Default clip / seed* (needs the decision): the placeholder `"you"` should resolve to the local user.
+    Either make `"you"` a **reserved absolute local-user voice** (always teal, like `agent`/`claude` are
+    absolute) - simplest, but update the peer-"you" test + comment - **or** attribute the default clip to
+    its actual creator (thread the dispatching author into `addTrack`'s seed clip; the pre-auth boot seed
+    stays unattributed -> viewer). Recommend the reserved-voice route: `"you"` is already `DEFAULT_USER`
+    with label "You" and its own hex, so treating it as the local-user voice is consistent, and real
+    collaborators have real ids (no one is literally "you" under auth).
+
+- `DAW-8.11` `to-do` **Activity feed at scale**
+
+  The feed already caps the rendered list at 100; for very long sessions, **virtualize / paginate** the
+  history (and consider truncating or chunking the persisted log) so it stays smooth.
+
+- `DAW-9` `to-do` **Group/track selection + group-FX editing**
+
+  Group/track selection + group-FX editing in the workbench (next, small). Select a group or track and
+  edit its effect rack in the center workbench; generalize selection beyond "the selected track".
+  Model/audio/MCP already support group effects (host-addressed).
+
+- `DAW-10` `to-do` **Changeable time signature**
+
+  Transport & grid: metronome (slice 27) and beat markers (slice 33, the audio-clip ruler) already
+  shipped; **changeable time signature** is what remains. Today `BEATS_PER_BAR = 4` is hardcoded in the
+  scheduler and the rulers. Make it a transport-level project value (`{ numerator, denominator }` on
+  `ProjectData`, default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. It threads
+  through the metronome accent (downbeat per `numerator`), every bar/beat `Ruler`, the arrangement grid
+  snap, and `beatsToSeconds`/loop math. Keystone-friendly: one transport value projected into the
+  scheduler, the rulers, and MCP - no per-site hardcoding.
+
+- `DAW-11` `to-do` **Timeline loop enable/disable toggle**
+
+  The arrangement has a loop **region** (start/length handles) but no way to turn looping off - the
+  scheduler always wraps at `loopStart + loopLen`. Add a transport-level `loopEnabled` flag (a loop button
+  by the transport, the region handles dim when off) so playback can run straight through to the
+  arrangement end. Transient-vs-durable: lean durable (persist it with the project) like the loop region itself.
+
+- `DAW-12` `planning` **Key & tonic-relative intervals**
+
+  Key & tonic-relative intervals - roadmap (pairs with the flagship synth as its test-bed). Make
+  **key** (a `{ tonic: 0-11, scale/mode }`) a first-class musical unit that the roll display and the
+  computer-keyboard input are both projections of. The two halves of this reinforce each other: a
+  tonic-relative model is precisely what lets the QWERTY keyboard span **4 octaves**, because diatonic
+  degrees pack ~7 per octave (one keyboard row) where chromatic needs 12 (which doesn't fit a 10-key
+  row). Design:
+  - *Data model unchanged.* `NoteEvent.pitch` stays **absolute MIDI** (transposition-safe, interop-
+    friendly, and the scheduler/engine never learn about keys). Key is an **input/display layer**:
+    display maps absolute -> degree; the keyboard maps degree -> absolute. A pure projection, no
+    persistence change - which is the same "everything is a projection of the schema" discipline the
+    rest of the app follows. Key lives at **project level** first; per-clip / per-section overrides are
+    a clean follow-on.
+  - *Keyboard = diatonic by default.* Replace the hardcoded single-octave `KEY_MAP`
+    ([AppShell.tsx](src/ui/AppShell.tsx)) with a map **generated from the current key**: the four
+    letter/number rows become four octaves of the scale, so playing is always "in key". A modifier
+    (e.g. Shift) raises a semitone for accidentals; the layout mode (diatonic vs a chromatic /
+    isomorphic option) can be a setting.
+  - *Display = scale highlighting first, note color last.* Hue is reserved for the two-voice authorship
+    coding, so degree must **not** ride on hue. First cut: **scale highlighting on the piano-roll lane
+    backgrounds** (in-key rows lit, the tonic row accented - the pattern many DAWs use) plus optional
+    **degree labels** on notes (`1 b3 5`...). Note *fill* stays authorship color. A later opt-in can
+    encode degree on a non-hue channel (brightness / saturation within the authorship hue) so both
+    codings coexist.
+  - *MCP payoff:* exposing key in project state lets the agent compose diatonically ("add a ii-V-I in
+    the project key"). Pairs with the autotune scale-snap layer under "Audio pitch & time".
+
+### Shipped feature detail (done, see DAW-1..7)
+
+Detailed write-ups of features already summarised by the DAW-1..7 done-core list at the top of the doc.
+Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
+
 - **Piano-roll editing - DONE (slice 12), the first of three "real DAW" pieces.** Full mouse
   manipulation on the existing single-clip model (no schema change): drag-move, edge-resize,
   marquee multi-select + multi-delete, a velocity lane, copy/cut/paste, horizontal/vertical
@@ -724,31 +897,6 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `set_groove`/`list_grooves` MCP tools; persisted (project schema 8). Offsets are in beats (no PPQ).
   *Follow-ups:* **per-track override** (pairs with the drum machine, where "swing the hats not the
   kick" matters) and groove **extraction** (analyze a clip's deviations into a template).
-- **Key & tonic-relative intervals - roadmap (pairs with the flagship synth as its test-bed).** Make
-  **key** (a `{ tonic: 0-11, scale/mode }`) a first-class musical unit that the roll display and the
-  computer-keyboard input are both projections of. The two halves of this reinforce each other: a
-  tonic-relative model is precisely what lets the QWERTY keyboard span **4 octaves**, because diatonic
-  degrees pack ~7 per octave (one keyboard row) where chromatic needs 12 (which doesn't fit a 10-key
-  row). Design:
-  - *Data model unchanged.* `NoteEvent.pitch` stays **absolute MIDI** (transposition-safe, interop-
-    friendly, and the scheduler/engine never learn about keys). Key is an **input/display layer**:
-    display maps absolute -> degree; the keyboard maps degree -> absolute. A pure projection, no
-    persistence change - which is the same "everything is a projection of the schema" discipline the
-    rest of the app follows. Key lives at **project level** first; per-clip / per-section overrides are
-    a clean follow-on.
-  - *Keyboard = diatonic by default.* Replace the hardcoded single-octave `KEY_MAP`
-    ([AppShell.tsx](src/ui/AppShell.tsx)) with a map **generated from the current key**: the four
-    letter/number rows become four octaves of the scale, so playing is always "in key". A modifier
-    (e.g. Shift) raises a semitone for accidentals; the layout mode (diatonic vs a chromatic /
-    isomorphic option) can be a setting.
-  - *Display = scale highlighting first, note color last.* Hue is reserved for the two-voice authorship
-    coding, so degree must **not** ride on hue. First cut: **scale highlighting on the piano-roll lane
-    backgrounds** (in-key rows lit, the tonic row accented - the pattern many DAWs use) plus optional
-    **degree labels** on notes (`1 b3 5`...). Note *fill* stays authorship color. A later opt-in can
-    encode degree on a non-hue channel (brightness / saturation within the authorship hue) so both
-    codings coexist.
-  - *MCP payoff:* exposing key in project state lets the agent compose diatonically ("add a ii-V-I in
-    the project key"). Pairs with the autotune scale-snap layer under "Audio pitch & time".
 - **Timeline & arrangement interactions - DONE (slice 13 + follow-ups), the third "real DAW"
   piece.** The bottom timeline is editable: zoom + scroll (reusing the piano-roll's
   beats<->px+ruler primitive), move / resize / split / delete placements, drag empty lane to
@@ -761,67 +909,24 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   drag-and-drop** - dragging an instrument/effect from the library onto the track edit panel
   (the add-effect menu covers the quick path; full DnD, incl. instrument-on-track semantics, is
   the larger item).
-- **Timeline & clip-editing usability (batch, follow-ons).** A set of arrangement / piano-roll
-  interaction gaps and small features. Several are touch-shaped by design (see the touch-first note
-  under Platform & form factor): every new action wants a right-click menu *and* a tap-reachable
-  equivalent.
-  - *Drag placements between tracks.* Today `movePlacement` only changes `startBeat`, so a placed
-    clip can move along its lane but not onto another track. Extend it (or add a cross-track move) so
-    a MIDI / audio placement drags onto any same-kind track's lane, mirroring the existing rail-drop
-    copy path.
-  - *Split from a lane context menu.* Splitting is double-click-only today. Add a "Split here" item to
-    a lane's right-click (and touch three-dots) menu, acting at the lane's selection marker. This
-    needs **clicking a track to also drop the selection marker on it** (today a click only selects the
-    track), so the marker is where the split lands.
-  - *Clip layering / stacking (promote the overlap).* Overlapping placements on one lane already
-    "just work"; make it an intended feature - MIDI / audio clips may stack on the same track, drawn
-    **semi-transparent** so lower clips / notes / audio read through. Needs: a **replace-vs-stack
-    prompt on clip drop**; **multi-select of tracks** (shift-click, plus a multi-select mode in the
-    timeline-options menu for touch); and a **merge / combine-tracks** action (right-click /
-    three-dots) that flattens the selected tracks' clips into one.
-  - *Bug: note-drag snapping.* Dragging a note in the piano roll doesn't always land its start on a
-    grid line - the onset can end up off-grid. The snap should apply to the note onset consistently
-    (audit the `snapBeat` / drag-origin math in the roll).
-  - *Bug: clip playhead ignores arrangement position.* The piano roll / step grid draw a playhead in
-    the selected clip whenever the transport is playing, even when playing from the timeline and the
-    global playhead hasn't reached (a placement of) this clip yet - so a clip that isn't sounding
-    still shows a moving cursor. The clip playhead should track the arrangement: only show (and only
-    advance) while the transport is inside a placement of *this* clip, offset by where in the clip
-    that placement is playing (and hidden otherwise). Today `PianoRoll` / `StepGrid` derive it
-    straight from `scheduler.getPositionBeats() % clip.lengthBeats`, which assumes the clip is always
-    the thing playing.
-  - *Bug: default/unattributed objects show a hashed hue (looks like the agent colour), not the user's.*
-    A newly-created track's default clip and unedited instrument params (including the seeded default
-    project) render in a wrong accent instead of the creating user's colour. Cause: those defaults carry
-    the literal placeholder author `"you"` (the seed clip in `ProjectStore.addTrack` hardcodes
-    `author: "you"`; the `Knob` param fallback is `author ?? "you"`), but once signed in the viewer's
-    `self` is their real id (email), so `colorForAuthor("you", …, self)` fails the `author === self` test
-    and **hashes** `"you"` to a palette swatch (a blue/violet - reads as the agent hue). When solo
-    (`self === "you"`) it correctly reads teal, which is why it only shows once authenticated. This
-    collides with a **deliberate** design choice (authorColors.test.ts: a literal `"you"` from a non-self
-    viewer is treated as a distinct peer, not teal), so the fix needs a small decision, not a one-liner:
-    - *Params* (clean, design-safe): fall back unattributed params to the **viewer** - `Knob`
-      `author ?? presence.self` - so an unedited control reads as "mine" (teal). No `colorForAuthor` change.
-    - *Default clip / seed* (needs the decision): the placeholder `"you"` should resolve to the local user.
-      Either make `"you"` a **reserved absolute local-user voice** (always teal, like `agent`/`claude` are
-      absolute) - simplest, but update the peer-"you" test + comment - **or** attribute the default clip to
-      its actual creator (thread the dispatching author into `addTrack`'s seed clip; the pre-auth boot seed
-      stays unattributed -> viewer). Recommend the reserved-voice route: `"you"` is already `DEFAULT_USER`
-      with label "You" and its own hex, so treating it as the local-user voice is consistent, and real
-      collaborators have real ids (no one is literally "you" under auth).
-  - *Draw-to-length note creation.* A press-drag on the piano roll should place a note and set its
-    length in one gesture (today a click adds a fixed-length note).
-  - *Clip start / loop-start handle.* The roll has an end / length handle but no clip-start handle, so
-    a placement's `offset` (where the clip starts) can't be moved off 0 from the UI. Add a start
-    handle so the clip's start point is draggable.
-  - *Don't auto-place a blank clip.* Creating a track / instrument should not drop an empty clip on
-    the timeline; the pool clip exists, and the user drags it onto a lane intentionally.
-  - *Context menus on clips + tracks.* Both the timeline and the panel give clips and tracks a
-    right-click context menu, plus a **persistent three-dots (⋮) affordance** (not hover-only) so the
-    same actions are reachable by touch.
-- **Activity feed at scale.** The feed already caps the rendered list at 100; for very long
-  sessions, **virtualize / paginate** the history (and consider truncating or chunking the
-  persisted log) so it stays smooth.
+- **Patches (instrument presets) - DONE (slice 24).** Save an instrument track's
+  sound - its instrument type, parameter values, and effect chain - as a named **patch**
+  in the library tree, then add a new track from it like a built-in instrument. Patches are
+  **global** (cross-project), so they live in localStorage (`src/audio/patches/library.ts`),
+  not the project bundle. Applying one is a single authored `createTrackFromPatch` edit that
+  carries pre-minted effect ids, so it is undoable, two-voice, and replay-deterministic like
+  any other; `ProjectStore.addTrackFromPatch` loads the values through the same coercing
+  setters. The library tree restructured to a collapsible **Instruments** section that lists the
+  catalog (each leaf chipped with its `family` - Synths / Bass / Keys - iterated, not hardcoded)
+  with a nested **Patches** sub-section, and an **Effects** section beside it. **MCP patch tools**
+  let Claude drive the library too - `list_patches` / `save_patch` / `apply_patch` ride a
+  `patchRequest`/`patchReply` RPC (the same shape as the history RPC, since patches live in the
+  tab's localStorage): `save` captures a track's live sound authored `claude`, `apply` dispatches
+  a `createTrackFromPatch` edit (coral, undoable). Patch row dots are two-voice colored by author.
+- **Mixer controls - shipped parts.** Track + group headers carry an adjoined **Mute/Solo** group
+  (solo is a per-track/group flag; the engine silences anything not solo-active - see `engine/mix.ts`)
+  and a low-profile **fader** (a line with a triangle ticker; `ui/MixerControls.tsx`). The pending
+  live level meter + input/mic monitoring moved to DAW-8.5.
 
 **Model evolutions - sequence early, they unlock the rest**
 
@@ -1151,26 +1256,55 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
 
 **Agent**
 
+`AGENT-1` `done` **MCP and Claude Desktop/Code control**
+
+- **MCP server + Claude Desktop/Code control - DONE.** The shipped power-user surface: the MCP
+  server lets Claude Desktop or Claude Code drive the DAW, edits landing through the shared
+  `dispatch` seam and narrated in the activity feed. This is the differentiator in miniature -
+  whether the chat lives in Claude Desktop / Code over MCP (today) or the embedded panel (later,
+  AGENT-2), the genuinely novel surface is the activity feed itself: a shared, two-voice timeline
+  of the *edits* and the agent's *stated intent*, not a chat log. Treat Desktop/Code-over-MCP as a
+  first-class *supported* workflow, not just a dev convenience - it is the best demo, costs nothing
+  per token, and self-selects technical early adopters for the richest feedback. Its limits are
+  exactly why the embedded panel still matters: two windows breaks creative flow, and MCP setup is
+  a non-starter for a general user. So MCP-in-a-second-window is the prototype + power workflow; the
+  embedded panel is the consumer shape; both ride the same `dispatch` seam and the same feed.
+
+`AGENT-6` `to-do` **MCP/agent tool consolidation** (deps: AGENT-1, AGENT-2)
+
+- **Converge on one tool catalog + dispatch (section 9).** The browser-side agent panel and the
+  server-side MCP server should share a single tool catalog and the same `dispatch` seam rather
+  than maintaining parallel definitions, so a tool added once appears on both surfaces. This
+  follows the section 9 direction: one shared tool catalog (zod -> JSON Schema) driving both the
+  in-app loop and MCP.
+
+`AGENT-2` `review` **In-app agent panel**
+
 - **In-app agent panel** (section 9): an embedded chat driving the model via the client-side
   tool loop + thin, provider-agnostic key-proxy described in section 9. Reuses the one shared
   tool catalog (zod -> JSON Schema); edits land authored `claude` (coral) through the existing
   `dispatch` seam. Claude Code / Desktop over MCP already covers this for the tinkerer at no
   per-token cost; the panel adds the embedded UX and the general "just open the app" user.
+`AGENT-4` `to-do` **Agent ears, offline audio analysis**
+
 - **Agent "ears" (audio analysis).** The agent reasons on symbolic data and cannot hear the
   output. Render offline (`OfflineAudioContext`) and expose **analysis tools** that mirror the
-  `list_*` reads: objective DSP first (loudness / LUFS, spectral balance / masking, clipping -
-  e.g. Meyda), then MIR (key / BPM / onset via essentia.js), then perceptual/semantic (CLAP or
-  an audio-tagging model, or a multimodal model as a `describe_sound` tool). Closes the
-  perception loop for mixing/arrangement; human auditioning still decides taste.
-- **Two surfaces, one differentiator - the activity panel.** Whether the chat lives in Claude
-  Desktop / Code over MCP (today) or the embedded panel (later), the genuinely novel surface is
-  the activity feed itself: a shared, two-voice timeline of the *edits* and the agent's *stated
-  intent*, not a chat log. Treat Desktop/Code-over-MCP as a first-class *supported* workflow, not
-  just a dev convenience - it is the best demo, costs nothing per token, and self-selects
-  technical early adopters for the richest feedback. Its limits are exactly why the embedded panel
-  still matters: two windows breaks creative flow, and MCP setup is a non-starter for a general
-  user. So MCP-in-a-second-window is the prototype + power workflow; the embedded panel is the
-  consumer shape; both ride the same `dispatch` seam and the same feed.
+  `list_*` reads, built in three tiers of increasing sophistication. Closes the perception loop
+  for mixing/arrangement; human auditioning still decides taste.
+
+  `AGENT-4.1` `to-do` **Objective DSP analysis**
+  Loudness / LUFS, spectral balance / masking, and clipping detection (e.g. Meyda). The first and most
+  tractable tier: cheap, deterministic measures the agent can act on directly.
+
+  `AGENT-4.2` `to-do` **MIR analysis** (deps: AGENT-4.1)
+  Musical-information retrieval: key / BPM / onset detection (e.g. essentia.js), so the agent can reason
+  about tempo and tonality of rendered audio.
+
+  `AGENT-4.3` `to-do` **Perceptual / semantic analysis** (deps: AGENT-4.2)
+  CLAP or an audio-tagging model, or a multimodal model exposed as a `describe_sound` tool, for "what does
+  this sound like" judgements.
+`AGENT-3` `done` **Persist agent intent into history**
+
 - **Persist agent intent into history - DONE.** The agent's intent notes (the `note` feed
   annotations) used to be session-only and vanished on reload. They now persist two ways, both
   mirroring how edit `entries` already work: (1) the **working stream** rides along in the bundle
@@ -1183,6 +1317,8 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   to the edit log now, so a note posted with no following edit is still saved. The Versions tab
   shows a commit's notes on expand (a coral count glyph when collapsed). No format-version bump:
   an absent `notes.json` loads as `[]`, so older bundles are unaffected.
+`AGENT-5` `to-do` **Play-an-idea, notes as a prompt**
+
 - **Play an idea to the agent (notes as a prompt modality).** The DAW's native language is
   notes, so let the user *perform* a short MIDI phrase and attach it to a message rather than
   describe it in words: "add this idea to the organ track", "make a breakdown that goes like
@@ -1197,6 +1333,8 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   feedback, so the loop becomes play-an-idea -> agent develops it -> you hear it and keep or
   reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
   reusing the exact shapes already flowing through `dispatch`/MCP.
+`AGENT-7` `to-do` **zod validation of model responses**
+
 - **Validate model responses with zod, not hand-rolled parsing.** The provider layer
   (`src/audio/agent/provider.ts`, `loop.ts`) currently pulls apart the model's HTTP response
   imperatively - `JSON.parse(raw)` then a chain of `(data as { choices?: unknown }).choices`
@@ -1217,21 +1355,30 @@ These are candidate approaches for the 15E "remote sync / collaboration" follow-
 so the tradeoffs are on record. Nothing here is committed; presence and shared editing may
 land in either order, or not at all if the local-first single-user shape stays the priority.
 
+`COLLAB-1` `done` **Real identity on the log** (deps: HOST-2)
+
 - **Authorship colour model - a projection of the log, not a stored field.** The keystone
   already stamps every edit with its author (that is how the two-voice colouring works), so
   "who last touched this clip/track/param" is a *query over the command log* and the colour is a
   *view*, never a property saved on the object. This composes with versioning for free (the
-  overlay at any commit is just the log up to that point) and needs no format change. Two modes
-  worth separating because they answer different questions: (1) **live presence** - ephemeral,
-  per-person hue on a cursor / selection, showing what someone is touching *now* (the Figma /
-  Google-Docs experience, where most of the "easy to follow who's doing what" value lives); (2)
-  **historical blame** - a toggleable git-blame overlay tinting objects by last author, off by
-  default (a permanent border on everything is noise), decaying or on-demand so the arrangement
-  stays readable. Open question: **role vs identity are two axes.** Today's colours encode
-  *role* (you / agent / claude); multi-user adds an *identity* axis (an open set of people). An
-  option is to keep the teal/violet/coral accents for role and assign each human a stable hue
-  (hashed id into a curated palette) for presence/blame, defaulting the overlay to track/clip
-  granularity and drilling to note/param on demand so a busy piano roll does not turn to confetti.
+  overlay at any commit is just the log up to that point) and needs no format change. Done:
+  per-user identity on the log plus perspective-relative colours have shipped. One view this
+  unlocks is **historical blame** - a toggleable git-blame overlay tinting objects by last author,
+  off by default (a permanent border on everything is noise), decaying or on-demand so the
+  arrangement stays readable; the ephemeral *live-presence* view is COLLAB-2. Open question is that
+  **role vs identity are two axes.** Today's colours encode *role* (you / agent / claude);
+  multi-user adds an *identity* axis (an open set of people). An option is to keep the
+  teal/violet/coral accents for role and assign each human a stable hue (hashed id into a curated
+  palette) for presence/blame, defaulting the overlay to track/clip granularity and drilling to
+  note/param on demand so a busy piano roll does not turn to confetti.
+
+`COLLAB-2` `to-do` **Presence and live cursors**
+
+- **Live presence - ephemeral per-person hue on a cursor / selection.** Showing what someone is
+  touching *now* (the Figma / Google-Docs experience, where most of the "easy to follow who's
+  doing what" value lives). It carries no document state, so a bug can flicker a cursor but never
+  corrupt a project, which is why it is the natural first networked step before shared editing; the
+  concurrency machinery below (sequencer + rebase) is what the shared-editing follow-on then needs.
 - **Concurrency model - keep the diff log, add a sequencer (leaning option).** A CRDT (Yjs/Automerge)
   is all-or-nothing: its value is *owning* the document and merging at that level, so adopting one
   means the store becomes a projection of its types and our authored command log stops being the
@@ -1326,7 +1473,17 @@ land in either order, or not at all if the local-first single-user shape stays t
   snapshot + replay-the-tail) are ones we already have for versioning, so concurrency reuses them rather
   than inventing them.
 
+`COLLAB-3` `to-do` **Comments and review flow**
+
+- **Comments and review flow.** A candidate collaboration surface: threaded comments anchored to
+  objects (a clip, a track, a param, a point in time) plus a lightweight review flow over the commit
+  DAG, so collaborators can discuss and sign off on changes rather than only editing them directly.
+  Not designed in detail; captured as a follow-on once real identity (COLLAB-1) and live presence
+  (COLLAB-2) are in place.
+
 **Platform & form factor**
+
+`MOBILE-2` `to-do` **Touch and pointer layer** (deps: MOBILE-1)
 
 - **Touch-first affordances (design principle, apply now - not just for mobile).** Even before a full
   responsive layout, build interactions so they also work by touch, because retrofitting hover- and
@@ -1336,6 +1493,8 @@ land in either order, or not at all if the local-first single-user shape stays t
   cheap groundwork that keeps the longer-term tablet / mobile goal (the Mobile / responsive bullet
   below) reachable without a rewrite, and it is why the timeline-usability batch above specifies a
   touch path for each new action.
+`MOBILE-1` `to-do` **Responsive shell, tier by device**
+
 - **Mobile / responsive layout (an epic; direction settled 2026-07-14).** The four-region video-editor
   grid assumes a wide screen; touch devices need a different shape. A concept mockup of the phone + tablet
   layouts lives at `docs/mockups/mobile-ux.html` (self-contained, open in a browser). Guiding decisions:
@@ -1367,17 +1526,24 @@ land in either order, or not at all if the local-first single-user shape stays t
     transport); (2) Pointer Events refactor of roll/timeline/knobs (no desktop behaviour change); (3)
     touch gesture + tool layer; (4) agent-forward flow + on-screen keyboard/pads; (5) PWA packaging.
 
-- **Native packaging - PWA first, then Tauri v2 (which now does mobile).** The real gating risk is not
-  the shell tech but whether an **OS webview can deliver acceptable real-time AudioWorklet audio** on
-  mobile - and that risk is shared by every webview approach (PWA, Tauri, Capacitor), since all three use
-  WKWebView / Android WebView. So: ship a **PWA first** (installable, zero native shell, free) to validate
-  webview audio on real devices and get an offline-capable app now; then **Tauri v2** for app-store
-  presence + native niceties - it added first-class iOS/Android targets, so one Tauri project can cover
-  desktop *and* mobile (a point in its favour over a native rewrite, which would abandon the shared web
-  codebase). Tauri-mobile is younger than its desktop story and its mobile plugin ecosystem is thinner, so
-  **Capacitor** is the fallback if Tauri-mobile plugins fall short (more proven web-to-mobile wrapper, same
-  webview + audio caveats). Only reach for React Native / Flutter / native if the webview proves it can't
-  carry the audio - which the PWA step will tell us cheaply.
+`MOBILE-3` `to-do` **PWA packaging: manifest, service worker, icons** (deps: HOST-5)
+
+- **PWA first (validates webview audio).** The real gating risk is not the shell tech but whether an
+  **OS webview can deliver acceptable real-time AudioWorklet audio** on mobile - and that risk is shared
+  by every webview approach (PWA, Tauri, Capacitor), since all three use WKWebView / Android WebView. So
+  ship a **PWA first** (installable, zero native shell, free) to validate webview audio on real devices
+  and get an offline-capable app now. It is the cheapest way to learn whether the webview can carry the
+  audio before committing to a native shell (MOBILE-4).
+
+`MOBILE-4` `planning` **Tauri v2, desktop and mobile** (deps: MOBILE-3)
+
+- **Then Tauri v2 (which now does mobile).** Once the PWA has proved webview audio, reach for **Tauri
+  v2** for app-store presence + native niceties - it added first-class iOS/Android targets, so one Tauri
+  project can cover desktop *and* mobile (a point in its favour over a native rewrite, which would abandon
+  the shared web codebase). Tauri-mobile is younger than its desktop story and its mobile plugin ecosystem
+  is thinner, so **Capacitor** is the fallback if Tauri-mobile plugins fall short (more proven
+  web-to-mobile wrapper, same webview + audio caveats). Only reach for React Native / Flutter / native if
+  the webview proves it can't carry the audio - which the PWA step (MOBILE-3) will tell us cheaply.
 
 **Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
 shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow), with
@@ -1541,15 +1707,15 @@ section records the intended direction, the security reasoning behind it, and a 
 we grow DSP now. It is direction + options, not committed scope; deferred until the hosted
 platform and user libraries exist.
 
-### The direction in one line
+`INST-4` `review` **User-authored declarative DSP**
 
-Make the **declarative primitive graph the primary instrument/effect format** (data, not code),
-cover as much as possible by **growing a curated primitive vocabulary**, and provide a **WASM
-escape hatch** for custom DSP that is still safe to share. **Never run untrusted AudioWorklets on
-the hosted platform** - raw worklets are for first-party DSP (via PR, reviewed) or local
-self-hosting only.
+**The direction in one line.** Make the **declarative primitive graph the primary
+instrument/effect format** (data, not code), cover as much as possible by **growing a curated
+primitive vocabulary**, and provide a **WASM escape hatch** for custom DSP that is still safe to
+share. **Never run untrusted AudioWorklets on the hosted platform** - raw worklets are for
+first-party DSP (via PR, reviewed) or local self-hosting only.
 
-### The maturity ladder (tiers)
+**The maturity ladder (tiers)** runs from safe-but-limited to powerful-but-guarded:
 
 1. **Presets over rich instruments (params only).** The AI picks parameter values against
    existing schemas. No new format, works today over MCP (a `save_patch`-style verb). Safe,
@@ -1563,22 +1729,94 @@ self-hosting only.
    persistence all project from it, exactly like the catalog today).
 3. **WASM custom DSP (the safe escape hatch).** For algorithms the vocabulary can't express,
    author custom DSP that compiles to a sandboxed WASM guest and appears as a primitive/leaf node
-   in the graph. Safe to share (see security below).
+   in the graph. Safe to share (see the security reasoning under INST-6).
 4. **Raw AudioWorklet (first-party / local only).** Genuinely exotic DSP that needs worklet
    capabilities: authored by us via PR (reviewed, trusted) or run by a user on a locally-hosted
    instance. Never accepted as untrusted user-generated content on the hosted platform.
 
-### Why declarative is the keystone-fit composition layer
+**Why declarative is the keystone-fit composition layer.** The app's whole architecture treats the
+param schema as the keystone (UI, MCP, automation, persistence are projections). A JSON primitive
+graph fits that exactly: it is introspectable data with first-class params, the AI emits structured
+data against a schema (which LLMs do well), and it persists/shares as pure data with **nothing to
+sandbox**. It also unifies local and online: first-party instruments can be expressed in the same
+format, so Claude-in-Claude-Code and online-Claude produce the same artifact; compiling a graph to
+a hand-written class becomes an optional performance path, not a separate feature.
 
-The app's whole architecture treats the param schema as the keystone (UI, MCP, automation,
-persistence are projections). A JSON primitive graph fits that exactly: it is introspectable data
-with first-class params, the AI emits structured data against a schema (which LLMs do well), and
-it persists/shares as pure data with **nothing to sandbox**. It also unifies local and online:
-first-party instruments can be expressed in the same format, so Claude-in-Claude-Code and
-online-Claude produce the same artifact; compiling a graph to a hand-written class becomes an
-optional performance path, not a separate feature.
+**Principle to adopt now.** Even though the platform is future, bias new DSP work this way today:
+**grow the reusable, composable primitive vocabulary rather than writing a one-off worklet per
+instrument, and keep DSP as pure, parameterized modules** (as `dsp/ladder`, `dsp/oscillators`,
+`dsp/wavetable` already are - thin realtime shells over pure DSP). Prefer general primitives that
+compose (a pitch shifter + a pitch detector + a scale quantizer) over special-purpose features (an
+"autotune node"), because the general ones recombine into many devices.
 
-### Security: why worklets are out (for sharing) and WASM is in
+**Adoption & sequencing (recommendation).** Adopt the model as direction now, but do not big-bang
+it:
+
+- **Now (zero-cost):** the principle above - new DSP as reusable pure modules / candidate
+  primitives.
+- **Prove with a vertical slice, not a rewrite:** build the graph runtime + schema + auto-UI and
+  express one or two of the simplest existing instruments in it (Subtractive, FM - purely native
+  nodes), validating format + UI projection + params + persistence + MCP end to end on real
+  instruments. Keep the rest as-is; a declarative instrument is just another cataloged type whose
+  factory is the graph interpreter, so the two systems coexist behind the `Instrument` interface.
+- **Grow demand-driven:** convert more instruments (and grow the primitive vocabulary) only as the
+  format earns it - when user authoring is real, or when a new instrument is genuinely easier as a
+  graph than a class. Populate primitives from real instruments + Faust's stdlib, not a speculative
+  list.
+- **Defer the heavy bits** (WASM/Faust pipeline, UI layout language, sandboxing) until the hosted
+  platform and sharing are actually on the table. The native-node graph + schema-projected UI is
+  the cheap, high-value core; sandboxing is only needed once untrusted code / sharing exists.
+
+Not recommended: converting all instruments now. The current ones work; conversion is churn and
+regression risk with no user-facing benefit today; and Nimbus/wavetable need the WASM-primitive
+path (more infra) regardless. Let real use, not speculation, drive the buildout.
+
+`INST-5` `to-do` **Extension SDK for third-party devices** (deps: INST-4)
+
+**The shell contract determines what is precluded (design it richly).** Because WASM matches
+worklets on DSP algorithms, the only things "no untrusted worklet" costs us are capabilities we
+choose not to expose through the trusted shell's fixed contract. So invest in a rich contract:
+**params in** (the schema); **musical/transport context in** (tempo, beat/bar position, time
+signature, sample rate, block time) so tempo-synced devices work; **note/event in**;
+**multi-channel audio in/out including a sidechain/keyed input**; a **bounded
+analysis/visualization out** region (meters, scopes, tuners, spectrum) the shell forwards to the
+trusted UI; and **control-rate signals + modulation routing** in the graph (analysis -> param,
+LFO -> param, envelope -> param), not just audio flow.
+
+What remains genuinely precluded from untrusted content (and routes to PR/local): bespoke
+bidirectional UI protocols beyond the contract, exotic I/O the contract doesn't expose, anything
+needing SharedArrayBuffer / threads / self-timing, and GPU/neural inference (inherent to the audio
+thread - no worklet or WASM audio code gets the GPU; that lives in trusted main-thread/worker
+code). These are plumbing, not sounds: any instrument or effect algorithm is expressible; an
+arbitrary plugin-with-its-own-runtime is not.
+
+**Custom UI: also declarative, a projection of the schema.** The UI is already a projection of the
+param schema (instrument panels render from param specs), and custom instruments should inherit
+that rather than ship their own code. Three levels, mirroring the DSP tiers:
+
+- **Auto-generated from the schema (default).** A user instrument declares its params (name, range,
+  unit, kind, grouping, control-type hint) and the app renders a consistent, accessible panel
+  automatically. This is what most instruments need, and it is pure data - the same reason MCP,
+  automation, and the AI can all see and drive the instrument. (Faust's own UI metadata - groups,
+  sliders, knobs - maps straight onto this.)
+- **Declarative layout + a curated widget palette.** For richer panels, a layout description
+  (sections, positions) referencing trusted widget types from a palette: knob, fader, XY pad,
+  envelope editor, step sequencer, wavetable / scope / meter display. Live-data widgets (scope,
+  spectrum, meter, tuner) bind to the **bounded analysis-out channel** from the shell contract -
+  the DSP writes analysis into a bounded buffer and a trusted renderer draws it. Still pure data to
+  place; nothing the author wrote executes.
+- **Arbitrary UI code: same policy as worklets.** Hand-written HTML/JS/canvas is untrusted code
+  touching the DOM - out for hosted/shared instruments (first-party via PR, or local only). Beyond
+  safety, arbitrary UI would fracture the keystone: a custom panel could hide params from
+  MCP/automation/the AI. Keeping UI declarative is what keeps instruments fully agent-controllable.
+
+Symmetry worth keeping: **DSP is a graph of curated primitives; UI is a layout of curated widgets;
+both bind to the same param schema; both are pure data; both grow by adding trusted building
+blocks.**
+
+`INST-6` `planning` **WASM DSP and Faust factory** (deps: INST-5)
+
+**Security: why worklets are out (for sharing) and WASM is in** - the trust model in three parts:
 
 - **AudioWorklet is capability-reduced, not isolated.** Its global scope has no DOM, no network,
   no storage - so it can't directly exfiltrate or touch the page. But it still runs in *our*
@@ -1602,11 +1840,9 @@ optional performance path, not a separate feature.
   the practical primitives. Net: WASM makes data access safe by construction; isolation + watchdog
   handle CPU; withheld imports handle timing.
 
-### Faust: the factory and compile target, not the user-facing format
-
-The **declarative graph** (tier 2) and **Faust** (a mature functional DSP language that compiles
-to WASM) are different layers, easy to conflate. Use Faust, but do not adopt it as the
-composition format:
+**Faust: the factory and compile target, not the user-facing format.** The **declarative graph**
+(tier 2) and **Faust** (a mature functional DSP language that compiles to WASM) are different
+layers, easy to conflate. Use Faust, but do not adopt it as the composition format:
 
 - **Keep our own declarative format** as the composition/sharing/keystone layer. It is data
   (shareable with nothing to sandbox), introspectable, param-schema-native, and gives us control
@@ -1628,95 +1864,17 @@ composition format:
   native-node / pure-data-no-compile properties. Deferred; the hybrid (native nodes + WASM
   primitives, our own format) is the current lean.
 
-### The shell contract determines what is precluded (design it richly)
-
-Because WASM matches worklets on DSP algorithms, the only things "no untrusted worklet" costs us
-are capabilities we choose not to expose through the trusted shell's fixed contract. So invest in
-a rich contract: **params in** (the schema); **musical/transport context in** (tempo, beat/bar
-position, time signature, sample rate, block time) so tempo-synced devices work; **note/event
-in**; **multi-channel audio in/out including a sidechain/keyed input**; a **bounded
-analysis/visualization out** region (meters, scopes, tuners, spectrum) the shell forwards to the
-trusted UI; and **control-rate signals + modulation routing** in the graph (analysis -> param,
-LFO -> param, envelope -> param), not just audio flow.
-
-What remains genuinely precluded from untrusted content (and routes to PR/local): bespoke
-bidirectional UI protocols beyond the contract, exotic I/O the contract doesn't expose, anything
-needing SharedArrayBuffer / threads / self-timing, and GPU/neural inference (inherent to the audio
-thread - no worklet or WASM audio code gets the GPU; that lives in trusted main-thread/worker
-code). These are plumbing, not sounds: any instrument or effect algorithm is expressible; an
-arbitrary plugin-with-its-own-runtime is not.
-
-### Custom UI: also declarative, a projection of the schema
-
-The UI is already a projection of the param schema (instrument panels render from param specs),
-and custom instruments should inherit that rather than ship their own code. Three levels, mirroring
-the DSP tiers:
-
-- **Auto-generated from the schema (default).** A user instrument declares its params (name, range,
-  unit, kind, grouping, control-type hint) and the app renders a consistent, accessible panel
-  automatically. This is what most instruments need, and it is pure data - the same reason MCP,
-  automation, and the AI can all see and drive the instrument. (Faust's own UI metadata - groups,
-  sliders, knobs - maps straight onto this.)
-- **Declarative layout + a curated widget palette.** For richer panels, a layout description
-  (sections, positions) referencing trusted widget types from a palette: knob, fader, XY pad,
-  envelope editor, step sequencer, wavetable / scope / meter display. Live-data widgets (scope,
-  spectrum, meter, tuner) bind to the **bounded analysis-out channel** from the shell contract -
-  the DSP writes analysis into a bounded buffer and a trusted renderer draws it. Still pure data to
-  place; nothing the author wrote executes.
-- **Arbitrary UI code: same policy as worklets.** Hand-written HTML/JS/canvas is untrusted code
-  touching the DOM - out for hosted/shared instruments (first-party via PR, or local only). Beyond
-  safety, arbitrary UI would fracture the keystone: a custom panel could hide params from
-  MCP/automation/the AI. Keeping UI declarative is what keeps instruments fully agent-controllable.
-
-Symmetry worth keeping: **DSP is a graph of curated primitives; UI is a layout of curated widgets;
-both bind to the same param schema; both are pure data; both grow by adding trusted building
-blocks.**
-
-### Principle to adopt now
-
-Even though the platform is future, bias new DSP work this way today: **grow the reusable,
-composable primitive vocabulary rather than writing a one-off worklet per instrument, and keep
-DSP as pure, parameterized modules** (as `dsp/ladder`, `dsp/oscillators`, `dsp/wavetable` already
-are - thin realtime shells over pure DSP). Prefer general primitives that compose (a pitch
-shifter + a pitch detector + a scale quantizer) over special-purpose features (an "autotune
-node"), because the general ones recombine into many devices.
-
-### Worked example: autotune
-
-Autotune = pitch detection + snap-to-scale + pitch shifting. None of these are native Web Audio
-nodes, so it is **not** expressible in a native-only graph. It **is** expressible in the
-declarative format once the vocabulary includes three reusable primitives: a **pitch detector**
-(autocorrelation / YIN or FFT) emitting a control-rate f0; a **scale/pitch quantizer**
-(control-rate: detected pitch + key/scale + retune-speed -> target shift); and a **pitch shifter**
-(phase vocoder or PSOLA). Wired: input -> pitch-detect -> quantize(key, scale, speed) ->
-pitch-shift(amount) -> output, with params for key, scale, retune speed, and mix. This needs the
-control-rate connections above, and it is the poster child for the principle: those same three
-primitives also compose into a harmonizer, an octaver, formant correction, and a vocoder - so we
-add capabilities that recombine, not a bespoke autotune device. Each primitive is a WASM leaf
+**Worked example: autotune.** Autotune = pitch detection + snap-to-scale + pitch shifting. None of
+these are native Web Audio nodes, so it is **not** expressible in a native-only graph. It **is**
+expressible in the declarative format once the vocabulary includes three reusable primitives: a
+**pitch detector** (autocorrelation / YIN or FFT) emitting a control-rate f0; a **scale/pitch
+quantizer** (control-rate: detected pitch + key/scale + retune-speed -> target shift); and a
+**pitch shifter** (phase vocoder or PSOLA). Wired: input -> pitch-detect -> quantize(key, scale,
+speed) -> pitch-shift(amount) -> output, with params for key, scale, retune speed, and mix. This
+needs the control-rate connections above, and it is the poster child for the principle: those same
+three primitives also compose into a harmonizer, an octaver, formant correction, and a vocoder - so
+we add capabilities that recombine, not a bespoke autotune device. Each primitive is a WASM leaf
 (Faust-authored), safe to ship and share.
-
-### Adoption & sequencing (recommendation)
-
-Adopt the model as direction now, but do not big-bang it:
-
-- **Now (zero-cost):** the principle above - new DSP as reusable pure modules / candidate
-  primitives.
-- **Prove with a vertical slice, not a rewrite:** build the graph runtime + schema + auto-UI and
-  express one or two of the simplest existing instruments in it (Subtractive, FM - purely native
-  nodes), validating format + UI projection + params + persistence + MCP end to end on real
-  instruments. Keep the rest as-is; a declarative instrument is just another cataloged type whose
-  factory is the graph interpreter, so the two systems coexist behind the `Instrument` interface.
-- **Grow demand-driven:** convert more instruments (and grow the primitive vocabulary) only as the
-  format earns it - when user authoring is real, or when a new instrument is genuinely easier as a
-  graph than a class. Populate primitives from real instruments + Faust's stdlib, not a speculative
-  list.
-- **Defer the heavy bits** (WASM/Faust pipeline, UI layout language, sandboxing) until the hosted
-  platform and sharing are actually on the table. The native-node graph + schema-projected UI is
-  the cheap, high-value core; sandboxing is only needed once untrusted code / sharing exists.
-
-Not recommended: converting all instruments now. The current ones work; conversion is churn and
-regression risk with no user-facing benefit today; and Nimbus/wavetable need the WASM-primitive
-path (more infra) regardless. Let real use, not speculation, drive the buildout.
 
 ### Status
 
@@ -1725,11 +1883,43 @@ exist. The near-term, no-regret move is the principle above (reusable pure DSP m
 primitives), and - when the declarative graph is built - making tier 2 the format first-party
 instruments are themselves expressed in, so local and online authoring converge on one artifact.
 
+
+## Architecture & tech debt
+
+Cross-cutting internal-quality items (not user-facing features), captured from code review. The `ARCH`
+area is where refactors and structural clean-ups live so they stay visible on the map.
+
+`ARCH-1` `to-do` **Split projectStore / state management**
+
+`projectStore.ts` has grown oversized (CLAUDE.md already flags it as a file to chip away at). To be clear
+on one question that comes up: it has **not** moved server-side - the sync service persists project *data*
+through the storage seam, but the in-memory `ProjectStore` (tracks / params / clips plus the mutators the
+reducers call) stays client-side and is the app's central store. Two ways to tame it, both keeping the
+`dispatch` / edit-log seam intact: (a) **split into focused sub-stores** by responsibility (tracks,
+transport, selection, devices, ...) behind the same seam; or (b) **adopt a store library (zustand)** for
+selectors + fine-grained subscriptions, shrinking the bespoke wiring and re-render surface. Prefer whichever
+keeps the reducers/`applyEdit` boundary unchanged so persistence and history are unaffected.
+
+`ARCH-2` `planning` **Share MIDI and audio device-chain code**
+
+The MIDI device chain (the note-transform pipeline for the arpeggiator / octavator, section 15) looks to
+**duplicate parts of the audio effect-chain code**: an ordered chain of devices with add / remove / reorder,
+per-device param stores, and host-addressing are common to both. Investigate a shared **"device chain"**
+abstraction the two families reuse - the chain container, ordering, and param plumbing are likely the shared
+core; only the payload differs (a note transform vs an audio node). Would cut the duplication and keep the
+two device families consistent (one place to fix a chain bug, one addressing scheme). Needs a look at the
+MIDI-device and effect-chain code to confirm the shared surface before committing to the abstraction.
+
 ## Sync service (server + database)
 
 Motivation: browser storage (OPFS/localStorage) was evicted by Chrome and wiped projects. We
 graduated to **web-app-primary**: a server + Postgres is the durable source of truth, OPFS is the
 offline fallback, and bundle export/import (`.daw.zip`) stays as the portability escape hatch.
+
+The server work items (the whole stack is built + deployed but in open PRs, not yet on `main`), each
+with its own detail below:
+
+`HOST-1` `review` **Multiplayer authority**
 
 - **Server + DB behind the `BundleStore` seam - DONE (slice sync-service).** A Hono + Drizzle +
   Postgres service (`server/api`, `server/db`) is a thin, owner-scoped `(projectId, path) ->
@@ -1740,18 +1930,217 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   type import) - the JSON control routes; file bytes go over plain `fetch`. Sync timing is the
   existing autosave: a ~300 ms debounce after any edit, plus commits, sample imports, and renames;
   reads on load and project switch. Last-write-wins, no conflict engine.
+- **Realtime multiplayer - chosen strategy (design decided; build underway).** Live multi-user
+  editing. The transport, authority, conflict model, and offline stance are settled below.
+- **Conflict resolution: server-authoritative total order + optimistic apply + rebase** (NOT OT, NOT
+  CRDT). The client applies a command optimistically to its local replica and sends it tagged with the
+  last authoritative `seq` it saw + a client op-id; the server appends it at the next `seq`, applies to
+  HEAD, and broadcasts; a client that had in-flight ops **rebases** (roll back optimistic ops, apply
+  the authoritative ones in order, re-apply its pending ops on top). Rationale: our edits are coarse
+  **semantic** commands that mostly target *different* objects, so they commute and the authority need
+  only *order* them; the rare **same-target** clash (two users on one knob/note) resolves
+  **last-writer-wins by `seq`**, which matches expectation. OT is rejected (a ~50x50 transform matrix);
+  CRDT is rejected *for now* because its value is authority-free multi-primary merge, which we do not
+  need (single authority per project, single region at a time) and which would reshape `ProjectStore`
+  and lose semantic intent. CRDT stays the escape hatch only if offline-collaboration or
+  multi-region-per-project ever becomes a hard requirement. Two requirements this imposes: (1)
+  **`applyEdit` must no-op gracefully on a stale target** (e.g. `addNote` to a track another user just
+  deleted) instead of throwing; (2) **client op-ids** so reconnect/retry never double-applies. This is
+  when `editCommandSchema` graduates from structural to first-class typed and server-assigned `seq`
+  replaces the client-stamped `seq`.
+- **Ephemeral vs durable split.** Presence (cursors, who's online) and live MIDI are **never
+  persisted** - they live in the room instance's memory / a pub-sub bus. Only authored `EditCommand`s
+  hit Postgres, so write load stays proportional to real edits.
+- **Offline stance: solo-offline kept, live-collab requires a connection.** Solo editing stays
+  **local-first** (OPFS working copy, queue commands, flush on reconnect - one writer, so the server
+  sequences the queue with nothing to conflict against). Live collaboration requires a connection;
+  brief disconnects are absorbed by the optimistic queue (reconnect -> replay pending -> rebase). We do
+  **not** go Onshape-online-only (solo offline is cheap and valuable) nor full offline-first (that
+  effectively demands CRDT). **Offline *during* active collaboration is deferred** - the genuinely hard
+  merge; when wanted, prefer **branch-and-merge** (an offline session becomes a branch, reconnect does a
+  3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
+- **Build progress.** Phase A is landing in two slices. **A1 (slice 71, done):** the server-side
+  per-project authority - a `Room` (server/api/rooms.ts) holds a headless `ProjectStore`, assigns the
+  single monotonic `seq`, applies via `applyEdit`, persists through the existing `appendEdits`, and
+  broadcasts `editApplied`; a `WebSocketServer` on the same HTTP port (`/ws`, token at the upgrade)
+  is the transport glue. Idempotent by `opId`; reloads HEAD from Postgres by replay on restart.
+  **A2 (slice 72, done):** the client `SharedSession` (src/audio/sync/sharedSession.ts) - optimistic
+  apply + total-order rebase. It keeps a confirmed `base` (advanced by `applyEdit` in `seq` order) and
+  a `pending` list of unconfirmed local ops; the live store is `base + pending`. Its own `editApplied`
+  just retires the pending op (live already matches); a peer's advances `base` and **rebases** (rebuild
+  live as `base` with `pending` replayed on top). Wired through a single `EditLog` remote-sink so UI /
+  MCP / recorder / agent edits all forward automatically; enabled whenever a remote backend is
+  configured (`VITE_DAW_API_URL`), where the client stops HTTP autosave and the authority persists.
+  Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase).
+  The collaboration-identity slices A3a/A3b/A3d are grouped with the auth epic (HOST-2); the
+  remaining connection-resilience piece:
+  **A3c (slice 76, done):** reconnect gap-fill - a dropped connection self-heals. `createWsClient` now
+  reconnects with capped exponential backoff after an unexpected close and exposes an `onOpen` hook that
+  fires on every (re)connect. `SharedSession.resync` (bound to `onOpen`, and the single path the initial
+  subscribe rides too) re-subscribes - the authority's `snapshot` folds any edits missed while away (the
+  gap-fill) - and re-sends every still-pending optimistic op. Re-sends are idempotent by `opId`: the room
+  now *broadcasts* an already-applied re-echo (rather than returning it silently) so the originator retires
+  its pending op, and peers drop it via their reorder guard. `onEditApplied` retires a pending op on any
+  `opId` match, even when its echo trails a snapshot that already folded it into `base`. This closes A3
+  (collaboration completeness); next is the auth + real-users epic (HOST-2).
+- **Hosting & scaling of the authority.** The authority is **per-project** (the shard unit), so a project
+  is single-region at a time; server-assigned `seq` is the enabling change.
+- **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
+  unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
+  functions, plain Lambda) for the socket layer; it needs an always-on process.
+- **Affordable platforms to start:** a small always-on **Node** instance + **managed Postgres**.
+  Recommended default **Fly.io** (runs the process as a long-lived VM, holds WS, region-pinnable next
+  to the DB, a few $/mo) **+ Neon** (serverless PG, scale-to-zero, branching, built-in pooler) - or
+  **Railway** for both if one dashboard is preferred. **Supabase** is tempting because it could also
+  supply auth (replacing the stubbed token). **Cloudflare Durable Objects / PartyKit** is the
+  odd-one-out: purpose-built stateful per-key "rooms" (each project = one addressable actor), the
+  cleanest fit for the model below, but a Cloudflare tie and a non-Node (Workers) runtime, so reach
+  for it only if per-project rooms dominate. Avoid API-Gateway-WebSockets-on-Lambda (awkward).
+- **The project is the shard unit at every layer.** A project's edit stream is a single ordered log,
+  so multiplayer needs exactly **one authority per project** (assigns order/`seq`, applies, broadcasts).
+  That same `projectId` partitions all three layers: (1) **WS routing** - a stateless gateway routes a
+  client for project P to P's owning instance (consistent hashing on `projectId`, or a directory;
+  Durable Objects/PartyKit do this natively via `idFromName(projectId)`); (2) **in-memory authority** -
+  the owner holds P's replay/CRDT state and fans out to P's peers, with **failover** cheap because any
+  instance can reload P from Postgres (keyframe + replay - the path already built) and take ownership;
+  (3) **DB sharding** - only when a single vertically-scaled PG (with pooling, read replicas, and
+  `edits` partitioned by `projectId`) is outgrown, shard by `projectId`/`ownerId`; a project never
+  spans a shard. This is clean **only because** the schema is already owner-/project-scoped with no
+  cross-project joins ("multi-user later is a change of principal, not of queries"). Ephemeral state
+  (presence, cursors, live MIDI) stays in the room's memory / a pub-sub bus, never the DB - so PG write
+  load stays proportional to authored edits. The one code change scaling assumes: the **server** assigns
+  `seq` (not the client, as today), the multiplayer/authoritative-log change.
+- **A project is single-region at a time (consequence, acceptable).** One authority per project means
+  that authority - and ideally its DB shard - lives in **one region** at any instant. The *service* is
+  multi-region (different projects homed in different regions; a project's ownership can **migrate**
+  regions on failover/rebalance, e.g. toward its active collaborators), but a single project is **not**
+  simultaneously authoritative in two regions - that would break the single total order. This is not a
+  latency problem in practice: with **optimistic local apply** (apply instantly, reconcile on server
+  ack), the authority's region only affects when the authoritative order/conflict-resolution *confirms*,
+  not the felt responsiveness of editing. The only way to make one project genuinely multi-region
+  (multi-primary, no central order) is a **CRDT** (yjs/automerge), which drops the single-`seq`
+  authority for conflict-free merge - a real fork we are deliberately *not* taking now (we lean
+  single-authority + server-assigned `seq`). So: single region per project unless/until a CRDT model is
+  adopted; revisit only if globally-distributed collaborators on one project become a real need.
+
+`HOST-2` `review` **Auth: principal, login, sharing**
+
 - **Trust & durability guarantees.** Projects **soft-delete** (a `deletedAt` stamp, never a hard
   `DELETE`) so an accidental delete is recoverable; `history/commits/*` is **write-once**
   (append-only). Auth is stubbed for now: a shared bearer token + a single hardcoded owner, with
   every query owner-scoped so real accounts are a change of principal, not of schema.
-- **Typed storage + a "don't trust the client" boundary - DONE.** JSON bundle files are stored as
-  Postgres **`jsonb`** (readable and queryable in Drizzle Studio / psql, not opaque bytes; samples
-  stay `bytea`, a CHECK enforces exactly one). Every JSON write is **shape-validated** against a
-  per-path zod schema (`server/api/bundleSchemas.ts`) before it reaches the DB - malformed JSON is
-  400, wrong shape is 422. The validation is deliberately **structural** (top-level type + always-
-  present fields, with zod's default key-stripping so evolving fields don't break saves); deep
-  per-parameter validation stays at the client/MCP boundary where the param schema lives. A test
-  runs a real project snapshot through the schemas to guard against over-strictness.
+- **A3a (slice 73, done):** per-user identity + colours.
+  `author` generalised from the 3-role enum to a bounded free string (`claude`/`agent` reserved AI
+  voices, `you` the default; any other value a human user id) - backward compatible, no schema bump.
+  A `currentUser` store (localStorage + `?user=` override, dev-only setter in the Authors settings tab,
+  removed once real auth supplies the id) sets `EditLog`'s local-author default, so UI edits carry the
+  user id (MCP/agent still stamp their own). A peer's `editApplied` now posts an append-only feed entry
+  via `EditLog.recordRemote` (narration, no re-apply), and the activity feed colours each entry by
+  `colorForAuthor` (any id -> a stable hue) instead of collapsing to three voice classes.
+- **A3d (slice 74, done):** full
+  per-surface tinting + **perspective-relative colouring**. The author-tinted surfaces (piano-roll
+  notes, knob/fader fills + pointers, arrangement placement blocks + note-summary bars, track-row
+  accents, clip rail, patch list, version timeline, feed) moved off the fixed 3-voice Tailwind classes
+  (authorVoice.ts) onto per-author inline hex (authorStyle.ts), fed a live `{config, self}` presence
+  through an `AuthorColorsProvider` context so a swatch/identity change recolours instantly. Colour is
+  **perspective-relative**: `colorForAuthor(author, config, self)` paints the viewer's OWN edits with
+  the teal "you" hue (whoever they are) and every collaborator in their own stable hashed hue;
+  `agent`/`claude` stay absolute voices. This removed the asymmetry where whoever kept the default `you`
+  was a privileged always-teal identity others couldn't recolour - now two users are symmetric (each
+  sees itself teal, the other in a distinct, recolourable colour). The Authors settings tab lists
+  **collaborators seen in the feed** (excluding the AI voices + self), each with its own swatch picker.
+  authorVoice.ts trimmed to the reserved-voice constants + label.
+- **A3b (slice 75, done):** project name is now project state - a `renameProject` edit
+  (`ProjectStore.renameProject`, an optional `name` on `projectDataSchema`) instead of a bare
+  `meta.json` write, so a rename syncs live across a shared session, rides undo/redo + history, and the
+  authority's headless replay reconstructs it. `meta.json` keeps a name copy as the library's list
+  index. A document with no `name` defaults to "Untitled" (the dev DB was cleared to drop pre-A3b
+  projects rather than carry a meta-heal, per the disposable-dev-data consent - no `PROJECT_SCHEMA`
+  bump). The header title reads the name from the store (`useProject`) so a peer's rename updates it in
+  real time.
+- **Auth + real users/sharing (the current epic, before Phase B/C).** Today auth is stubbed: one
+  hardcoded owner `"local"` + a shared bearer token, so "two users" are the same account. This epic
+  makes multi-user genuine and is the gateway to the rest. We adopt **Supabase Auth as an identity
+  provider only** - it runs login and issues a JWT; our Hono+Postgres owns all domain data and just
+  *verifies* the token to get the principal. Lock-in is kept low deliberately (a decision with the
+  user): the DB stays plain Postgres (Drizzle unchanged), we keep our **own `users` table** keyed by
+  the auth subject (never FK into Supabase's tables), verification is a standard JWKS check behind a
+  one-function seam, and we use none of Supabase's realtime/storage/data-API - so moving to AWS
+  (RDS + Cognito or self-hosted GoTrue) later is a contained swap. Sliced A/B/C:
+  **Auth-A (slice 77, done):** the server-side principal, end to end. New `server/api/principal.ts`
+  seam (`makeJwtResolver` verifies a Supabase JWT via `jose`/JWKS - issuer + `authenticated` audience,
+  principal = `sub`; `makeDevResolver` keeps the pre-auth shared-token + single-`"local"`-owner stub
+  for local dev/tests). Both the HTTP middleware (`app.ts`) and the WS upgrade (`wsServer.ts`) resolve
+  identity through it (WS is now a *per-connection* owner; the message handler awaits the resolved
+  principal so an early `subscribe` is held, not dropped). A resolved principal is JIT-provisioned into
+  a new `users` table (`ensureUser`, `onConflictDoNothing`); `projects.ownerId` is now an FK to
+  `users.id` (+ an owner index), and `Room.load` also `ensureUser`s so the authority satisfies the FK
+  for any caller. Bootstrap reads `SUPABASE_JWKS_URL`/`SUPABASE_JWT_ISSUER` (unset -> dev-stub). No
+  client change (Auth-B wires the real token). Tests mint tokens against a local JWKS (no network/live
+  Supabase). **NOTE - authentication only:** per-project *authorization* (may this user open this
+  project?) still needs the membership model and lands in Auth-C; until then the owner is the only real
+  user and there is no login UI, so nothing can exploit it yet.
+  **Auth-B (slice 78, done):** the browser login. New `src/auth/session.ts` (the only importer of
+  `@supabase/supabase-js`) wraps Supabase Auth behind two seams: `getAccessToken()` (the credential for
+  the clients - the live session JWT, or the static `VITE_DAW_API_TOKEN` when auth is off) and a
+  `readAuthState`/`subscribeAuth` store fed by `onAuthStateChange`. `src/ui/AuthGate.tsx` wraps
+  `AppShell` in `App.tsx`: when `authEnabled` (both `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set)
+  it shows a loading card / a login screen (Continue with Google/GitHub, styled like `StartDialog`) /
+  the app by session status - gating *above* AppShell so the audio engine doesn't build behind the
+  login. The token became a lazy `TokenSource` (`string | (() => string | undefined)`) on
+  `createApiClient` (per-request `authHeaders()`) and `createWsClient` (URL rebuilt inside `connect()`,
+  so a reconnect picks up a refreshed token); `RemoteProjectStorage`/`bundleStore`/AppShell feed
+  `getAccessToken`. On sign-in the gate bridges the session's display name into `currentUser` (author =
+  a readable name, deliberately distinct from the server principal = JWT `sub`); the A3a dev identity
+  field in `AuthorColorSettings` is now auth-aware (static name + Sign out when authed, editable handle
+  in dev). Auth composes with the existing `VITE_DAW_API_URL` gate; local/OPFS mode ignores tokens.
+  Tested: `test/client.test.ts` (the token-getter is evaluated per request); the gate/login/supabase
+  wrapper are verified live (client runs in Vitest's node env - no jsdom - so no component tests).
+  **Auth-C (slice 79, done):** **membership/sharing** end to end. New `project_members` table
+  (`(projectId, email)` PK, role, invitedBy) - a member is keyed by **email** (the invited identity,
+  stored lowercase), never a FK into `users`, so an owner can invite someone who hasn't signed up yet
+  and the grant takes effect the moment they sign in with a provider account whose verified email
+  matches. The single-owner filter in `server/db/store.ts` became **owner-or-member**: an `accessibleWhere`
+  predicate (`ownerId == me OR EXISTS a member row for my token email`) drops in wherever a query was
+  `eq(ownerId)`; writes gate the same way (create-if-absent still owner-stamps, but a member's write never
+  re-stamps the owner). Owner-only member endpoints (`GET/POST/DELETE /projects/:id/members`, zod
+  `z.email()` at the boundary) + a `SharePanel` reached from the project menu (shown only for a project
+  you own). This also **closed the WS room-authorization gap** flagged in Auth-A: `RoomRegistry.get` now
+  takes the principal, resolves the project's *real* owner from the table, authorizes owner-or-member
+  before handing back the room, and loads/persists the room under that real owner - so a shared project
+  is one room keyed by `projectId` and a member's edits persist under the owner (an unauthorized subscribe
+  is refused, closing 1008). And the **project index moved onto the `projects` table**: `GET /projects`
+  returns `{ id, name, modifiedAt, role }[]` (the `ProjectStorage` seam's `listProjectIds -> listProjects`),
+  killing the per-project `meta.json` read on the remote path.
+  **Auth cleanup (slice 80, done):** the Auth-C follow-ups + a polish. (a) **Retired `DAW_API_TOKEN`** end to end - `makeDevResolver` keeps only the `"local"` dev principal (open locally; production always
+  sets the JWT config), and `VITE_DAW_API_TOKEN` is gone (the client sends the Supabase JWT or nothing).
+  (b) **Email-based edit identity** - `author` (the colour key + feed label) is now the signed-in
+  **email**, not the display name, so two logins of the same person stay distinct; the feed shows "You"
+  for your own edits, emails for collaborators. One-line change in the `AuthGate` bridge (no schema/wire
+  change - `author` stays a free string). (c) **Rename propagates live** - the authority calls
+  `setProjectName` when it applies a `renameProject` edit (so `projects.name` is authoritative without the
+  renamer pushing `meta.json`), and a peer patches its library-list label straight from the edit via a new
+  `SharedSession.onRemoteEdit` hook -> `patchProjectName`. (d) **Account avatar + panel** - a rail avatar
+  (your colour + initials) above the settings gear opens an account panel (name, email, sign out; the
+  single home for sign-out now). Still deferred: the fuller server-side `meta.json` retirement (keep it
+  only as the OPFS/offline fallback index).
+  Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
+  Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
+  (solo-offline PWA).
+
+`HOST-3` `review` **Deploy on Fly and Neon, single-origin**
+
+- **First deploy - DONE (slice 81):** the recommended shape (the per-project authority; scaling detail under HOST-1) is now realized as a concrete,
+  repeatable deploy (runbook in `docs/DEPLOY.md`). **Single origin:** one Node process serves the built
+  client (`dist/`), the Hono API, and `/ws` from one URL (the server gained static + SPA-fallback
+  serving in `server/api/index.ts`; the auth gate is scoped to `/projects` so static assets aren't
+  401'd). **Fly.io** runs it as a **scale-to-zero** machine (`fly.toml`: one `shared-cpu-1x`/256 MB,
+  `max_machines_running = 1`, no volume - bounds cost to ~$2-3/mo worst case, near-$0 idle) + **Neon**
+  free Postgres; migrations apply on boot. Scale-to-zero is safe here because a room rebuilds by
+  replaying the `edits` table and clients reconnect/gap-fill (slice 76) - the only cost is a few-second
+  cold start after idle; flip `min_machines_running = 1` for a live session. Deployed with **auth on**
+  (the Supabase JWT stack, slices 77-80). The scaling model below (per-project sharding, single-region)
+  still stands as the growth path; nothing here forecloses it.
 - **Migrations - the paradigm shifted, and it is now in force (slice 81 deploy).** The old "discard
   old data on a format change" shortcut was scoped to disposable local-only data. With the app now
   **deployed to a live hosted database** (Fly + Neon), that shortcut is **retired**: there is real
@@ -1772,56 +2161,8 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   The "discard on change" mindset (still referenced in the older local-only notes above and in the
   slice-70 dev-DB refresh) applied **only** while data was disposable; it does not apply to hosted data.
 
-**Roadmap (deferred):**
+`HOST-4` `review` **B1 server keyframes and compaction** (deps: HOST-1)
 
-- **Offline-first / PWA + backend interchangeability (the target working model; direction firmed up
-  2026-07-15).** The north star: online and offline are the *same app* degrading gracefully, with local
-  and remote storage **almost interchangeable** and a **trivial sync on reconnect** - not two builds.
-  - **Where we are.** All project data goes through one seam (`BundleStore`/`ProjectStorage`,
-    `getProjectStorage()`), with three backends: **RemoteProjectStorage** (HTTP + WS authority ->
-    Postgres/Neon), **OpfsBundleStore** (browser OPFS bundle), and **MemoryBundleStore** (tests). But the
-    backend is chosen **at build time** by `VITE_DAW_API_URL`, so it is online-*or*-offline: remote mode
-    writes **no** OPFS cache, so a server it can't reach just fails; local mode syncs nowhere. (Small
-    non-project state - `currentUser`, current-project key, author colours, agent chat - lives in
-    `localStorage` regardless.)
-  - **Why we are well-positioned.** The **edit log is the universal currency**: both backends model
-    persistence as "append `seq`-ordered `EditCommand`s + replay to materialize HEAD," identical in
-    `edits.json` (OPFS) and the `edits` table + WS (remote). Sync is therefore a *sequencing* problem, and
-    the hard part is already solved - the authority is **`opId`-idempotent** and `SharedSession` already
-    does optimistic apply + rebase + **reconnect gap-fill** (slice 76). So **an offline session is just a
-    peer that has been away longer**: on reconnect, replay the queued local edits through the authority
-    (dedup by `opId`), it assigns authoritative `seq`s, and LWW-by-`seq` rebase converges - no CRDT (same
-    decision as multiplayer). Content-addressed samples (sha256) sync by "push the hashes the server
-    lacks," dedup for free.
-  - **The work to get there.** (1) **Always keep an OPFS working copy**, even in remote mode
-    (write-through cache), so there is local state to render + mutate when the network drops; (2) a
-    **durable offline write-queue** (append edits with `opId`s + provisional local `seq`s to OPFS, flush
-    through `SharedSession` on reconnect - the gap-fill extended to a long gap); (3) **runtime online/
-    offline switching** (a "cache + queue" wrapper at the `BundleStore` seam, not a build-time flag); (4)
-    **service worker + manifest** for the installable PWA. The one subtlety is **`seq`-space
-    reconciliation** - solo-offline is a clean replay (no peers); multi-user-with-offline rides the
-    existing LWW-by-`seq` rebase.
-  - **This reshapes how history/commits (Phase B2) should be built.** Under this model a commit is best a
-    **syncable authored entry in the same log** (authorable offline, synced on reconnect like any edit),
-    NOT a server-only `POST` the client cannot perform offline. So establish the always-local-cache +
-    edit-log-sync substrate *before or with* B2, or B2 will need rework. Likewise agent-session
-    persistence rides the same substrate.
-  - **Per-backend index note.** Each backend needs a cheap listing index: remote uses the `projects`
-    table columns; OPFS uses each bundle's `meta.json` (a small name-card, so the library needn't parse
-    every `project.json`). That is why `meta.json` survives client-side after B1 retired it server-side -
-    whatever unifies the backends still wants a lightweight per-project index on each side.
-- **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
-  samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
-  for true multiplayer) - all fit behind the current seams.
-- **Agent-session persistence.** Agent chat (`ChatTurn` via `src/ui/agentSessions.ts`) is
-  `localStorage`-only and **global** (cross-project) today - the same evictable storage that motivated
-  the sync service, so it is the next durability gap after project data. Move it behind the sync seam as
-  its own session-scoped store (`agent_sessions` + `agent_turns`, keyed by session id, not by the
-  project's edit `seq`). Two decisions to settle when picked up: per-project vs global scoping (currently
-  global - the agent re-reads project state each turn, so a conversation can span projects), and
-  transcript size/privacy (tool-call payloads get large and are more sensitive than project data). This
-  is a **distinct** stream from the project's authored edit-log: chat is the reasoning transcript that
-  *produces* edits + feed notes; do not fold agent turns into the project edit-log.
 - **Delta sync - _done_ (slices 66-67).** Autosave no longer re-uploads the whole `project.json` on
   every edit; it **appends the delta** to a durable, append-only edit log and rewrites `project.json`
   only as a throttled **keyframe** (recording, via a `headSeq` marker, the seq it reflects). Load
@@ -1913,97 +2254,181 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     at the same time - `projects.name`/`modifiedAt` is maintained by the authority (`setProjectName` on a
     `renameProject` edit); `meta.json` stays only as a client OPFS/export bundle file. Still client-side
     and deferred to **B2/B3**: the commit/version DAG (`VersionStore`) and MCP server-side history.
-  - **B2 - server-authoritative history (the current slice): a commit is a syncable log entry.** Commits
-    are *already* persisted server-side (bundle writes reach the DB, `history/commits/*` is write-once),
-    but the DAG is **authored independently by each client**: every client runs its own debounced
-    auto-checkpoint and advances `refs.json` - a single mutable HEAD pointer - so concurrent committers
-    **race and clobber HEAD**, peers don't see each other's commits without a reload, and there's redundant
-    per-client auto-commit churn. The fix, per the offline-first note above, is **not** a WS/HTTP commit
-    *request* (that can't be authored offline and adds a second, uncoordinated notion of HEAD): make a
-    **commit a new authored entry kind in the edit log itself**. A "save version" dispatches a `commit`
-    marker (message + author) that rides `SharedSession` exactly like an edit - queued offline, flushed on
-    reconnect, assigned an authoritative `seq` by the `Room`, and broadcast to peers in the same
-    `editApplied` stream. Consequences: (a) **the `refs.json` race disappears by construction** - HEAD is
-    just the latest `commit` marker in `seq` order, a derived value, not a mutable pointer anyone writes;
-    (b) commits **reference log ranges** (the edits between this marker and the previous one) rather than
-    embedding client-seq copies - resolving the "commit embeds its entries" note below and unifying on the
-    authoritative `seq` space (the client feed's local seq space is retired for history); (c) the server
-    **materializes** snapshots/keyframes on cadence (reusing B1 keyframe machinery) so replay stays
-    bounded; (d) peers' history is live for free (the marker arrives in their edit stream). Reads
-    (`list_history` / `diff` / get-commit) reconstruct from the authoritative log + keyframes - shareable
-    by any caller. The **local/offline backend keeps its file-DAG** unchanged (the `repoOverride` seam
-    isolates it); this reworks the *remote* path. This is a meaty rework of the commit model (seq-space
-    unification + marker-in-log), not a drop-in - it was always going to need it (the design flagged
-    "B2 will need rework" without the substrate; the offline foundation is that substrate, now shipped).
-    - **Done (steps 1-2):** the `commit` edit command (message; `applyEdit` no-ops it) +
-      `SharedSession.postCommit`. A named commit is authored into the log, queued offline, seq'd by the
-      `Room`, broadcast to peers - no new message types, no Room change. Concurrent commits land as
-      distinct ordered markers (the HEAD race is gone by construction). Tested in `sharedSession.test.ts`.
-    - **Done (step 3) - client reads history from the log + commit-pinned keyframes + revert-as-marker.**
-      The remote `VersionStore` (`src/audio/commands/history.ts`) now derives history from the authoritative
-      log instead of the client file-DAG: `history()` scans the mirrored log for `commit` / `loadSnapshot`
-      markers (HEAD = the latest marker's `seq`, derived); `commit()` -> `session.postCommit`; `revertTo()`
-      dispatches a `loadSnapshot`; `diff` materialises from pinned keyframes. The **local file-DAG is
-      untouched** (`repoOverride` seam / `setRemote(null)`), and the client-side auto-checkpoint is a no-op
-      in remote mode. Reactivity: `SharedSession.onConfirmed` fires when the log advances (ours or a peer's)
-      -> `onLogAdvanced()` re-reads, so a peer's commit appears live. Covered by `history.test.ts` (remote
-      suite) + `room.test.ts`.
-      - **Server writes a keyframe per commit.** On a `commit` marker the `Room` snapshots HEAD
-        *synchronously* at seq-assignment (exact under concurrency) to `history/keyframes/<seq>.json` (a
-        `ProjectData` snapshot, distinct prefix + schema from the `commitSchema` file-DAG nodes). Materialise
-        = load that keyframe, **zero replay**, exact however old. Markers are exempt from log compaction
-        (`deleteEditsBelow`), so the commit list stays enumerable forever.
-      - **Revert = a `loadSnapshot` marker carrying the target snapshot.** Unlike a commit (a no-op
-        pointer), a revert changes state, so it embeds the target `ProjectData` and `applyEdit` replays it
-        with `project.load`. Because the state is *in the command*, it is a plain forward edit: rides sync,
-        applies optimistically, replays on peers, self-anchors on replay - **zero special-casing** in the
-        realtime authority. Acceptable payload because reverts are rare + explicit (the reason we don't
-        embed snapshots in frequent commits). It is also a history node (`message` = `Revert to "..."`).
-    - **Design revision from the "keyframe budget" discussion - auto-checkpoints are keyframes, not
-      commits.** We separated two concerns the earlier plan conflated: *durability/undo* (never lose work,
-      scrub recent history) vs *version history* (deliberate milestones). Keyframes only ever serve two
-      jobs - cold-start/initial load, and reconstructing a specific commit - so pin them to those: **one
-      keyframe per commit** (few, user-driven) gives full, cheap time-travel to any commit; a **rolling
-      keyframe on the edit cadence** is the durability/undo safety net. This **supersedes the earlier
-      "auto-commit on edit cadence" decision**: auto-checkpoints become *keyframes* (invisible in the
-      version list -> no feed noise), and commits are **entirely user-driven** (fewer, meaningful nodes).
-      Numbers: N=100 edit cadence, one pinned keyframe per commit, a rolling window of ~M=10 head keyframes
-      (~1000 edits of fine-grained reach). Ctrl-Z undo is a separate in-memory stack, unaffected.
-      - **Deferred (no consumer yet):** the **rolling head-keyframe window (M)** + its GC, and
-        *arbitrary uncommitted-seq* scrubbing. Commit-pinned keyframes are self-contained, so commit
-        diff/revert needs zero replay *without* the rolling window - M only bounds replay for scrubbing to
-        an uncommitted point, which no UI does yet. Build it when a timeline-scrubber lands. For now the
-        single cold-start `project.json` keyframe + the retained recent log cover load + recent undo.
-      - **Verify live (pending):** two accounts - a named commit appears for both; revert converges both;
-        diff reads correctly; cold-start after a commit loads fast + exact.
-  - **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
-    ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
-    would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
-    where every future capability wants its own endpoint. The insight: MCP is *already shaped like a sync
-    client* - `server/mcpServer.ts` keeps a `mirror` `ProjectStore` fed by sync messages and emits edits;
-    its peer today is just the **tab** (over the local bridge), not the server. "Server-side MCP" done
-    right = **swap the peer**: run a headless `SharedSession` (Node) against the `Room`, authenticated by
-    the same JWT and addressed by `projectId`. Then reads are local to the synced store, edits + commits +
-    reverts ride the same WS authority the browser uses, and it needs **essentially no new endpoints** -
-    only the stateless bootstrap `createApiClient` already provides (list/open projects, file reads).
-    This **converges with the tool-surface consolidation** (§9): browser-agent and server-MCP become the
-    same core - one tool catalog + `dispatch` -> `applyEdit` + a `SharedSession` - differing only in
-    frontend (LLM loop vs stdio) and host (browser vs Node). So server-side MCP is its **own future
-    slice**, built as this sync client; until then MCP stays tab-coupled (fine for the tinkerer audience,
-    per §9). Guard against the anti-pattern: a new per-feature HTTP write endpoint for MCP is a smell -
-    reach for the WS authority + shared tool catalog instead.
-- **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
-  covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
-  command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
-  documents drift below the current version silently. Two cheap guards close that (upcasting stays
-  lazy-on-load in `documentMigration.ts`, which also serves OPFS/local + `.daw.zip` import, so the
-  logic deliberately stays in shared TS rather than server-only SQL): (a) **detectability** -
-  `findStaleProjects(db, currentVersion)` reads the `projects.project_schema` column (backfilled from
-  `manifest.json` on every write) and the API logs a startup warning listing any below the current
-  version; (b) **build-time honesty** - `firstMissingUpcaster` asserts the upcaster registry chains
-  contiguously up to `PROJECT_SCHEMA`, so bumping the schema without the matching upcaster fails in
-  CI instead of stranding old data. Deferred until the first actual bump: an **eager data-migration**
-  that heals stored blobs by reusing the same upcasters (there is nothing to heal until then).
+
+`HOST-5` `review` **Offline foundation** (deps: HOST-1)
+
+- **Offline-first / PWA + backend interchangeability (the target working model; direction firmed up
+  2026-07-15).** The north star: online and offline are the *same app* degrading gracefully, with local
+  and remote storage **almost interchangeable** and a **trivial sync on reconnect** - not two builds.
+  - **Where we are.** All project data goes through one seam (`BundleStore`/`ProjectStorage`,
+    `getProjectStorage()`), with three backends: **RemoteProjectStorage** (HTTP + WS authority ->
+    Postgres/Neon), **OpfsBundleStore** (browser OPFS bundle), and **MemoryBundleStore** (tests). But the
+    backend is chosen **at build time** by `VITE_DAW_API_URL`, so it is online-*or*-offline: remote mode
+    writes **no** OPFS cache, so a server it can't reach just fails; local mode syncs nowhere. (Small
+    non-project state - `currentUser`, current-project key, author colours, agent chat - lives in
+    `localStorage` regardless.)
+  - **Why we are well-positioned.** The **edit log is the universal currency**: both backends model
+    persistence as "append `seq`-ordered `EditCommand`s + replay to materialize HEAD," identical in
+    `edits.json` (OPFS) and the `edits` table + WS (remote). Sync is therefore a *sequencing* problem, and
+    the hard part is already solved - the authority is **`opId`-idempotent** and `SharedSession` already
+    does optimistic apply + rebase + **reconnect gap-fill** (slice 76). So **an offline session is just a
+    peer that has been away longer**: on reconnect, replay the queued local edits through the authority
+    (dedup by `opId`), it assigns authoritative `seq`s, and LWW-by-`seq` rebase converges - no CRDT (same
+    decision as multiplayer). Content-addressed samples (sha256) sync by "push the hashes the server
+    lacks," dedup for free.
+  - **The work to get there.** (1) **Always keep an OPFS working copy**, even in remote mode
+    (write-through cache), so there is local state to render + mutate when the network drops; (2) a
+    **durable offline write-queue** (append edits with `opId`s + provisional local `seq`s to OPFS, flush
+    through `SharedSession` on reconnect - the gap-fill extended to a long gap); (3) **runtime online/
+    offline switching** (a "cache + queue" wrapper at the `BundleStore` seam, not a build-time flag); (4)
+    **service worker + manifest** for the installable PWA. The one subtlety is **`seq`-space
+    reconciliation** - solo-offline is a clean replay (no peers); multi-user-with-offline rides the
+    existing LWW-by-`seq` rebase.
+  - **This reshapes how history/commits (Phase B2) should be built.** Under this model a commit is best a
+    **syncable authored entry in the same log** (authorable offline, synced on reconnect like any edit),
+    NOT a server-only `POST` the client cannot perform offline. So establish the always-local-cache +
+    edit-log-sync substrate *before or with* B2, or B2 will need rework. Likewise agent-session
+    persistence rides the same substrate.
+  - **Per-backend index note.** Each backend needs a cheap listing index: remote uses the `projects`
+    table columns; OPFS uses each bundle's `meta.json` (a small name-card, so the library needn't parse
+    every `project.json`). That is why `meta.json` survives client-side after B1 retired it server-side -
+    whatever unifies the backends still wants a lightweight per-project index on each side.
+
+`HOST-6` `review` **B2 server-authoritative history** (deps: HOST-5)
+
+- **B2 - server-authoritative history (the current slice): a commit is a syncable log entry.** Commits
+  are *already* persisted server-side (bundle writes reach the DB, `history/commits/*` is write-once),
+  but the DAG is **authored independently by each client**: every client runs its own debounced
+  auto-checkpoint and advances `refs.json` - a single mutable HEAD pointer - so concurrent committers
+  **race and clobber HEAD**, peers don't see each other's commits without a reload, and there's redundant
+  per-client auto-commit churn. The fix, per the offline-first note above, is **not** a WS/HTTP commit
+  *request* (that can't be authored offline and adds a second, uncoordinated notion of HEAD): make a
+  **commit a new authored entry kind in the edit log itself**. A "save version" dispatches a `commit`
+  marker (message + author) that rides `SharedSession` exactly like an edit - queued offline, flushed on
+  reconnect, assigned an authoritative `seq` by the `Room`, and broadcast to peers in the same
+  `editApplied` stream. Consequences: (a) **the `refs.json` race disappears by construction** - HEAD is
+  just the latest `commit` marker in `seq` order, a derived value, not a mutable pointer anyone writes;
+  (b) commits **reference log ranges** (the edits between this marker and the previous one) rather than
+  embedding client-seq copies - resolving the "commit embeds its entries" note below and unifying on the
+  authoritative `seq` space (the client feed's local seq space is retired for history); (c) the server
+  **materializes** snapshots/keyframes on cadence (reusing B1 keyframe machinery) so replay stays
+  bounded; (d) peers' history is live for free (the marker arrives in their edit stream). Reads
+  (`list_history` / `diff` / get-commit) reconstruct from the authoritative log + keyframes - shareable
+  by any caller. The **local/offline backend keeps its file-DAG** unchanged (the `repoOverride` seam
+  isolates it); this reworks the *remote* path. This is a meaty rework of the commit model (seq-space
+  unification + marker-in-log), not a drop-in - it was always going to need it (the design flagged
+  "B2 will need rework" without the substrate; the offline foundation is that substrate, now shipped).
+- **Design revision from the "keyframe budget" discussion - auto-checkpoints are keyframes, not
+  commits.** We separated two concerns the earlier plan conflated: *durability/undo* (never lose work,
+  scrub recent history) vs *version history* (deliberate milestones). Keyframes only ever serve two
+  jobs - cold-start/initial load, and reconstructing a specific commit - so pin them to those: **one
+  keyframe per commit** (few, user-driven) gives full, cheap time-travel to any commit; a **rolling
+  keyframe on the edit cadence** is the durability/undo safety net. This **supersedes the earlier
+  "auto-commit on edit cadence" decision**: auto-checkpoints become *keyframes* (invisible in the
+  version list -> no feed noise), and commits are **entirely user-driven** (fewer, meaningful nodes).
+  Numbers: N=100 edit cadence, one pinned keyframe per commit, a rolling window of ~M=10 head keyframes
+  (~1000 edits of fine-grained reach). Ctrl-Z undo is a separate in-memory stack, unaffected.
+  - **Deferred (no consumer yet):** the **rolling head-keyframe window (M)** + its GC, and
+    *arbitrary uncommitted-seq* scrubbing. Commit-pinned keyframes are self-contained, so commit
+    diff/revert needs zero replay *without* the rolling window - M only bounds replay for scrubbing to
+    an uncommitted point, which no UI does yet. Build it when a timeline-scrubber lands. For now the
+    single cold-start `project.json` keyframe + the retained recent log cover load + recent undo.
+
+`HOST-6.1` `done` **Commit as a log marker**
+
+- **Done (steps 1-2):** the `commit` edit command (message; `applyEdit` no-ops it) +
+  `SharedSession.postCommit`. A named commit is authored into the log, queued offline, seq'd by the
+  `Room`, broadcast to peers - no new message types, no Room change. Concurrent commits land as
+  distinct ordered markers (the HEAD race is gone by construction). Tested in `sharedSession.test.ts`.
+
+`HOST-6.2` `done` **Client reads history from the log + commit-pinned keyframes + revert-as-marker**
+
+- **Done (step 3) - client reads history from the log + commit-pinned keyframes + revert-as-marker.**
+  The remote `VersionStore` (`src/audio/commands/history.ts`) now derives history from the authoritative
+  log instead of the client file-DAG: `history()` scans the mirrored log for `commit` / `loadSnapshot`
+  markers (HEAD = the latest marker's `seq`, derived); `commit()` -> `session.postCommit`; `revertTo()`
+  dispatches a `loadSnapshot`; `diff` materialises from pinned keyframes. The **local file-DAG is
+  untouched** (`repoOverride` seam / `setRemote(null)`), and the client-side auto-checkpoint is a no-op
+  in remote mode. Reactivity: `SharedSession.onConfirmed` fires when the log advances (ours or a peer's)
+  -> `onLogAdvanced()` re-reads, so a peer's commit appears live. Covered by `history.test.ts` (remote
+  suite) + `room.test.ts`.
+  - **Server writes a keyframe per commit.** On a `commit` marker the `Room` snapshots HEAD
+    *synchronously* at seq-assignment (exact under concurrency) to `history/keyframes/<seq>.json` (a
+    `ProjectData` snapshot, distinct prefix + schema from the `commitSchema` file-DAG nodes). Materialise
+    = load that keyframe, **zero replay**, exact however old. Markers are exempt from log compaction
+    (`deleteEditsBelow`), so the commit list stays enumerable forever.
+  - **Revert = a `loadSnapshot` marker carrying the target snapshot.** Unlike a commit (a no-op
+    pointer), a revert changes state, so it embeds the target `ProjectData` and `applyEdit` replays it
+    with `project.load`. Because the state is *in the command*, it is a plain forward edit: rides sync,
+    applies optimistically, replays on peers, self-anchors on replay - **zero special-casing** in the
+    realtime authority. Acceptable payload because reverts are rare + explicit (the reason we don't
+    embed snapshots in frequent commits). It is also a history node (`message` = `Revert to "..."`).
+
+`HOST-6.3` `done` **Verify live: two accounts, revert converges, cold-start exact**
+
+- **Verify live:** two accounts - a named commit appears for both; revert converges both;
+  diff reads correctly; cold-start after a commit loads fast + exact.
+
+`HOST-7` `to-do` **B3 headless MCP sync client** (deps: HOST-6)
+
+- **B3 reframed - MCP as a headless sync client, NOT per-feature HTTP endpoints.** The original B3
+  ("give MCP HTTP history endpoints") is **dropped**: it only half-delivers "MCP without a tab" (history
+  would be headless while *edits still forward to the tab*), and it starts an endpoint-sprawl pattern
+  where every future capability wants its own endpoint. The insight: MCP is *already shaped like a sync
+  client* - `server/mcpServer.ts` keeps a `mirror` `ProjectStore` fed by sync messages and emits edits;
+  its peer today is just the **tab** (over the local bridge), not the server. "Server-side MCP" done
+  right = **swap the peer**: run a headless `SharedSession` (Node) against the `Room`, authenticated by
+  the same JWT and addressed by `projectId`. Then reads are local to the synced store, edits + commits +
+  reverts ride the same WS authority the browser uses, and it needs **essentially no new endpoints** -
+  only the stateless bootstrap `createApiClient` already provides (list/open projects, file reads).
+  This **converges with the tool-surface consolidation** (§9): browser-agent and server-MCP become the
+  same core - one tool catalog + `dispatch` -> `applyEdit` + a `SharedSession` - differing only in
+  frontend (LLM loop vs stdio) and host (browser vs Node). So server-side MCP is its **own future
+  slice**, built as this sync client; until then MCP stays tab-coupled (fine for the tinkerer audience,
+  per §9). Guard against the anti-pattern: a new per-feature HTTP write endpoint for MCP is a smell -
+  reach for the WS authority + shared tool catalog instead.
+
+`HOST-8` `to-do` **Hardening: quotas, rate-limit, socket sweep**
+
+Hardening for hosting is mostly done (auth epic, slices 77-80 + deploy slice 81): the old shared token
+(open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is retired; real
+per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every request and
+socket, and the single-origin deploy makes the `*` CORS concern moot (no cross-origin browser calls).
+Three abuse/robustness gaps stay open:
+
+  `HOST-8.1` `to-do` **Per-owner quotas**
+  Caps on projects / files / bytes per owner, so a single account can't exhaust storage.
+
+  `HOST-8.2` `to-do` **Rate-limiting on the auth/JWT path**
+  Throttle verification/login attempts to blunt brute-force and abuse.
+
+  `HOST-8.3` `to-do` **WS ping/pong heartbeat + sweep**
+  Reap half-open sockets. A dropped connection the OS never FIN'd leaves a client in its `Room` forever,
+  holding the room live and broadcasting into the void; a periodic server ping with a pong deadline evicts
+  the dead peer and lets the room free when truly empty.
+
+`HOST-9` `to-do` **Observability, structured logs**
+
+- **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
+  tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
+  stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),
+  domain-event logs (WS connect/disconnect, room load/evict, edit applied, auth refusals), and error
+  handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
+  retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
+  or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
+
+### Foundations & deferred notes (no ticket)
+
+Cross-cutting done infrastructure and deferred notes that do not belong to a single HOST ticket.
+
+- **Typed storage + a "don't trust the client" boundary - DONE.** JSON bundle files are stored as
+  Postgres **`jsonb`** (readable and queryable in Drizzle Studio / psql, not opaque bytes; samples
+  stay `bytea`, a CHECK enforces exactly one). Every JSON write is **shape-validated** against a
+  per-path zod schema (`server/api/bundleSchemas.ts`) before it reaches the DB - malformed JSON is
+  400, wrong shape is 422. The validation is deliberately **structural** (top-level type + always-
+  present fields, with zod's default key-stripping so evolving fields don't break saves); deep
+  per-parameter validation stays at the client/MCP boundary where the param schema lives. A test
+  runs a real project snapshot through the schemas to guard against over-strictness.
 - **Canonical shared project schema - _done_ (slice 63, Phase 1).** The shallow, hand-written
   structural guard is replaced by a single pure-`zod` module, `src/audio/project/schema.ts`, that is
   the source of truth for the document types: the client derives its TS types via `z.infer` (the old
@@ -2037,6 +2462,18 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     *contract* (message unions, parse helpers, typed `createWsClient`) ships now, but standing up an
     actual socket listener is transport plumbing tied to multiplayer (and needs a WS adapter dep), so
     it lands with the conflict-resolution work, built on this contract.
+- **Document-schema drift detection - _done_ (slice 68).** Two version axes exist and only one is
+  covered by DB migrations: drizzle-kit versions *table shape* (DDL), but the `project.json` /
+  command payloads live in `jsonb` blobs it cannot see, so a `PROJECT_SCHEMA` bump would let stored
+  documents drift below the current version silently. Two cheap guards close that (upcasting stays
+  lazy-on-load in `documentMigration.ts`, which also serves OPFS/local + `.daw.zip` import, so the
+  logic deliberately stays in shared TS rather than server-only SQL): (a) **detectability** -
+  `findStaleProjects(db, currentVersion)` reads the `projects.project_schema` column (backfilled from
+  `manifest.json` on every write) and the API logs a startup warning listing any below the current
+  version; (b) **build-time honesty** - `firstMissingUpcaster` asserts the upcaster registry chains
+  contiguously up to `PROJECT_SCHEMA`, so bumping the schema without the matching upcaster fails in
+  CI instead of stranding old data. Deferred until the first actual bump: an **eager data-migration**
+  that heals stored blobs by reusing the same upcasters (there is nothing to heal until then).
 - **Deepening validation is gated on catalog versioning (sequence).** Deep per-param and built-in-device
   validation are deliberately deferred: built-in instrument/effect schemas live in the client catalogs
   (not the document), and the client is coercion-tolerant and versionless by design, so strict
@@ -2048,221 +2485,30 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   is embedded in the document) -> **catalog versioning** -> **built-in params** -> deep `EditCommand`.
   Full declarative conversion of built-ins is the separate gated declarative-DSP initiative (section
   16), not a validation lever (built-ins would still be referenced by id from a shared catalog).
-- **Realtime multiplayer - chosen strategy (design decided; build underway).** Live multi-user
-  editing. The transport, authority, conflict model, and offline stance are settled below.
-  - **Build progress.** Phase A is landing in two slices. **A1 (slice 71, done):** the server-side
-    per-project authority - a `Room` (server/api/rooms.ts) holds a headless `ProjectStore`, assigns the
-    single monotonic `seq`, applies via `applyEdit`, persists through the existing `appendEdits`, and
-    broadcasts `editApplied`; a `WebSocketServer` on the same HTTP port (`/ws`, token at the upgrade)
-    is the transport glue. Idempotent by `opId`; reloads HEAD from Postgres by replay on restart.
-    **A2 (slice 72, done):** the client `SharedSession` (src/audio/sync/sharedSession.ts) - optimistic
-    apply + total-order rebase. It keeps a confirmed `base` (advanced by `applyEdit` in `seq` order) and
-    a `pending` list of unconfirmed local ops; the live store is `base + pending`. Its own `editApplied`
-    just retires the pending op (live already matches); a peer's advances `base` and **rebases** (rebuild
-    live as `base` with `pending` replayed on top). Wired through a single `EditLog` remote-sink so UI /
-    MCP / recorder / agent edits all forward automatically; enabled whenever a remote backend is
-    configured (`VITE_DAW_API_URL`), where the client stops HTTP autosave and the authority persists.
-    Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase).
-    **A3 (collaboration completeness, done) - A3a (slice 73, done):** per-user identity + colours.
-    `author` generalised from the 3-role enum to a bounded free string (`claude`/`agent` reserved AI
-    voices, `you` the default; any other value a human user id) - backward compatible, no schema bump.
-    A `currentUser` store (localStorage + `?user=` override, dev-only setter in the Authors settings tab,
-    removed once real auth supplies the id) sets `EditLog`'s local-author default, so UI edits carry the
-    user id (MCP/agent still stamp their own). A peer's `editApplied` now posts an append-only feed entry
-    via `EditLog.recordRemote` (narration, no re-apply), and the activity feed colours each entry by
-    `colorForAuthor` (any id -> a stable hue) instead of collapsing to three voice classes. **A3d (slice 74, done):** full
-    per-surface tinting + **perspective-relative colouring**. The author-tinted surfaces (piano-roll
-    notes, knob/fader fills + pointers, arrangement placement blocks + note-summary bars, track-row
-    accents, clip rail, patch list, version timeline, feed) moved off the fixed 3-voice Tailwind classes
-    (authorVoice.ts) onto per-author inline hex (authorStyle.ts), fed a live `{config, self}` presence
-    through an `AuthorColorsProvider` context so a swatch/identity change recolours instantly. Colour is
-    **perspective-relative**: `colorForAuthor(author, config, self)` paints the viewer's OWN edits with
-    the teal "you" hue (whoever they are) and every collaborator in their own stable hashed hue;
-    `agent`/`claude` stay absolute voices. This removed the asymmetry where whoever kept the default `you`
-    was a privileged always-teal identity others couldn't recolour - now two users are symmetric (each
-    sees itself teal, the other in a distinct, recolourable colour). The Authors settings tab lists
-    **collaborators seen in the feed** (excluding the AI voices + self), each with its own swatch picker.
-    authorVoice.ts trimmed to the reserved-voice constants + label.
-    **A3b (slice 75, done):** project name is now project state - a `renameProject` edit
-    (`ProjectStore.renameProject`, an optional `name` on `projectDataSchema`) instead of a bare
-    `meta.json` write, so a rename syncs live across a shared session, rides undo/redo + history, and the
-    authority's headless replay reconstructs it. `meta.json` keeps a name copy as the library's list
-    index. A document with no `name` defaults to "Untitled" (the dev DB was cleared to drop pre-A3b
-    projects rather than carry a meta-heal, per the disposable-dev-data consent - no `PROJECT_SCHEMA`
-    bump). The header title reads the name from the store (`useProject`) so a peer's rename updates it in
-    real time.
-    **A3c (slice 76, done):** reconnect gap-fill - a dropped connection self-heals. `createWsClient` now
-    reconnects with capped exponential backoff after an unexpected close and exposes an `onOpen` hook that
-    fires on every (re)connect. `SharedSession.resync` (bound to `onOpen`, and the single path the initial
-    subscribe rides too) re-subscribes - the authority's `snapshot` folds any edits missed while away (the
-    gap-fill) - and re-sends every still-pending optimistic op. Re-sends are idempotent by `opId`: the room
-    now *broadcasts* an already-applied re-echo (rather than returning it silently) so the originator retires
-    its pending op, and peers drop it via their reorder guard. `onEditApplied` retires a pending op on any
-    `opId` match, even when its echo trails a snapshot that already folded it into `base`. This closes A3
-    (collaboration completeness); next is the auth + real-users epic below.
-  - **Auth + real users/sharing (the current epic, before Phase B/C).** Today auth is stubbed: one
-    hardcoded owner `"local"` + a shared bearer token, so "two users" are the same account. This epic
-    makes multi-user genuine and is the gateway to the rest. We adopt **Supabase Auth as an identity
-    provider only** - it runs login and issues a JWT; our Hono+Postgres owns all domain data and just
-    *verifies* the token to get the principal. Lock-in is kept low deliberately (a decision with the
-    user): the DB stays plain Postgres (Drizzle unchanged), we keep our **own `users` table** keyed by
-    the auth subject (never FK into Supabase's tables), verification is a standard JWKS check behind a
-    one-function seam, and we use none of Supabase's realtime/storage/data-API - so moving to AWS
-    (RDS + Cognito or self-hosted GoTrue) later is a contained swap. Sliced A/B/C:
-    **Auth-A (slice 77, done):** the server-side principal, end to end. New `server/api/principal.ts`
-    seam (`makeJwtResolver` verifies a Supabase JWT via `jose`/JWKS - issuer + `authenticated` audience,
-    principal = `sub`; `makeDevResolver` keeps the pre-auth shared-token + single-`"local"`-owner stub
-    for local dev/tests). Both the HTTP middleware (`app.ts`) and the WS upgrade (`wsServer.ts`) resolve
-    identity through it (WS is now a *per-connection* owner; the message handler awaits the resolved
-    principal so an early `subscribe` is held, not dropped). A resolved principal is JIT-provisioned into
-    a new `users` table (`ensureUser`, `onConflictDoNothing`); `projects.ownerId` is now an FK to
-    `users.id` (+ an owner index), and `Room.load` also `ensureUser`s so the authority satisfies the FK
-    for any caller. Bootstrap reads `SUPABASE_JWKS_URL`/`SUPABASE_JWT_ISSUER` (unset -> dev-stub). No
-    client change (Auth-B wires the real token). Tests mint tokens against a local JWKS (no network/live
-    Supabase). **NOTE - authentication only:** per-project *authorization* (may this user open this
-    project?) still needs the membership model and lands in Auth-C; until then the owner is the only real
-    user and there is no login UI, so nothing can exploit it yet.
-    **Auth-B (slice 78, done):** the browser login. New `src/auth/session.ts` (the only importer of
-    `@supabase/supabase-js`) wraps Supabase Auth behind two seams: `getAccessToken()` (the credential for
-    the clients - the live session JWT, or the static `VITE_DAW_API_TOKEN` when auth is off) and a
-    `readAuthState`/`subscribeAuth` store fed by `onAuthStateChange`. `src/ui/AuthGate.tsx` wraps
-    `AppShell` in `App.tsx`: when `authEnabled` (both `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` set)
-    it shows a loading card / a login screen (Continue with Google/GitHub, styled like `StartDialog`) /
-    the app by session status - gating *above* AppShell so the audio engine doesn't build behind the
-    login. The token became a lazy `TokenSource` (`string | (() => string | undefined)`) on
-    `createApiClient` (per-request `authHeaders()`) and `createWsClient` (URL rebuilt inside `connect()`,
-    so a reconnect picks up a refreshed token); `RemoteProjectStorage`/`bundleStore`/AppShell feed
-    `getAccessToken`. On sign-in the gate bridges the session's display name into `currentUser` (author =
-    a readable name, deliberately distinct from the server principal = JWT `sub`); the A3a dev identity
-    field in `AuthorColorSettings` is now auth-aware (static name + Sign out when authed, editable handle
-    in dev). Auth composes with the existing `VITE_DAW_API_URL` gate; local/OPFS mode ignores tokens.
-    Tested: `test/client.test.ts` (the token-getter is evaluated per request); the gate/login/supabase
-    wrapper are verified live (client runs in Vitest's node env - no jsdom - so no component tests).
-    **Auth-C (slice 79, done):** **membership/sharing** end to end. New `project_members` table
-    (`(projectId, email)` PK, role, invitedBy) - a member is keyed by **email** (the invited identity,
-    stored lowercase), never a FK into `users`, so an owner can invite someone who hasn't signed up yet
-    and the grant takes effect the moment they sign in with a provider account whose verified email
-    matches. The single-owner filter in `server/db/store.ts` became **owner-or-member**: an `accessibleWhere`
-    predicate (`ownerId == me OR EXISTS a member row for my token email`) drops in wherever a query was
-    `eq(ownerId)`; writes gate the same way (create-if-absent still owner-stamps, but a member's write never
-    re-stamps the owner). Owner-only member endpoints (`GET/POST/DELETE /projects/:id/members`, zod
-    `z.email()` at the boundary) + a `SharePanel` reached from the project menu (shown only for a project
-    you own). This also **closed the WS room-authorization gap** flagged in Auth-A: `RoomRegistry.get` now
-    takes the principal, resolves the project's *real* owner from the table, authorizes owner-or-member
-    before handing back the room, and loads/persists the room under that real owner - so a shared project
-    is one room keyed by `projectId` and a member's edits persist under the owner (an unauthorized subscribe
-    is refused, closing 1008). And the **project index moved onto the `projects` table**: `GET /projects`
-    returns `{ id, name, modifiedAt, role }[]` (the `ProjectStorage` seam's `listProjectIds -> listProjects`),
-    killing the per-project `meta.json` read on the remote path.
-    **Auth cleanup (slice 80, done):** the Auth-C follow-ups + a polish. (a) **Retired `DAW_API_TOKEN`**
-    end to end - `makeDevResolver` keeps only the `"local"` dev principal (open locally; production always
-    sets the JWT config), and `VITE_DAW_API_TOKEN` is gone (the client sends the Supabase JWT or nothing).
-    (b) **Email-based edit identity** - `author` (the colour key + feed label) is now the signed-in
-    **email**, not the display name, so two logins of the same person stay distinct; the feed shows "You"
-    for your own edits, emails for collaborators. One-line change in the `AuthGate` bridge (no schema/wire
-    change - `author` stays a free string). (c) **Rename propagates live** - the authority calls
-    `setProjectName` when it applies a `renameProject` edit (so `projects.name` is authoritative without the
-    renamer pushing `meta.json`), and a peer patches its library-list label straight from the edit via a new
-    `SharedSession.onRemoteEdit` hook -> `patchProjectName`. (d) **Account avatar + panel** - a rail avatar
-    (your colour + initials) above the settings gear opens an account panel (name, email, sign out; the
-    single home for sign-out now). Still deferred: the fuller server-side `meta.json` retirement (keep it
-    only as the OPFS/offline fallback index).
-    Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
-    Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
-    (solo-offline PWA).
-  - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
-    ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
-    server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample
-    transfer, and bundle export stay HTTP. Transport edits as semantic `EditCommand`s, never document
-    snapshots - the command is the one unit for local apply, WS broadcast, persisted delta, and commit.
-  - **Server becomes the authority (the "dumb blob store -> smart authority" shift).** Per project, one
-    authority instance holds the in-memory replay state, assigns the authoritative `seq`, applies, and
-    broadcasts `editApplied` to peers. History/keyframe/commit logic moves **server-side** (the server
-    now owns the replay engine, so the deferred server-side-keyframe and commit-referencing items land
-    here). Client traffic collapses to *semantic commands out, broadcasts in* (+ presence) - no more
-    whole-`project.json` uploads or client-computed keyframes. This is the deliberate departure from the
-    thin `(projectId, path) -> bytes` store; the `BundleStore` seam already permits a smart backend.
-  - **Conflict resolution: server-authoritative total order + optimistic apply + rebase** (NOT OT, NOT
-    CRDT). The client applies a command optimistically to its local replica and sends it tagged with the
-    last authoritative `seq` it saw + a client op-id; the server appends it at the next `seq`, applies to
-    HEAD, and broadcasts; a client that had in-flight ops **rebases** (roll back optimistic ops, apply
-    the authoritative ones in order, re-apply its pending ops on top). Rationale: our edits are coarse
-    **semantic** commands that mostly target *different* objects, so they commute and the authority need
-    only *order* them; the rare **same-target** clash (two users on one knob/note) resolves
-    **last-writer-wins by `seq`**, which matches expectation. OT is rejected (a ~50x50 transform matrix);
-    CRDT is rejected *for now* because its value is authority-free multi-primary merge, which we do not
-    need (single authority per project, single region at a time) and which would reshape `ProjectStore`
-    and lose semantic intent. CRDT stays the escape hatch only if offline-collaboration or
-    multi-region-per-project ever becomes a hard requirement. Two requirements this imposes: (1)
-    **`applyEdit` must no-op gracefully on a stale target** (e.g. `addNote` to a track another user just
-    deleted) instead of throwing; (2) **client op-ids** so reconnect/retry never double-applies. This is
-    when `editCommandSchema` graduates from structural to first-class typed and server-assigned `seq`
-    replaces the client-stamped `seq`.
-  - **Ephemeral vs durable split.** Presence (cursors, who's online) and live MIDI are **never
-    persisted** - they live in the room instance's memory / a pub-sub bus. Only authored `EditCommand`s
-    hit Postgres, so write load stays proportional to real edits.
-  - **Offline stance: solo-offline kept, live-collab requires a connection.** Solo editing stays
-    **local-first** (OPFS working copy, queue commands, flush on reconnect - one writer, so the server
-    sequences the queue with nothing to conflict against). Live collaboration requires a connection;
-    brief disconnects are absorbed by the optimistic queue (reconnect -> replay pending -> rebase). We do
-    **not** go Onshape-online-only (solo offline is cheap and valuable) nor full offline-first (that
-    effectively demands CRDT). **Offline *during* active collaboration is deferred** - the genuinely hard
-    merge; when wanted, prefer **branch-and-merge** (an offline session becomes a branch, reconnect does a
-    3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
-  - See the hosting/scaling entry above: the authority is **per-project** (the shard unit), so a project
-    is single-region at a time; server-assigned `seq` is the enabling change.
-- **Hosting & scaling.**
-  - **First deploy - DONE (slice 81):** the recommended shape below is now realized as a concrete,
-    repeatable deploy (runbook in `docs/DEPLOY.md`). **Single origin:** one Node process serves the built
-    client (`dist/`), the Hono API, and `/ws` from one URL (the server gained static + SPA-fallback
-    serving in `server/api/index.ts`; the auth gate is scoped to `/projects` so static assets aren't
-    401'd). **Fly.io** runs it as a **scale-to-zero** machine (`fly.toml`: one `shared-cpu-1x`/256 MB,
-    `max_machines_running = 1`, no volume - bounds cost to ~$2-3/mo worst case, near-$0 idle) + **Neon**
-    free Postgres; migrations apply on boot. Scale-to-zero is safe here because a room rebuilds by
-    replaying the `edits` table and clients reconnect/gap-fill (slice 76) - the only cost is a few-second
-    cold start after idle; flip `min_machines_running = 1` for a live session. Deployed with **auth on**
-    (the Supabase JWT stack, slices 77-80). The scaling model below (per-project sharding, single-region)
-    still stands as the growth path; nothing here forecloses it.
-  - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
-    unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
-    functions, plain Lambda) for the socket layer; it needs an always-on process.
-  - **Affordable platforms to start:** a small always-on **Node** instance + **managed Postgres**.
-    Recommended default **Fly.io** (runs the process as a long-lived VM, holds WS, region-pinnable next
-    to the DB, a few $/mo) **+ Neon** (serverless PG, scale-to-zero, branching, built-in pooler) - or
-    **Railway** for both if one dashboard is preferred. **Supabase** is tempting because it could also
-    supply auth (replacing the stubbed token). **Cloudflare Durable Objects / PartyKit** is the
-    odd-one-out: purpose-built stateful per-key "rooms" (each project = one addressable actor), the
-    cleanest fit for the model below, but a Cloudflare tie and a non-Node (Workers) runtime, so reach
-    for it only if per-project rooms dominate. Avoid API-Gateway-WebSockets-on-Lambda (awkward).
-  - **The project is the shard unit at every layer.** A project's edit stream is a single ordered log,
-    so multiplayer needs exactly **one authority per project** (assigns order/`seq`, applies, broadcasts).
-    That same `projectId` partitions all three layers: (1) **WS routing** - a stateless gateway routes a
-    client for project P to P's owning instance (consistent hashing on `projectId`, or a directory;
-    Durable Objects/PartyKit do this natively via `idFromName(projectId)`); (2) **in-memory authority** -
-    the owner holds P's replay/CRDT state and fans out to P's peers, with **failover** cheap because any
-    instance can reload P from Postgres (keyframe + replay - the path already built) and take ownership;
-    (3) **DB sharding** - only when a single vertically-scaled PG (with pooling, read replicas, and
-    `edits` partitioned by `projectId`) is outgrown, shard by `projectId`/`ownerId`; a project never
-    spans a shard. This is clean **only because** the schema is already owner-/project-scoped with no
-    cross-project joins ("multi-user later is a change of principal, not of queries"). Ephemeral state
-    (presence, cursors, live MIDI) stays in the room's memory / a pub-sub bus, never the DB - so PG write
-    load stays proportional to authored edits. The one code change scaling assumes: the **server** assigns
-    `seq` (not the client, as today), the multiplayer/authoritative-log change.
-  - **A project is single-region at a time (consequence, acceptable).** One authority per project means
-    that authority - and ideally its DB shard - lives in **one region** at any instant. The *service* is
-    multi-region (different projects homed in different regions; a project's ownership can **migrate**
-    regions on failover/rebalance, e.g. toward its active collaborators), but a single project is **not**
-    simultaneously authoritative in two regions - that would break the single total order. This is not a
-    latency problem in practice: with **optimistic local apply** (apply instantly, reconcile on server
-    ack), the authority's region only affects when the authoritative order/conflict-resolution *confirms*,
-    not the felt responsiveness of editing. The only way to make one project genuinely multi-region
-    (multi-primary, no central order) is a **CRDT** (yjs/automerge), which drops the single-`seq`
-    authority for conflict-free merge - a real fork we are deliberately *not* taking now (we lean
-    single-authority + server-assigned `seq`). So: single region per project unless/until a CRDT model is
-    adopted; revisit only if globally-distributed collaborators on one project become a real need.
-
-**Security hardening (from a review of the sync service):**
-
+- **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
+  ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
+  server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample
+  transfer, and bundle export stay HTTP. Transport edits as semantic `EditCommand`s, never document
+  snapshots - the command is the one unit for local apply, WS broadcast, persisted delta, and commit.
+- **Server becomes the authority (the "dumb blob store -> smart authority" shift).** Per project, one
+  authority instance holds the in-memory replay state, assigns the authoritative `seq`, applies, and
+  broadcasts `editApplied` to peers. History/keyframe/commit logic moves **server-side** (the server
+  now owns the replay engine, so the deferred server-side-keyframe and commit-referencing items land
+  here). Client traffic collapses to *semantic commands out, broadcasts in* (+ presence) - no more
+  whole-`project.json` uploads or client-computed keyframes. This is the deliberate departure from the
+  thin `(projectId, path) -> bytes` store; the `BundleStore` seam already permits a smart backend.
+- **Agent-session persistence.** Agent chat (`ChatTurn` via `src/ui/agentSessions.ts`) is
+  `localStorage`-only and **global** (cross-project) today - the same evictable storage that motivated
+  the sync service, so it is the next durability gap after project data. Move it behind the sync seam as
+  its own session-scoped store (`agent_sessions` + `agent_turns`, keyed by session id, not by the
+  project's edit `seq`). Two decisions to settle when picked up: per-project vs global scoping (currently
+  global - the agent re-reads project state each turn, so a conversation can span projects), and
+  transcript size/privacy (tool-call payloads get large and are more sensitive than project data). This
+  is a **distinct** stream from the project's authored edit-log: chat is the reasoning transcript that
+  *produces* edits + feed notes; do not fold agent turns into the project edit-log.
+- **Real accounts** (OAuth) replacing the stubbed token/owner; **object storage** (S3/R2) for large
+  samples instead of `bytea`; **realtime** (SSE for cross-device change nudges first, WebSocket/CRDT
+  for true multiplayer) - all fit behind the current seams.
 - **The three code-level gaps - _closed_ (slice 65):**
   1. **Validation is no longer bypassable via `Content-Type`.** The PUT now decides JSON-vs-binary by
      **path** (`isBinaryPath` in the contract: `samples/*` = binary, everything else = JSON-to-validate)
@@ -2275,25 +2521,10 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
      `insert(...).onConflictDoNothing().returning()`: the `(projectId, path)` unique constraint lets
      exactly one concurrent insert win, and the loser (no row returned) is a 409 - no check-then-upsert
      for two writers to race.
-- **Harden for hosting - mostly DONE (auth epic, slices 77-80 + deploy slice 81).** The old shared
-  token (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is **retired**;
-  real per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every
-  request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
-  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse;
-  **rate-limiting** on the auth/JWT path; and a **WS ping/pong heartbeat + sweep** to reap half-open
-  sockets (a dropped connection the OS never FIN'd leaves a client in its `Room` forever, holding the room
-  live and broadcasting into the void). A periodic server ping with a pong deadline evicts the dead peer
-  and lets the room free when truly empty.
-- **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
-  tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
-  stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),
-  domain-event logs (WS connect/disconnect, room load/evict, edit applied, auth refusals), and error
-  handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
-  retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
-  or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
 - **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
   untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
   key is a prototype-pollution vector only if the client merges it carelessly).
+
 
 ## Licensing & business model (open source, trademark, contributions)
 

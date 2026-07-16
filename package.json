@@ -28,13 +28,18 @@
     "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "check:server": "tsc -p tsconfig.server.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "roadmap:check": "tsx scripts/roadmap.ts --check",
+    "roadmap:list": "tsx scripts/roadmap.ts",
+    "roadmap:view": "vite tools/roadmap"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@hono/node-server": "^2.0.8",
     "@hono/zod-validator": "^0.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@supabase/supabase-js": "^2.110.4",
+    "@xyflow/react": "^12.11.2",
     "drizzle-orm": "^0.45.2",
     "fflate": "^0.8.3",
     "hono": "^4.12.29",
