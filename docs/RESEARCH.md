@@ -10,6 +10,65 @@ and the reasoning; any ticket it argues for lives there, not here.
 
 ---
 
+## TL;DR
+
+A synthesis of everything below. Verdicts are graded by evidence strength (Good / Thin, per section 1).
+
+**The pain is real and the architecture answers it - for one audience.** The design solves a genuine,
+evidenced pain for developer-adjacent creators; whether it solves anything for anyone else depends on
+positioning and feature decisions that have not been made yet.
+
+Per-bet verdicts:
+
+- **Bet 3 - git-style versioning: MIXED.** The pain is real and universally hand-patched (even the
+  doubters hand-roll timestamped save-as plus backups), and the design answers the three stated
+  objections directly (stable JSON diffs, standard `.mid`, content-addressed sample dedup). Two
+  corrections: branching is over-invested (verified demand is *linear revert and snapshot safety*, not
+  branch-and-A/B), and versioning is a retention/trust feature that cannot be the thing that pays (the
+  Splice Studio warning).
+- **Bet 2 - the AI co-author: UNPROVEN, and the riskiest bet.** Evidence is too thin to settle either
+  way, and nobody in the corpus had actually used one. Reduce exposure: ship an off-switch, keep
+  provenance local (a 30-year producer was auto-rejected by a label for ticking "used AI"), and lead
+  with AI-as-librarian rather than AI-as-composer.
+- **Browser viability / no-VST: VALIDATED, more than expected.** Plugins are the third-largest
+  objection (9%), not the first; a real "no-VST is a feature" constituency exists; and the scary
+  AudioWorklet latency source does not survive inspection. The durable objections are
+  latency/reliability and audience clarity, not the plugin catalog.
+- **Open source: MIXED.** The licence wins no users on its own, but it names an unoccupied slot (no FOSS
+  DAW offers Ableton-style clip-launching *composition*) and the AGPL identity is a live wedge (OpenDAW
+  was attacked in-thread for not being open).
+
+Strategic read:
+
+- **Sharpest opportunity: the no-VST constraint is the moat.** No plugins means project state is
+  *complete*, so it can be JSON, so it can be diffed, versioned semantically, and fully read and written
+  by an agent. Every incumbent is locked out of this by their own plugin ecosystem and cannot follow
+  without abandoning it. Position: *the open-source browser DAW whose projects are complete, readable
+  files, because it owns its whole device chain.*
+- **Biggest risk: audience ambiguity.** Versioning wins developers; the agent wins beginners; the two
+  audiences barely overlap. Picking a lead segment is the decision this research most strongly implies,
+  and developer-adjacent (segment b) is the only well-evidenced fit and the one the built product
+  already serves.
+
+Per-segment: **(b) developer-adjacent tinkerers WILL** be satisfied (strongest fit); **(d) complete
+beginners MIGHT** (sharpest opening, via "where do I start"); **(a) hobbyists and (c) working/semi-pro
+WON'T** as designed (they would need mixing/finishing help, WAM, and local-only provenance).
+
+Next steps (proposed in section 12; none yet on the roadmap):
+
+- Highest certainty: `DAW-13` audio export/mixdown - there is no way to get a finished track out today,
+  which plausibly gates any public launch.
+- Cheap risk reducers: `AGENT-8` off-switch, `AGENT-9` local-only provenance, `AGENT-12` auto version
+  summaries (the most specific unprompted user request found anywhere in the corpus).
+- Answer the reported pains (weak dataset, read section 7 first): `AGENT-10` blank-page/"where do I
+  start", `AGENT-11` mixing assist, `DAW-14` finishing/constraint mode.
+- Decisions, not tickets: leave branching unbuilt; current lean is *not* to build the WAM host
+  (`INST-7`), since it dilutes the complete-file differentiator.
+- Biggest open unknown: there is no ranked pain dataset for *working* producers, and every finding here
+  reacts to the concept - zero hands-on reports of an agentic DAW exist in the corpus.
+
+---
+
 ## 1. Method, and an honest health warning
 
 Two research passes were run.
@@ -583,7 +642,7 @@ about our closest analogue:
 
 ---
 
-## 9. Strategic read
+next## 9. Strategic read
 
 ### Biggest risk
 

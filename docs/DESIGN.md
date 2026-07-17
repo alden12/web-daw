@@ -72,6 +72,72 @@ What makes it different from Ableton/Logic/etc.: the AI co-author, the version-c
 model, fearless experimentation, and tinkerability on a software level - all of which
 fall out of points 1-3.
 
+## Market & positioning
+
+Who we build for, and the strategic reasoning behind it. This is grounded in the user
+research (`docs/RESEARCH.md`, gathered 2026-07-17), which stress-tested the design's
+premises against primary evidence - forum threads, issue trackers, a dead-analogue
+post-mortem - and was deliberately biased toward disconfirming the design. The TL;DR at the
+top of that file is the short version; this section is the standing conclusion the roadmap
+should answer to.
+
+### Who this is for
+
+Stated honestly, because it shapes every decision. The primary user is a **developer who
+makes music** - the author is the archetype, and the tool is built from pain points felt
+personally when composing with existing software. That is a deliberate bias, not an
+accident, and it is fine: the user research (`docs/RESEARCH.md` section 8) found this is
+the **only well-evidenced fit** for the design, that the segment is real and underserved,
+and that several other founders are independently building pieces of the same thing. It is
+acceptable if the author remains the primary user; the design should stay coherent to that
+person first.
+
+In priority order:
+
+- **(b) Developer-adjacent musicians - the lead.** Local-first, git-shaped history, a
+  readable/diffable project folder, MCP and IDE editing, agent-scriptable everything. This
+  is who the built product already serves and who we design for by default.
+- **(d) Complete beginners - the sharpest secondary opening.** Their top reported pain by a
+  wide margin is "where do I start", which a competent agent genuinely answers - and an
+  agent over a *fully readable* project is uniquely able to inspect and explain the whole
+  session, which a plugin-opaque DAW cannot. Reached via the **librarian** framing (section
+  4), not the co-author framing. Guard against being a toy that never converts upward.
+- **(a) hobbyist producers and (c) working/semi-pro producers - not targeted, as designed.**
+  Winning them would mean third-party plugin support (WAM/VST), which dilutes the core
+  differentiator (see goals below and the fork at `INST-7`). We do not chase them unless
+  direct evidence shows plugin absence is the actual thing blocking adoption.
+
+The **biggest risk is audience ambiguity** (the top-4 objection on our closest analogue's
+launch thread): versioning wins developers, the agent wins beginners, and the two audiences
+barely overlap. The resolution is to **lead with (b)** and treat (d) as the second act, not
+to court all four at once.
+
+### Overall goals
+
+- **The constraint is the moat.** Owning the whole device chain (no third-party plugins)
+  means project state is *complete*, which is what lets it be JSON, diffed, versioned
+  semantically, and fully read and written by an agent. Every incumbent is locked out of
+  this by their own plugin ecosystem and cannot follow without abandoning it. The one-line
+  position:
+
+  > The open-source browser DAW whose projects are *complete, readable files* - because it
+  > owns its whole device chain. Your project is data you can diff, git, script, and hand to
+  > an agent.
+
+- **The durable asset is the architecture, not only the app.** The transferable value is the
+  **project format** (a complete, readable, diffable musical document) and the **control
+  plane** (the param-schema keystone exposed as a typed, agent-addressable surface over MCP)
+  - both potentially useful to people and tools that never touch this UI. The app is the
+  reference implementation that proves them; the format and control plane are the moat.
+  Design them to be adoptable (documented, stable, seam-friendly), not just internally
+  convenient.
+
+- **Lead with the librarian, let authorship be discovered.** The best-evidenced agent use is
+  AI-as-librarian (build me a template, a starting point, a variation), not AI-as-composer.
+  Keep the co-author vision (point 2), but pitch the librarian first, keep an off-switch
+  (`AGENT-8`), and keep provenance local by default so it is never an evidence trail against
+  the user (`AGENT-9`). See `docs/RESEARCH.md` sections 4 and 9.
+
 ## 2. Architecture recap (what already exists)
 
 - `src/audio/params/` - the keystone. `ParamSchema` (discriminated union of number/enum/
