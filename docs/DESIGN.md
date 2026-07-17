@@ -2388,13 +2388,15 @@ with its own detail below:
   per §9). Guard against the anti-pattern: a new per-feature HTTP write endpoint for MCP is a smell -
   reach for the WS authority + shared tool catalog instead.
 
-`HOST-8` `to-do` **Hardening: quotas, rate-limit, socket sweep**
+`HOST-8` `to-do` **Hardening: quotas, rate-limit, sockets, auth config**
 
 Hardening for hosting is mostly done (auth epic, slices 77-80 + deploy slice 81): the old shared token
 (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is retired; real
 per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every request and
-socket, and the single-origin deploy makes the `*` CORS concern moot (no cross-origin browser calls).
-Three abuse/robustness gaps stay open:
+socket. CORS defaults to `*`, which the single-origin deploy makes moot (the bearer token, not a cookie, is
+the gate, and there are no cross-origin browser calls); narrowing it to the app origin is optional
+defence-in-depth, not a live hole, so it stays a config note rather than a ticket. The remaining abuse /
+robustness / config gaps:
 
   `HOST-8.1` `to-do` **Per-owner quotas**
   Caps on projects / files / bytes per owner, so a single account can't exhaust storage.
@@ -2406,6 +2408,17 @@ Three abuse/robustness gaps stay open:
   Reap half-open sockets. A dropped connection the OS never FIN'd leaves a client in its `Room` forever,
   holding the room live and broadcasting into the void; a periodic server ping with a pong deadline evicts
   the dead peer and lets the room free when truly empty.
+
+  `HOST-8.4` `to-do` **Fail closed without auth config**
+  Today an unset `SUPABASE_JWKS_URL` / `SUPABASE_JWT_ISSUER` silently drops to the open dev-stub (a single
+  "local" owner, no credential). Safe locally, but a misconfigured production deploy would then run wide
+  open. Under `NODE_ENV=production`, refuse to boot (or refuse to serve the API/WS) unless real auth is
+  configured, so "open" can never be the accidental default where it matters.
+
+  `HOST-8.5` `to-do` **Configurable JWT audience**
+  `makeJwtResolver` hard-codes the expected `aud` to `"authenticated"` (the Supabase default). Make it a
+  config/env value alongside issuer + JWKS, so a non-default audience or an identity-provider swap needs no
+  code change and the audience check stays a real, intentional constraint.
 
 `HOST-9` `to-do` **Observability, structured logs**
 
