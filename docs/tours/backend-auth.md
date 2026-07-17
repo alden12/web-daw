@@ -145,9 +145,10 @@ The realtime path, mirroring HTTP. At the upgrade (line 52) it reads `?token=` a
 it through the **same** seam; failure closes the socket with code 1008. Resolution is async,
 so the message handler `await`s it (line 72) - an early `subscribe` is held, not dropped.
 Then per-message authorization: a `subscribe` (92-104) must pass `registry.get(projectId,
-principal)`, and edits re-check it. (Heads-up: the comment at 49-51 is stale - it predates
-sharing; the code below it already enforces owner-or-member. Good example of doc drift to
-distrust.)
+principal)`, and edits re-check it. (The comment at 46-51 was corrected during this
+walkthrough: it originally predated sharing and implied the owner was the only real user, so
+it undersold the per-message owner-or-member check the code already does. A good reminder that
+comments drift from the code and are worth distrusting until you've read what runs.)
 
 ## 11. Authorize, then load the room
 
