@@ -81,6 +81,39 @@ post-mortem - and was deliberately biased toward disconfirming the design. The T
 top of that file is the short version; this section is the standing conclusion the roadmap
 should answer to.
 
+### At a glance
+
+The one-screen pitch, in the order it's best told. Deliberately telegraphic - a shareable
+starting frame to refine, not the full argument (the reasoning is in the sections below).
+
+- **What is it?**
+  - A browser DAW where the project is structured data, co-edited by a human and an AI.
+  - An open format + control plane, with an app on top (the format may outlast the app).
+- **What's the USP?** (why this exists)
+  - Projects are complete, readable, diffable *files* - version them like code.
+  - Agent-native: an AI co-author that edits the real project through one control plane.
+  - Open-source, browser-based, no install, no VSTs.
+- **What problem does it solve?**
+  - DAW projects are opaque binaries - can't diff, review, or hand to a tool.
+  - Music software isn't built for people who think in files, versions, and automation.
+  - No real AI collaborator *inside* the DAW - chat lives elsewhere, can't touch the project.
+- **Who is it for?**
+  - Primary: developers who make music (build-from-personal-pain archetype).
+  - Secondary: beginners, via an AI "librarian" that does the setup.
+  - Not: pro producers wedded to VSTs, or pure hobbyists on mobile.
+- **How does it work?**
+  - One param-schema is the keystone; UI, AI, automation, persistence are projections of it.
+  - Everything flows through a single store as structured edits -> versionable + agent-addressable.
+  - An MCP control plane lets an LLM read/write the project as a first-class user.
+- **How do you monetise?** *(weakest-specified - no validated willingness-to-pay yet)*
+  - Open-source core (AGPL); sole-provider via trademark, not license.
+  - Likely: a hosted/sync tier + agent usage (bring-key or metered).
+  - Longer shot: the format/architecture itself as the asset (embed, licence, platform).
+- **What does growth look like?**
+  - Land segment (b) developers first (where the pain and the distribution channels are).
+  - Expand to beginners once the librarian carries the setup burden.
+  - Open format -> ecosystem/community as moat; hosting + agents as the revenue surface.
+
 ### Who this is for
 
 Stated honestly, because it shapes every decision. The primary user is a **developer who
