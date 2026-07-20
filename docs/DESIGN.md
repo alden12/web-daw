@@ -1402,6 +1402,18 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   `AGENT-4.3` `to-do` **Perceptual / semantic analysis** (deps: AGENT-4.2)
   CLAP or an audio-tagging model, or a multimodal model exposed as a `describe_sound` tool, for "what does
   this sound like" judgements.
+
+  **Where it runs - client-side first.** Rendering the graph offline uses `OfflineAudioContext` in the
+  browser, which reuses the *exact* DSP the user hears - no second engine to keep in sync (the shared-DSP
+  thesis). The analysis math (LUFS, FFT, MIR) is pure `Float32Array` crunching via WASM libs (Meyda,
+  essentia.js) that run in-browser fine. So 4.1/4.2 live client-side, next to the in-app loop (`AGENT-10`);
+  the MCP surface reaches them the same way it reaches every other tool - round-tripping to the live tab via
+  the bridge, which does the render + analysis and returns top-line features. Node has no Web Audio and can't
+  run the custom worklets, so an all-Node render would mean a second DSP implementation - exactly the
+  divergence to avoid. A headless/server-side (tab-less) render only earns its keep when tab-less operation
+  matters (pairs with the B3 server-side-MCP direction) and needs a portable DSP core first - a real epic,
+  deferred. Python enters only at 4.3, where best-in-class perceptual models (CLAP, audio tagging) live in
+  that ecosystem; expose them as a remote `describe_sound` call rather than standing infra.
 `AGENT-3` `done` **Persist agent intent into history**
 
 - **Persist agent intent into history - DONE.** The agent's intent notes (the `note` feed
@@ -1447,6 +1459,51 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   parsing any unknown/untrusted object shape uses zod** (`safeParse` at the edge, typed value
   inward), never `as`-cast + `typeof` ladders. Cheap, self-contained; do it when the provider
   layer is next touched.
+
+`AGENT-10` `to-do` **Agentic loop, run-until-done** (deps: AGENT-2)
+
+- **Turn call-and-response into a real agent loop.** Today the panel/MCP loop
+  (`src/audio/agent/loop.ts`, `provider.ts`) is essentially one turn: prompt -> the model optionally
+  calls tools -> a reply. The shift is a *run-until-done* loop: each iteration the model emits either
+  tool calls or a terminal "finished" signal; we execute the tools, feed the results back, and repeat
+  until a stop condition - the model signals done, a hard **iteration cap**, an error, or a **user
+  interrupt**. Use the model's **interleaved thinking** between tool results - that is where the
+  "think, reflect, reconsider" behaviour actually lives; reflection is not a separate mode, it is the
+  model reasoning over tool output before its next move (and it becomes *grounded* reflection once the
+  loop can call the `AGENT-4` analysis tools on its own render, rather than second-guessing in a
+  vacuum). This is the spine the other agent tickets hang off - the ears (`AGENT-4`), play-an-idea
+  (`AGENT-5`), and the plan artifact (`AGENT-11`) are all tools/inputs the loop drives. Fold `AGENT-7`
+  (zod-validate the model-response envelope) in here, since hardening the loop is exactly when the
+  provider layer is touched. Keep it a **single** agent loop to start - a dedicated composition-critic
+  sub-agent is a later split only if one loop stops scaling, and it adds real coordination cost.
+
+`AGENT-11` `to-do` **Interactive plan artifact + approval gate** (deps: AGENT-10)
+
+- **A living plan the agent drafts, the user approves, and the loop executes against.** For anything
+  bigger than a one-shot edit, the agent first drafts a plan from the prompt (intent, key/tempo/mood,
+  instrumentation, a section-by-section arrangement, and the concrete actions it will take); the user
+  reviews and edits it; the approved plan becomes **both** the spec the loop executes and the checklist
+  it reflects against (does the render match the key, is the arrangement too dense, is loudness in
+  range). This doubles as the **human-in-the-loop gate** - approval before the agent starts mutating the
+  project, especially for destructive ops. Strongly on-thesis: a plan is structured, diffable,
+  commit-able data, so it rides the same history/notes machinery as edits (`AGENT-3`) - pin the approved
+  plan as an artifact, mark steps done as the loop proceeds, and the version timeline reads as intent ->
+  plan -> edits. Decomposes directly into existing `dispatch`/MCP tool calls; no new engine surface,
+  mostly panel UX plus a plan schema.
+
+`AGENT-8` `to-do` **Agent off-switch**
+
+- **A first-class disable/off-switch for the agent** (referenced from Market & positioning). The product
+  must never feel like the AI is unavoidable: a clear control to turn the agent off entirely (no calls,
+  no background analysis), so the DAW stands on its own as a plain DAW for anyone who wants that. See
+  `docs/RESEARCH.md` section 4.
+
+`AGENT-9` `to-do` **Local-by-default provenance**
+
+- **Keep agent provenance local by default** (referenced from Market & positioning). The two-voice
+  authorship log and agent intent notes are valuable, but they must never become an evidence trail held
+  *against* the user: default provenance to the user's own machine/project rather than a server-side
+  record, and make any sharing explicit and opt-in. See `docs/RESEARCH.md` section 9.
 
 **Collaboration & multi-user (options, not a decided direction)**
 
