@@ -24,6 +24,7 @@ import { grooveAt } from "../sequencer/groove";
 import { clamp } from "../../util";
 import { getAudioBuffer } from "../audioStore";
 import { audioPlayWindow } from "./audioWindow";
+import { createMidiDevice } from "../midi/device/registry";
 import { analyzeMix, summarizeMix, type MixSummary } from "../analysis/analyze";
 import { GRID } from "../sequencer/types";
 import type { ProjectStore, EffectInstance, InstrumentTrack, AudioTrack } from "../project/projectStore";
@@ -31,6 +32,8 @@ import type { AudioClipData } from "../project/types";
 import type { Instrument } from "../instruments/types";
 import type { Effect } from "../effects/types";
 import type { NoteEvent } from "../sequencer/types";
+import type { TransportClock } from "../midi/device/clock";
+import type { NoteTarget } from "../midi/device/GraphMidiDevice";
 
 export interface RenderOptions {
   /** Render sample rate. Default 44100. */
@@ -46,10 +49,10 @@ export interface RenderOptions {
  * -> limiter -> destination. Notes are flattened from placements and scheduled up front inside a
  * single suspend(0), so worklet-instrument port messages are queued before the first block.
  *
- * Fidelity: async assets (sampler/drumkit + audio-clip buffers) are decoded before rendering (so
- * they are not silent), groove is applied, and audio tracks render their clips. Remaining gap: MIDI
- * devices are bypassed (the instrument plays the raw notes) - they need an offline transport clock
- * (AGENT-4.7). The region plays once, which IS the arrangement (live just loops it).
+ * Fidelity (AGENT-4.7): the output matches live playback - async assets (sampler/drumkit +
+ * audio-clip buffers) are decoded before rendering, groove is applied, audio tracks render their
+ * clips, and notes route through each track's MIDI-device chain (arp / octavator) via an offline
+ * transport clock. The region plays once, which IS the arrangement (live just loops it).
  */
 export async function renderProjectOffline(project: ProjectStore, options: RenderOptions = {}): Promise<AudioBuffer> {
   const sampleRate = options.sampleRate ?? 44100;
@@ -63,6 +66,18 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
   // Project groove: the schedule-time onset + velocity nudge the live scheduler applies per note.
   const { id: grooveId, amount: grooveAmount } = project.getGroove();
   const groove = grooveById(grooveId);
+  // The transport clock MIDI devices read, as a pure function of the render timeline: render time 0
+  // maps to beat loopStart, so continuousBeatAtTime(t) = loopStart + t*bps. `playing` is always true
+  // (we are bouncing the arrangement), so generators (arp) lock to the grid exactly as they do live.
+  const bps = bpm / 60;
+  const transportClock: TransportClock = {
+    playing: true,
+    get currentTime() {
+      return ctx.currentTime;
+    },
+    secondsPerBeat: 60 / bpm,
+    continuousBeatAtTime: (time) => loopStart + time * bps,
+  };
 
   await loadWorklets(ctx);
   setSampleAssets(project.getSamples()); // so a Sampler's "asset:<id>" ref resolves
@@ -111,6 +126,11 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
       gain.connect(parentInput(track.parentId));
       gain.gain.value = mutedTracks.has(track.id) ? 0 : track.volume;
 
+      // MIDI-device note chain (d0 -> ... -> instrument); notes enter at the head. The device
+      // strategy self-schedules all transformed notes from one playNote using the transport clock,
+      // so an arp / octavator renders faithfully offline. No devices => head IS the instrument.
+      const noteHead = buildMidiChain(track, instrument, transportClock, disposables);
+
       const events = flattenTrackNotes(track, loopStart, project.length);
       scheduleFns.push(() => {
         for (const { note, atBeat } of events) {
@@ -119,7 +139,7 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
           const shift = grooveAt(groove, atBeat, grooveAmount);
           const whenSec = beatsToSeconds(atBeat - loopStart + shift.offsetBeats, bpm);
           const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
-          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, Math.max(0, whenSec));
+          noteHead.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, Math.max(0, whenSec));
         }
       });
     } else {
@@ -160,6 +180,26 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
  */
 export async function analyzeProjectMix(project: ProjectStore): Promise<MixSummary> {
   return summarizeMix(analyzeMix(await renderProjectOffline(project)));
+}
+
+/** Build a track's MIDI-device chain (d0 -> ... -> instrument) and return the head note target -
+ *  the instrument itself when there are no devices. Mirrors AudioEngine.reconcileMidiDevices;
+ *  bypassed devices stay linked (they pass through internally). Devices are added to `disposables`. */
+function buildMidiChain(
+  track: InstrumentTrack,
+  instrument: Instrument,
+  clock: TransportClock,
+  disposables: { dispose(): void }[],
+): NoteTarget {
+  const devices = track.midiDevices.map((instance) =>
+    createMidiDevice(instance.type, instance.params, instrument, clock),
+  );
+  devices.forEach((device, index) => {
+    device.bypassed = track.midiDevices[index].bypassed;
+    device.setNext(devices[index + 1] ?? instrument);
+  });
+  disposables.push(...devices);
+  return devices[0] ?? instrument;
 }
 
 /** Create + connect an effect chain: input -> fx1 -> ... -> output (skipping bypassed). */

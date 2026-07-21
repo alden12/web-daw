@@ -14,6 +14,7 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
         __dawRenderProjectSmoke?: () => Promise<number>;
         __dawRenderSamplerSmoke?: () => Promise<number>;
         __dawRenderAudioTrackSmoke?: () => Promise<number>;
+        __dawRenderMidiDeviceSmoke?: () => Promise<number>;
         __dawAnalyzeMix?: () => Promise<unknown>;
       };
       // Build a tiny project (the seeded default instrument track + a wavetable/worklet track), put
@@ -54,6 +55,18 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
         const fileId = await putAudio(encodeWav(samples, sampleRate));
         const project = new ProjectStore(false);
         project.addAudioTrack({ fileId, name: "Take", durationSec, startBeat: 0 });
+        return peakAmplitude(await renderProjectOffline(project));
+      };
+      // An instrument track with a MIDI device (octavator) + a note - proves notes route through
+      // the device chain (via the offline transport clock) into the instrument, not silence.
+      harness.__dawRenderMidiDeviceSmoke = async () => {
+        const { ProjectStore } = await import("./audio/project/projectStore");
+        const project = new ProjectStore();
+        const track = project.getTracks().find((entry) => entry.kind === "instrument");
+        if (track?.kind === "instrument") {
+          project.addMidiDevice(track.id, "octavator");
+          track.clips[0]?.store.addNote({ pitch: 60, start: 0, length: 1, velocity: 0.9 });
+        }
         return peakAmplitude(await renderProjectOffline(project));
       };
       // The full "agent ears" chain: render offline -> analyze -> model-friendly report.
