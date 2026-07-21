@@ -39,28 +39,49 @@ export function parseReply(raw: string): ProviderReply {
   try {
     json = JSON.parse(raw);
   } catch {
-    throw new Error("The model returned a response that was not valid JSON.");
+    throw new ModelResponseError("The model returned a response that was not valid JSON.", raw);
   }
   const parsed = completionSchema.safeParse(json);
-  if (!parsed.success) throw new Error("The model returned a response in an unexpected shape.");
+  if (!parsed.success) throw new ModelResponseError("The model returned a response in an unexpected shape.", raw);
   const choice = parsed.data.choices?.[0];
-  if (!choice || !choice.message) throw new Error("The model response contained no choices.");
+  if (!choice || !choice.message) throw new ModelResponseError("The model response contained no choices.", raw);
   const text = typeof choice.message.content === "string" ? choice.message.content : "";
-  const toolCalls = readToolCalls(choice.message.tool_calls);
-  if (text === "" && !toolCalls) throw new EmptyReplyError(choice.finish_reason);
+  const rawToolCalls = choice.message.tool_calls;
+  const toolCalls = readToolCalls(rawToolCalls);
+  // The model tried to call a tool but we could not parse ANY of them. Do NOT fall through to a
+  // plain text reply - that is how a dropped tool call becomes "claimed it did something, then
+  // stopped" (the loop treats a text-only round as finished). Surface it as a retryable
+  // malformed-tool-call instead, carrying the raw payload for diagnostics.
+  if (!toolCalls && rawToolCalls && rawToolCalls.length > 0) {
+    throw new EmptyReplyError("malformed_function_call", raw);
+  }
+  if (text === "" && !toolCalls) throw new EmptyReplyError(choice.finish_reason, raw);
   const usage = readUsage(parsed.data.usage);
   return { text, ...(toolCalls ? { toolCalls } : {}), ...(usage ? { usage } : {}) };
 }
 
-/** The model returned a candidate with no text and no tool call. This is usually
- *  non-deterministic (a truncated/malformed generation), so the loop retries it before
- *  giving up; `finishReason` (when the provider gives one) says why. */
+/** A response we parsed as JSON but cannot use (bad envelope shape, no choices). Carries the
+ *  raw body so the UI can show what the model actually returned on failure. */
+export class ModelResponseError extends Error {
+  readonly raw?: string;
+  constructor(message: string, raw?: string) {
+    super(message);
+    this.name = "ModelResponseError";
+    this.raw = raw;
+  }
+}
+
+/** The model returned a candidate with no usable text and no parseable tool call. This is usually
+ *  non-deterministic (a truncated/malformed generation), so the loop retries it before giving up;
+ *  `finishReason` (when the provider gives one) says why, and `raw` keeps the payload for the UI. */
 export class EmptyReplyError extends Error {
   readonly finishReason?: string;
-  constructor(finishReason?: string) {
+  readonly raw?: string;
+  constructor(finishReason?: string, raw?: string) {
     super(emptyReplyMessage(finishReason));
     this.name = "EmptyReplyError";
     this.finishReason = finishReason;
+    this.raw = raw;
   }
 }
 
@@ -107,11 +128,14 @@ function readToolCalls(toolCalls: z.infer<typeof toolCallSchema>[] | undefined):
   return calls.length > 0 ? calls : undefined;
 }
 
-/** An error from the provider, surfaced to the user in the chat. */
+/** An error from the provider, surfaced to the user in the chat. `raw` is the response body
+ *  (for an HTTP error), kept so the UI can reveal what the provider actually returned. */
 export class ProviderError extends Error {
-  constructor(message: string) {
+  readonly raw?: string;
+  constructor(message: string, raw?: string) {
     super(message);
     this.name = "ProviderError";
+    this.raw = raw;
   }
 }
 
@@ -166,7 +190,7 @@ export function createProvider(): AgentProvider {
       });
       const raw = await response.text();
       if (!response.ok) {
-        throw new ProviderError(providerErrorMessage(raw, response.status));
+        throw new ProviderError(providerErrorMessage(raw, response.status), raw);
       }
       return parseReply(raw);
     },

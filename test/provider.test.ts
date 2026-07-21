@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EmptyReplyError, parseReply, providerErrorMessage } from "../src/audio/agent/provider";
+import { EmptyReplyError, ModelResponseError, parseReply, providerErrorMessage } from "../src/audio/agent/provider";
 
 describe("parseReply", () => {
   it("pulls assistant text from an OpenAI-shaped response", () => {
@@ -43,6 +43,35 @@ describe("parseReply", () => {
   it("throws on a structurally invalid envelope (zod-validated shape)", () => {
     expect(() => parseReply(JSON.stringify({ choices: "not-an-array" }))).toThrow(/unexpected shape/i);
     expect(() => parseReply(JSON.stringify(42))).toThrow(/unexpected shape/i);
+  });
+
+  it("attaches the raw body to a parse error (for the click-to-reveal panel)", () => {
+    const raw = JSON.stringify({ choices: "not-an-array" });
+    try {
+      parseReply(raw);
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ModelResponseError);
+      expect((error as ModelResponseError).raw).toBe(raw);
+    }
+  });
+
+  it("does NOT treat a message with an unparseable tool call as a finished text reply", () => {
+    // A tool call whose function.name is missing would be dropped by readToolCalls; with narration
+    // text present that used to look like a done text reply (the "claimed it did something" bug).
+    const raw = JSON.stringify({
+      choices: [
+        { message: { content: "I added the track.", tool_calls: [{ id: "c1", function: { arguments: "{}" } }] } },
+      ],
+    });
+    try {
+      parseReply(raw);
+      expect.unreachable("should have thrown, not returned a text reply");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmptyReplyError);
+      expect((error as EmptyReplyError).message).toMatch(/malformed tool call/i);
+      expect((error as EmptyReplyError).raw).toBe(raw);
+    }
   });
 
   it("throws a retryable EmptyReplyError when a choice has neither text nor tool calls", () => {

@@ -194,18 +194,36 @@ describe("runAgent", () => {
     expect(seen).toHaveLength(1);
   });
 
-  it("treats a provider AbortError as a stop, not an error", async () => {
+  it("treats an AbortError as a stop only when our signal actually aborted", async () => {
+    // The provider aborts the controller mid-request, then throws AbortError - a real user stop.
+    const controller = new AbortController();
     const provider: AgentProvider = {
       async chat() {
+        controller.abort();
         const error = new Error("The user aborted a request.");
         error.name = "AbortError";
         throw error;
       },
     };
-    const controller = new AbortController();
     const result = await runAgent({ messages: seed, provider, tools: [echoTool], signal: controller.signal });
 
     expect(result.stopped).toBe(true);
     expect(result.text).toBe("");
+  });
+
+  it("surfaces an unexpected AbortError (signal never aborted) as an error, not a silent stop", async () => {
+    // An AbortError while our signal was never aborted = a network drop / dev reload, not a user
+    // stop. It must not masquerade as a clean stop (that is the "empty and stopped" bug).
+    const provider: AgentProvider = {
+      async chat() {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    };
+    const controller = new AbortController();
+    await expect(runAgent({ messages: seed, provider, tools: [echoTool], signal: controller.signal })).rejects.toThrow(
+      /interrupted unexpectedly/i,
+    );
   });
 });

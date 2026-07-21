@@ -86,7 +86,15 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     try {
       reply = await chatWithRetry(provider, conversation, toolSpecs, signal);
     } catch (error) {
-      if (isAbortError(error)) return stopped();
+      if (isAbortError(error)) {
+        // Only a stop we actually initiated returns the partial result. An AbortError while our
+        // signal is NOT aborted is an unexpected interruption (network drop, dev hot-reload) - do
+        // not masquerade it as a clean user stop; surface it so the user sees something went wrong.
+        if (signal?.aborted) return stopped();
+        throw new Error("The agent request was interrupted unexpectedly (a network drop or a reload). Try again.", {
+          cause: error,
+        });
+      }
       throw error;
     }
     if (reply.usage) {

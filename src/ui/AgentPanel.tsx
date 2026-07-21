@@ -38,6 +38,16 @@ function humanizeToolName(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** Pretty-print a raw error response for the reveal panel: indented JSON when it parses,
+ *  otherwise the raw string as-is (an HTML gateway page, a truncated body, ...). */
+function formatDetails(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 /** A one-line description of the user's current selection, prepended to each turn so the
  *  agent knows what "this track"/"here"/"this clip" refer to without a tool call. */
 function selectionContext(projectStore: ProjectStore): string {
@@ -152,6 +162,7 @@ export function AgentPanel({
   const { pending, error, send, retry, stop } = useAgentChat(tools, turns, setTurns, { getContext });
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const currentTitle = sessions.find((session) => session.id === currentId)?.title ?? "New chat";
@@ -311,7 +322,26 @@ export function AgentPanel({
 
       {error && (
         <div className="mx-4 mb-2 shrink-0 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
-          {error.message}
+          <div>{error.message}</div>
+          {error.details && (
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() => setShowErrorDetails((open) => !open)}
+                aria-expanded={showErrorDetails}
+                title="Show the raw model response that failed"
+                className="flex items-center gap-1 font-mono text-[10px] text-warn/80 hover:text-warn cursor-pointer"
+              >
+                <span className="text-[13px] leading-none w-3 text-center">{showErrorDetails ? "▾" : "▸"}</span>
+                {showErrorDetails ? "Hide" : "Show"} model response
+              </button>
+              {showErrorDetails && (
+                <pre className="mt-1 max-h-48 overflow-auto rounded bg-ground/60 p-2 font-mono text-[10px] leading-relaxed text-muted whitespace-pre-wrap break-all">
+                  {formatDetails(error.details)}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
       )}
 

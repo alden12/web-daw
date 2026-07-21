@@ -20,7 +20,10 @@ const SYSTEM_PROMPT = [
   "A drum kit maps each pad to a specific MIDI note. It follows the General MIDI drum map by default " +
     "(kick=36, snare=38, closed hat=42, open hat=46, ...), but pads can be remapped and custom samples may differ, " +
     "so call list_parameters on that track and use the `pads` map (each pad's note + sound) to pick pitches.",
-  "Make small, purposeful edits, then briefly tell the user what you did.",
+  "Make small, purposeful edits by calling the matching tool, then briefly confirm what changed.",
+  "Never say you have added, changed, removed, or created something unless you actually called its " +
+    "tool in this same turn and saw it succeed. Do not describe an edit in the past tense before doing " +
+    "it, and do not end your turn with a promise to act - if you intend to make a change, call the tool now.",
   "If a tool returns an error, read it and adjust - do not repeat the same failing call.",
 ].join(" ");
 
@@ -39,6 +42,9 @@ export interface ChatTurn {
 
 export interface ChatError {
   message: string;
+  /** The raw model/provider response that failed, when available - shown on demand in the
+   *  error box so you can see exactly what came back. */
+  details?: string;
 }
 
 export function useAgentChat(
@@ -137,5 +143,9 @@ export function useAgentChat(
 }
 
 function toChatError(err: unknown): ChatError {
-  return { message: err instanceof Error ? err.message : "Something went wrong talking to the agent." };
+  const message = err instanceof Error ? err.message : "Something went wrong talking to the agent.";
+  // Provider/parse errors (ProviderError, ModelResponseError, EmptyReplyError) carry the raw
+  // response body on `raw`; surface it as details so the error box can reveal it on demand.
+  const raw = err && typeof err === "object" && "raw" in err ? (err as { raw?: unknown }).raw : undefined;
+  return { message, ...(typeof raw === "string" && raw.length > 0 ? { details: raw } : {}) };
 }
