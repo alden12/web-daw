@@ -19,7 +19,7 @@ export class GraphInstrument extends BaseInstrument {
   /** Per-voice live graph, so a param change can reach each sounding voice. */
   private readonly voiceGraphs = new WeakMap<VoiceHandle, BuiltGraph>();
 
-  constructor(ctx: AudioContext, store: ParamStore, def: GraphInstrumentDef) {
+  constructor(ctx: BaseAudioContext, store: ParamStore, def: GraphInstrumentDef) {
     super(ctx, store);
     this.def = def;
     this.paramIds = collectParamIds(def.voice);

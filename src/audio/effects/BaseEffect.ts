@@ -10,7 +10,7 @@ import { bindParams, rampParam, type ParamBinding } from "../params/binding";
 import type { Effect } from "./types";
 
 export abstract class BaseEffect implements Effect {
-  protected readonly ctx: AudioContext;
+  protected readonly ctx: BaseAudioContext;
   protected readonly store: ParamStore;
   readonly input: GainNode;
   readonly output: GainNode;
@@ -20,7 +20,7 @@ export abstract class BaseEffect implements Effect {
 
   private unsubscribe: (() => void) | null = null;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     this.ctx = ctx;
     this.store = store;
     this.input = ctx.createGain();

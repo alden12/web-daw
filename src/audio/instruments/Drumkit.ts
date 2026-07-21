@@ -38,7 +38,7 @@ export class DrumkitInstrument extends BaseInstrument {
   // source (fires onended -> cleanup) rather than nothing.
   private readonly silence: AudioBuffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

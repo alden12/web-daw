@@ -21,11 +21,11 @@ export type NoteMessage =
 
 export class WorkletInstrument implements Instrument {
   readonly output: AudioWorkletNode;
-  private readonly ctx: AudioContext;
+  private readonly ctx: BaseAudioContext;
   private readonly node: AudioWorkletNode;
   private unsubscribe: (() => void) | null = null;
 
-  constructor(ctx: AudioContext, store: ParamStore, processorName: string) {
+  constructor(ctx: BaseAudioContext, store: ParamStore, processorName: string) {
     this.ctx = ctx;
     this.node = new AudioWorkletNode(ctx, processorName, {
       numberOfInputs: 0,

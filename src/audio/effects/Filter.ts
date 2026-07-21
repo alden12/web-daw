@@ -15,7 +15,7 @@ export class FilterEffect extends BaseEffect {
   private baseCutoff = 2000;
   private depth = 0.5;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

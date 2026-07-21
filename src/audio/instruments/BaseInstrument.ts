@@ -10,7 +10,7 @@ import type { Instrument, VoiceHandle } from "./types";
 import { bindParams, rampParam, type ParamBinding } from "./binding";
 
 export abstract class BaseInstrument implements Instrument {
-  protected readonly ctx: AudioContext;
+  protected readonly ctx: BaseAudioContext;
   protected readonly store: ParamStore;
   /** Instrument output (its amp.level gain); connect into the track gain. */
   readonly output: GainNode;
@@ -22,7 +22,7 @@ export abstract class BaseInstrument implements Instrument {
 
   private unsubscribe: (() => void) | null = null;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     this.ctx = ctx;
     this.store = store;
     this.output = ctx.createGain();
