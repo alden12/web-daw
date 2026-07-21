@@ -105,10 +105,12 @@ describe("resolveAuthConfig (fail-closed bootstrap)", () => {
   });
 
   it("throws in production when only one of the two vars is set (partial config is not enough)", () => {
-    expect(() => resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWKS_URL: configured.SUPABASE_JWKS_URL })).toThrow(
+    expect(() =>
+      resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWKS_URL: configured.SUPABASE_JWKS_URL }),
+    ).toThrow(/Refusing to start/);
+    expect(() => resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWT_ISSUER: ISSUER })).toThrow(
       /Refusing to start/,
     );
-    expect(() => resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWT_ISSUER: ISSUER })).toThrow(/Refusing to start/);
   });
 
   it("returns undefined (open dev-stub) outside production when config is missing, and warns", () => {
