@@ -23,6 +23,8 @@ interface Pad {
   note: number; // the MIDI note that fires this pad
   level: number;
   tune: number; // semitones
+  /** The pad's latest sample load, so an offline render can await readiness (Instrument.ready). */
+  loadPromise: Promise<void>;
 }
 
 export class DrumkitInstrument extends BaseInstrument {
@@ -32,6 +34,7 @@ export class DrumkitInstrument extends BaseInstrument {
     note: noteForPad(index),
     level: 0.85,
     tune: 0,
+    loadPromise: Promise.resolve(),
   }));
   private disposed = false;
   // A 1-frame silent buffer so a voice for an empty/undecoded pad still has a finite
@@ -64,15 +67,20 @@ export class DrumkitInstrument extends BaseInstrument {
     pad.ref = ref;
     if (!ref) {
       pad.buffer = null;
+      pad.loadPromise = Promise.resolve();
       return;
     }
-    loadSampleBuffer(this.ctx, ref)
+    pad.loadPromise = loadSampleBuffer(this.ctx, ref)
       .then((buffer) => {
         if (!this.disposed && pad.ref === ref) pad.buffer = buffer;
       })
       .catch(() => {
         if (!this.disposed && pad.ref === ref) pad.buffer = null;
       });
+  }
+
+  ready(): Promise<void> {
+    return Promise.all(this.pads.map((pad) => pad.loadPromise)).then(() => undefined);
   }
 
   // The note -> pad mapping is data: find the pad assigned this note. (If two pads share

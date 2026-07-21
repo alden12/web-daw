@@ -24,6 +24,8 @@ export class SamplerInstrument extends BaseInstrument {
   private buffer: AudioBuffer | null = null;
   /** The ref currently being/just loaded, so a stale async load can't clobber. */
   private currentRef = "";
+  /** The latest sample load, so an offline render can await readiness (see Instrument.ready). */
+  private loadPromise: Promise<void> = Promise.resolve();
   private root = 60;
   private keytrack = true;
   private disposed = false;
@@ -51,13 +53,17 @@ export class SamplerInstrument extends BaseInstrument {
 
   private loadSample(ref: string): void {
     this.currentRef = ref;
-    loadSampleBuffer(this.ctx, ref)
+    this.loadPromise = loadSampleBuffer(this.ctx, ref)
       .then((buffer) => {
         if (!this.disposed && this.currentRef === ref) this.buffer = buffer;
       })
       .catch(() => {
         if (!this.disposed && this.currentRef === ref) this.buffer = null;
       });
+  }
+
+  ready(): Promise<void> {
+    return this.loadPromise;
   }
 
   protected createVoice(midi: number, when: number): VoiceHandle {

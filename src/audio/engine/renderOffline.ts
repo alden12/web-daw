@@ -21,6 +21,7 @@ import { soloMutedTrackIds } from "./mix";
 import { beatsToSeconds, tileClipNotes } from "../sequencer/scheduler";
 import { analyzeMix, summarizeMix, type MixSummary } from "../analysis/analyze";
 import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
+import type { Instrument } from "../instruments/types";
 import type { Effect } from "../effects/types";
 import type { NoteEvent } from "../sequencer/types";
 
@@ -38,10 +39,10 @@ export interface RenderOptions {
  * -> limiter -> destination. Notes are flattened from placements and scheduled up front inside a
  * single suspend(0), so worklet-instrument port messages are queued before the first block.
  *
- * v1 scope (deliberate, expand next): instrument tracks only (audio tracks skipped); MIDI devices
- * are bypassed (the instrument plays directly - devices need an offline transport clock); samplers
- * render only if their buffers are already decoded (no pre-decode yet); the region plays once (no
- * loop repetition) and groove is not applied.
+ * Async assets (sampler/drumkit buffers) are awaited via Instrument.ready before rendering, so
+ * they are not silent. Remaining v1 gaps (deliberate, expand next): audio tracks are skipped; MIDI
+ * devices are bypassed (the instrument plays directly - devices need an offline transport clock);
+ * the region plays once (no loop repetition) and groove is not applied.
  */
 export async function renderProjectOffline(project: ProjectStore, options: RenderOptions = {}): Promise<AudioBuffer> {
   const sampleRate = options.sampleRate ?? 44100;
@@ -89,10 +90,12 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
   // Instrument tracks: build instrument + effects, route into the group tree, and collect the
   // scheduling closures (run later, inside suspend, so worklet note messages are queued in time).
   const scheduleFns: (() => void)[] = [];
+  const instruments: Instrument[] = [];
   for (const track of tracks) {
     if (track.kind !== "instrument") continue;
     const gain = ctx.createGain();
     const instrument = createInstrument(track.instrumentType, ctx, track.params);
+    instruments.push(instrument);
     disposables.push(instrument, ...connectChain(ctx, instrument.output, track.effects, gain));
     gain.connect(parentInput(track.parentId));
     gain.gain.value = mutedTracks.has(track.id) ? 0 : track.volume;
@@ -109,6 +112,10 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
       }
     });
   }
+
+  // Wait for async assets (sampler/drumkit buffers) to decode before rendering - offline render
+  // runs to completion immediately, so an undecoded sampler would render silent (Instrument.ready).
+  await Promise.all(instruments.map((instrument) => instrument.ready?.()));
 
   // Schedule all notes inside one suspend(0): a worklet note is a port message, and a message
   // posted before startRendering() races the offline render and loses. Pausing at t=0 lets the

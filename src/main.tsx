@@ -12,6 +12,7 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
       const harness = window as unknown as {
         __dawRenderWorkletSmoke?: () => Promise<number>;
         __dawRenderProjectSmoke?: () => Promise<number>;
+        __dawRenderSamplerSmoke?: () => Promise<number>;
         __dawAnalyzeMix?: () => Promise<unknown>;
       };
       // Build a tiny project (the seeded default instrument track + a wavetable/worklet track), put
@@ -29,6 +30,16 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
       harness.__dawRenderWorkletSmoke = async () => peakAmplitude(await renderWorkletSmokeTest());
       harness.__dawRenderProjectSmoke = async () =>
         peakAmplitude(await renderProjectOffline(await buildSmokeProject()));
+      // A sampler track (default sample: builtin:kick) - proves samples are decoded (Instrument.ready)
+      // before render, so they are not silent.
+      harness.__dawRenderSamplerSmoke = async () => {
+        const { ProjectStore } = await import("./audio/project/projectStore");
+        const project = new ProjectStore(false);
+        const track = project.addTrack("sampler");
+        if (track.kind === "instrument")
+          track.clips[0]?.store.addNote({ pitch: 60, start: 0, length: 1, velocity: 0.9 });
+        return peakAmplitude(await renderProjectOffline(project));
+      };
       // The full "agent ears" chain: render offline -> analyze -> model-friendly report.
       harness.__dawAnalyzeMix = async () => analyzeProjectMix(await buildSmokeProject());
     },
