@@ -174,7 +174,10 @@ never re-stamps), then gates on `canAccess`, and treats `history/commits/*` as w
 Every read (`listProjects`, `readFile`) is filtered by `accessibleWhere` too.
 
 Gaps worth carrying in your head (all deliberate, for the unhardened window):
-the **dev-stub open path** still exists (guarded only by "prod sets the env"); **no
-rate-limiting or per-owner quotas** yet (only a body-size cap); **CORS defaults to `*`**
-(the bearer token, not a cookie, is the gate); the JWT **audience is hard-coded** to
-`"authenticated"`. These map to the roadmap's `HOST-8` hardening tickets.
+the **dev-stub open path** still exists for local dev, but it now **fails closed in
+production** - `resolveAuthConfig` (principal.ts) throws under `NODE_ENV=production`
+when the Supabase env is unset, so a misconfigured deploy refuses to boot rather than
+running open (HOST-8.4); **no rate-limiting or per-owner quotas** yet (only a body-size
+cap); **CORS defaults to `*`** (the bearer token, not a cookie, is the gate); the JWT
+**audience is hard-coded** to `"authenticated"`. These map to the roadmap's `HOST-8`
+hardening tickets.

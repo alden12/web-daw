@@ -2565,11 +2565,14 @@ robustness / config gaps:
   holding the room live and broadcasting into the void; a periodic server ping with a pong deadline evicts
   the dead peer and lets the room free when truly empty.
 
-  `HOST-8.4` `to-do` **Fail closed without auth config**
-  Today an unset `SUPABASE_JWKS_URL` / `SUPABASE_JWT_ISSUER` silently drops to the open dev-stub (a single
-  "local" owner, no credential). Safe locally, but a misconfigured production deploy would then run wide
-  open. Under `NODE_ENV=production`, refuse to boot (or refuse to serve the API/WS) unless real auth is
-  configured, so "open" can never be the accidental default where it matters.
+  `HOST-8.4` `review` **Fail closed without auth config**
+  Done: `resolveAuthConfig` (`server/api/principal.ts`) is the single place the bootstrap turns env into an
+  `AuthConfig`. When `SUPABASE_JWKS_URL` / `SUPABASE_JWT_ISSUER` are unset (or only half-set) it throws under
+  `NODE_ENV=production` - the server refuses to boot rather than silently dropping to the open dev-stub (a
+  single "local" owner, no credential), so a misconfigured production deploy fails closed instead of running
+  wide open. Outside production it still returns the open dev-stub, now with a loud warning. Both the HTTP
+  and WS gates inherit the one decision. `NODE_ENV=production` is set in two independent places in the
+  deploy (Dockerfile + fly.toml), so the signal is hard to lose. Covered by `test/principal.test.ts`.
 
   `HOST-8.5` `to-do` **Configurable JWT audience**
   `makeJwtResolver` hard-codes the expected `aud` to `"authenticated"` (the Supabase default). Make it a
