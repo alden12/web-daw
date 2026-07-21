@@ -41,6 +41,25 @@ test("a project (synth + worklet tracks) renders to a non-silent buffer offline"
 });
 
 /**
+ * Sampler pre-decode: a sampler's buffer decodes asynchronously and, without Instrument.ready,
+ * would render silent offline (the render runs to completion before the decode lands). A sampler
+ * track (default sample: builtin:kick) with a note must render non-silent - proving the render
+ * awaits sample readiness before startRendering.
+ */
+test("a sampler track renders to a non-silent buffer offline (sample pre-decode)", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => typeof (window as unknown as { __dawRenderSamplerSmoke?: unknown }).__dawRenderSamplerSmoke === "function",
+  );
+
+  const peak = await page.evaluate(async () =>
+    (window as unknown as { __dawRenderSamplerSmoke: () => Promise<number> }).__dawRenderSamplerSmoke(),
+  );
+
+  expect(peak).toBeGreaterThan(0.001);
+});
+
+/**
  * The full "agent ears" chain end to end: render offline -> analyzeMix -> summarizeMix, the exact
  * logic behind the analyze_mix agent tool. Proves the render produces measurable audio and the
  * analysis yields a sane, model-friendly report (audible, with headroom, not clipping - the master
