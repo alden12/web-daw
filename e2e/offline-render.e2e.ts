@@ -20,3 +20,22 @@ test("a worklet instrument renders to a non-silent buffer offline (AGENT-4.1 spi
 
   expect(peak).toBeGreaterThan(0.001);
 });
+
+/**
+ * The real path: renderProjectOffline consumes a ProjectStore (a seeded synth track + a wavetable
+ * worklet track, each with a note), builds the instrument -> effects -> group -> master graph, and
+ * schedules the flattened arrangement. Non-silent proves the project-consuming render works end to
+ * end in a real browser.
+ */
+test("a project (synth + worklet tracks) renders to a non-silent buffer offline", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => typeof (window as unknown as { __dawRenderProjectSmoke?: unknown }).__dawRenderProjectSmoke === "function",
+  );
+
+  const peak = await page.evaluate(async () =>
+    (window as unknown as { __dawRenderProjectSmoke: () => Promise<number> }).__dawRenderProjectSmoke(),
+  );
+
+  expect(peak).toBeGreaterThan(0.001);
+});
