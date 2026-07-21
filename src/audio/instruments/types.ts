@@ -15,6 +15,13 @@ export interface Instrument {
   playNote(midi: number, durationSec: number, velocity?: number, when?: number): void;
   allNotesOff(): void;
   dispose(): void;
+  /**
+   * Resolves once the instrument's async assets (e.g. decoded samples) are loaded, so an
+   * offline render can wait before `startRendering` (which runs to completion immediately -
+   * an undecoded sampler would otherwise render silent). Omitted by instruments with no async
+   * assets (the synths); live playback never needs it (buffers stream in as they decode).
+   */
+  ready?(): Promise<void>;
 }
 
 /**

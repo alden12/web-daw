@@ -15,7 +15,7 @@ import type { Graph, NodeSpec, NumberField, EnumField, OscNodeSpec, ShaperNodeSp
 import { NODE_IMPLS, SHAPER_CURVES } from "./nodes";
 
 export interface GraphContext {
-  ctx: AudioContext;
+  ctx: BaseAudioContext;
   /** Reserved endpoints by id: `amp` (instrument voice) or `in`/`wet` (effect). */
   reserved: Record<string, AudioNode>;
   /** The voice's fundamental frequency (instruments); absent for effects. */
@@ -94,7 +94,7 @@ type AddTarget = (paramId: string, apply: (value: ParamValue, smoothMs?: number)
 function applyFields(
   spec: NodeSpec,
   node: AudioNode,
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   context: GraphContext,
   addTarget: AddTarget,
 ): void {
@@ -137,7 +137,7 @@ function applyFields(
 function bindNumber(
   field: NumberField | undefined,
   param: AudioParam,
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   startTime: number,
   readParam: (id: string) => ParamValue,
   addTarget: AddTarget,
@@ -177,7 +177,7 @@ function bindProperty(
 function bindOscFrequency(
   spec: OscNodeSpec,
   osc: OscillatorNode,
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   startTime: number,
   context: GraphContext,
   addTarget: AddTarget,

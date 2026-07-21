@@ -15,7 +15,7 @@ export class GraphEffect extends BaseEffect {
   private readonly def: GraphEffectDef;
   private built!: BuiltGraph;
 
-  constructor(ctx: AudioContext, store: ParamStore, def: GraphEffectDef) {
+  constructor(ctx: BaseAudioContext, store: ParamStore, def: GraphEffectDef) {
     super(ctx, store);
     this.def = def;
     this.init();

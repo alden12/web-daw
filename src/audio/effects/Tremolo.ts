@@ -14,7 +14,7 @@ export class TremoloEffect extends BaseEffect {
   private lfoGain!: GainNode;
   private depth = 0.6;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

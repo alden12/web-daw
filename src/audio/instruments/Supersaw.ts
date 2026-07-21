@@ -16,7 +16,7 @@ export class SupersawInstrument extends BaseInstrument {
   private count = 7;
   private spread = 25;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }
