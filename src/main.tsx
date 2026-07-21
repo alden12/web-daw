@@ -8,15 +8,15 @@ import App from "./App.tsx";
 // OfflineAudioContext. Guarded so it never ships in a production build. See AGENT-4.1.
 if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   void import("./audio/engine/renderOffline").then(
-    ({ renderWorkletSmokeTest, renderProjectOffline, peakAmplitude }) => {
+    ({ renderWorkletSmokeTest, renderProjectOffline, analyzeProjectMix, peakAmplitude }) => {
       const harness = window as unknown as {
         __dawRenderWorkletSmoke?: () => Promise<number>;
         __dawRenderProjectSmoke?: () => Promise<number>;
+        __dawAnalyzeMix?: () => Promise<unknown>;
       };
-      harness.__dawRenderWorkletSmoke = async () => peakAmplitude(await renderWorkletSmokeTest());
       // Build a tiny project (the seeded default instrument track + a wavetable/worklet track), put
-      // a note on each, and render it - exercises the whole project-consuming render path.
-      harness.__dawRenderProjectSmoke = async () => {
+      // a note on each - exercises the whole project-consuming render path.
+      const buildSmokeProject = async () => {
         const { ProjectStore } = await import("./audio/project/projectStore");
         const project = new ProjectStore();
         project.addTrack("wavetable");
@@ -24,8 +24,13 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
           if (track.kind === "instrument")
             track.clips[0]?.store.addNote({ pitch: 60, start: 0, length: 1, velocity: 0.9 });
         }
-        return peakAmplitude(await renderProjectOffline(project));
+        return project;
       };
+      harness.__dawRenderWorkletSmoke = async () => peakAmplitude(await renderWorkletSmokeTest());
+      harness.__dawRenderProjectSmoke = async () =>
+        peakAmplitude(await renderProjectOffline(await buildSmokeProject()));
+      // The full "agent ears" chain: render offline -> analyze -> model-friendly report.
+      harness.__dawAnalyzeMix = async () => analyzeProjectMix(await buildSmokeProject());
     },
   );
 }
