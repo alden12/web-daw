@@ -43,6 +43,35 @@ export interface AuthConfig {
 }
 
 /**
+ * Resolve the JWT-verification config from env at bootstrap, failing closed in production.
+ *
+ * Real auth needs both `SUPABASE_JWKS_URL` and `SUPABASE_JWT_ISSUER`; with both set, requests/sockets are
+ * gated by verifying a JWT (`makeJwtResolver`). Without them the API falls back to the open dev-stub
+ * (`makeDevResolver`: a single "local" owner, no gate) - fine for local dev, a hole in production. So when
+ * `NODE_ENV=production` and the config is absent (or only half-set), throw rather than silently deploy
+ * open. Returns `undefined` (open dev-stub) only outside production, where it warns loudly. This is the
+ * one place the "did we forget the auth env?" question is answered, so both the HTTP and WS gates inherit
+ * the decision.
+ */
+export function resolveAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefined {
+  const jwksUrl = env.SUPABASE_JWKS_URL;
+  const issuer = env.SUPABASE_JWT_ISSUER;
+  if (jwksUrl && issuer) return { jwksUrl, issuer };
+  if (env.NODE_ENV === "production") {
+    throw new Error(
+      "Refusing to start: set SUPABASE_JWKS_URL and SUPABASE_JWT_ISSUER in production. Without both the " +
+        'API would run open (no auth, a single "local" owner), exposing every project. Set the Supabase ' +
+        "secrets, or unset NODE_ENV to run the local dev-stub.",
+    );
+  }
+  console.warn(
+    '[web-daw] WARNING: no auth configured - running the OPEN dev-stub (single "local" owner, no gate). ' +
+      "Fine for local dev; never deploy this way.",
+  );
+  return undefined;
+}
+
+/**
  * Verify JWTs against a JWKS. `getKey` defaults to a remote JWKS fetched (and cached) from
  * `config.jwksUrl`; tests inject a local key set to verify without a network round-trip.
  */

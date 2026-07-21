@@ -4,11 +4,11 @@
  * key pair and check that only correctly-signed, correctly-scoped, unexpired tokens resolve to a
  * principal - and that a resolved principal is provisioned into the `users` table.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, type JWTVerifyGetKey } from "jose";
 import { makeSyncEnv } from "./support/syncEnv";
-import { makeJwtResolver, makeDevResolver, type AuthConfig } from "../server/api/principal";
+import { makeJwtResolver, makeDevResolver, resolveAuthConfig, type AuthConfig } from "../server/api/principal";
 import { users } from "../server/db/schema";
 
 const ISSUER = "https://test.supabase.co/auth/v1";
@@ -88,6 +88,35 @@ describe("makeJwtResolver", () => {
     expect(await resolve((await sign()) + "x")).toBeNull();
     expect(await resolve(undefined)).toBeNull();
     expect(await resolve("not-a-jwt")).toBeNull();
+  });
+});
+
+describe("resolveAuthConfig (fail-closed bootstrap)", () => {
+  const configured = { SUPABASE_JWKS_URL: "https://project.supabase.co/auth/v1/jwks", SUPABASE_JWT_ISSUER: ISSUER };
+
+  it("returns the config when both vars are set, in any environment", () => {
+    const expected = { jwksUrl: configured.SUPABASE_JWKS_URL, issuer: ISSUER };
+    expect(resolveAuthConfig({ ...configured, NODE_ENV: "production" })).toEqual(expected);
+    expect(resolveAuthConfig({ ...configured, NODE_ENV: "development" })).toEqual(expected);
+  });
+
+  it("throws in production when the auth config is absent (fails closed)", () => {
+    expect(() => resolveAuthConfig({ NODE_ENV: "production" })).toThrow(/Refusing to start/);
+  });
+
+  it("throws in production when only one of the two vars is set (partial config is not enough)", () => {
+    expect(() => resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWKS_URL: configured.SUPABASE_JWKS_URL })).toThrow(
+      /Refusing to start/,
+    );
+    expect(() => resolveAuthConfig({ NODE_ENV: "production", SUPABASE_JWT_ISSUER: ISSUER })).toThrow(/Refusing to start/);
+  });
+
+  it("returns undefined (open dev-stub) outside production when config is missing, and warns", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(resolveAuthConfig({})).toBeUndefined();
+    expect(resolveAuthConfig({ NODE_ENV: "development" })).toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
