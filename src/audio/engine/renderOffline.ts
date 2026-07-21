@@ -19,6 +19,9 @@ import { loadWorklets } from "../worklets";
 import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
 import { beatsToSeconds, tileClipNotes } from "../sequencer/scheduler";
+import { grooveById } from "../grooves/catalog";
+import { grooveAt } from "../sequencer/groove";
+import { clamp } from "../../util";
 import { analyzeMix, summarizeMix, type MixSummary } from "../analysis/analyze";
 import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
 import type { Instrument } from "../instruments/types";
@@ -53,6 +56,9 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
   const durationSec = beatsToSeconds(regionBeats, bpm) + tailSec;
   const frames = Math.max(1, Math.ceil(durationSec * sampleRate));
   const ctx = new OfflineAudioContext(2, frames, sampleRate);
+  // Project groove: the schedule-time onset + velocity nudge the live scheduler applies per note.
+  const { id: grooveId, amount: grooveAmount } = project.getGroove();
+  const groove = grooveById(grooveId);
 
   await loadWorklets(ctx);
   setSampleAssets(project.getSamples()); // so a Sampler's "asset:<id>" ref resolves
@@ -103,12 +109,12 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
     const events = flattenTrackNotes(track, loopStart, project.length);
     scheduleFns.push(() => {
       for (const { note, atBeat } of events) {
-        instrument.playNote(
-          note.pitch,
-          beatsToSeconds(note.length, bpm),
-          note.velocity,
-          beatsToSeconds(atBeat - loopStart, bpm),
-        );
+        // Groove nudges the onset + scales velocity at schedule time (the notes are untouched),
+        // matching Scheduler.tick. A no-op when the project has no groove (amount 0 / Straight).
+        const shift = grooveAt(groove, atBeat, grooveAmount);
+        const whenSec = beatsToSeconds(atBeat - loopStart + shift.offsetBeats, bpm);
+        const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
+        instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, Math.max(0, whenSec));
       }
     });
   }
