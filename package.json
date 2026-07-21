@@ -16,7 +16,10 @@
     "test:e2e:ui": "playwright test --ui",
     "server": "tsx server/index.ts",
     "check:server": "tsc -p tsconfig.server.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "worktree:new": "bash scripts/worktree.sh new",
+    "worktree:rm": "bash scripts/worktree.sh rm",
+    "worktree:list": "bash scripts/worktree.sh list"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
