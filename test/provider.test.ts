@@ -40,6 +40,11 @@ describe("parseReply", () => {
     expect(() => parseReply(JSON.stringify({ choices: [] }))).toThrow(/no choices/);
   });
 
+  it("throws on a structurally invalid envelope (zod-validated shape)", () => {
+    expect(() => parseReply(JSON.stringify({ choices: "not-an-array" }))).toThrow(/unexpected shape/i);
+    expect(() => parseReply(JSON.stringify(42))).toThrow(/unexpected shape/i);
+  });
+
   it("throws a retryable EmptyReplyError when a choice has neither text nor tool calls", () => {
     try {
       parseReply(JSON.stringify({ choices: [{ message: { content: "" } }] }));

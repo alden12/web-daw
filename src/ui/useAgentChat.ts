@@ -2,12 +2,14 @@
  * The reason-act loop for one user message, tracking ephemeral pending/error. The
  * conversation turns are owned by the caller (the session store), passed in with a
  * setter, so switching sessions swaps the history transparently. The loop seeds from the
- * visible turns; its own tool rounds stay internal, and each assistant turn records which
- * tools ran (for the activity chips). See docs/AGENT.md.
+ * visible turns; each assistant turn records the act rounds it ran (`steps`, the
+ * think-act-observe trail) as they happen, so the panel grows the trail live. A run is
+ * interruptible: `stop()` aborts the in-flight request and keeps the partial trail. See
+ * docs/AGENT.md.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createProvider } from "../audio/agent/provider";
-import { runAgent } from "../audio/agent/loop";
+import { runAgent, type AgentStep } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
 const SYSTEM_PROMPT = [
@@ -27,8 +29,10 @@ export interface ChatTurn {
   content: string;
   /** When the turn was created (epoch ms), for the timestamp. */
   at?: number;
-  /** Tools the agent ran to produce this turn (assistant turns only). */
-  activity?: { name: string; ok: boolean }[];
+  /** The act rounds the agent ran to produce this turn, in order (assistant turns only). */
+  steps?: AgentStep[];
+  /** True when the run was interrupted by the user before finishing (assistant turns only). */
+  stopped?: boolean;
   /** Tokens the exchange cost (assistant turns only). */
   usage?: { inputTokens: number; outputTokens: number };
 }
@@ -52,6 +56,7 @@ export function useAgentChat(
   const agent = useMemo(() => provider ?? createProvider(), [provider]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Run the loop over a conversation ending in the message to answer, appending the
   // assistant turn on success. Shared by send (new message) and retry (re-run the last).
@@ -59,28 +64,47 @@ export function useAgentChat(
     async (history: ChatTurn[]) => {
       setError(null);
       setPending(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const startedAt = Date.now();
       const context = getContext?.();
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },
         ...(context ? [{ role: "system" as const, content: context }] : []),
         ...history.map((turn): ChatMessage => ({ role: turn.role, content: turn.content })),
       ];
+      // Per-run accumulator: steps arrive in order via onStep, so we grow a draft
+      // assistant turn and re-publish it as the trail unfolds.
+      const liveSteps: AgentStep[] = [];
       try {
-        const result = await runAgent({ messages, provider: agent, tools });
+        const result = await runAgent({
+          messages,
+          provider: agent,
+          tools,
+          signal: controller.signal,
+          // Grow the trail live: each completed act round appends to a draft assistant turn.
+          onStep: (step) => {
+            liveSteps[step.index] = { text: step.text, activity: step.activity };
+            setTurns([...history, { role: "assistant", content: "", at: startedAt, steps: [...liveSteps] }]);
+          },
+        });
         setTurns([
           ...history,
           {
             role: "assistant",
             content: result.text,
-            at: Date.now(),
-            activity: result.invocations.map((invocation) => ({ name: invocation.name, ok: invocation.ok })),
+            at: startedAt,
+            steps: result.steps,
+            stopped: result.stopped,
             usage: result.usage,
           },
         ]);
       } catch (err) {
         setError(toChatError(err));
+        setTurns(history);
       } finally {
         setPending(false);
+        abortRef.current = null;
       }
     },
     [agent, tools, setTurns, getContext],
@@ -103,7 +127,13 @@ export function useAgentChat(
     void run(turns);
   }, [pending, turns, run]);
 
-  return { pending, error, send, retry };
+  // Interrupt the in-flight run; runAgent resolves with the partial trail (stopped: true),
+  // so the success path records what was done rather than surfacing an error.
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  return { pending, error, send, retry, stop };
 }
 
 function toChatError(err: unknown): ChatError {

@@ -6,24 +6,49 @@
  * fit; the active provider only changes the base URL, model, and headers (see
  * providers.ts). See docs/AGENT.md (phase 1).
  */
+import { z } from "zod";
 import { activeKey, readAgentConfig, resolveModel } from "./config";
 import { PROVIDERS } from "./providers";
-import type { AgentProvider, ChatMessage, ProviderReply, ProviderToolCall, ToolSpec } from "./types";
+import type { AgentProvider, ChatMessage, ChatOptions, ProviderReply, ProviderToolCall, ToolSpec } from "./types";
+
+/** The slice of the OpenAI chat-completions response we read. A model response is an
+ *  untrusted boundary like any other (MCP inputs, loaded bundles), so we validate it with
+ *  zod - `safeParse` at the edge, typed inward - rather than an `as`-cast + `typeof` ladder.
+ *  Fields the model may legitimately omit are optional; unknown extras are ignored. */
+const toolCallSchema = z.object({
+  id: z.string().optional(),
+  function: z.object({ name: z.string().optional(), arguments: z.unknown().optional() }).optional(),
+});
+const completionSchema = z.object({
+  choices: z
+    .array(
+      z.object({
+        message: z
+          .object({ content: z.unknown().optional(), tool_calls: z.array(toolCallSchema).optional() })
+          .optional(),
+        finish_reason: z.string().optional(),
+      }),
+    )
+    .optional(),
+  usage: z.object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional() }).optional(),
+});
 
 /** Parse an OpenAI-shaped chat-completions response body into a provider reply. */
 export function parseReply(raw: string): ProviderReply {
-  let data: unknown;
+  let json: unknown;
   try {
-    data = JSON.parse(raw);
+    json = JSON.parse(raw);
   } catch {
     throw new Error("The model returned a response that was not valid JSON.");
   }
-  const message = firstChoiceMessage(data);
-  if (message === null) throw new Error("The model response contained no choices.");
-  const text = typeof message.content === "string" ? message.content : "";
-  const toolCalls = readToolCalls(message);
-  if (text === "" && !toolCalls) throw new EmptyReplyError(readFinishReason(data));
-  const usage = readUsage(data);
+  const parsed = completionSchema.safeParse(json);
+  if (!parsed.success) throw new Error("The model returned a response in an unexpected shape.");
+  const choice = parsed.data.choices?.[0];
+  if (!choice || !choice.message) throw new Error("The model response contained no choices.");
+  const text = typeof choice.message.content === "string" ? choice.message.content : "";
+  const toolCalls = readToolCalls(choice.message.tool_calls);
+  if (text === "" && !toolCalls) throw new EmptyReplyError(choice.finish_reason);
+  const usage = readUsage(parsed.data.usage);
   return { text, ...(toolCalls ? { toolCalls } : {}), ...(usage ? { usage } : {}) };
 }
 
@@ -56,37 +81,19 @@ function emptyReplyMessage(finishReason?: string): string {
   return message ?? "The model returned an empty response. This can happen intermittently; retrying usually fixes it.";
 }
 
-function readFinishReason(data: unknown): string | undefined {
-  const choices = (data as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return undefined;
-  const reason = (choices[0] as { finish_reason?: unknown }).finish_reason;
-  return typeof reason === "string" ? reason : undefined;
+function readUsage(
+  usage: z.infer<typeof completionSchema>["usage"],
+): { inputTokens: number; outputTokens: number } | undefined {
+  if (!usage) return undefined;
+  const { prompt_tokens: input, completion_tokens: output } = usage;
+  if (input === undefined && output === undefined) return undefined;
+  return { inputTokens: input ?? 0, outputTokens: output ?? 0 };
 }
 
-function readUsage(data: unknown): { inputTokens: number; outputTokens: number } | undefined {
-  const usage = (data as { usage?: unknown }).usage;
-  if (typeof usage !== "object" || usage === null) return undefined;
-  const input = (usage as { prompt_tokens?: unknown }).prompt_tokens;
-  const output = (usage as { completion_tokens?: unknown }).completion_tokens;
-  if (typeof input !== "number" && typeof output !== "number") return undefined;
-  return { inputTokens: typeof input === "number" ? input : 0, outputTokens: typeof output === "number" ? output : 0 };
-}
-
-function firstChoiceMessage(data: unknown): { content?: unknown; tool_calls?: unknown } | null {
-  if (typeof data !== "object" || data === null) return null;
-  const choices = (data as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
-  const message = (choices[0] as { message?: unknown }).message;
-  return typeof message === "object" && message !== null
-    ? (message as { content?: unknown; tool_calls?: unknown })
-    : null;
-}
-
-function readToolCalls(message: { tool_calls?: unknown }): ProviderToolCall[] | undefined {
-  if (!Array.isArray(message.tool_calls) || message.tool_calls.length === 0) return undefined;
-  const calls = message.tool_calls
-    .map((entry): ProviderToolCall | null => {
-      const call = entry as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+function readToolCalls(toolCalls: z.infer<typeof toolCallSchema>[] | undefined): ProviderToolCall[] | undefined {
+  if (!toolCalls || toolCalls.length === 0) return undefined;
+  const calls = toolCalls
+    .map((call): ProviderToolCall | null => {
       const name = call.function?.name;
       if (typeof name !== "string") return null;
       const args = call.function?.arguments;
@@ -130,7 +137,7 @@ export function providerErrorMessage(raw: string, status: number): string {
 
 export function createProvider(): AgentProvider {
   return {
-    async chat(messages: ChatMessage[], tools?: ToolSpec[]): Promise<ProviderReply> {
+    async chat(messages: ChatMessage[], tools?: ToolSpec[], options?: ChatOptions): Promise<ProviderReply> {
       const config = readAgentConfig();
       const info = PROVIDERS[config.provider];
       const apiKey = activeKey(config);
@@ -155,6 +162,7 @@ export function createProvider(): AgentProvider {
           ...(info.extraHeaders ?? {}),
         },
         body: JSON.stringify(body),
+        signal: options?.signal,
       });
       const raw = await response.text();
       if (!response.ok) {
