@@ -35,6 +35,19 @@ The user invokes as `/walkthrough <args>`. Interpret `<args>`:
 - **Mode a: links only.** Skip the `code -g` call; just print the clickable
   `file:line` reference and let the user click to open.
 
+**Diff-aware tours (walking through *recent changes*).** When the tour is of a diff
+(working-tree changes, or a branch vs its base) rather than settled code, the red/green
+diff view adds real value - it shows what each section *changed*, not just what it is. In
+that case open the section's file in VS Code's diff editor instead of the plain file:
+materialize the "before" version to a temp file and `code --diff <before> <file>`
+(`git show <baseref>:<file> > tmp` first). Baseref is `HEAD` for uncommitted working-tree
+changes, or the base branch (e.g. `main`, the parent slice) for committed branch work. The
+`--diff` editor can't target a line, so keep printing the clickable `file:line` and the
+inline snippet for precise section context. To keep this cheap per turn, write a tiny
+reusable shell helper **once** (takes `<file> [baseref] [line]`, does the materialize +
+`code --diff`, falls back to `code -g` when there is no diff) and call it per section - do
+not re-derive the temp-path/baseref plumbing each turn.
+
 Before the first `code -g` in a session, confirm the CLI exists with
 `command -v code`. If it is missing, tell the user (once) that auto-jump needs the
 `code` CLI ("Shell Command: Install 'code' command in PATH" from the VS Code
@@ -56,11 +69,18 @@ For each section:
    line numbers if the file looks like it has drifted from the doc (see "Drift").
 2. Print a compact header: `Section N/total - <title>` and the clickable
    `<file>:<startLine>` reference.
-3. Show the focused lines as a fenced snippet (read them fresh from the file so
+3. When the section is dense or turns on a non-obvious design decision, open with a
+   one-line **TL;DR** (a `>` blockquote) that states the takeaway - the "so what" -
+   so the reader can decide whether to dig in or just say `next`. Skip it when the
+   title already says everything; a redundant TL;DR is noise.
+4. Show the focused lines as a fenced snippet (read them fresh from the file so
    they are accurate). Keep it to the lines that matter, not the whole file.
-4. Explain concisely: what this code does and why it matters in the feature's
-   story. Prefer plain language over restating the code.
-5. Stop and invite questions. Remind them of the controls the first time:
+5. Explain **briefly**: lead with the single most important point and make it
+   intuitive and clear, then stop. Prioritise the key info first; prefer plain
+   language over restating the code. Resist the urge to preempt every question - the
+   reader can always ask a follow-up, and depth-on-demand reads better than a wall
+   of text. A few tight sentences usually beats a paragraph.
+6. Stop and invite questions. Remind them of the controls the first time:
    `next` (continue), `back`, `jump to N`, `re-explain`, `exit`.
 
 Then WAIT. Answer whatever they ask against the real code (open related files if a
