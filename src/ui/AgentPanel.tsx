@@ -8,6 +8,7 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChat } from "./useAgentChat";
+import type { AgentStep } from "../audio/agent/loop";
 import { useAgentSessions } from "./agentSessions";
 import { createAgentTools } from "../audio/agent/tools";
 import type { ProjectStore } from "../audio/project/projectStore";
@@ -31,6 +32,22 @@ function formatTokens(count: number): string {
   return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
 }
 
+/** A tool's snake_case name as sentence case for display: `create_track` -> `Create track`. */
+function humanizeToolName(name: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Pretty-print a raw error response for the reveal panel: indented JSON when it parses,
+ *  otherwise the raw string as-is (an HTML gateway page, a truncated body, ...). */
+function formatDetails(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
 /** A one-line description of the user's current selection, prepended to each turn so the
  *  agent knows what "this track"/"here"/"this clip" refer to without a tool call. */
 function selectionContext(projectStore: ProjectStore): string {
@@ -43,6 +60,80 @@ function selectionContext(projectStore: ProjectStore): string {
   return (
     `Current selection: track "${track.name}" (id ${track.id}${instrument})${clipPart}. ` +
     `When the user says "this track", "here", "this clip" or similar, they mean this unless they say otherwise.`
+  );
+}
+
+/**
+ * The think-act-observe trail for an assistant turn: the act rounds the agent ran (its
+ * narration + the tools each round called), plus a "stopped" marker when interrupted. It is
+ * expanded while the run is live (`live`), then auto-collapses to a compact "N steps"
+ * disclosure once the turn finishes, so old exchanges stay tidy but remain inspectable.
+ */
+function AgentTrail({ steps, stopped, live }: { steps?: AgentStep[]; stopped?: boolean; live: boolean }) {
+  const [open, setOpen] = useState(live);
+  // `open` follows `live` (expand while running, collapse when the run finishes) BUT the
+  // disclosure button must also be able to toggle it independently and have that stick
+  // afterward - so it is real state, not a value derived from `live`.
+  //
+  // To snap it on each live -> !live (or !live -> live) transition we use React's
+  // "adjust state during render" pattern (react.dev, "You Might Not Need an Effect"):
+  // `wasLive` tracks the previous `live` so the `if` fires exactly once, on the render where
+  // `live` changed. Setting state *during* render makes React re-render synchronously and
+  // discard this pass BEFORE the browser paints, so the collapse happens with no flash of the
+  // wrong state. On the immediate re-render `wasLive === live`, so the `if` is false and it
+  // settles (no infinite loop). Deliberately NOT a `useEffect` (that runs after paint -> a
+  // visible wrong frame, plus a cascading-render lint smell) and `wasLive` is state, not a
+  // ref: writing a ref during render is impure and misbehaves under StrictMode/concurrent
+  // double-render, whereas a render-phase state update is rolled back cleanly.
+  const [wasLive, setWasLive] = useState(live);
+  if (live !== wasLive) {
+    setWasLive(live);
+    setOpen(live);
+  }
+
+  const hasSteps = steps !== undefined && steps.length > 0;
+  if (!hasSteps && !stopped) return null;
+
+  return (
+    <div className="mb-1.5 flex flex-col gap-1">
+      {hasSteps && !live && (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="self-start flex items-center gap-1 font-mono text-[10px] text-faint hover:text-muted cursor-pointer"
+        >
+          <span className="text-[15px] leading-none w-4 text-center">{open ? "▾" : "▸"}</span>
+          {steps.length} step{steps.length === 1 ? "" : "s"}
+        </button>
+      )}
+      {open && hasSteps && (
+        <div className="flex flex-col gap-1.5">
+          {steps.map((step, stepIndex) => (
+            <div key={stepIndex} className="flex flex-col gap-1">
+              {step.text && (
+                <div className="text-[11px] text-muted whitespace-pre-wrap leading-relaxed">{step.text}</div>
+              )}
+              {step.activity.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {step.activity.map((tool, toolIndex) => (
+                    <span
+                      key={toolIndex}
+                      className={`font-mono text-[9px] rounded px-1.5 py-0.5 border ${
+                        tool.ok ? "border-you/40 text-you" : "border-warn/50 text-warn"
+                      }`}
+                    >
+                      {tool.ok ? "✓" : "✕"} {humanizeToolName(tool.name)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {stopped && <span className="self-start font-mono text-[9px] text-faint">⏹ Stopped</span>}
+    </div>
   );
 }
 
@@ -68,9 +159,10 @@ export function AgentPanel({
   );
   const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
   const getContext = useCallback(() => selectionContext(projectStore), [projectStore]);
-  const { pending, error, send, retry } = useAgentChat(tools, turns, setTurns, { getContext });
+  const { pending, error, send, retry, stop } = useAgentChat(tools, turns, setTurns, { getContext });
   const [draft, setDraft] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const currentTitle = sessions.find((session) => session.id === currentId)?.title ?? "New chat";
@@ -200,20 +292,7 @@ export function AgentPanel({
                 {turn.at !== undefined && <span>{formatClock(turn.at)}</span>}
               </span>
             </div>
-            {turn.activity && turn.activity.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1">
-                {turn.activity.map((step, stepIndex) => (
-                  <span
-                    key={stepIndex}
-                    className={`font-mono text-[9px] rounded px-1.5 py-0.5 border ${
-                      step.ok ? "border-you/40 text-you" : "border-warn/50 text-warn"
-                    }`}
-                  >
-                    {step.ok ? "✓" : "✕"} {step.name}
-                  </span>
-                ))}
-              </div>
-            )}
+            <AgentTrail steps={turn.steps} stopped={turn.stopped} live={pending && index === turns.length - 1} />
             {turn.content &&
               (turn.role === "user" ? (
                 <div className="text-[12.5px] text-ink whitespace-pre-wrap leading-relaxed">{turn.content}</div>
@@ -243,7 +322,26 @@ export function AgentPanel({
 
       {error && (
         <div className="mx-4 mb-2 shrink-0 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-[11px] text-warn">
-          {error.message}
+          <div>{error.message}</div>
+          {error.details && (
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() => setShowErrorDetails((open) => !open)}
+                aria-expanded={showErrorDetails}
+                title="Show the raw model response that failed"
+                className="flex items-center gap-1 font-mono text-[10px] text-warn/80 hover:text-warn cursor-pointer"
+              >
+                <span className="text-[13px] leading-none w-3 text-center">{showErrorDetails ? "▾" : "▸"}</span>
+                {showErrorDetails ? "Hide" : "Show"} model response
+              </button>
+              {showErrorDetails && (
+                <pre className="mt-1 max-h-48 overflow-auto rounded bg-ground/60 p-2 font-mono text-[10px] leading-relaxed text-muted whitespace-pre-wrap break-all">
+                  {formatDetails(error.details)}
+                </pre>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -262,14 +360,26 @@ export function AgentPanel({
           aria-label="Message the agent"
           className="flex-1 min-w-0 resize-none rounded-md bg-ground border border-line px-2.5 py-2 text-[12.5px] text-ink placeholder:text-faint focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-1"
         />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={pending || draft.trim() === ""}
-          className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-        >
-          Send
-        </button>
+        {pending ? (
+          <button
+            type="button"
+            onClick={stop}
+            aria-label="Stop the agent"
+            title="Stop the agent"
+            className="shrink-0 rounded-md border border-warn/45 bg-warn/10 px-3 py-2 text-[12px] text-warn hover:bg-warn/20 cursor-pointer"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={submit}
+            disabled={draft.trim() === ""}
+            className="shrink-0 rounded-md border border-line bg-card px-3 py-2 text-[12px] text-ink hover:border-agent/55 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            Send
+          </button>
+        )}
       </div>
     </div>
   );

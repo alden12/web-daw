@@ -134,4 +134,96 @@ describe("runAgent", () => {
     await runAgent({ messages: seed, provider, tools: [echoTool], onToolStart: (info) => started.push(info) });
     expect(started).toEqual([{ name: "echo", args: { a: 2 } }]);
   });
+
+  it("records each act round as a step (narration + tools) and fires onStep per round", async () => {
+    const { provider } = scriptedProvider([
+      { text: "first I will echo", toolCalls: [{ id: "c1", name: "echo", arguments: '{"n":1}' }] },
+      { text: "now once more", toolCalls: [{ id: "c2", name: "echo", arguments: '{"n":2}' }] },
+      { text: "done" },
+    ]);
+    const emitted: unknown[] = [];
+    const result = await runAgent({
+      messages: seed,
+      provider,
+      tools: [echoTool],
+      onStep: (step) => emitted.push(step),
+    });
+
+    expect(emitted).toEqual([
+      { index: 0, text: "first I will echo", activity: [{ name: "echo", ok: true }] },
+      { index: 1, text: "now once more", activity: [{ name: "echo", ok: true }] },
+    ]);
+    expect(result.steps).toHaveLength(2);
+    expect(result.text).toBe("done");
+    expect(result.stopped).toBeUndefined();
+  });
+
+  it("returns immediately (stopped) when the signal is already aborted, without calling the provider", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { provider, seen } = scriptedProvider([{ text: "hi" }]);
+    const result = await runAgent({ messages: seed, provider, tools: [echoTool], signal: controller.signal });
+
+    expect(result.stopped).toBe(true);
+    expect(result.text).toBe("");
+    expect(result.steps).toEqual([]);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("returns a partial, stopped result when interrupted mid-run", async () => {
+    const controller = new AbortController();
+    const cutTool: AgentTool = {
+      name: "cut",
+      description: "aborts the run",
+      jsonSchema: { type: "object" },
+      run: async () => {
+        controller.abort();
+        return { ok: true };
+      },
+    };
+    const { provider, seen } = scriptedProvider([
+      { text: "working on it", toolCalls: [{ id: "c1", name: "cut", arguments: "{}" }] },
+      { text: "should not be reached" },
+    ]);
+    const result = await runAgent({ messages: seed, provider, tools: [cutTool], signal: controller.signal });
+
+    expect(result.stopped).toBe(true);
+    expect(result.invocations).toHaveLength(1);
+    expect(result.steps).toEqual([{ text: "working on it", activity: [{ name: "cut", ok: true }] }]);
+    // The loop stops before the second provider round.
+    expect(seen).toHaveLength(1);
+  });
+
+  it("treats an AbortError as a stop only when our signal actually aborted", async () => {
+    // The provider aborts the controller mid-request, then throws AbortError - a real user stop.
+    const controller = new AbortController();
+    const provider: AgentProvider = {
+      async chat() {
+        controller.abort();
+        const error = new Error("The user aborted a request.");
+        error.name = "AbortError";
+        throw error;
+      },
+    };
+    const result = await runAgent({ messages: seed, provider, tools: [echoTool], signal: controller.signal });
+
+    expect(result.stopped).toBe(true);
+    expect(result.text).toBe("");
+  });
+
+  it("surfaces an unexpected AbortError (signal never aborted) as an error, not a silent stop", async () => {
+    // An AbortError while our signal was never aborted = a network drop / dev reload, not a user
+    // stop. It must not masquerade as a clean stop (that is the "empty and stopped" bug).
+    const provider: AgentProvider = {
+      async chat() {
+        const error = new Error("aborted");
+        error.name = "AbortError";
+        throw error;
+      },
+    };
+    const controller = new AbortController();
+    await expect(runAgent({ messages: seed, provider, tools: [echoTool], signal: controller.signal })).rejects.toThrow(
+      /interrupted unexpectedly/i,
+    );
+  });
 });
