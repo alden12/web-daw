@@ -54,16 +54,19 @@ Per-segment: **(b) developer-adjacent tinkerers WILL** be satisfied (strongest f
 beginners MIGHT** (sharpest opening, via "where do I start"); **(a) hobbyists and (c) working/semi-pro
 WON'T** as designed (they would need mixing/finishing help, WAM, and local-only provenance).
 
-Next steps (proposed in section 12; none yet on the roadmap):
+Next steps (now promoted into the `docs/DESIGN.md` roadmap; section 12 keeps the reasoning):
 
 - Highest certainty: `DAW-13` audio export/mixdown - there is no way to get a finished track out today,
   which plausibly gates any public launch.
-- Cheap risk reducers: `AGENT-8` off-switch, `AGENT-9` local-only provenance, `AGENT-12` auto version
-  summaries (the most specific unprompted user request found anywhere in the corpus).
-- Answer the reported pains (weak dataset, read section 7 first): `AGENT-10` blank-page/"where do I
-  start", `AGENT-11` mixing assist, `DAW-14` finishing/constraint mode.
-- Decisions, not tickets: leave branching unbuilt; current lean is *not* to build the WAM host
-  (`INST-7`), since it dilutes the complete-file differentiator.
+- Cheap risk reducers: `AGENT-8` (promoted as agent *modes*: off / librarian / full), `AGENT-9`
+  local-only provenance + strip-on-export, `AGENT-12` auto version summaries (the most specific
+  unprompted user request found anywhere in the corpus).
+- Answer the reported pains (weak dataset, read section 7 first): `AGENT-13` blank-page / "where do I
+  start" and `AGENT-14` mixing assist (promoted under new ids - 10/11 were already taken by the agentic
+  loop and plan artifact).
+- Recorded as open decisions in DESIGN.md section 12, not tickets: leave branching unbuilt; do not build
+  the WAM host (it dilutes the complete-file differentiator); and finishing/constraint mode is kept an
+  open question rather than a ticket.
 - Biggest open unknown: there is no ranked pain dataset for *working* producers, and every finding here
   reacts to the concept - zero hands-on reports of an agentic DAW exist in the corpus.
 
@@ -718,78 +721,14 @@ Kept here so they are not cited later in good faith.
 
 ---
 
-## 12. Proposed tickets (NOT yet on the roadmap)
+## 12. Proposed tickets (now actioned) + open decisions
 
-The "so what" of everything above. **These are proposals pending review; none is on the roadmap.**
-
-`scripts/roadmap.ts` reads **only** `docs/DESIGN.md`, so the markers below are inert while they live
-in this file. **To promote one:** move the marker line into `docs/DESIGN.md` beside the prose that
-describes it, and delete it here. Ids are reserved against the current areas (next free were DAW-13,
-INST-7, AGENT-8, AGENT-12) but are not binding until promoted.
-
-### A. A gap that stands regardless of the research
-
-`DAW-13` `to-do` Audio export and mixdown
-
-Not research-driven; found while mapping the roadmap. There is currently **no way to get a finished
-track out of the DAW as audio**. The `.daw.zip` export (slice 15) is the *project* bundle;
-`OfflineAudioContext` appears only under `AGENT-4.1` for agent ears. Every segment needs this and it
-plausibly gates any public launch. Engine work partly overlaps `AGENT-4.1`.
-
-### B. Cheap risk reduction
-
-`AGENT-8` `to-do` Agent off-switch (deps: AGENT-2)
-
-DESIGN.md section 3 specifies "The agent is never fully gone", with Produce mode collapsing it to a
-thin presence rail. The only conditional-acceptance voice in the entire corpus asks for exactly the
-opposite: *"as long as we can turn it off."* Cost is a collapsed pane and a setting; refusing it
-disqualifies the sceptics before the product has argued its case. Low cost, direct evidence,
-contradicts a current design decision - so decide it deliberately rather than by default.
-
-`AGENT-9` `to-do` Local-only provenance, strip authorship on export (deps: AGENT-3)
-
-`AGENT-3` shipped, so the authored-edit trail already exists; this is about not weaponising it. A
-producer of 30 years had a demo **auto-rejected by a record label** for ticking "Did you use AI?" on a
-submission form, having used AI only for supplementary drum patterns. The two-voice colour, AI cursor
-and activity feed are framed in DESIGN.md as trust features; they are also a durable evidence trail
-against the user, and industry AI labelling is standardising. Proposed stance: **provenance is local by
-default and never exported**; export/bounce strips authorship metadata unless explicitly opted in;
-teal/coral is a *working* aid, not a permanent property of the artifact. (Evidence is n=1 and
-self-reported - but the mechanism is plausible and the fix is nearly free.)
-
-`AGENT-12` `to-do` Auto-generated version summaries (deps: AGENT-2)
-
-DESIGN.md section 7 already describes plain-language version summaries as an "AI superpower", but there
-is no ticket. This is the most specific unprompted user request found anywhere in the research: an
-Ableton user asks for commit-message metadata, then immediately says he will not write it, proposing
-auto-summaries ("36 tracks: 12 audio 24 instruments") tiered by importance - minor saves get one line,
-the last save of the day asks for more.
-
-### C. Answers the pains people actually report
-
-Ranked from the only ranked dataset available, which is **weak** - a beginner community's signup form.
-Read section 7 before leaning on these numbers.
-
-`AGENT-10` `to-do` Blank page, where do I start (deps: AGENT-2)
-
-The #1 reported struggle at 19%, roughly 2.3x the next item. The agent's strongest evidenced use case -
-and note it is the *librarian* framing (DESIGN.md section 4), not the co-author framing (section 1, bet
-2). The clearest strategic recommendation in this research is to lead with the librarian and let
-authorship be something users discover.
-
-`AGENT-11` `to-do` Mixing assist (deps: AGENT-4.1)
-
-The #2 reported struggle at 8.2%. AI pointed at the mix rather than at authorship is the one place
-assistive AI demonstrably sells; iZotope built a business on this exact gap. `AGENT-4.1` (objective DSP
-analysis) is the natural dependency - agent ears feed mix advice.
-
-`DAW-14` `to-do` Finishing and constraint mode
-
-The #4 reported struggle at 7.0%, and the direct hedge against the sharpest risk surfaced here:
-producers report *deleting* plugins and options in order to finish ("less stuff more creativity" worked
-"like magic"), while the axis principle (section 3), clip variants (section 6) and AI-generated takes
-all *manufacture* optionality. Something that deliberately narrows choices would hedge section 6's
-fearless-iteration thesis against the people it most targets.
+The "so what" of everything above. **These proposals have now been actioned:** the tickets were promoted
+onto the `docs/DESIGN.md` roadmap (`DAW-13`; `AGENT-8`/`AGENT-9`/`AGENT-12`; and the reported-pain
+tickets as `AGENT-13` blank-page + `AGENT-14` mixing assist, renumbered because 10/11 were already
+taken), and the non-tickets were recorded as **open decisions** in DESIGN.md section 12. `scripts/roadmap.ts`
+reads **only** `docs/DESIGN.md`, so nothing here is a live marker. What remains below (D, E) is the
+evidence and reasoning behind two of those decisions - branching, and the WAM host - kept as the trail.
 
 ### D. A decision, not a ticket
 
@@ -802,9 +741,11 @@ claim in that document. Costs nothing to honour - it is a decision not to build.
 
 ### E. The fork that needs deciding first
 
-`INST-7` `planning` Web Audio Modules (WAM) host (deps: INST-5)
+**A WAM (Web Audio Modules) host - allow third-party plugins at all?** Recorded as an open decision in
+`docs/DESIGN.md` section 12 (not a ticket), with the schema-bridge / params-only-subset nuance; the
+current lean is not to build it. The reasoning:
 
-The obvious "unblock the working/semi-pro segment" ticket: WAM is a mature browser plugin standard, and
+The obvious "unblock the working/semi-pro segment" option: WAM is a mature browser plugin standard, and
 supporting it would reportedly bring ~50 plugins immediately. It is the only third-party plugin path
 that does not mean abandoning the browser.
 
