@@ -19,6 +19,7 @@ import { loadWorklets } from "../worklets";
 import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
 import { beatsToSeconds, tileClipNotes } from "../sequencer/scheduler";
+import { analyzeMix, summarizeMix, type MixSummary } from "../analysis/analyze";
 import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
 import type { Effect } from "../effects/types";
 import type { NoteEvent } from "../sequencer/types";
@@ -122,6 +123,15 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
   // render never keeps reacting to the live project's params.
   for (const disposable of disposables) disposable.dispose();
   return buffer;
+}
+
+/**
+ * Render the project offline and measure its master output - the agent's "ears" as one call.
+ * This is what the `analyze_mix` tool runs: it hears the exact audio the user would, so the
+ * agent can check its edits (clipping / level / loudness) instead of reasoning blind.
+ */
+export async function analyzeProjectMix(project: ProjectStore): Promise<MixSummary> {
+  return summarizeMix(analyzeMix(await renderProjectOffline(project)));
 }
 
 /** Create + connect an effect chain: input -> fx1 -> ... -> output (skipping bypassed). */

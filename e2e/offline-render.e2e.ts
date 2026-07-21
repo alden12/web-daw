@@ -39,3 +39,26 @@ test("a project (synth + worklet tracks) renders to a non-silent buffer offline"
 
   expect(peak).toBeGreaterThan(0.001);
 });
+
+/**
+ * The full "agent ears" chain end to end: render offline -> analyzeMix -> summarizeMix, the exact
+ * logic behind the analyze_mix agent tool. Proves the render produces measurable audio and the
+ * analysis yields a sane, model-friendly report (audible, with headroom, not clipping - the master
+ * limiter keeps a single note well under full scale).
+ */
+test("render + analyze produces a sane mix report (analyze_mix chain)", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => typeof (window as unknown as { __dawAnalyzeMix?: unknown }).__dawAnalyzeMix === "function",
+  );
+
+  const report = (await page.evaluate(async () =>
+    (window as unknown as { __dawAnalyzeMix: () => Promise<Record<string, unknown>> }).__dawAnalyzeMix(),
+  )) as { peakDbfs: number; headroomDb: number; loudnessDbfs: number; clipping: boolean; note: string };
+
+  expect(report.clipping).toBe(false);
+  expect(report.peakDbfs).toBeGreaterThan(-120); // audible, not silent
+  expect(report.peakDbfs).toBeLessThanOrEqual(0.5); // under (or at) full scale
+  expect(report.headroomDb).toBeGreaterThan(0);
+  expect(typeof report.note).toBe("string");
+});

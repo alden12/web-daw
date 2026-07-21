@@ -15,10 +15,17 @@ import { structureTools } from "./structure";
 import { clipTools } from "./clips";
 import { soundTools } from "./sound";
 import { projectTools } from "./project";
+import { analysisTools } from "./analysis";
 
 export type { AgentToolDeps } from "./factory";
 
 export function createAgentTools(deps: AgentToolDeps): AgentTool[] {
   const context = makeContext(deps);
-  return [...structureTools(context), ...clipTools(context), ...soundTools(context), ...projectTools(context)];
+  return [
+    ...structureTools(context),
+    ...clipTools(context),
+    ...soundTools(context),
+    ...projectTools(context),
+    ...analysisTools(context),
+  ];
 }
