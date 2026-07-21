@@ -46,9 +46,9 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
   wss.on("connection", (socket, request) => {
     // Verify identity at the upgrade (a browser WebSocket can't set headers, so the credential rides
     // `?token=`, mirroring the HTTP bearer gate). Resolution is async; the message handler awaits it, so
-    // an early `subscribe` is held rather than dropped. On failure we close 1008. NOTE: this establishes
-    // *authentication* (who) only - per-project *authorization* (may this user open this project?) needs
-    // the membership model and lands with sharing (Auth-C). Until then the owner is the only real user.
+    // an early `subscribe` is held rather than dropped. On failure we close 1008. This establishes
+    // *authentication* (who) only; per-project *authorization* (may this user open this project?) is
+    // enforced per message below, where each `subscribe`/edit passes through `registry.get` (owner-or-member).
     const credential = new URL(request.url ?? "", "http://localhost").searchParams.get("token") ?? undefined;
     const principalPromise = resolvePrincipal(credential);
     void principalPromise.then((resolved) => {
