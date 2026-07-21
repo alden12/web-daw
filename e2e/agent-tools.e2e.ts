@@ -68,7 +68,7 @@ test("runs a tool call from the model and edits the project", async ({ page }) =
   // finishes, so expand the "N steps" disclosure to see the tool chip it ran.
   await expect(page.getByText("Added a subtractive track called Agent Bass.")).toBeVisible();
   await page.getByRole("button", { name: /step/ }).click();
-  await expect(page.getByText(/create_track/)).toBeVisible();
+  await expect(page.getByText(/Create track/)).toBeVisible();
 
   // The tool dispatched a real edit: the new track exists in the project.
   await expect(page.getByText("Agent Bass").first()).toBeVisible();

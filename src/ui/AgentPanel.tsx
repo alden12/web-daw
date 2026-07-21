@@ -32,6 +32,12 @@ function formatTokens(count: number): string {
   return `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k`;
 }
 
+/** A tool's snake_case name as sentence case for display: `create_track` -> `Create track`. */
+function humanizeToolName(name: string): string {
+  const words = name.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** A one-line description of the user's current selection, prepended to each turn so the
  *  agent knows what "this track"/"here"/"this clip" refer to without a tool call. */
 function selectionContext(projectStore: ProjectStore): string {
@@ -107,7 +113,7 @@ function AgentTrail({ steps, stopped, live }: { steps?: AgentStep[]; stopped?: b
                         tool.ok ? "border-you/40 text-you" : "border-warn/50 text-warn"
                       }`}
                     >
-                      {tool.ok ? "✓" : "✕"} {tool.name}
+                      {tool.ok ? "✓" : "✕"} {humanizeToolName(tool.name)}
                     </span>
                   ))}
                 </div>
