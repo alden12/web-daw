@@ -17,7 +17,7 @@ const HARMONICS = [1, 2, 3, 4, 5, 6];
 export class OrganInstrument extends BaseInstrument {
   private brightness = 0.5;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

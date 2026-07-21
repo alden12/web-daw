@@ -14,7 +14,7 @@ export class FmInstrument extends BaseInstrument {
   private ratio = 2;
   private index = 300;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

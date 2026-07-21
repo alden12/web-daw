@@ -31,7 +31,7 @@ export class SamplerInstrument extends BaseInstrument {
   // onended -> cleanup) before the real sample finishes decoding.
   private readonly silence: AudioBuffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

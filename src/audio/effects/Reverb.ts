@@ -10,7 +10,7 @@ import { BaseEffect } from "./BaseEffect";
 export class ReverbEffect extends BaseEffect {
   private convolver!: ConvolverNode;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }

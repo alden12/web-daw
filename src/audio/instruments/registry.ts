@@ -22,7 +22,7 @@ import { DrumkitInstrument } from "./Drumkit";
 import { SilentInstrument } from "./Silent";
 import { DEFAULT_INSTRUMENT, EMPTY_INSTRUMENT } from "./catalog";
 
-type InstrumentFactory = (ctx: AudioContext, store: ParamStore) => Instrument;
+type InstrumentFactory = (ctx: BaseAudioContext, store: ParamStore) => Instrument;
 
 const FACTORIES = new Map<string, InstrumentFactory>();
 
@@ -31,7 +31,7 @@ export function registerInstrumentFactory(type: string, factory: InstrumentFacto
   FACTORIES.set(type, factory);
 }
 
-export function createInstrument(type: string, ctx: AudioContext, store: ParamStore): Instrument {
+export function createInstrument(type: string, ctx: BaseAudioContext, store: ParamStore): Instrument {
   const make = FACTORIES.get(type) ?? FACTORIES.get(DEFAULT_INSTRUMENT)!;
   return make(ctx, store);
 }

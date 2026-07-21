@@ -14,10 +14,8 @@
  * factory + worklet reuse thesis holds and the full `renderProjectOffline` (groups, samples,
  * effect tails, an offline transport clock for MIDI devices) is mechanical from here.
  *
- * NOTE: `OfflineAudioContext` is not assignable to `AudioContext` in TS even though every
- * node API we use lives on `BaseAudioContext`; the spike casts at the factory boundary. The
- * proper fix - widening the factory/base-class signatures to `BaseAudioContext` - lands with
- * the real renderer, not the spike.
+ * The instrument/effect factories take a `BaseAudioContext`, so an `OfflineAudioContext` is
+ * passed directly (no cast) - both the live `AudioContext` and an offline one satisfy it.
  */
 import { createInstrument } from "../instruments/registry";
 import { instrumentSchema } from "../instruments/catalog";
@@ -50,7 +48,7 @@ export async function renderWorkletSmokeTest(sampleRate = 44100): Promise<AudioB
   await loadWorklets(ctx);
 
   const store = new ParamStore(instrumentSchema("wavetable"));
-  const instrument = createInstrument("wavetable", ctx as unknown as AudioContext, store);
+  const instrument = createInstrument("wavetable", ctx, store);
   instrument.output.connect(ctx.destination);
 
   // Worklet note commands are port messages. A message posted before startRendering() races

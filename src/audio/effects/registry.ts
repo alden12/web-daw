@@ -19,7 +19,7 @@ import { ChorusEffect } from "./Chorus";
 import { BitcrusherEffect } from "./Bitcrusher";
 import { DEFAULT_EFFECT } from "./catalog";
 
-type EffectFactory = (ctx: AudioContext, store: ParamStore) => Effect;
+type EffectFactory = (ctx: BaseAudioContext, store: ParamStore) => Effect;
 
 const FACTORIES = new Map<string, EffectFactory>();
 
@@ -28,7 +28,7 @@ export function registerEffectFactory(type: string, factory: EffectFactory): voi
   FACTORIES.set(type, factory);
 }
 
-export function createEffect(type: string, ctx: AudioContext, store: ParamStore): Effect {
+export function createEffect(type: string, ctx: BaseAudioContext, store: ParamStore): Effect {
   const make = FACTORIES.get(type) ?? FACTORIES.get(DEFAULT_EFFECT)!;
   return make(ctx, store);
 }

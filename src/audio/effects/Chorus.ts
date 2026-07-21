@@ -21,7 +21,7 @@ export class ChorusEffect extends BaseEffect {
   private lfo!: OscillatorNode;
   private lfoGain!: GainNode;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }
