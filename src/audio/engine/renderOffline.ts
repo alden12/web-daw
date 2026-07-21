@@ -22,8 +22,12 @@ import { beatsToSeconds, tileClipNotes } from "../sequencer/scheduler";
 import { grooveById } from "../grooves/catalog";
 import { grooveAt } from "../sequencer/groove";
 import { clamp } from "../../util";
+import { getAudioBuffer } from "../audioStore";
+import { audioPlayWindow } from "./audioWindow";
 import { analyzeMix, summarizeMix, type MixSummary } from "../analysis/analyze";
-import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
+import { GRID } from "../sequencer/types";
+import type { ProjectStore, EffectInstance, InstrumentTrack, AudioTrack } from "../project/projectStore";
+import type { AudioClipData } from "../project/types";
 import type { Instrument } from "../instruments/types";
 import type { Effect } from "../effects/types";
 import type { NoteEvent } from "../sequencer/types";
@@ -42,10 +46,10 @@ export interface RenderOptions {
  * -> limiter -> destination. Notes are flattened from placements and scheduled up front inside a
  * single suspend(0), so worklet-instrument port messages are queued before the first block.
  *
- * Async assets (sampler/drumkit buffers) are awaited via Instrument.ready before rendering, so
- * they are not silent. Remaining v1 gaps (deliberate, expand next): audio tracks are skipped; MIDI
- * devices are bypassed (the instrument plays directly - devices need an offline transport clock);
- * the region plays once (no loop repetition) and groove is not applied.
+ * Fidelity: async assets (sampler/drumkit + audio-clip buffers) are decoded before rendering (so
+ * they are not silent), groove is applied, and audio tracks render their clips. Remaining gap: MIDI
+ * devices are bypassed (the instrument plays the raw notes) - they need an offline transport clock
+ * (AGENT-4.7). The region plays once, which IS the arrangement (live just loops it).
  */
 export async function renderProjectOffline(project: ProjectStore, options: RenderOptions = {}): Promise<AudioBuffer> {
   const sampleRate = options.sampleRate ?? 44100;
@@ -93,35 +97,46 @@ export async function renderProjectOffline(project: ProjectStore, options: Rende
     output.gain.value = group.muted ? 0 : group.volume;
   }
 
-  // Instrument tracks: build instrument + effects, route into the group tree, and collect the
-  // scheduling closures (run later, inside suspend, so worklet note messages are queued in time).
+  // Tracks: build each track's chain and route it into the group tree, and collect the scheduling
+  // closures (run later, inside suspend, so worklet note messages are queued in time).
   const scheduleFns: (() => void)[] = [];
   const instruments: Instrument[] = [];
+  const audioBuffers = new Map<string, AudioBuffer>();
   for (const track of tracks) {
-    if (track.kind !== "instrument") continue;
-    const gain = ctx.createGain();
-    const instrument = createInstrument(track.instrumentType, ctx, track.params);
-    instruments.push(instrument);
-    disposables.push(instrument, ...connectChain(ctx, instrument.output, track.effects, gain));
-    gain.connect(parentInput(track.parentId));
-    gain.gain.value = mutedTracks.has(track.id) ? 0 : track.volume;
+    if (track.kind === "instrument") {
+      const gain = ctx.createGain();
+      const instrument = createInstrument(track.instrumentType, ctx, track.params);
+      instruments.push(instrument);
+      disposables.push(instrument, ...connectChain(ctx, instrument.output, track.effects, gain));
+      gain.connect(parentInput(track.parentId));
+      gain.gain.value = mutedTracks.has(track.id) ? 0 : track.volume;
 
-    const events = flattenTrackNotes(track, loopStart, project.length);
-    scheduleFns.push(() => {
-      for (const { note, atBeat } of events) {
-        // Groove nudges the onset + scales velocity at schedule time (the notes are untouched),
-        // matching Scheduler.tick. A no-op when the project has no groove (amount 0 / Straight).
-        const shift = grooveAt(groove, atBeat, grooveAmount);
-        const whenSec = beatsToSeconds(atBeat - loopStart + shift.offsetBeats, bpm);
-        const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
-        instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, Math.max(0, whenSec));
-      }
-    });
+      const events = flattenTrackNotes(track, loopStart, project.length);
+      scheduleFns.push(() => {
+        for (const { note, atBeat } of events) {
+          // Groove nudges the onset + scales velocity at schedule time (the notes are untouched),
+          // matching Scheduler.tick. A no-op when the project has no groove (amount 0 / Straight).
+          const shift = grooveAt(groove, atBeat, grooveAmount);
+          const whenSec = beatsToSeconds(atBeat - loopStart + shift.offsetBeats, bpm);
+          const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
+          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, Math.max(0, whenSec));
+        }
+      });
+    } else {
+      // Audio track: input -> effects -> gain -> group tree; its clips are scheduled below.
+      const input = ctx.createGain();
+      const gain = ctx.createGain();
+      disposables.push(...connectChain(ctx, input, track.effects, gain));
+      gain.connect(parentInput(track.parentId));
+      gain.gain.value = mutedTracks.has(track.id) ? 0 : track.volume;
+      scheduleFns.push(() => scheduleAudioTrack(ctx, track, input, audioBuffers, loopStart, project.length, bpm));
+    }
   }
 
-  // Wait for async assets (sampler/drumkit buffers) to decode before rendering - offline render
-  // runs to completion immediately, so an undecoded sampler would render silent (Instrument.ready).
+  // Decode audio-clip buffers + wait for instrument assets (sampler/drumkit buffers) before
+  // rendering - offline render runs to completion immediately, so anything undecoded renders silent.
   await Promise.all(instruments.map((instrument) => instrument.ready?.()));
+  await decodeAudioClips(ctx, tracks, audioBuffers);
 
   // Schedule all notes inside one suspend(0): a worklet note is a port message, and a message
   // posted before startRendering() races the offline render and loses. Pausing at t=0 lets the
@@ -179,6 +194,83 @@ function flattenTrackNotes(
     }
   }
   return onsets;
+}
+
+/** Decode every audio-clip file the project references into `audioBuffers` (keyed by fileId). A
+ *  missing/undecodable file is skipped (it renders as silence, exactly as the live engine does). */
+async function decodeAudioClips(
+  ctx: BaseAudioContext,
+  tracks: readonly { kind: string }[],
+  audioBuffers: Map<string, AudioBuffer>,
+): Promise<void> {
+  const clips = (tracks as (InstrumentTrack | AudioTrack)[]).flatMap((track) =>
+    track.kind === "audio" ? track.clips : [],
+  );
+  await Promise.all(
+    clips.map(async (clip) => {
+      if (audioBuffers.has(clip.fileId)) return;
+      try {
+        audioBuffers.set(clip.fileId, await ctx.decodeAudioData(await getAudioBuffer(clip.fileId)));
+      } catch {
+        // Missing file / decode failure - leave it out; that clip renders silent (matches live).
+      }
+    }),
+  );
+}
+
+/** Schedule an audio track's placements over the render timeline, mirroring Scheduler.tick's audio
+ *  branch for a single pass of [loopStart, length): each placement re-triggers its clip's loop
+ *  region every region-length, truncated at the arrangement end. */
+function scheduleAudioTrack(
+  ctx: BaseAudioContext,
+  track: AudioTrack,
+  dest: AudioNode,
+  audioBuffers: Map<string, AudioBuffer>,
+  loopStart: number,
+  length: number,
+  bpm: number,
+): void {
+  for (const placement of track.placements) {
+    const clip = track.clips.find((entry) => entry.id === placement.clipId);
+    if (!clip) continue;
+    const buffer = audioBuffers.get(clip.fileId);
+    if (!buffer) continue;
+    const regionSec = (clip.loopEndSec ?? clip.durationSec) - (clip.loopStartSec ?? 0);
+    const stepBeats = regionSec > 0 ? Math.max(GRID, (regionSec * bpm) / 60) : Infinity;
+    for (let tau = 0; tau < placement.length; tau += stepBeats) {
+      const atBeat = placement.startBeat + tau;
+      if (atBeat < loopStart || atBeat >= length) continue;
+      const whenSec = beatsToSeconds(atBeat - loopStart, bpm);
+      // Cap at the arrangement end so a region overrunning the end is truncated, not left ringing.
+      scheduleAudioClipOffline(ctx, buffer, clip, dest, whenSec, beatsToSeconds(length - atBeat, bpm));
+    }
+  }
+}
+
+/** Play one audio-clip trigger: its loop-region slice of the buffer at `when`, into `dest`. Mirrors
+ *  AudioEngine.scheduleAudioClip (minus the live source bookkeeping). */
+function scheduleAudioClipOffline(
+  ctx: BaseAudioContext,
+  buffer: AudioBuffer,
+  clip: AudioClipData,
+  dest: AudioNode,
+  when: number,
+  maxDurationSec: number,
+): void {
+  const win = audioPlayWindow(clip.loopStartSec, clip.loopEndSec, clip.gridOffsetSec, buffer.duration, maxDurationSec);
+  if (!win) return;
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  if (clip.gain !== 1) {
+    const clipGain = ctx.createGain();
+    clipGain.gain.value = clip.gain;
+    source.connect(clipGain).connect(dest);
+  } else {
+    source.connect(dest);
+  }
+  if (win.offset > 0 || win.span < buffer.duration || win.delaySec > 0)
+    source.start(when + win.delaySec, win.offset, win.span);
+  else source.start(when);
 }
 
 /** Peak absolute sample across all channels. 0 means the buffer is silent. */

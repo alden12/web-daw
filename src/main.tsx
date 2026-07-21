@@ -13,6 +13,7 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
         __dawRenderWorkletSmoke?: () => Promise<number>;
         __dawRenderProjectSmoke?: () => Promise<number>;
         __dawRenderSamplerSmoke?: () => Promise<number>;
+        __dawRenderAudioTrackSmoke?: () => Promise<number>;
         __dawAnalyzeMix?: () => Promise<unknown>;
       };
       // Build a tiny project (the seeded default instrument track + a wavetable/worklet track), put
@@ -38,6 +39,21 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
         const track = project.addTrack("sampler");
         if (track.kind === "instrument")
           track.clips[0]?.store.addNote({ pitch: 60, start: 0, length: 1, velocity: 0.9 });
+        return peakAmplitude(await renderProjectOffline(project));
+      };
+      // An audio track backed by a synthetic recorded take (a 220 Hz sine stored via putAudio) -
+      // proves audio-clip buffers are decoded + scheduled offline, not just instrument tracks.
+      harness.__dawRenderAudioTrackSmoke = async () => {
+        const { ProjectStore } = await import("./audio/project/projectStore");
+        const { encodeWav } = await import("./audio/recording/wav");
+        const { putAudio } = await import("./audio/audioStore");
+        const sampleRate = 44100;
+        const durationSec = 0.5;
+        const samples = new Float32Array(Math.floor(sampleRate * durationSec));
+        for (let i = 0; i < samples.length; i += 1) samples[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / sampleRate);
+        const fileId = await putAudio(encodeWav(samples, sampleRate));
+        const project = new ProjectStore(false);
+        project.addAudioTrack({ fileId, name: "Take", durationSec, startBeat: 0 });
         return peakAmplitude(await renderProjectOffline(project));
       };
       // The full "agent ears" chain: render offline -> analyze -> model-friendly report.

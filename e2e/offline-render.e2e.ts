@@ -60,6 +60,25 @@ test("a sampler track renders to a non-silent buffer offline (sample pre-decode)
 });
 
 /**
+ * Audio tracks: a recorded take (a synthetic sine stored via putAudio) on an audio track must be
+ * decoded and scheduled into the render, so the offline mix includes recorded audio, not just
+ * instrument tracks. Non-silent proves the audio-clip decode + windowed scheduling path.
+ */
+test("an audio track (recorded take) renders to a non-silent buffer offline", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () =>
+      typeof (window as unknown as { __dawRenderAudioTrackSmoke?: unknown }).__dawRenderAudioTrackSmoke === "function",
+  );
+
+  const peak = await page.evaluate(async () =>
+    (window as unknown as { __dawRenderAudioTrackSmoke: () => Promise<number> }).__dawRenderAudioTrackSmoke(),
+  );
+
+  expect(peak).toBeGreaterThan(0.001);
+});
+
+/**
  * The full "agent ears" chain end to end: render offline -> analyzeMix -> summarizeMix, the exact
  * logic behind the analyze_mix agent tool. Proves the render produces measurable audio and the
  * analysis yields a sane, model-friendly report (audible, with headroom, not clipping - the master
