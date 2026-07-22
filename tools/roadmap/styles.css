@@ -321,6 +321,14 @@ body {
   background: #46536a;
   border: none;
 }
+/* A handle with a hidden connection (filtered-out endpoint, or a satisfied cross-group link): a brighter, larger
+ * dot in the area hue with a soft halo, so you can tell at a glance there is a link to reveal on hover. */
+.react-flow__handle.handle--hidden-link {
+  width: 10px;
+  height: 10px;
+  background: var(--area, #4f9dff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--area, #4f9dff) 28%, transparent);
+}
 
 /* Detail panel -------------------------------------------------------------- */
 .detail {

@@ -6,7 +6,7 @@ import type { ItemNode } from "./graph";
  *  (always in the status hue), and the title (struck through for a done item). Selected nodes glow; nodes
  *  unrelated to the selection dim back. */
 export function ItemNodeView({ data }: NodeProps<ItemNode>) {
-  const { item, colour, statusColour, selected, dimmed } = data;
+  const { item, colour, statusColour, selected, dimmed, hiddenLinkIn, hiddenLinkOut } = data;
   const status = STATUSES[item.status];
   return (
     <div
@@ -15,7 +15,7 @@ export function ItemNodeView({ data }: NodeProps<ItemNode>) {
       data-dimmed={dimmed}
       style={{ "--area": colour } as React.CSSProperties}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} className={hiddenLinkIn ? "handle--hidden-link" : undefined} />
       <div className="item-node__rail" />
       <div className="item-node__body">
         <div className="item-node__meta">
@@ -28,7 +28,7 @@ export function ItemNodeView({ data }: NodeProps<ItemNode>) {
           {item.title}
         </div>
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} className={hiddenLinkOut ? "handle--hidden-link" : undefined} />
     </div>
   );
 }
