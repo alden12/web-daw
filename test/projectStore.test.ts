@@ -84,6 +84,30 @@ describe("ProjectStore", () => {
     expect(p.tempo).toBe(300);
   });
 
+  it("defaults to 4/4, sets the time signature (clamped numerator), and derives beatsPerBar", () => {
+    const p = new ProjectStore(false);
+    expect(p.timeSignature).toEqual({ numerator: 4, denominator: 4 });
+    expect(p.beatsPerBar).toBe(4);
+    p.setTimeSignature(3);
+    expect(p.timeSignature).toEqual({ numerator: 3, denominator: 4 });
+    expect(p.beatsPerBar).toBe(3);
+    // Numerator clamps to 1..32; an invalid denominator keeps the current one (store coerces).
+    p.setTimeSignature(99, 5);
+    expect(p.timeSignature).toEqual({ numerator: 32, denominator: 4 });
+  });
+
+  it("round-trips the time signature through snapshot/load and heals a doc that lacks one to 4/4", () => {
+    const a = new ProjectStore(false);
+    a.setTimeSignature(7);
+    const b = new ProjectStore(false);
+    b.load(a.snapshot());
+    expect(b.timeSignature).toEqual({ numerator: 7, denominator: 4 });
+    // An older document with no timeSignature field heals to common time.
+    const c = new ProjectStore(false);
+    c.load({ ...a.snapshot(), timeSignature: undefined });
+    expect(c.timeSignature).toEqual({ numerator: 4, denominator: 4 });
+  });
+
   it("round-trips snapshot and load (multiple tracks, params, clips)", () => {
     const a = new ProjectStore(false);
     const t1 = a.addTrack("subtractive", { name: "Lead" });

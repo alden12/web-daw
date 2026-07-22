@@ -36,7 +36,8 @@ import { beginPointerDrag } from "./pointerDrag";
 import { useAnimationFrame } from "./useAnimationFrame";
 import { TransportBar } from "./TransportBar";
 import { Ruler } from "./timeline/Ruler";
-import { beatToX, DEFAULT_BEATS_PER_BAR } from "./timeline/timeGrid";
+import { beatToX } from "./timeline/timeGrid";
+import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
 import {
@@ -132,7 +133,7 @@ export function ArrangementTimeline({
     length: number;
   } | null>(null);
 
-  const beatsPerBar = DEFAULT_BEATS_PER_BAR;
+  const beatsPerBar = beatsPerBarOf(project.timeSignature);
   const lengthBeats = project.lengthBeats;
   const rows = flattenRows(project.groups, project.tracks);
   const clipMode = project.tracks.some((track) => track.launchedClipId);

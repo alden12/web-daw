@@ -913,15 +913,28 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   edit its effect rack in the center workbench; generalize selection beyond "the selected track".
   Model/audio/MCP already support group effects (host-addressed).
 
-- `DAW-10` `to-do` **Changeable time signature**
+- `DAW-10` `review` **Changeable time signature**
 
-  Transport & grid: metronome (slice 27) and beat markers (slice 33, the audio-clip ruler) already
-  shipped; **changeable time signature** is what remains. Today `BEATS_PER_BAR = 4` is hardcoded in the
-  scheduler and the rulers. Make it a transport-level project value (`{ numerator, denominator }` on
-  `ProjectData`, default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. It threads
-  through the metronome accent (downbeat per `numerator`), every bar/beat `Ruler`, the arrangement grid
-  snap, and `beatsToSeconds`/loop math. Keystone-friendly: one transport value projected into the
-  scheduler, the rulers, and MCP - no per-site hardcoding.
+  Transport & grid: make the meter a transport-level project value (`{ numerator, denominator }` on
+  `ProjectData`, default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. A "beat"
+  stays a fixed quarter-note, so bar length in beats is `numerator * 4 / denominator` (the shared
+  `beatsPerBar` helper in `project/schema.ts`); the scheduler metronome accent, every bar/beat `Ruler`, the
+  arrangement + waveform grids, the recorder's bar snap, and MCP all project that one value - no per-site
+  hardcoding. Split into the numerator (simple x/4 meters) and the denominator (x/8 compound meters) so the
+  fractional-bar rendering lands on its own slice.
+
+  `DAW-10.1` `review` **Numerator: simple meters (x/4)**
+  The keystone field + `setTimeSignature` edit (rides undo/history/multiplayer) + `set_time_signature` MCP
+  tool + a numerator control by the tempo readout, with every consumer switched off the hardcoded
+  `BEATS_PER_BAR = 4` to the project's `beatsPerBar` getter. The denominator is stored (default 4) and rides
+  the whole data model already, but stays fixed at 4 in the UI/MCP this slice; bars remain integer beats.
+
+  `DAW-10.2` `to-do` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
+  Unlock the denominator in the UI (and widen the `set_time_signature` MCP tool). The schema, edit,
+  persistence, and migration already carry `denominator`, so the remaining work is float-aware bar-line
+  placement: bars fall on fractional beats (6/8 = 3 beats, 7/8 = 3.5), so `beatTicks` / `Ruler` must place
+  bar lines at multiples of `beatsPerBar` rather than the integer `beat % beatsPerBar === 0` test, plus the
+  metronome's compound-meter pulse (accent per dotted beat).
 
 - `DAW-11` `to-do` **Timeline loop enable/disable toggle**
 

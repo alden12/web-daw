@@ -23,6 +23,13 @@ describe("EditLog", () => {
     expect(entries.map((e) => e.seq)).toEqual([0, 1]);
   });
 
+  it("applies setTimeSignature and describes it for the activity feed", () => {
+    const { project, log } = setup();
+    log.dispatch({ type: "setTimeSignature", numerator: 3, denominator: 4 }, "claude");
+    expect(project.timeSignature).toEqual({ numerator: 3, denominator: 4 });
+    expect(log.describe(log.getEntries()[0])).toBe("Set time signature 3/4");
+  });
+
   it("note() posts a feed annotation that is not an edit (stays out of the replay stream)", () => {
     const { log } = setup();
     log.dispatch({ type: "setTempo", bpm: 100 });
