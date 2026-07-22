@@ -193,22 +193,25 @@ export class Recorder {
         await this.refreshDevices();
       }
 
-      const interval = 60 / this.project.tempo; // seconds per beat
-      const beatsPerBar = this.project.beatsPerBar;
-      const countBeats = this.state.countInBars * beatsPerBar;
+      // Count in on the meter's shown beat (a quarter in x/4, an eighth in x/8), accenting each
+      // bar downbeat - matching the transport metronome so the count flows straight into playback.
+      const secondsPerBeat = 60 / this.project.tempo; // per quarter-note
+      const step = this.project.beatUnit * secondsPerBeat; // seconds per shown beat
+      const unitsPerBar = this.project.timeSignature.numerator; // shown beats per bar
+      const countUnits = this.state.countInBars * unitsPerBar;
       const t0 = this.engine.currentTime + COUNT_IN_LEAD_SEC;
-      for (let i = 0; i < countBeats; i++) {
-        this.engine.scheduleClick(t0 + i * interval, i % beatsPerBar === 0);
+      for (let i = 0; i < countUnits; i++) {
+        this.engine.scheduleClick(t0 + i * step, i % unitsPerBar === 0);
       }
-      // The first recorded beat lands one interval after the last count-in click. Anchor the
+      // The first recorded beat lands one step after the last count-in click. Anchor the
       // transport to this exact audio-clock time so its metronome continues the count-in grid
       // in phase (the JS timer only needs to wake us near it, not define the beat).
-      const downbeatTime = t0 + countBeats * interval;
+      const downbeatTime = t0 + countUnits * step;
 
       const beginCapture = () => {
         this.countInTimer = null;
         if (this.state.status === "idle") return; // stopped during the count-in
-        if (!this.scheduler.isPlaying) this.scheduler.play(countBeats > 0 ? downbeatTime : undefined);
+        if (!this.scheduler.isPlaying) this.scheduler.play(countUnits > 0 ? downbeatTime : undefined);
         if (this.mode === "audio") {
           this.startBeat = this.scheduler.beatAtTime(this.engine.startRecording());
         } else {
@@ -219,9 +222,9 @@ export class Recorder {
         this.set({ status: "recording", take: this.mode === "midi" ? this.liveTake() : null });
       };
 
-      if (countBeats > 0) {
+      if (countUnits > 0) {
         this.set({ status: "counting" });
-        // Wake at the downbeat itself (include the lead), not countBeats*interval after now -
+        // Wake at the downbeat itself (include the lead), not countUnits*step after now -
         // otherwise capture starts COUNT_IN_LEAD_SEC early and the take lands ahead of the grid.
         this.countInTimer = setTimeout(beginCapture, (downbeatTime - this.engine.currentTime) * 1000);
       } else {

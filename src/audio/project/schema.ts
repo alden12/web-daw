@@ -177,6 +177,12 @@ export const DEFAULT_TIME_SIGNATURE = { numerator: 4, denominator: 4 } as const;
 export const beatsPerBar = (timeSignature: z.infer<typeof timeSignatureSchema>): number =>
   (timeSignature.numerator * 4) / timeSignature.denominator;
 
+/** The length in beats (quarter-notes) of the note the denominator counts - the meter's "shown beat":
+ *  `4 / denominator` (1 for x/4, 0.5 for x/8). A bar is `numerator` of these. The ruler ticks and the
+ *  metronome step by this, so x/8 shows/clicks eighth-notes with the bar line landing on a tick. */
+export const beatUnitBeats = (timeSignature: z.infer<typeof timeSignatureSchema>): number =>
+  4 / timeSignature.denominator;
+
 /* -------------------------------------------------------------------------- */
 /* Project root (project.json)                                                */
 /* -------------------------------------------------------------------------- */

@@ -18,12 +18,30 @@ describe("timeGrid", () => {
   });
 
   it("beatTicks flags bar starts and numbers bars (4/4)", () => {
-    const ticks = beatTicks(8, 4);
+    const ticks = beatTicks(8, { numerator: 4, denominator: 4 });
     // 0..8 inclusive
     expect(ticks).toHaveLength(9);
     expect(ticks.filter((t) => t.isBar).map((t) => t.beat)).toEqual([0, 4, 8]);
     expect(ticks.find((t) => t.beat === 0)?.bar).toBe(1);
     expect(ticks.find((t) => t.beat === 4)?.bar).toBe(2);
     expect(ticks.find((t) => t.beat === 2)?.isBar).toBe(false);
+  });
+
+  it("beatTicks defaults to 4/4 when no signature is given", () => {
+    expect(
+      beatTicks(4)
+        .filter((t) => t.isBar)
+        .map((t) => t.beat),
+    ).toEqual([0, 4]);
+  });
+
+  it("beatTicks subdivides by the denominator and lands bar lines on fractional beats (7/8)", () => {
+    const ticks = beatTicks(7, { numerator: 7, denominator: 8 });
+    // eighth-note grid: a tick every 0.5 beats, 0..7 inclusive
+    expect(ticks).toHaveLength(15);
+    // bars every 7 eighths = every 3.5 beats, each landing exactly on a tick
+    expect(ticks.filter((t) => t.isBar).map((t) => t.beat)).toEqual([0, 3.5, 7]);
+    expect(ticks.find((t) => t.beat === 3.5)?.bar).toBe(2);
+    expect(ticks.find((t) => t.beat === 0.5)?.isBar).toBe(false);
   });
 });

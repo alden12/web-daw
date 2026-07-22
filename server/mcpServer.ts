@@ -1477,16 +1477,21 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     "set_time_signature",
     {
       title: "Set time signature",
-      // v1 supports simple meters (x/4): the numerator is the beats per bar. Denominators other
-      // than 4 (x/8 etc.) are a coming follow-up; the tool fixes the denominator at 4 for now.
-      description: "Set the number of beats per bar (a simple x/4 time signature, e.g. 3 for 3/4). 1-32.",
-      inputSchema: { numerator: z.number().int().min(1).max(32) },
+      description:
+        "Set the project time signature: the numerator is the beats per bar; the denominator (a power of two, default 4) is the note that gets one beat - e.g. 3/4, 7/8, 5/16.",
+      inputSchema: {
+        numerator: z.number().int().min(1).max(32),
+        denominator: z
+          .union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(32)])
+          .optional(),
+      },
     },
-    async ({ numerator }) => {
-      const denominator = 4;
-      if (!sendToTab({ type: "setTimeSignature", numerator, denominator })) return fail("No DAW tab connected.");
-      mirror.setTimeSignature(numerator, denominator);
-      return ok(`Time signature set to ${numerator}/${denominator}.`);
+    async ({ numerator, denominator }) => {
+      const beatUnit = denominator ?? 4;
+      if (!sendToTab({ type: "setTimeSignature", numerator, denominator: beatUnit }))
+        return fail("No DAW tab connected.");
+      mirror.setTimeSignature(numerator, beatUnit);
+      return ok(`Time signature set to ${numerator}/${beatUnit}.`);
     },
   );
 
