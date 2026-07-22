@@ -1444,12 +1444,13 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   Needs a live tab open (Web Audio is browser-only); a tab-less server-side render is the separate deferred
   epic (portable DSP core, pairs with the B3 server-MCP direction).
 
-  `AGENT-4.7` `to-do` **Render fidelity: match the live output (audio tracks, MIDI devices, groove, full arrangement)** (deps: AGENT-4.1)
-  Close the deliberate v1 gaps so `renderProjectOffline` is faithful to playback, so `analyze_mix` measures
-  exactly what the user hears: render **audio tracks** (pre-decode their clip buffers, schedule the audio-clip
-  loop regions as the live scheduler does), drive **MIDI devices** through an offline transport clock (so
-  arps / harmonizers transform notes instead of being bypassed), apply **groove** (the schedule-time onset /
-  velocity nudge), and honour the **loop region / full arrangement** rather than a single pass.
+  `AGENT-4.7` `review` **Render fidelity: match the live output (audio tracks, MIDI devices, groove, full arrangement)** (deps: AGENT-4.1)
+  Closed the deliberate v1 gaps so `renderProjectOffline` is faithful to playback, so `analyze_mix` measures
+  what the user hears (slice-91): renders **audio tracks** (pre-decodes clip buffers, schedules the audio-clip
+  loop regions via `audioPlayWindow` like the scheduler), routes notes through each track's **MIDI-device**
+  chain via an offline transport clock (arps / octavators self-schedule from it, so they render exactly as
+  live), and applies **groove**. The region plays once, which IS the arrangement (live just loops it). Samples
+  already pre-decode (`AGENT-4.1`).
 
   **Where it runs - client-side first.** Rendering the graph offline uses `OfflineAudioContext` in the
   browser, which reuses the *exact* DSP the user hears - no second engine to keep in sync (the shared-DSP
