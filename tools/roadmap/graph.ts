@@ -448,7 +448,9 @@ export function buildGraph(
         hidden: hiddenIds.has(sibling.id),
         style: { width: ITEM_WIDTH, height: ITEM_HEIGHT },
         data: nodeDataFor(sibling),
-        zIndex: 2,
+        // z 3 (area box 0, nested ticket box 1, leaf card 3) leaves room for edges to resolve to effective z 2:
+        // above nested boxes so a link reaches a node inside one, still below leaf cards so it never occludes one.
+        zIndex: 3,
       };
       return [leaf];
     });
@@ -499,9 +501,10 @@ export function buildGraph(
  * Build the dependency edges as a layer independent of the node layout, so hover and selection restyle them
  * (via `setEdges` alone) without rebuilding - or repainting - a single node.
  *
- * Every edge sits at z-index -1, which resolves to effective z 1 (React Flow adds the endpoint cards' z of 2):
- * above the area-box backgrounds (z 0) so the line stays visible in the gaps and gutters, but below every card
- * (z 2) so a line never occludes a ticket. A cross-area edge is additionally de-emphasised - thinner, fainter,
+ * Every edge sits at z-index -1, which resolves to effective z 2 (React Flow adds the endpoint cards' z of 3):
+ * above the area-box backgrounds (z 0) and nested ticket boxes (z 1) - so the line stays visible in the gaps
+ * and reaches a node sitting inside a nested box - but below every leaf card (z 3) so it never occludes a
+ * ticket. A cross-area edge is additionally de-emphasised - thinner, fainter,
  * and dashed (so it reads at a glance as a link that does not apply inside the group) - since it cannot route
  * cleanly between separate boxes. An edge is "lit" (full colour) when selected,
  * when either of its endpoint tickets is hovered, or when the edge itself is hovered - so a connection surfaces
@@ -537,15 +540,19 @@ export function buildEdges(
         const crossArea = areaOf(dep) !== areaOf(item.id);
         const lit = selectedEnd || hoveredEnd || id === hoveredEdgeId;
         const staleHidden = crossArea && doneIds.has(dep); // satisfied cross-group link: hide until lit
+        const filteredHidden = hiddenIds.has(dep) || hiddenIds.has(item.id);
+        // Hovering a filtered-out node's still-visible neighbour previews the hidden node as a ghost (App), so
+        // reveal its edge too.
+        const ghostRevealed = hoveredEnd && filteredHidden;
         return {
           id,
           source: dep,
           target: item.id,
           type: "smoothstep",
           pathOptions: { borderRadius: 12 },
-          hidden: hiddenIds.has(dep) || hiddenIds.has(item.id) || (staleHidden && !lit),
+          hidden: (filteredHidden && !ghostRevealed) || (staleHidden && !lit),
           animated: selectedEnd,
-          zIndex: -1, // -> effective z 1: above box backgrounds (0), below cards (2), so lines never occlude a card
+          zIndex: -1, // -> effective z 2: above box backgrounds (0) and nested boxes (1), below leaf cards (3)
           style: {
             stroke: lit ? hueOf(item) : "#7c8aa0",
             strokeWidth: lit ? 2.5 : crossArea ? 1.2 : 1.5,
