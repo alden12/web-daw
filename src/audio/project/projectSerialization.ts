@@ -23,6 +23,7 @@ import type {
   MidiDeviceData,
   InstrumentTrackData,
   AudioTrackData,
+  TimeSignature,
 } from "./types";
 import type { Track, Group, NoteClip, EffectInstance, EffectHost, MidiDeviceInstance } from "./projectStore";
 import type { SampleAsset } from "../samples/catalog";
@@ -55,6 +56,7 @@ export interface TransportState {
   tempoBpm: number;
   lengthBeats: number;
   loopStartBeats: number;
+  timeSignature: TimeSignature;
   selectedTrackId: string | null;
   grooveId: string;
   grooveAmount: number;
@@ -126,6 +128,7 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     tempoBpm: transport.tempoBpm,
     lengthBeats: transport.lengthBeats,
     loopStart: transport.loopStartBeats,
+    timeSignature: transport.timeSignature,
     selectedTrackId: transport.selectedTrackId,
     grooveId: transport.grooveId,
     grooveAmount: transport.grooveAmount,

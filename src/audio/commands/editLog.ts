@@ -65,6 +65,7 @@ const COALESCABLE = new Set<EditCommand["type"]>([
   "setGroup",
   "setAudioClip",
   "setTempo",
+  "setTimeSignature",
   "setGroove",
   "setLength",
   "setLoopStart",
@@ -89,6 +90,8 @@ function coalesceKey(command: EditCommand): string {
       return `setAudioClip:${command.trackId}`;
     case "setTempo":
       return "setTempo";
+    case "setTimeSignature":
+      return "setTimeSignature";
     case "setGroove":
       // Coalesce by which facet is changing, so amount drags collapse but a template
       // pick stays its own entry.

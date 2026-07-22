@@ -79,6 +79,7 @@ export function buildStructure(tracks: Track[], groups: Group[], transport: Tran
     tempoBpm: transport.tempoBpm,
     lengthBeats: transport.lengthBeats,
     loopStart: transport.loopStartBeats,
+    timeSignature: transport.timeSignature,
     grooveId: transport.grooveId,
     grooveAmount: transport.grooveAmount,
     samples: transport.samples,

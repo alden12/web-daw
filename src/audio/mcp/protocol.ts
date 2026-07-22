@@ -131,6 +131,7 @@ export type ServerToBrowser =
   | { type: "allNotesOff" }
   // Transport (project-level)
   | { type: "setTempo"; bpm: number }
+  | { type: "setTimeSignature"; numerator: number; denominator: number }
   | { type: "setGroove"; grooveId?: string; amount?: number }
   | { type: "setLength"; lengthBeats: number }
   | { type: "setLoopStart"; beats: number }

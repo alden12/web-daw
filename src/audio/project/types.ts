@@ -46,7 +46,7 @@ export type {
   InstrumentTrackData,
   AudioTrackData,
 };
-export type { ProjectData, TrackData } from "./schema";
+export type { ProjectData, TrackData, TimeSignature } from "./schema";
 
 /** An effect in a chain (structural view, no param values). Shared by tracks and groups. */
 export type EffectMeta = Omit<EffectData, "params">;

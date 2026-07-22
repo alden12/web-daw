@@ -105,6 +105,7 @@ const DESCRIBE: DescribeMap = {
   launchClip: (command) => (command.clipId ? "Launched clip" : "Stopped clip"),
   stopAllClips: () => "Back to timeline",
   setTempo: (command) => `Set tempo ${command.bpm}`,
+  setTimeSignature: (command) => `Set time signature ${command.numerator}/${command.denominator}`,
   setGroove: (command) =>
     command.grooveId !== undefined
       ? `Set groove to ${grooveById(command.grooveId).name}`

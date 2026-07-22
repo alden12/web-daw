@@ -1,8 +1,8 @@
 /**
- * Transport controls: play/stop the scheduler, edit the project tempo, and toggle
- * the metronome. Tempo is read/written through the project store, so MCP and the UI
- * stay in sync; the metronome is a transient playback preference (persisted locally,
- * pushed to the scheduler), not part of the project/edit stream.
+ * Transport controls: play/stop the scheduler, edit the project tempo + time
+ * signature, and toggle the metronome. Tempo and meter are read/written through the
+ * project store, so MCP and the UI stay in sync; the metronome is a transient playback
+ * preference (persisted locally, pushed to the scheduler), not part of the project/edit stream.
  */
 import { useEffect } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
@@ -90,6 +90,28 @@ export function TransportBar({
           className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
         BPM
+      </label>
+      <label
+        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted"
+        title="Time signature (beats per bar)"
+      >
+        Meter
+        {/* v1 sets the numerator (beats per bar); the denominator (x/8 etc.) is a coming follow-up. */}
+        <input
+          type="number"
+          min={1}
+          max={32}
+          value={project.timeSignature.numerator}
+          onChange={(e) =>
+            dispatch({
+              type: "setTimeSignature",
+              numerator: Number(e.target.value),
+              denominator: project.timeSignature.denominator,
+            })
+          }
+          className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
+        />
+        <span className="text-muted">/{project.timeSignature.denominator}</span>
       </label>
       <button
         type="button"

@@ -119,10 +119,6 @@ export function metronomeClicksInBeatRange(
   return out;
 }
 
-// Beats per bar for the metronome's bar accent. A project-level time signature is
-// a future feature; 4/4 matches the timeline ruler's DEFAULT_BEATS_PER_BAR.
-const BEATS_PER_BAR = 4;
-
 export class Scheduler implements TransportClock {
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -245,7 +241,7 @@ export class Scheduler implements TransportClock {
         horizonBeats,
         loopStart,
         loopLen,
-        BEATS_PER_BAR,
+        this.project.beatsPerBar,
       )) {
         const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
         this.engine.scheduleClick(when, accent);

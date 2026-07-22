@@ -34,7 +34,6 @@ export type AutoQuantize = () => QuantizeSettings | null;
 /** Returns the manual recording-latency trim (ms earlier) to apply on top of the auto estimate. */
 export type RecordOffsetMs = () => number;
 
-const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
 const COUNT_IN_LEAD_SEC = 0.12; // small lead so the first click is not clipped
 
 /** What the next take captures: audio from the mic, or MIDI notes played live. */
@@ -195,10 +194,11 @@ export class Recorder {
       }
 
       const interval = 60 / this.project.tempo; // seconds per beat
-      const countBeats = this.state.countInBars * BEATS_PER_BAR;
+      const beatsPerBar = this.project.beatsPerBar;
+      const countBeats = this.state.countInBars * beatsPerBar;
       const t0 = this.engine.currentTime + COUNT_IN_LEAD_SEC;
       for (let i = 0; i < countBeats; i++) {
-        this.engine.scheduleClick(t0 + i * interval, i % BEATS_PER_BAR === 0);
+        this.engine.scheduleClick(t0 + i * interval, i % beatsPerBar === 0);
       }
       // The first recorded beat lands one interval after the last count-in click. Anchor the
       // transport to this exact audio-clock time so its metronome continues the count-in grid
@@ -358,7 +358,8 @@ export class Recorder {
     // Anchor the clip at the bar the take began in, so notes keep their groove
     // relative to the bar and the clip lines up with the grid. The clip is sized
     // up to whole bars to cover the last note.
-    const clipStart = Math.max(0, Math.floor(this.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR);
+    const beatsPerBar = this.project.beatsPerBar;
+    const clipStart = Math.max(0, Math.floor(this.startBeat / beatsPerBar) * beatsPerBar);
     const captured0: NoteEvent[] = captured.map((note) => ({
       id: newNoteId(),
       pitch: note.pitch,
@@ -371,7 +372,7 @@ export class Recorder {
     const autoQuantize = this.getAutoQuantize();
     const notes = autoQuantize ? quantizeNotes(captured0, autoQuantize) : captured0;
     const span = Math.max(...notes.map((note) => note.start + note.length));
-    const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
+    const lengthBeats = Math.max(beatsPerBar, Math.ceil(span / beatsPerBar) * beatsPerBar);
     this.dispatch({
       type: "addNoteClip",
       trackId: target.id,
