@@ -8,6 +8,7 @@ import {
   useEdgesState,
   applyNodeChanges,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
   type NodeChange,
   type XYPosition,
 } from "@xyflow/react";
@@ -38,22 +39,16 @@ export function App() {
   const [colourMode, setColourMode] = useState<ColourMode>("area");
   const [locked, setLocked] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null); // a node with a dependency path, hovered
+  const [hoveredId, setHoveredId] = useState<string | null>(null); // a ticket with a dependency path, hovered
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null); // a dependency edge, hovered directly
   const [layoutNonce, setLayoutNonce] = useState(0); // bump to force a fresh auto-layout (e.g. after reset)
 
-  // Node ids that arm hover highlighting: every ticket that touches a dependency path, plus the `area:*` boxes
-  // that have an external (cross-area) link. Hovering anything else (a dependency-free card, or an area box
-  // with only internal paths) does nothing, so it never restyles the edges for nothing.
+  // Ticket ids that touch a dependency path. Only these arm hover highlighting, so hovering a dependency-free
+  // card (or an area box) never restyles the edges for nothing - a link surfaces from its own tickets or line.
   const linkedNodes = useMemo(() => {
-    const areaOf = (id: string) => id.split("-")[0];
     const linked = new Set<string>();
     for (const item of items) {
-      for (const dep of item.deps) {
-        linked.add(dep).add(item.id);
-        if (areaOf(dep) !== areaOf(item.id)) {
-          linked.add(`area:${areaOf(dep)}`).add(`area:${areaOf(item.id)}`);
-        }
-      }
+      for (const dep of item.deps) linked.add(dep).add(item.id);
     }
     return linked;
   }, [items]);
@@ -149,8 +144,8 @@ export function App() {
 
   // Edges are their own layer: hover and selection restyle them here without touching the node layout above.
   useEffect(() => {
-    setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hiddenIds));
-  }, [items, colours, colourMode, selectedId, hoveredId, hiddenIds, setEdges]);
+    setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds));
+  }, [items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds, setEdges]);
 
   const selected = selectedId ? (items.find((item) => item.id === selectedId) ?? null) : null;
   const detail = selected ? sectionAround(designDoc, selected.line) : "";
@@ -168,12 +163,14 @@ export function App() {
     }
   };
 
-  // Hover a node (ticket or area box) that has a dependency path to highlight every path touching it; ignore
-  // the dependency-free cards so hovering them never restyles the edges for nothing.
+  // Hover a ticket that has a dependency path to light the paths directly attached to it (dependency-free cards
+  // and area boxes are ignored); hover an edge to light just that one.
   const onNodeMouseEnter: NodeMouseHandler = (_event, node) => {
     if (linkedNodes.has(node.id)) setHoveredId(node.id);
   };
   const onNodeMouseLeave: NodeMouseHandler = () => setHoveredId(null);
+  const onEdgeMouseEnter: EdgeMouseHandler = (_event, edge) => setHoveredEdgeId(edge.id);
+  const onEdgeMouseLeave: EdgeMouseHandler = () => setHoveredEdgeId(null);
 
   const counts = useMemo(() => {
     const byArea = new Map<string, number>();
@@ -264,6 +261,8 @@ export function App() {
               onNodeClick={onNodeClick}
               onNodeMouseEnter={onNodeMouseEnter}
               onNodeMouseLeave={onNodeMouseLeave}
+              onEdgeMouseEnter={onEdgeMouseEnter}
+              onEdgeMouseLeave={onEdgeMouseLeave}
               onPaneClick={() => setSelectedId(null)}
               nodesDraggable={!locked}
               fitView

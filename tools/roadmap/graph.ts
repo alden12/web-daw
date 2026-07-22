@@ -12,6 +12,10 @@ export interface ItemNodeData extends Record<string, unknown> {
   statusColour: string;
   selected: boolean;
   dimmed: boolean;
+  /** This ticket has a dependency edge not drawn at rest (a filtered-out or satisfied cross-group link), so its
+   *  handle carries a hint: `In` on the target (left) side, `Out` on the source (right) side. */
+  hiddenLinkIn: boolean;
+  hiddenLinkOut: boolean;
 }
 export type ItemNode = Node<ItemNodeData, "item">;
 
@@ -24,6 +28,8 @@ export interface TicketNodeData extends Record<string, unknown> {
   count: number;
   selected: boolean;
   dimmed: boolean;
+  hiddenLinkIn: boolean;
+  hiddenLinkOut: boolean;
 }
 export type TicketNode = Node<TicketNodeData, "ticket">;
 
@@ -55,11 +61,11 @@ export function areaColours(areas: string[]): Record<string, string> {
 
 const ITEM_WIDTH = 212;
 const ITEM_HEIGHT = 62;
-const GAP = 22; // between grid cells
+const GAP = 34; // horizontal/vertical space between packed cards
 const PAD_X = 18; // box inner side padding
 const PAD_TOP = 46; // box title bar
 const PAD_BOTTOM = 20;
-const AREA_GAP = 40; // between area boxes
+const AREA_GAP = 68; // between area boxes - a wide gutter so cross-area links have room to run
 const RANKSEP = 92; // dagre horizontal rank spacing (the flow direction)
 const NODESEP = 30; // dagre spacing within a rank
 
@@ -71,9 +77,20 @@ interface Placement extends Size {
   x: number;
   y: number;
 }
+/** One horizontal run of the skyline packer: the filled height `y` across [x, x + width). */
+interface Segment {
+  x: number;
+  y: number;
+  width: number;
+}
 
 const childrenOf = (items: RoadmapItem[], parentId: string | null): RoadmapItem[] =>
   items.filter((item) => item.parent === parentId);
+
+/** True when one id is an ancestor of the other (dotted nesting, e.g. `AGENT-10` and `AGENT-10.1`). A declared
+ *  dependency between a ticket and its own ancestor is already expressed by the nesting, so we don't draw it -
+ *  it would render as a box linked to a card sitting inside itself. */
+const structuralEdge = (a: string, b: string): boolean => a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
 
 /** The rendered size of one item: a leaf card, or (if it has children) the box that frames them. */
 function sizeOf(item: RoadmapItem, items: RoadmapItem[]): Size {
@@ -153,6 +170,77 @@ function shelfPack(
     shelfHeight = Math.max(shelfHeight, box.height);
   }
   return { placements, extent: { width, height: y + shelfHeight } };
+}
+
+/**
+ * Pack boxes into a compact block with a bottom-left skyline heuristic: place each box (tallest first) at the
+ * lowest - then leftmost - position where it fits within `maxWidth`. Unlike shelf packing, this backfills the
+ * vertical gaps a tall box leaves beside shorter ones, so a set of very differently-sized boxes (the area
+ * boxes) packs tight instead of leaving big empty bands under the short ones. Returns content-relative
+ * placements (origin 0,0) and the packed extent.
+ */
+function packBoxes(
+  boxes: Boxed[],
+  maxWidth: number,
+  gap: number,
+): { placements: Map<string, Placement>; extent: Size } {
+  const width = Math.max(maxWidth, ...boxes.map((box) => box.width)); // never narrower than the widest box
+  // The skyline is a left-to-right list of segments; `y` is the filled height across each segment's span.
+  let skyline: Segment[] = [{ x: 0, y: 0, width }];
+  const placements = new Map<string, Placement>();
+  const order = [...boxes].sort((first, second) => second.height - first.height || second.width - first.width);
+
+  for (const box of order) {
+    // Rest the box on each segment's left edge (on the highest skyline it would span) and keep the lowest such
+    // rest, ties broken leftmost - the classic bottom-left fill.
+    let best: { x: number; y: number } | null = null;
+    for (const segment of skyline) {
+      const x = segment.x;
+      if (x + box.width > width) continue; // would overflow the block
+      let restY = 0;
+      for (const other of skyline) {
+        if (other.x + other.width <= x || other.x >= x + box.width) continue; // no horizontal overlap
+        restY = Math.max(restY, other.y);
+      }
+      if (best === null || restY < best.y || (restY === best.y && x < best.x)) best = { x, y: restY };
+    }
+    const spot = best ?? { x: 0, y: 0 };
+    placements.set(box.id, { x: spot.x, y: spot.y, width: box.width, height: box.height });
+    skyline = raiseSkyline(skyline, spot.x, box.width + gap, spot.y + box.height + gap);
+  }
+
+  let extentWidth = 0;
+  let extentHeight = 0;
+  for (const placement of placements.values()) {
+    extentWidth = Math.max(extentWidth, placement.x + placement.width);
+    extentHeight = Math.max(extentHeight, placement.y + placement.height);
+  }
+  return { placements, extent: { width: extentWidth, height: extentHeight } };
+}
+
+/** Raise the skyline over [x, x + width) to height `y`, clipping the segments it covers and merging equal-height
+ *  neighbours so the segment list stays minimal. Segments outside the range are untouched. */
+function raiseSkyline(skyline: Segment[], x: number, width: number, y: number): Segment[] {
+  const end = x + width;
+  const kept: Segment[] = [];
+  for (const segment of skyline) {
+    const segmentEnd = segment.x + segment.width;
+    if (segmentEnd <= x || segment.x >= end) {
+      kept.push(segment);
+      continue;
+    }
+    if (segment.x < x) kept.push({ x: segment.x, y: segment.y, width: x - segment.x });
+    if (segmentEnd > end) kept.push({ x: end, y: segment.y, width: segmentEnd - end });
+  }
+  kept.push({ x, y, width });
+  kept.sort((first, second) => first.x - second.x);
+  const merged: Segment[] = [];
+  for (const segment of kept) {
+    const last = merged[merged.length - 1];
+    if (last && last.y === segment.y && last.x + last.width === segment.x) last.width += segment.width;
+    else merged.push({ ...segment });
+  }
+  return merged;
 }
 
 /** A row-width budget for shelf-packing `boxes` into a compact, roughly landscape block. Targets total area
@@ -291,7 +379,7 @@ export function buildGraph(
   const visibleIds = new Set(items.map((item) => item.id));
   const depEdges = items.flatMap((item) =>
     item.deps
-      .filter((dep) => visibleIds.has(dep))
+      .filter((dep) => visibleIds.has(dep) && !structuralEdge(dep, item.id))
       .map((dep) => ({ id: `${dep}->${item.id}`, source: dep, target: item.id })),
   );
   const neighbours = selectedId
@@ -302,6 +390,21 @@ export function buildGraph(
       )
     : null;
 
+  // A ticket carries a "hidden connection" hint on a handle when it has an edge not drawn at rest - because the
+  // other end is filtered out (`hiddenIds`), or because it is a satisfied cross-group link (its source is done,
+  // hidden to cut clutter and revealed on hover). Left handle = an incoming such edge, right = an outgoing one.
+  const areaOf = (id: string): string => id.split("-")[0];
+  const doneIds = new Set(items.filter((item) => item.status === "done").map((item) => item.id));
+  const hiddenLinkIn = new Set<string>();
+  const hiddenLinkOut = new Set<string>();
+  for (const edge of depEdges) {
+    const filteredOut = hiddenIds.has(edge.source) || hiddenIds.has(edge.target);
+    const staleHidden = areaOf(edge.source) !== areaOf(edge.target) && doneIds.has(edge.source);
+    if (!filteredOut && !staleHidden) continue;
+    if (!hiddenIds.has(edge.source)) hiddenLinkOut.add(edge.source);
+    if (!hiddenIds.has(edge.target)) hiddenLinkIn.add(edge.target);
+  }
+
   const hueOf = (item: RoadmapItem): string =>
     colourMode === "area" ? (colours[item.area] ?? "#94a3b8") : (STATUSES[item.status]?.colour ?? "#94a3b8");
   const nodeDataFor = (item: RoadmapItem) => ({
@@ -310,6 +413,8 @@ export function buildGraph(
     statusColour: STATUSES[item.status]?.colour ?? "#94a3b8",
     selected: item.id === selectedId,
     dimmed: neighbours ? !neighbours.has(item.id) : false,
+    hiddenLinkIn: hiddenLinkIn.has(item.id),
+    hiddenLinkOut: hiddenLinkOut.has(item.id),
   });
 
   // Lay a container's children out once and emit their nodes (positions relative to the container). A child
@@ -350,9 +455,8 @@ export function buildGraph(
     return { nodes, box };
   };
 
-  // Build each area's inner layout once, then pack the area boxes. Areas joined by a cross-area dependency are
-  // ordered consecutively (so those few links stay short when packed in sequence), then the boxes shelf-pack
-  // into a roughly square block rather than fixed-width rows.
+  // Build each area's inner layout once, then pack the area boxes with the skyline packer so short areas
+  // backfill the vertical gaps beside the tall ones (the areas vary a lot in height), keeping the map compact.
   const built: BuiltArea[] = areas.flatMap((area) => {
     const topTickets = items.filter((item) => item.area === area && item.parent === null);
     if (topTickets.length === 0) return [];
@@ -361,11 +465,14 @@ export function buildGraph(
   });
 
   const ordered = orderAreasByLinkage(built, items);
-  const packed = shelfPack(
+  const packed = packBoxes(
     ordered.map((entry) => ({ id: entry.area, ...entry.size })),
+    // Skyline packing backfills the gaps shelf packing left, so it needs far less width slack: ~1.6 lands the
+    // densest, roughly-landscape block (empirically ~88% filled).
     packWidth(
       ordered.map((entry) => entry.size),
       AREA_GAP,
+      1.6,
     ),
     AREA_GAP,
   );
@@ -392,13 +499,18 @@ export function buildGraph(
  * Build the dependency edges as a layer independent of the node layout, so hover and selection restyle them
  * (via `setEdges` alone) without rebuilding - or repainting - a single node.
  *
- * An intra-area edge is the crisp orthogonal flow. A cross-area edge cannot route cleanly through the packed
- * area boxes (its endpoints sit in separate containers), so at rest it is a faint solid line sent BEHIND the
- * boxes (negative z) - visible only in the gutters between them, never crossing content. An edge is "lit"
- * (full colour, lifted to the front) when selected, or on hover: hovering a ticket lights the paths directly
- * attached to that ticket, while hovering an area box lights only that area's external (cross-area) links, not
- * the paths internal to it. Selecting additionally dims the edges it does not touch; hovering only lifts, to
- * stay calm.
+ * Every edge sits at z-index -1, which resolves to effective z 1 (React Flow adds the endpoint cards' z of 2):
+ * above the area-box backgrounds (z 0) so the line stays visible in the gaps and gutters, but below every card
+ * (z 2) so a line never occludes a ticket. A cross-area edge is additionally de-emphasised - thinner, fainter,
+ * and dashed (so it reads at a glance as a link that does not apply inside the group) - since it cannot route
+ * cleanly between separate boxes. An edge is "lit" (full colour) when selected,
+ * when either of its endpoint tickets is hovered, or when the edge itself is hovered - so a connection surfaces
+ * from its own nodes or line, not from the surrounding box. Selecting also dims the edges it does not touch;
+ * hovering only brightens, to stay calm. (Lit edges stay behind the cards too - they brighten in place.)
+ *
+ * A satisfied cross-group link - one that crosses groups and whose source is already `done` - is hidden at rest
+ * (its dependency is met, so it is just clutter) and revealed only when lit. The endpoints still flag it with a
+ * handle hint (see `buildGraph`), so you can tell there is something to hover for.
  */
 export function buildEdges(
   items: RoadmapItem[],
@@ -406,37 +518,38 @@ export function buildEdges(
   colourMode: ColourMode,
   selectedId: string | null,
   hoveredId: string | null,
+  hoveredEdgeId: string | null,
   hiddenIds: Set<string>,
 ): Edge[] {
   const visibleIds = new Set(items.map((item) => item.id));
+  const doneIds = new Set(items.filter((item) => item.status === "done").map((item) => item.id));
   const areaOf = (id: string): string => id.split("-")[0];
   const hueOf = (item: RoadmapItem): string =>
     colourMode === "area" ? (colours[item.area] ?? "#94a3b8") : (STATUSES[item.status]?.colour ?? "#94a3b8");
-  const hoveredArea = hoveredId?.startsWith("area:") ? hoveredId.slice("area:".length) : null;
 
   return items.flatMap((item) =>
     item.deps
-      .filter((dep) => visibleIds.has(dep))
+      .filter((dep) => visibleIds.has(dep) && !structuralEdge(dep, item.id))
       .map((dep) => {
+        const id = `${dep}->${item.id}`;
         const selectedEnd = selectedId === dep || selectedId === item.id;
+        const hoveredEnd = hoveredId != null && (dep === hoveredId || item.id === hoveredId);
         const crossArea = areaOf(dep) !== areaOf(item.id);
-        const hoveredEnd =
-          hoveredArea != null
-            ? crossArea && (areaOf(dep) === hoveredArea || areaOf(item.id) === hoveredArea)
-            : hoveredId != null && (dep === hoveredId || item.id === hoveredId);
-        const lit = selectedEnd || hoveredEnd;
+        const lit = selectedEnd || hoveredEnd || id === hoveredEdgeId;
+        const staleHidden = crossArea && doneIds.has(dep); // satisfied cross-group link: hide until lit
         return {
-          id: `${dep}->${item.id}`,
+          id,
           source: dep,
           target: item.id,
           type: "smoothstep",
           pathOptions: { borderRadius: 12 },
-          hidden: hiddenIds.has(dep) || hiddenIds.has(item.id),
+          hidden: hiddenIds.has(dep) || hiddenIds.has(item.id) || (staleHidden && !lit),
           animated: selectedEnd,
-          zIndex: lit ? 20 : crossArea ? -1 : 5,
+          zIndex: -1, // -> effective z 1: above box backgrounds (0), below cards (2), so lines never occlude a card
           style: {
             stroke: lit ? hueOf(item) : "#7c8aa0",
             strokeWidth: lit ? 2.5 : crossArea ? 1.2 : 1.5,
+            strokeDasharray: crossArea ? "6 5" : undefined, // dashed: reads at a glance as a cross-group link
             opacity: lit ? 1 : selectedId ? (crossArea ? 0.08 : 0.12) : crossArea ? 0.4 : 0.6,
           },
         };
