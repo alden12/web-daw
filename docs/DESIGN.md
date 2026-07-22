@@ -929,12 +929,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `BEATS_PER_BAR = 4` to the project's `beatsPerBar` getter. The denominator is stored (default 4) and rides
   the whole data model already, but stays fixed at 4 in the UI/MCP this slice; bars remain integer beats.
 
-  `DAW-10.2` `to-do` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
-  Unlock the denominator in the UI (and widen the `set_time_signature` MCP tool). The schema, edit,
-  persistence, and migration already carry `denominator`, so the remaining work is float-aware bar-line
-  placement: bars fall on fractional beats (6/8 = 3 beats, 7/8 = 3.5), so `beatTicks` / `Ruler` must place
-  bar lines at multiples of `beatsPerBar` rather than the integer `beat % beatsPerBar === 0` test, plus the
-  metronome's compound-meter pulse (accent per dotted beat).
+  `DAW-10.2` `review` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
+  Unlocked the denominator (a `<select>` beside the numerator; the `set_time_signature` MCP tool now takes
+  it too). The subdivision is the meter's "shown beat" (`beatUnitBeats = 4/denominator`: a quarter in x/4,
+  an eighth in x/8), so the ruler ticks and the metronome step by it and 7/8 shows 7 eighth-beats with the
+  bar line landing on a tick. `beatTicks` iterates by tick *index* (not accumulating beats) so the
+  fractional-bar test (7/8 bars every 3.5 beats) stays exact; `metronomeClicksInBeatRange` gained a
+  `beatUnit` step and accents the bar downbeat; the recorder count-in matches. Compound accent *grouping*
+  (6/8 as two dotted-quarter pulses) is a later nicety - downbeat-only for now.
 
 - `DAW-11` `to-do` **Timeline loop enable/disable toggle**
 

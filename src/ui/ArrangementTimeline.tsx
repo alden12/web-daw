@@ -471,7 +471,7 @@ export function ArrangementTimeline({
                   loopStart={project.loopStart}
                   loopEnd={lengthBeats}
                   pxPerBeat={pxPerBeat}
-                  beatsPerBar={beatsPerBar}
+                  timeSignature={project.timeSignature}
                   onSetLoopStart={(beats) => dispatch({ type: "setLoopStart", beats })}
                   onSetLoopEnd={(beats) => dispatch({ type: "setLength", lengthBeats: beats })}
                 />

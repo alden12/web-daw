@@ -91,16 +91,13 @@ export function TransportBar({
         />
         BPM
       </label>
-      <label
-        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted"
-        title="Time signature (beats per bar)"
-      >
+      <label className="inline-flex items-center gap-1.5 font-mono text-xs text-muted" title="Time signature">
         Meter
-        {/* v1 sets the numerator (beats per bar); the denominator (x/8 etc.) is a coming follow-up. */}
         <input
           type="number"
           min={1}
           max={32}
+          aria-label="Beats per bar (numerator)"
           value={project.timeSignature.numerator}
           onChange={(e) =>
             dispatch({
@@ -111,7 +108,25 @@ export function TransportBar({
           }
           className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
-        <span className="text-muted">/{project.timeSignature.denominator}</span>
+        <span className="text-muted">/</span>
+        <select
+          aria-label="Beat unit (denominator)"
+          value={project.timeSignature.denominator}
+          onChange={(e) =>
+            dispatch({
+              type: "setTimeSignature",
+              numerator: project.timeSignature.numerator,
+              denominator: Number(e.target.value),
+            })
+          }
+          className="font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright cursor-pointer"
+        >
+          {[2, 4, 8, 16].map((denominator) => (
+            <option key={denominator} value={denominator}>
+              {denominator}
+            </option>
+          ))}
+        </select>
       </label>
       <button
         type="button"

@@ -38,7 +38,7 @@ import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/de
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
-import { DEFAULT_TIME_SIGNATURE, beatsPerBar } from "./schema";
+import { DEFAULT_TIME_SIGNATURE, beatsPerBar, beatUnitBeats } from "./schema";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
 import type {
@@ -280,6 +280,11 @@ export class ProjectStore {
    *  scheduler, rulers, and grid all project the meter through the shared `beatsPerBar` helper. */
   get beatsPerBar(): number {
     return beatsPerBar(this.timeSig);
+  }
+  /** The meter's "shown beat" in beats (the note the denominator counts): 1 for x/4, 0.5 for x/8.
+   *  The ruler ticks and the metronome step by this so x/8 subdivides into eighths. */
+  get beatUnit(): number {
+    return beatUnitBeats(this.timeSig);
   }
   get name(): string {
     return this.projectName;

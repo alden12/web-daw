@@ -10,6 +10,7 @@ import type { ProjectStore, Track, AudioTrack, InstrumentTrack } from "../audio/
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
+import type { TimeSignature } from "../audio/project/types";
 import type { McpStatus } from "../audio/mcp/bridge";
 import type { WsStatus } from "../contract/client";
 import { SyncChip } from "./ConnectionStatus";
@@ -148,7 +149,7 @@ function AudioClipPanel({
   track,
   scheduler,
   tempoBpm,
-  beatsPerBar,
+  timeSignature,
   loopStart,
   loopLength,
   dispatch,
@@ -156,8 +157,8 @@ function AudioClipPanel({
   track: AudioTrack;
   scheduler: Scheduler;
   tempoBpm: number;
-  /** Bar length in beats (from the project time signature), for the bar gridlines. */
-  beatsPerBar: number;
+  /** Project time signature, for the bar gridlines + ruler. */
+  timeSignature: TimeSignature;
   /** Arrangement loop region (beats), for the launch-mode playhead window. */
   loopStart: number;
   loopLength: number;
@@ -165,6 +166,7 @@ function AudioClipPanel({
 }) {
   const clip = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
   const bps = beatsPerSecond(tempoBpm);
+  const beatsPerBar = beatsPerBarOf(timeSignature);
   const dur = clip?.durationSec || 0;
   const durBeats = Math.max(0.001, dur * bps);
   const loopStartSec = clip?.loopStartSec ?? 0;
@@ -267,6 +269,7 @@ function AudioClipPanel({
                 loopStart={loopStartSec * bps}
                 loopEnd={loopEndSec * bps}
                 pxPerBeat={pxPerBeat}
+                timeSignature={timeSignature}
                 onSetLoopStart={(b) => setClip({ loopStartSec: b / bps })}
                 onSetLoopEnd={(b) => setClip({ loopEndSec: b / bps })}
               />
@@ -626,7 +629,7 @@ export function CenterWorkbench({
             track={selectedTrack}
             scheduler={scheduler}
             tempoBpm={project.tempoBpm}
-            beatsPerBar={beatsPerBarOf(project.timeSignature)}
+            timeSignature={project.timeSignature}
             loopStart={project.loopStart}
             loopLength={project.lengthBeats - project.loopStart}
             dispatch={dispatch}

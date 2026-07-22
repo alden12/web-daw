@@ -4,11 +4,11 @@
  * `pxPerBeat` zoom factor, so the same mapping drives the ruler, the note grid,
  * and the velocity lane - and later the arrangement lanes - with no per-view
  * duplication. Musical time is in beats; `GRID` (sequencer/types) is the finest
- * snap. 4/4 is assumed (beatsPerBar = 4) until time signatures land.
+ * snap. The meter comes from the project time signature (default 4/4).
  */
 import { GRID } from "../../audio/sequencer/types";
-
-export const DEFAULT_BEATS_PER_BAR = 4;
+import { DEFAULT_TIME_SIGNATURE, beatUnitBeats } from "../../audio/project/schema";
+import type { TimeSignature } from "../../audio/project/types";
 
 /** Beats -> x pixels. */
 export const beatToX = (beat: number, pxPerBeat: number): number => beat * pxPerBeat;
@@ -31,14 +31,19 @@ export interface BeatTick {
 }
 
 /**
- * Ticks at every whole beat from 0..lengthBeats inclusive, flagging bar starts.
- * The trailing tick at `lengthBeats` marks the loop end.
+ * Ticks at every shown beat (the time signature's `beatUnitBeats` - a quarter in x/4, an eighth in
+ * x/8) from 0..lengthBeats inclusive, flagging bar starts. The trailing tick at `lengthBeats` marks
+ * the loop end. Iterating by tick *index* (not by accumulating beats) keeps the bar test exact for
+ * fractional bars (7/8 bars every 3.5 beats), so the heavy bar line always lands on a tick.
  */
-export function beatTicks(lengthBeats: number, beatsPerBar: number = DEFAULT_BEATS_PER_BAR): BeatTick[] {
+export function beatTicks(lengthBeats: number, timeSignature: TimeSignature = DEFAULT_TIME_SIGNATURE): BeatTick[] {
+  const beatUnit = beatUnitBeats(timeSignature); // beats per shown beat
+  const beatsPerBarUnits = timeSignature.numerator; // shown beats per bar
   const ticks: BeatTick[] = [];
-  for (let beat = 0; beat <= lengthBeats; beat += 1) {
-    const isBar = beat % beatsPerBar === 0;
-    ticks.push(isBar ? { beat, isBar, bar: beat / beatsPerBar + 1 } : { beat, isBar });
+  for (let index = 0; index * beatUnit <= lengthBeats + 1e-9; index += 1) {
+    const beat = index * beatUnit;
+    const isBar = index % beatsPerBarUnits === 0;
+    ticks.push(isBar ? { beat, isBar, bar: index / beatsPerBarUnits + 1 } : { beat, isBar });
   }
   return ticks;
 }

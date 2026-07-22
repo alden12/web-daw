@@ -84,16 +84,22 @@ describe("ProjectStore", () => {
     expect(p.tempo).toBe(300);
   });
 
-  it("defaults to 4/4, sets the time signature (clamped numerator), and derives beatsPerBar", () => {
+  it("defaults to 4/4, sets the time signature (clamped numerator), and derives beatsPerBar/beatUnit", () => {
     const p = new ProjectStore(false);
     expect(p.timeSignature).toEqual({ numerator: 4, denominator: 4 });
     expect(p.beatsPerBar).toBe(4);
+    expect(p.beatUnit).toBe(1);
     p.setTimeSignature(3);
     expect(p.timeSignature).toEqual({ numerator: 3, denominator: 4 });
     expect(p.beatsPerBar).toBe(3);
     // Numerator clamps to 1..32; an invalid denominator keeps the current one (store coerces).
     p.setTimeSignature(99, 5);
     expect(p.timeSignature).toEqual({ numerator: 32, denominator: 4 });
+    // A compound meter (7/8): bar = 7 * 4/8 = 3.5 beats, shown beat = an eighth (0.5 beats).
+    p.setTimeSignature(7, 8);
+    expect(p.timeSignature).toEqual({ numerator: 7, denominator: 8 });
+    expect(p.beatsPerBar).toBe(3.5);
+    expect(p.beatUnit).toBe(0.5);
   });
 
   it("round-trips the time signature through snapshot/load and heals a doc that lacks one to 4/4", () => {
