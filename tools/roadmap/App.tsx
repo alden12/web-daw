@@ -8,6 +8,7 @@ import {
   useEdgesState,
   applyNodeChanges,
   type NodeMouseHandler,
+  type EdgeMouseHandler,
   type NodeChange,
   type XYPosition,
 } from "@xyflow/react";
@@ -38,22 +39,16 @@ export function App() {
   const [colourMode, setColourMode] = useState<ColourMode>("area");
   const [locked, setLocked] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null); // a node with a dependency path, hovered
+  const [hoveredId, setHoveredId] = useState<string | null>(null); // a ticket with a dependency path, hovered
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null); // a dependency edge, hovered directly
   const [layoutNonce, setLayoutNonce] = useState(0); // bump to force a fresh auto-layout (e.g. after reset)
 
-  // Node ids that arm hover highlighting: every ticket that touches a dependency path, plus the `area:*` boxes
-  // that have an external (cross-area) link. Hovering anything else (a dependency-free card, or an area box
-  // with only internal paths) does nothing, so it never restyles the edges for nothing.
+  // Ticket ids that touch a dependency path. Only these arm hover highlighting, so hovering a dependency-free
+  // card (or an area box) never restyles the edges for nothing - a link surfaces from its own tickets or line.
   const linkedNodes = useMemo(() => {
-    const areaOf = (id: string) => id.split("-")[0];
     const linked = new Set<string>();
     for (const item of items) {
-      for (const dep of item.deps) {
-        linked.add(dep).add(item.id);
-        if (areaOf(dep) !== areaOf(item.id)) {
-          linked.add(`area:${areaOf(dep)}`).add(`area:${areaOf(item.id)}`);
-        }
-      }
+      for (const dep of item.deps) linked.add(dep).add(item.id);
     }
     return linked;
   }, [items]);
@@ -87,6 +82,26 @@ export function App() {
     for (const item of items) if (isHidden(item)) hidden.add(item.id);
     return hidden;
   }, [items, hiddenAreas, hiddenStatuses]);
+
+  // For each visible ticket, the filtered-out tickets it links to. Hovering it previews those as translucent
+  // ghosts (the ghost effect below), so you can inspect a connection the current filters would otherwise hide.
+  const previewReveal = useMemo(() => {
+    const structural = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+    const reveal = new Map<string, Set<string>>();
+    const add = (host: string, ghost: string) => {
+      const ghosts = reveal.get(host) ?? new Set<string>();
+      ghosts.add(ghost);
+      reveal.set(host, ghosts);
+    };
+    for (const item of items) {
+      for (const dep of item.deps) {
+        if (structural(dep, item.id)) continue;
+        if (hiddenIds.has(item.id) && !hiddenIds.has(dep)) add(dep, item.id);
+        if (hiddenIds.has(dep) && !hiddenIds.has(item.id)) add(item.id, dep);
+      }
+    }
+    return reveal;
+  }, [items, hiddenIds]);
 
   // React Flow needs controlled node/edge state (with change handlers) for dragging to take effect. The
   // layout is rebuilt from the markers whenever the filters/colour/selection change, but any node the user
@@ -149,8 +164,30 @@ export function App() {
 
   // Edges are their own layer: hover and selection restyle them here without touching the node layout above.
   useEffect(() => {
-    setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hiddenIds));
-  }, [items, colours, colourMode, selectedId, hoveredId, hiddenIds, setEdges]);
+    setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds));
+  }, [items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds, setEdges]);
+
+  // Ghost preview: while a ticket with filtered-out links is hovered, un-hide those neighbours as translucent
+  // ghosts (and restore them on leave). A targeted patch of just those nodes - not a rebuild - so the rest of
+  // the graph never repaints. Their edges are revealed by `buildEdges` (see `ghostRevealed`).
+  const ghostedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const ghosts = (hoveredId ? previewReveal.get(hoveredId) : undefined) ?? new Set<string>();
+    const previous = ghostedRef.current;
+    if (ghosts.size === 0 && previous.size === 0) return;
+    setNodes((current) =>
+      current.map((node) => {
+        if (ghosts.has(node.id)) return { ...node, hidden: false, style: { ...node.style, opacity: 0.42 } };
+        if (previous.has(node.id)) {
+          const style = { ...node.style };
+          delete style.opacity;
+          return { ...node, hidden: hiddenIds.has(node.id), style };
+        }
+        return node;
+      }),
+    );
+    ghostedRef.current = ghosts;
+  }, [hoveredId, previewReveal, hiddenIds, setNodes]);
 
   const selected = selectedId ? (items.find((item) => item.id === selectedId) ?? null) : null;
   const detail = selected ? sectionAround(designDoc, selected.line) : "";
@@ -168,12 +205,14 @@ export function App() {
     }
   };
 
-  // Hover a node (ticket or area box) that has a dependency path to highlight every path touching it; ignore
-  // the dependency-free cards so hovering them never restyles the edges for nothing.
+  // Hover a ticket that has a dependency path to light the paths directly attached to it (dependency-free cards
+  // and area boxes are ignored); hover an edge to light just that one.
   const onNodeMouseEnter: NodeMouseHandler = (_event, node) => {
     if (linkedNodes.has(node.id)) setHoveredId(node.id);
   };
   const onNodeMouseLeave: NodeMouseHandler = () => setHoveredId(null);
+  const onEdgeMouseEnter: EdgeMouseHandler = (_event, edge) => setHoveredEdgeId(edge.id);
+  const onEdgeMouseLeave: EdgeMouseHandler = () => setHoveredEdgeId(null);
 
   const counts = useMemo(() => {
     const byArea = new Map<string, number>();
@@ -264,6 +303,8 @@ export function App() {
               onNodeClick={onNodeClick}
               onNodeMouseEnter={onNodeMouseEnter}
               onNodeMouseLeave={onNodeMouseLeave}
+              onEdgeMouseEnter={onEdgeMouseEnter}
+              onEdgeMouseLeave={onEdgeMouseLeave}
               onPaneClick={() => setSelectedId(null)}
               nodesDraggable={!locked}
               fitView
