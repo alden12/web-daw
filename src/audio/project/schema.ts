@@ -157,6 +157,26 @@ export const groupDataSchema = z.object({
 const customInstrumentSchema = instrumentDefSchema as unknown as z.ZodType<GraphInstrumentDef>;
 const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDef>;
 
+/**
+ * A project's time signature: `numerator` beats to the bar, each a `1/denominator` note. A "beat"
+ * in the app is a fixed quarter-note, so bar length in beats is `numerator * 4 / denominator`
+ * (integer for x/4, fractional for x/8). Denominator is a power of two per convention. Default 4/4.
+ * v1 wires the numerator (x/4) in the UI; the denominator rides here already so x/8 needs no schema
+ * change - see docs/DESIGN.md (DAW-10).
+ */
+export const timeSignatureSchema = z.object({
+  numerator: z.number().int().min(1).max(32),
+  denominator: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(32)]),
+});
+
+/** The default time signature (common time). Used to heal older docs on load and seed new projects. */
+export const DEFAULT_TIME_SIGNATURE = { numerator: 4, denominator: 4 } as const;
+
+/** Bar length in beats (a beat = a quarter-note): `numerator * 4 / denominator`. Integer for x/4,
+ *  fractional for x/8. The scheduler, rulers, and grid all project the meter through this one formula. */
+export const beatsPerBar = (timeSignature: z.infer<typeof timeSignatureSchema>): number =>
+  (timeSignature.numerator * 4) / timeSignature.denominator;
+
 /* -------------------------------------------------------------------------- */
 /* Project root (project.json)                                                */
 /* -------------------------------------------------------------------------- */
@@ -173,6 +193,8 @@ export const projectDataSchema = z.object({
   loopStart: z.number().optional(),
   grooveId: z.string().optional(),
   grooveAmount: z.number().optional(),
+  // Optional + healed to 4/4 on load (like loopStart/grooveId), so older docs need no schema bump.
+  timeSignature: timeSignatureSchema.optional(),
   samples: z.array(sampleAssetSchema).optional(),
   customInstruments: z.array(customInstrumentSchema).optional(),
   customEffects: z.array(customEffectSchema).optional(),
@@ -267,6 +289,7 @@ export type InstrumentTrackData = z.infer<typeof instrumentTrackDataSchema>;
 export type AudioTrackData = z.infer<typeof audioTrackDataSchema>;
 export type TrackData = z.infer<typeof trackDataSchema>;
 export type GroupData = z.infer<typeof groupDataSchema>;
+export type TimeSignature = z.infer<typeof timeSignatureSchema>;
 export type ProjectData = z.infer<typeof projectDataSchema>;
 
 /* -------------------------------------------------------------------------- */

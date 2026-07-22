@@ -30,7 +30,8 @@ import { DrumRoll } from "./DrumRoll";
 import { ClipRail } from "./ClipRail";
 import { Waveform } from "./Waveform";
 import { Ruler } from "./timeline/Ruler";
-import { beatToX, DEFAULT_BEATS_PER_BAR } from "./timeline/timeGrid";
+import { beatToX } from "./timeline/timeGrid";
+import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { beginPointerDrag } from "./pointerDrag";
 import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
@@ -147,6 +148,7 @@ function AudioClipPanel({
   track,
   scheduler,
   tempoBpm,
+  beatsPerBar,
   loopStart,
   loopLength,
   dispatch,
@@ -154,6 +156,8 @@ function AudioClipPanel({
   track: AudioTrack;
   scheduler: Scheduler;
   tempoBpm: number;
+  /** Bar length in beats (from the project time signature), for the bar gridlines. */
+  beatsPerBar: number;
   /** Arrangement loop region (beats), for the launch-mode playhead window. */
   loopStart: number;
   loopLength: number;
@@ -294,7 +298,7 @@ function AudioClipPanel({
                   style={{
                     backgroundImage: [
                       `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${
-                        pxPerBeat * DEFAULT_BEATS_PER_BAR
+                        pxPerBeat * beatsPerBar
                       }px)`,
                       `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${pxPerBeat}px)`,
                     ].join(", "),
@@ -622,6 +626,7 @@ export function CenterWorkbench({
             track={selectedTrack}
             scheduler={scheduler}
             tempoBpm={project.tempoBpm}
+            beatsPerBar={beatsPerBarOf(project.timeSignature)}
             loopStart={project.loopStart}
             loopLength={project.lengthBeats - project.loopStart}
             dispatch={dispatch}

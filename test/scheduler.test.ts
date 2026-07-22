@@ -24,6 +24,13 @@ describe("metronomeClicksInBeatRange", () => {
         .map((c) => c.atBeat),
     ).toEqual([0, 4]);
   });
+  it("accents on the time-signature's beats per bar (3/4 downbeats every 3)", () => {
+    expect(
+      metronomeClicksInBeatRange(0, 9, 0, 12, 3)
+        .filter((c) => c.accent)
+        .map((c) => c.atBeat),
+    ).toEqual([0, 3, 6]);
+  });
   it("maps continuous beats through the loop so accents follow the loop start", () => {
     // loopLen 4 from 0: continuous beats 4,5 wrap to musical 0,1 -> beat 4 accents.
     expect(metronomeClicksInBeatRange(4, 6, 0, 4, 4)).toEqual([
