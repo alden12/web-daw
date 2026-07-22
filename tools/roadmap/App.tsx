@@ -83,6 +83,26 @@ export function App() {
     return hidden;
   }, [items, hiddenAreas, hiddenStatuses]);
 
+  // For each visible ticket, the filtered-out tickets it links to. Hovering it previews those as translucent
+  // ghosts (the ghost effect below), so you can inspect a connection the current filters would otherwise hide.
+  const previewReveal = useMemo(() => {
+    const structural = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+    const reveal = new Map<string, Set<string>>();
+    const add = (host: string, ghost: string) => {
+      const ghosts = reveal.get(host) ?? new Set<string>();
+      ghosts.add(ghost);
+      reveal.set(host, ghosts);
+    };
+    for (const item of items) {
+      for (const dep of item.deps) {
+        if (structural(dep, item.id)) continue;
+        if (hiddenIds.has(item.id) && !hiddenIds.has(dep)) add(dep, item.id);
+        if (hiddenIds.has(dep) && !hiddenIds.has(item.id)) add(item.id, dep);
+      }
+    }
+    return reveal;
+  }, [items, hiddenIds]);
+
   // React Flow needs controlled node/edge state (with change handlers) for dragging to take effect. The
   // layout is rebuilt from the markers whenever the filters/colour/selection change, but any node the user
   // has dragged keeps its manual position (tracked in `draggedPositions`), so re-layouts don't undo drags.
@@ -146,6 +166,28 @@ export function App() {
   useEffect(() => {
     setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds));
   }, [items, colours, colourMode, selectedId, hoveredId, hoveredEdgeId, hiddenIds, setEdges]);
+
+  // Ghost preview: while a ticket with filtered-out links is hovered, un-hide those neighbours as translucent
+  // ghosts (and restore them on leave). A targeted patch of just those nodes - not a rebuild - so the rest of
+  // the graph never repaints. Their edges are revealed by `buildEdges` (see `ghostRevealed`).
+  const ghostedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const ghosts = (hoveredId ? previewReveal.get(hoveredId) : undefined) ?? new Set<string>();
+    const previous = ghostedRef.current;
+    if (ghosts.size === 0 && previous.size === 0) return;
+    setNodes((current) =>
+      current.map((node) => {
+        if (ghosts.has(node.id)) return { ...node, hidden: false, style: { ...node.style, opacity: 0.42 } };
+        if (previous.has(node.id)) {
+          const style = { ...node.style };
+          delete style.opacity;
+          return { ...node, hidden: hiddenIds.has(node.id), style };
+        }
+        return node;
+      }),
+    );
+    ghostedRef.current = ghosts;
+  }, [hoveredId, previewReveal, hiddenIds, setNodes]);
 
   const selected = selectedId ? (items.find((item) => item.id === selectedId) ?? null) : null;
   const detail = selected ? sectionAround(designDoc, selected.line) : "";
