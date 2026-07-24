@@ -48,6 +48,15 @@ reusable shell helper **once** (takes `<file> [baseref] [line]`, does the materi
 `code --diff`, falls back to `code -g` when there is no diff) and call it per section - do
 not re-derive the temp-path/baseref plumbing each turn.
 
+**Multi-file sections: open ONE window, link the rest.** A section often spans several files (e.g.
+"add one edit type" touches a union, a dispatcher, a describer). Do **not** open a diff/editor window
+for each - a burst of windows flashing open reads as noise and the reader loses track of what they are
+even looking at. Instead: pick the single **most relevant** file (the one the section's explanation
+anchors to, usually the core mechanism, not the boilerplate satellites), jump the editor to just that
+one, and list the other files as clickable `file:line` **links** in the chat for the reader to open on
+demand. One editor jump per section, always. When you author the doc, put that anchor file in the
+section's `file` field and list the satellites in the prose (a `related:` line or inline links).
+
 Before the first `code -g` in a session, confirm the CLI exists with
 `command -v code`. If it is missing, tell the user (once) that auto-jump needs the
 `code` CLI ("Shell Command: Install 'code' command in PATH" from the VS Code
@@ -65,8 +74,11 @@ point - never dump multiple sections or the entire tour in one message.
 
 For each section:
 
-1. If mode b, `code -g <file>:<startLine>` to move the editor. Re-read the current
-   line numbers if the file looks like it has drifted from the doc (see "Drift").
+1. If mode b, jump the editor to the section's **anchor file only** (`code -g
+   <file>:<startLine>`, or the diff helper for a diff tour) - one window per section. If the
+   section spans multiple files, list the others as clickable `file:line` links in the chat
+   rather than opening a window for each (see "Multi-file sections"). Re-read the current line
+   numbers if the file looks like it has drifted from the doc (see "Drift").
 2. Print a compact header: `Section N/total - <title>` and the clickable
    `<file>:<startLine>` reference.
 3. When the section is dense or turns on a non-obvious design decision, open with a
