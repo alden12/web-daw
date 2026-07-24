@@ -2756,6 +2756,20 @@ robustness / config gaps:
   retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
   or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
 
+`HOST-10` `to-do` **MCP mirror: stream edits instead of full snapshots**
+
+- **Tech debt.** The local Node MCP server keeps a full `ProjectStore` mirror of the tab
+  (`server/mcpServer.ts`), kept current by inbound sync messages. The high-frequency edits already delta
+  (`paramChanged`, `clipSnapshot`), but **every structural/transport emit ships the whole `ProjectData`**:
+  `bridge.ts`'s `wireOutbound` sends a `projectStructure` snapshot on each `projectStore.subscribe` fire.
+  The pathological case is a continuous drag of a structural control (a volume fader, or a tempo /
+  time-signature numerator), which calls `emit()` per frame -> a full-project `JSON.stringify` ~60x/sec on
+  a large project. It runs over localhost (loopback) and only when an MCP client is connected, so the cost
+  is serialization CPU / GC, not network bytes - hence debt, not a live bug. **Fix:** send the `EditCommand`
+  and `applyEdit` it into the mirror (the append-edits model the network authority already uses,
+  `server/api/rooms.ts`) - O(edit), not O(project). A cheap stopgap is to rAF/debounce the
+  `projectStructure` send so a drag collapses to one snapshot at drag-end.
+
 ### Foundations & deferred notes (no ticket)
 
 Cross-cutting done infrastructure and deferred notes that do not belong to a single HOST ticket.
