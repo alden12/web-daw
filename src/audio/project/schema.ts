@@ -164,9 +164,14 @@ const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDe
  * v1 wires the numerator (x/4) in the UI; the denominator rides here already so x/8 needs no schema
  * change - see docs/DESIGN.md (DAW-10).
  */
+/** Time-signature bounds, shared by the schema (which validates/rejects at boundaries) and the
+ *  ProjectStore (which coerces/clamps trusted values) so the limits live in exactly one place. */
+export const TIME_SIGNATURE_NUMERATOR_RANGE = { min: 1, max: 32 } as const;
+export const TIME_SIGNATURE_DENOMINATORS = [1, 2, 4, 8, 16, 32] as const;
+
 export const timeSignatureSchema = z.object({
-  numerator: z.number().int().min(1).max(32),
-  denominator: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(32)]),
+  numerator: z.number().int().min(TIME_SIGNATURE_NUMERATOR_RANGE.min).max(TIME_SIGNATURE_NUMERATOR_RANGE.max),
+  denominator: z.literal(TIME_SIGNATURE_DENOMINATORS),
 });
 
 /** The default time signature (common time). Used to heal older docs on load and seed new projects. */
@@ -176,6 +181,12 @@ export const DEFAULT_TIME_SIGNATURE = { numerator: 4, denominator: 4 } as const;
  *  fractional for x/8. The scheduler, rulers, and grid all project the meter through this one formula. */
 export const beatsPerBar = (timeSignature: z.infer<typeof timeSignatureSchema>): number =>
   (timeSignature.numerator * 4) / timeSignature.denominator;
+
+/** The length in beats (quarter-notes) of the note the denominator counts - the meter's "shown beat":
+ *  `4 / denominator` (1 for x/4, 0.5 for x/8). A bar is `numerator` of these. The ruler ticks and the
+ *  metronome step by this, so x/8 shows/clicks eighth-notes with the bar line landing on a tick. */
+export const beatUnitBeats = (timeSignature: z.infer<typeof timeSignatureSchema>): number =>
+  4 / timeSignature.denominator;
 
 /* -------------------------------------------------------------------------- */
 /* Project root (project.json)                                                */

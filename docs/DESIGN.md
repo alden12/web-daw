@@ -929,12 +929,14 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   `BEATS_PER_BAR = 4` to the project's `beatsPerBar` getter. The denominator is stored (default 4) and rides
   the whole data model already, but stays fixed at 4 in the UI/MCP this slice; bars remain integer beats.
 
-  `DAW-10.2` `to-do` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
-  Unlock the denominator in the UI (and widen the `set_time_signature` MCP tool). The schema, edit,
-  persistence, and migration already carry `denominator`, so the remaining work is float-aware bar-line
-  placement: bars fall on fractional beats (6/8 = 3 beats, 7/8 = 3.5), so `beatTicks` / `Ruler` must place
-  bar lines at multiples of `beatsPerBar` rather than the integer `beat % beatsPerBar === 0` test, plus the
-  metronome's compound-meter pulse (accent per dotted beat).
+  `DAW-10.2` `review` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
+  Unlocked the denominator (a `<select>` beside the numerator; the `set_time_signature` MCP tool now takes
+  it too). The subdivision is the meter's "shown beat" (`beatUnitBeats = 4/denominator`: a quarter in x/4,
+  an eighth in x/8), so the ruler ticks and the metronome step by it and 7/8 shows 7 eighth-beats with the
+  bar line landing on a tick. `beatTicks` iterates by tick *index* (not accumulating beats) so the
+  fractional-bar test (7/8 bars every 3.5 beats) stays exact; `metronomeClicksInBeatRange` gained a
+  `beatUnit` step and accents the bar downbeat; the recorder count-in matches. Compound accent *grouping*
+  (6/8 as two dotted-quarter pulses) is a later nicety - downbeat-only for now.
 
 - `DAW-11` `to-do` **Timeline loop enable/disable toggle**
 
@@ -2753,6 +2755,20 @@ robustness / config gaps:
   handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
   retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
   or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
+
+`HOST-10` `to-do` **MCP mirror: stream edits instead of full snapshots**
+
+- **Tech debt.** The local Node MCP server keeps a full `ProjectStore` mirror of the tab
+  (`server/mcpServer.ts`), kept current by inbound sync messages. The high-frequency edits already delta
+  (`paramChanged`, `clipSnapshot`), but **every structural/transport emit ships the whole `ProjectData`**:
+  `bridge.ts`'s `wireOutbound` sends a `projectStructure` snapshot on each `projectStore.subscribe` fire.
+  The pathological case is a continuous drag of a structural control (a volume fader, or a tempo /
+  time-signature numerator), which calls `emit()` per frame -> a full-project `JSON.stringify` ~60x/sec on
+  a large project. It runs over localhost (loopback) and only when an MCP client is connected, so the cost
+  is serialization CPU / GC, not network bytes - hence debt, not a live bug. **Fix:** send the `EditCommand`
+  and `applyEdit` it into the mirror (the append-edits model the network authority already uses,
+  `server/api/rooms.ts`) - O(edit), not O(project). A cheap stopgap is to rAF/debounce the
+  `projectStructure` send so a drag collapses to one snapshot at drag-end.
 
 ### Foundations & deferred notes (no ticket)
 

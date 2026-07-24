@@ -38,7 +38,13 @@ import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/de
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
-import { DEFAULT_TIME_SIGNATURE, beatsPerBar } from "./schema";
+import {
+  DEFAULT_TIME_SIGNATURE,
+  TIME_SIGNATURE_NUMERATOR_RANGE,
+  TIME_SIGNATURE_DENOMINATORS,
+  beatsPerBar,
+  beatUnitBeats,
+} from "./schema";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
 import type {
@@ -56,12 +62,10 @@ import type {
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
-const MIN_TS_NUMERATOR = 1; // beats per bar
-const MAX_TS_NUMERATOR = 32; // beats per bar
-// The note that gets one beat (a power of two). Typed as the literal union so the guard narrows.
-const VALID_TS_DENOMINATORS: TimeSignature["denominator"][] = [1, 2, 4, 8, 16, 32];
+// Time-signature bounds are shared with the zod schema (the one source), so the store's coercion
+// and the schema's validation can't drift. The guard narrows a number to the denominator union.
 const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>
-  (VALID_TS_DENOMINATORS as number[]).includes(value);
+  (TIME_SIGNATURE_DENOMINATORS as readonly number[]).includes(value);
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
@@ -280,6 +284,11 @@ export class ProjectStore {
    *  scheduler, rulers, and grid all project the meter through the shared `beatsPerBar` helper. */
   get beatsPerBar(): number {
     return beatsPerBar(this.timeSig);
+  }
+  /** The meter's "shown beat" in beats (the note the denominator counts): 1 for x/4, 0.5 for x/8.
+   *  The ruler ticks and the metronome step by this so x/8 subdivides into eighths. */
+  get beatUnit(): number {
+    return beatUnitBeats(this.timeSig);
   }
   get name(): string {
     return this.projectName;
@@ -844,7 +853,11 @@ export class ProjectStore {
   /** Set the project time signature. Numerator clamps to a whole beats-per-bar; omitted or invalid
    *  denominators keep the current one (this store coerces - the MCP boundary validates). */
   setTimeSignature(numerator: number, denominator?: number): void {
-    const nextNumerator = clamp(Math.round(numerator), MIN_TS_NUMERATOR, MAX_TS_NUMERATOR);
+    const nextNumerator = clamp(
+      Math.round(numerator),
+      TIME_SIGNATURE_NUMERATOR_RANGE.min,
+      TIME_SIGNATURE_NUMERATOR_RANGE.max,
+    );
     const requested = denominator ?? this.timeSig.denominator;
     const nextDenominator = isValidDenominator(requested) ? requested : this.timeSig.denominator;
     if (nextNumerator === this.timeSig.numerator && nextDenominator === this.timeSig.denominator) return;

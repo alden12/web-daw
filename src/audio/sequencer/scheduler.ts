@@ -97,11 +97,12 @@ export function tileClipNotes(notes: NoteEvent[], clipLen: number, offset: numbe
 }
 
 /**
- * Pure: metronome clicks (whole beats) whose continuous onset lands in
- * [fromBeat, toBeat). Continuous beat 0 = playback start = the loop's start, so a
- * continuous beat `b` maps to the musical beat `loopStart + (b mod loopLen)`; the
- * click is accented on each bar (musical beat divisible by `beatsPerBar`). Matches
- * the note scheduler's half-open range so clicks and notes line up tick to tick.
+ * Pure: metronome clicks (one per shown beat) whose continuous onset lands in [fromBeat, toBeat).
+ * Continuous beat 0 = playback start = the loop's start, so a continuous beat `b` maps to the musical
+ * beat `loopStart + (b mod loopLen)`; the click is accented on each bar downbeat. `beatUnit` is the
+ * shown-beat size in beats (1 for x/4, 0.5 for x/8), so x/8 clicks eighths and the bar accent still
+ * lands on the downbeat. Iterating by click *index* keeps the bar test exact for fractional bars.
+ * Matches the note scheduler's half-open range so clicks and notes line up tick to tick.
  */
 export function metronomeClicksInBeatRange(
   fromBeat: number,
@@ -109,12 +110,16 @@ export function metronomeClicksInBeatRange(
   loopStart: number,
   loopLen: number,
   beatsPerBar: number,
+  beatUnit: number = 1,
 ): { atBeat: number; accent: boolean }[] {
   const out: { atBeat: number; accent: boolean }[] = [];
-  if (loopLen <= 0 || beatsPerBar <= 0 || toBeat <= fromBeat) return out;
-  for (let b = Math.ceil(fromBeat); b < toBeat; b++) {
-    const musical = loopStart + (((b % loopLen) + loopLen) % loopLen);
-    out.push({ atBeat: b, accent: musical % beatsPerBar === 0 });
+  if (loopLen <= 0 || beatsPerBar <= 0 || beatUnit <= 0 || toBeat <= fromBeat) return out;
+  const unitsPerBar = Math.max(1, Math.round(beatsPerBar / beatUnit)); // shown beats per bar (numerator)
+  for (let index = Math.max(0, Math.ceil(fromBeat / beatUnit - 1e-9)); index * beatUnit < toBeat; index++) {
+    const atBeat = index * beatUnit;
+    if (atBeat < fromBeat) continue;
+    const musical = loopStart + (((atBeat % loopLen) + loopLen) % loopLen);
+    out.push({ atBeat, accent: Math.round(musical / beatUnit) % unitsPerBar === 0 });
   }
   return out;
 }
@@ -242,6 +247,7 @@ export class Scheduler implements TransportClock {
         loopStart,
         loopLen,
         this.project.beatsPerBar,
+        this.project.beatUnit,
       )) {
         const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
         this.engine.scheduleClick(when, accent);
