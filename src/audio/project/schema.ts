@@ -164,9 +164,14 @@ const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDe
  * v1 wires the numerator (x/4) in the UI; the denominator rides here already so x/8 needs no schema
  * change - see docs/DESIGN.md (DAW-10).
  */
+/** Time-signature bounds, shared by the schema (which validates/rejects at boundaries) and the
+ *  ProjectStore (which coerces/clamps trusted values) so the limits live in exactly one place. */
+export const TIME_SIGNATURE_NUMERATOR_RANGE = { min: 1, max: 32 } as const;
+export const TIME_SIGNATURE_DENOMINATORS = [1, 2, 4, 8, 16, 32] as const;
+
 export const timeSignatureSchema = z.object({
-  numerator: z.number().int().min(1).max(32),
-  denominator: z.union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(32)]),
+  numerator: z.number().int().min(TIME_SIGNATURE_NUMERATOR_RANGE.min).max(TIME_SIGNATURE_NUMERATOR_RANGE.max),
+  denominator: z.literal(TIME_SIGNATURE_DENOMINATORS),
 });
 
 /** The default time signature (common time). Used to heal older docs on load and seed new projects. */

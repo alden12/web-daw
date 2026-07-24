@@ -34,6 +34,7 @@ import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequen
 import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
 import { BUILTIN_SAMPLES, builtinRef, assetRef } from "../src/audio/samples/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
+import { timeSignatureSchema } from "../src/audio/project/schema";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
 import {
   parseInstrumentDef,
@@ -1479,11 +1480,10 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
       title: "Set time signature",
       description:
         "Set the project time signature: the numerator is the beats per bar; the denominator (a power of two, default 4) is the note that gets one beat - e.g. 3/4, 7/8, 5/16.",
+      // Reuse the canonical time-signature schema so the tool's validation can't drift from it.
       inputSchema: {
-        numerator: z.number().int().min(1).max(32),
-        denominator: z
-          .union([z.literal(1), z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(32)])
-          .optional(),
+        numerator: timeSignatureSchema.shape.numerator,
+        denominator: timeSignatureSchema.shape.denominator.optional(),
       },
     },
     async ({ numerator, denominator }) => {
