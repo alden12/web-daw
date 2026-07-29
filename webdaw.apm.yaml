@@ -1657,6 +1657,17 @@ projects:
         id: 019faef9-b920-73ac-9eaa-913658f5ec30
         at: 2026-07-29T17:43:49.280Z
         actor: claude
+      - body: "Decision: the apm MCP server stays **local-only** for now. So
+          `webdaw.apm.yaml` is the portable thing of record - it is committed
+          and is plain YAML holding markdown, readable in an editor without any
+          tooling. CLAUDE.md, CONTRIBUTING.md and docs/HANDOVER.md were updated
+          to point at the **file**, with the MCP server described as the nicer
+          way in rather than the only way, so an outside contributor to the
+          public repo is never sent somewhere they cannot reach."
+        audience: user
+        id: 019faefe-60a1-731c-b7e1-5284a75111b7
+        at: 2026-07-29T17:48:54.305Z
+        actor: claude
     areas: []
     items:
       - ref: AGENT-1
