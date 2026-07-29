@@ -2,7 +2,7 @@
 
 > **Status: design.** Nothing described here is built yet. This is the map we build
 > against and update as we go, so the whole thing stays legible. Companion to
-> [DESIGN.md](./DESIGN.md) (the "agent-right" direction) and
+> the apm project `web-daw` (the "agent-right" direction, AGENT-2) and
 > [BRIEF.md](./BRIEF.md). No em-dash characters in this file (repo convention).
 
 The goal is a built-in AI collaborator that lives in the reserved right rail and can

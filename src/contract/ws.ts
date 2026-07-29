@@ -7,7 +7,7 @@
  * the client types are single-sourced.
  *
  * This is the realtime foundation: the destination is multiplayer editing (sync + live
- * play/record), which rides these messages over a socket. The model (see docs/DESIGN.md,
+ * play/record), which rides these messages over a socket. The model (see the apm project,
  * sync-service roadmap) is a server-authoritative per-project authority: a client `subscribe`s,
  * gets a `snapshot`, then sends `edit`s (applied optimistically locally) that the authority
  * orders by assigning `seq`, applies, persists, and echoes back as `editApplied` to every peer.

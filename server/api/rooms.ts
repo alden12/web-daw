@@ -4,7 +4,7 @@
  * load use), the current max `seq`, and its connected clients. It is the single serialization point for
  * a project: every inbound edit is assigned the next `seq`, applied, persisted to the `edits` table, and
  * broadcast to every peer as `editApplied`. Clients apply optimistically and reconcile/rebase off that
- * echo (see docs/DESIGN.md, sync-service roadmap).
+ * echo (see the apm project, HOST-1).
  *
  * DOM-free (Node): reuses `ProjectStore(false)` + `applyEdit`, exactly like `server/mcpServer.ts` and the
  * repository's replay path. A room is keyed by project id and persists as the project's *real* owner

@@ -1,7 +1,7 @@
 /**
  * Semantic diff between two project snapshots: a list of human-readable, musical
  * changes ("Lead: filter.cutoff 400 -> 800", "+4 notes in clip A") rather than a
- * text diff (DESIGN.md section 7). Pure functions over ProjectData, so the version
+ * text diff (see apm: "History and versioning"). Pure functions over ProjectData, so the version
  * timeline (15B.4) and any history tooling can render "what changed" between commits.
  */
 import type { ProjectData, TrackData, NoteClipData, AudioClipData } from "../project/types";

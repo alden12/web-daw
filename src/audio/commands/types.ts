@@ -2,7 +2,7 @@
  * The authored edit vocabulary: every durable change to the project, as a
  * serializable command. This is the keystone for undo/redo, the activity feed,
  * version history, and (next) the on-disk file format - all projections of one
- * append-only, authored command stream (DESIGN.md section 1.3).
+ * append-only, authored command stream (see apm: "Thesis").
  *
  * The vocabulary reuses the MCP wire protocol's edit shapes (`ServerToBrowser`)
  * so the two systems can't drift, minus the non-edits (navigation, live notes,
@@ -140,7 +140,7 @@ export type LocalEdit =
       // edit - queued offline, assigned an authoritative `seq` by the authority, broadcast to peers - and
       // the commit DAG is derived from these markers (HEAD = the latest marker's seq; a commit spans the
       // edits between it and the previous marker). No mutable HEAD pointer, so concurrent commits can't
-      // race. See docs/DESIGN.md (Phase B2).
+      // race. See HOST-6.
       type: "commit";
       message: string;
     }
@@ -151,7 +151,7 @@ export type LocalEdit =
       // plain forward edit: it rides the sync pipeline, applies optimistically, replays on peers, and
       // self-anchors on replay, with zero special-casing in the realtime authority. Rare + explicit, so
       // the snapshot payload is acceptable (unlike frequent commits, which stay lightweight markers). It
-      // is also a history node: `message` names it ("Revert to ..."). See docs/DESIGN.md (Phase B2).
+      // is also a history node: `message` names it ("Revert to ..."). See HOST-6.2.
       type: "loadSnapshot";
       project: ProjectData;
       message: string;

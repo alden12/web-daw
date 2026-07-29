@@ -5,7 +5,7 @@
  * into a Web Audio node graph, driven by the same ParamStore/schema keystone as the
  * class-based instruments, so UI, MCP, automation, and persistence are unchanged.
  *
- * This is the format the AI-authored / user library will target (see DESIGN.md 16).
+ * This is the format the AI-authored / user library will target (see INST-4).
  * It is deliberately small: a handful of node kinds (nodes.ts), literal-or-param
  * field values with an optional linear transform, and connections that target either
  * a node's audio input or one of its AudioParams (for modulation).
