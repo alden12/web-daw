@@ -35,7 +35,7 @@ export function createEffect(type: string, ctx: BaseAudioContext, store: ParamSt
 
 // --- built-in factories (self-registered) ---------------------------------
 // Delay, Distortion, and Tremolo are declarative graph effects (data, not code); the
-// rest are still class-based. See src/audio/graph and DESIGN.md 16.
+// rest are still class-based. See src/audio/graph and INST-4.
 registerEffectFactory(delay.type, (ctx, store) => new GraphEffect(ctx, store, delay));
 registerEffectFactory(distortion.type, (ctx, store) => new GraphEffect(ctx, store, distortion));
 registerEffectFactory("reverb", (ctx, store) => new ReverbEffect(ctx, store));

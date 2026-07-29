@@ -28,10 +28,7 @@
     "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "check:server": "tsc -p tsconfig.server.json",
-    "preview": "vite preview",
-    "roadmap:check": "tsx scripts/roadmap.ts --check",
-    "roadmap:list": "tsx scripts/roadmap.ts",
-    "roadmap:view": "vite tools/roadmap"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",

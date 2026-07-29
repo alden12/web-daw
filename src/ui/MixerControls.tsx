@@ -3,7 +3,7 @@
  * line with a triangle ticker) and an adjoined Mute/Solo button pair. The Fader is
  * built to host a live level meter later - it already accepts an optional `level`
  * (0..1) and `clip` and renders a meter bar behind the line (red when clipping);
- * callers just don't pass them yet (see DESIGN.md roadmap: per-bus metering).
+ * callers just don't pass them yet (per-bus metering is DAW-8.5).
  */
 import { useRef } from "react";
 

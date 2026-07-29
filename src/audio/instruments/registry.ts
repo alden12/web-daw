@@ -38,7 +38,7 @@ export function createInstrument(type: string, ctx: BaseAudioContext, store: Par
 
 // --- built-in factories (self-registered) ---------------------------------
 // Subtractive and FM are declarative graph instruments (data, not code); the rest are
-// still class-based. See src/audio/graph and DESIGN.md 16.
+// still class-based. See src/audio/graph and INST-4.
 registerInstrumentFactory(subtractive.type, (ctx, store) => new GraphInstrument(ctx, store, subtractive));
 registerInstrumentFactory(fm.type, (ctx, store) => new GraphInstrument(ctx, store, fm));
 registerInstrumentFactory(mellotronFlute.type, (ctx, store) => new GraphInstrument(ctx, store, mellotronFlute));
