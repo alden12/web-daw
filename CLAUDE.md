@@ -1,12 +1,19 @@
 # web-daw - conventions
 
-Architecture and project direction live in the **apm** project `web-daw` (the MCP
-server configured in `.mcp.json`, store `webdaw.apm.yaml`) - open it with
-`resume_project` and read its `protocol` section first. This file is the short list
+Architecture and project direction live in **`webdaw.apm.yaml`** - the project map
+(tickets, statuses, dependencies) plus the design narrative as context sections.
+It is committed, and it is plain YAML holding markdown, so **read it directly** if
+you have no tooling; start with its `protocol` section. This file is the short list
 of coding conventions to follow throughout the codebase.
 
-Comments in the codebase cite that project directly: a bare ticket ref (`DAW-10`,
-`HOST-6.2`, `INST-4`) or `apm: "<section>"` for one of its context sections.
+That file is the store of an **apm** project, and the `apm` MCP server in
+`.mcp.json` is the nicer way in (`resume_project`, `list_tickets`, `open_viewer`
+for the dependency graph). The server lives outside this repo, so that entry only
+resolves on a machine that has it checked out alongside - the YAML is the portable
+copy and stays the thing of record.
+
+Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.2`,
+`INST-4`) or `apm: "<section>"` for one of its context sections.
 
 ## Validation
 
@@ -88,10 +95,10 @@ Comments in the codebase cite that project directly: a bare ticket ref (`DAW-10`
 
 ## Roadmap
 
-- The **apm project `web-daw`** is the **single source of truth for the project map.** Tickets carry
-  their own status; `open_viewer` renders the dependency graph. Ticket refs match the old
-  `docs/DESIGN.md` markers exactly (including dotted sub-tickets like `DAW-8.1` / `HOST-6.2`), so
-  references in older commits and comments still resolve.
+- **`webdaw.apm.yaml`** is the **single source of truth for the project map.** Tickets carry their own
+  status and dependency edges; `open_viewer` (via the `apm` MCP server) renders the graph. Ticket refs
+  match the old `docs/DESIGN.md` markers exactly (including dotted sub-tickets like `DAW-8.1` /
+  `HOST-6.2`), so references in older commits and comments still resolve.
 - **Keep statuses current - nothing moves them automatically, it is a manual discipline.** When you
   open a PR that implements a ticket, set it to `review` in the *same* change (`review` = built and
   working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And whenever you

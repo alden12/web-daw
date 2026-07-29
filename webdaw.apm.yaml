@@ -1643,6 +1643,20 @@ projects:
         id: 019fae9e-2f9e-7438-a8c4-c957256c5c02
         at: 2026-07-29T16:03:50.302Z
         actor: claude
+      - body: "The migration is committed as **PR #105** (`slice-95-apm-migration`),
+          based on `slice-94-time-signature-denominator` to continue the stack -
+          `main` is 97 commits behind and never received the roadmap tooling, so
+          only `docs/DESIGN.md` existed there. The PR deletes the doc + tooling
+          and repoints ~30 code comments and 6 docs at this project. **One open
+          question for the reviewer:** `.mcp.json`'s apm entry points at
+          `../ai-project-manager/node_modules/.bin/vite-node`, a
+          sibling-checkout path that won't resolve on a fresh clone of the
+          public repo - and CLAUDE.md / CONTRIBUTING.md / HANDOVER.md now all
+          direct readers to it."
+        audience: user
+        id: 019faef9-b920-73ac-9eaa-913658f5ec30
+        at: 2026-07-29T17:43:49.280Z
+        actor: claude
     areas: []
     items:
       - ref: AGENT-1
