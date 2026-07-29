@@ -5,8 +5,14 @@ against primary user evidence (forum threads, issue trackers, post-mortems). It 
 biased toward **disconfirming** evidence: the goal was to find out where the design is wrong, not
 to build a case for it.
 
-`docs/DESIGN.md` remains the single source of truth for the roadmap. This file holds the evidence
-and the reasoning; any ticket it argues for lives there, not here.
+The **apm project `web-daw`** is the single source of truth for the roadmap. This file holds the
+evidence and the reasoning; any ticket it argues for lives there, not here.
+
+> **Note (2026-07-29):** this is a point-in-time evidence file. `docs/DESIGN.md` was migrated into
+> the apm project and deleted; its section references below are left exactly as written, because they
+> record what the design said *when the evidence was gathered*. Ticket refs (`DAW-13`, `AGENT-8`, ...)
+> are unchanged and still resolve. "DESIGN.md section 12" is now the "Open decisions" context section;
+> "section 3" is "Layout and UX"; "section 7" is "History and versioning".
 
 ---
 
@@ -726,8 +732,8 @@ Kept here so they are not cited later in good faith.
 The "so what" of everything above. **These proposals have now been actioned:** the tickets were promoted
 onto the `docs/DESIGN.md` roadmap (`DAW-13`; `AGENT-8`/`AGENT-9`/`AGENT-12`; and the reported-pain
 tickets as `AGENT-13` blank-page + `AGENT-14` mixing assist, renumbered because 10/11 were already
-taken), and the non-tickets were recorded as **open decisions** in DESIGN.md section 12. `scripts/roadmap.ts`
-reads **only** `docs/DESIGN.md`, so nothing here is a live marker. What remains below (D, E) is the
+taken), and the non-tickets were recorded as **open decisions** (now the apm project's "Open decisions"
+context section). Nothing in this file is a live ticket. What remains below (D, E) is the
 evidence and reasoning behind two of those decisions - branching, and the WAM host - kept as the trail.
 
 ### D. A decision, not a ticket

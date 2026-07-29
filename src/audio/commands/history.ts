@@ -2,7 +2,7 @@
  * Version history: the commit DAG layered on top of the authored edit log.
  * The edit log is the fine-grained working stream; a *commit* is a coarse, durable
  * checkpoint - a full snapshot plus the edits since the last commit, with an author,
- * message, and a parent pointer (DESIGN.md section 7). The DAG is the source of
+ * message, and a parent pointer (see apm: "History and versioning"). The DAG is the source of
  * truth; `project.json` is just where HEAD currently is.
  *
  * Hybrid creation: the store auto-checkpoints after a burst of edit activity
@@ -25,7 +25,7 @@ const CHECKPOINT_DEBOUNCE_MS = 4000;
 /**
  * Keyframe cadence: store a full snapshot at most every Nth commit; the commits
  * between are deltas that replay forward from it. Bounds both per-commit size and
- * the replay length needed to reconstruct any commit (DESIGN.md section 7).
+ * the replay length needed to reconstruct any commit (see apm: "History and versioning").
  */
 const KEYFRAME_INTERVAL = 16;
 

@@ -1,7 +1,7 @@
 /**
  * The project repository: the one seam the app uses to load/save the project
  * document and its audio samples. It reads/writes a *bundle* (see `bundleStore.ts`)
- * with this layout - the v1 of the on-disk format in docs/DESIGN.md section 10:
+ * with this layout - the v1 of the on-disk format in apm: "Project format and local-first data":
  *
  *   project.daw/
  *     manifest.json     formatVersion, project id, project-schema version

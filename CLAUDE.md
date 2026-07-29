@@ -1,7 +1,12 @@
 # web-daw - conventions
 
-Architecture and project direction live in `docs/DESIGN.md`. This file is the
-short list of coding conventions to follow throughout the codebase.
+Architecture and project direction live in the **apm** project `web-daw` (the MCP
+server configured in `.mcp.json`, store `webdaw.apm.yaml`) - open it with
+`resume_project` and read its `protocol` section first. This file is the short list
+of coding conventions to follow throughout the codebase.
+
+Comments in the codebase cite that project directly: a bare ticket ref (`DAW-10`,
+`HOST-6.2`, `INST-4`) or `apm: "<section>"` for one of its context sections.
 
 ## Validation
 
@@ -83,15 +88,15 @@ short list of coding conventions to follow throughout the codebase.
 
 ## Roadmap
 
-- `docs/DESIGN.md` is the **single source of truth for the project map.** Every ticket carries an
-  inline `` `AREA-N` `status` `` marker right beside its prose (syntax + the fixed status vocab are
-  documented in the doc's "Roadmap markers" section). `yarn roadmap:view` renders them as a graph;
-  `yarn roadmap:check` validates them (run it after touching a marker).
-- **Keep markers current - nothing moves them automatically, it is a manual discipline.** When you
-  open a PR that implements a ticket, flip its marker to `review` in the *same* change (`review` =
-  built and working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And
-  whenever you notice a stale status (a ticket really done/merged/in-progress/abandoned but marked
-  otherwise), fix it right away in whatever change you are already making - don't wait to be asked.
+- The **apm project `web-daw`** is the **single source of truth for the project map.** Tickets carry
+  their own status; `open_viewer` renders the dependency graph. Ticket refs match the old
+  `docs/DESIGN.md` markers exactly (including dotted sub-tickets like `DAW-8.1` / `HOST-6.2`), so
+  references in older commits and comments still resolve.
+- **Keep statuses current - nothing moves them automatically, it is a manual discipline.** When you
+  open a PR that implements a ticket, set it to `review` in the *same* change (`review` = built and
+  working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And whenever you
+  notice a stale status (a ticket really done/merged/in-progress/abandoned but marked otherwise), fix
+  it right away in whatever change you are already making - don't wait to be asked.
 
 - The parameter schema is the keystone: UI, MCP, automation, and persistence are
   projections of it. Don't add per-parameter or per-type UI/branching - map over

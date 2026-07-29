@@ -48,7 +48,7 @@ export interface PackedStack {
   steps: PackedStep[];
 }
 
-/** Persisted undo/redo stacks (delta-encoded), so undo survives a reload (DESIGN.md section 7). */
+/** Persisted undo/redo stacks (delta-encoded), so undo survives a reload (see apm: "History and versioning"). */
 export interface UndoState {
   undo: PackedStack;
   redo: PackedStack;
@@ -125,7 +125,7 @@ function coalesceKey(command: EditCommand): string {
  * never touch it). Shares the edit `seq` counter so it interleaves with edits in
  * feed order. Persisted as a parallel stream (notes.json) and swept into each
  * commit, so the narration survives a reload and the version timeline reads as a
- * narrated changelog (DESIGN.md section 7).
+ * narrated changelog (see apm: "History and versioning").
  */
 export interface FeedNote {
   seq: number;

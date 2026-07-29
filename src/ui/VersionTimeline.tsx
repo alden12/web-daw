@@ -1,5 +1,5 @@
 /**
- * The version timeline: the commit DAG as a readable history (DESIGN.md section 7).
+ * The version timeline: the commit DAG as a readable history (see apm: "History and versioning").
  * Save a named version, see the chain newest-first (two-voice colored, auto vs
  * named), expand a commit to see its semantic diff, and revert to it (which lands
  * a new commit - history stays append-only). The list is async (commits live in

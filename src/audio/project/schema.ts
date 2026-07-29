@@ -13,7 +13,7 @@
  * Depth: project.json is deep-validated down the tree (tracks/groups/clips/placements/
  * effects/params). Parameter *value* maps validate as `Record<string, ParamValue>` and
  * the `EditCommand` union stays STRUCTURAL (`{type: string}`) - deep per-param and
- * per-command validation are deferred (see docs/DESIGN.md). Object schemas are non-strict
+ * per-command validation are deferred (see apm: "Sync service - foundations and deferred notes"). Object schemas are non-strict
  * (unknown keys are ignored, not rejected) and the server stores the original JSON, so
  * validation is a gate, never a filter - evolving/extra fields never break a save.
  */
@@ -162,7 +162,7 @@ const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDe
  * in the app is a fixed quarter-note, so bar length in beats is `numerator * 4 / denominator`
  * (integer for x/4, fractional for x/8). Denominator is a power of two per convention. Default 4/4.
  * v1 wires the numerator (x/4) in the UI; the denominator rides here already so x/8 needs no schema
- * change - see docs/DESIGN.md (DAW-10).
+ * change - see DAW-10.
  */
 /** Time-signature bounds, shared by the schema (which validates/rejects at boundaries) and the
  *  ProjectStore (which coerces/clamps trusted values) so the limits live in exactly one place. */

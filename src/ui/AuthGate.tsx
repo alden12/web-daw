@@ -61,7 +61,7 @@ function GateCard({ children }: { children: ReactNode }) {
 }
 
 // Invite-only during the deploy/dev window. GitHub OAuth accepts any GitHub user, which is an open-signup
-// surface while the app is still unhardened (no per-owner quotas / rate-limiting yet - see DESIGN.md). So
+// surface while the app is still unhardened (no per-owner quotas / rate-limiting yet - see HOST-8). So
 // we ship Google-only: Google's "Testing" publishing mode is itself a whitelist (only test-user emails
 // added in the Google Cloud console can sign in). To re-enable GitHub once things are verified: flip this
 // flag AND re-enable the GitHub provider in the Supabase dashboard (both are needed).

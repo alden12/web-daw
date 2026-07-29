@@ -2,7 +2,7 @@
  * The client half of realtime multiplayer: an optimistic, total-order sync session against the
  * server-authoritative `Room` (server/api/rooms.ts). It rides the WS message contract (src/contract/ws.ts).
  *
- * The model (decided in docs/DESIGN.md, sync-service roadmap): the authority assigns a single monotonic
+ * The model (decided in the apm project, HOST-1): the authority assigns a single monotonic
  * `seq` to every edit; the client applies its own edits *immediately* (optimistically) and reconciles off
  * the authority's echo. We keep two views:
  *   - `base`  - the confirmed, server-ordered state (a headless ProjectStore advanced by `applyEdit` in
