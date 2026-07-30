@@ -1,25 +1,11 @@
 /**
  * Pure arpeggiator note math: given the held pitches (sorted ascending), a pattern, an
- * octave span, and a running step index, which pitch does this step play? And how many
- * beats is one step at a given rate. No audio, no clock, no state - unit-tested in
- * isolation; the arp strategy drives it on the transport grid.
+ * octave span, and a running step index, which pitch does this step play? No audio, no
+ * clock, no state - unit-tested in isolation; the arp strategy drives it on the transport
+ * grid, and the Euclidean sequencer reuses it to voice its pulses. (Step *length* math is
+ * shared separately, in ../rate.ts.)
  */
 export type ArpPattern = "up" | "down" | "updown" | "random";
-
-/** Note division -> beats (a beat is a quarter note; `T` is a triplet = x 2/3). */
-const RATE_BEATS: Record<string, number> = {
-  "1/4": 1,
-  "1/4T": 2 / 3,
-  "1/8": 0.5,
-  "1/8T": 1 / 3,
-  "1/16": 0.25,
-  "1/16T": 1 / 6,
-  "1/32": 0.125,
-};
-
-export function rateToBeats(rate: string): number {
-  return RATE_BEATS[rate] ?? 0.5;
-}
 
 /** Deterministic pseudo-random index for the `random` pattern (stable per step, testable). */
 const hashStep = (stepIndex: number): number => (Math.imul(stepIndex + 1, 2654435761) >>> 0) % 1000000;
