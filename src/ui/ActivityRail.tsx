@@ -3,85 +3,35 @@
  * between one view at a time - Project / Instruments / Effects / Patches / Samples
  * / Activity. Clicking the active icon collapses the panel to just this rail
  * (mirroring the agent panel's collapse-to-rail); clicking any other icon selects
- * that view (expanding first if collapsed). The set of views is data, so adding one
- * is a single entry here.
+ * that view (expanding first if collapsed). The set of views is data (libraryViews.tsx),
+ * shared with the touch shell's strip, so adding one is a single entry there.
  */
-import type { ReactNode } from "react";
 import { AccountAvatar } from "./AccountAvatar";
+import { RAIL_ITEMS, type LibraryView } from "./libraryViews";
 
-/** The one library view shown beside the rail. Persisted, so it survives a reload. */
-export type LibraryView = "search" | "project" | "instruments" | "effects" | "patches" | "samples" | "activity";
+export type { LibraryView, RailItem } from "./libraryViews";
 
-interface RailItem {
-  view: LibraryView;
-  label: string;
-  icon: ReactNode;
+/**
+ * The settings cog. Its own component (a 24-unit grid for the toothed ring, unlike the
+ * 16-grid view icons) so the rail and the touch shell's view strip share one icon.
+ */
+export function SettingsIcon({ className = "w-4.5 h-4.5" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
 }
-
-// 16px line icons (stroke = currentColor), matching the app's minimal glyph style.
-const svg = (children: ReactNode) => (
-  <svg
-    viewBox="0 0 16 16"
-    aria-hidden="true"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="w-4.5 h-4.5"
-  >
-    {children}
-  </svg>
-);
-
-const RAIL_ITEMS: RailItem[] = [
-  {
-    view: "search",
-    label: "Search",
-    icon: svg(
-      <>
-        <circle cx="7" cy="7" r="4.25" />
-        <path d="M10.2 10.2 13.5 13.5" />
-      </>,
-    ),
-  },
-  {
-    view: "project",
-    label: "Projects",
-    icon: svg(
-      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" />,
-    ),
-  },
-  {
-    view: "instruments",
-    label: "Instruments",
-    icon: svg(
-      <>
-        <rect x="2.5" y="4" width="11" height="8" rx="1" />
-        <path d="M6 4v4M8 4v4M10 4v4" />
-      </>,
-    ),
-  },
-  {
-    view: "effects",
-    label: "Effects",
-    icon: svg(
-      <>
-        <path d="M3 5h10M3 8h10M3 11h10" />
-        <circle cx="6" cy="5" r="1.4" fill="currentColor" stroke="none" />
-        <circle cx="10.5" cy="8" r="1.4" fill="currentColor" stroke="none" />
-        <circle cx="5" cy="11" r="1.4" fill="currentColor" stroke="none" />
-      </>,
-    ),
-  },
-  { view: "patches", label: "Patches", icon: svg(<path d="M4 2.5h8v11l-4-2.5-4 2.5z" />) },
-  {
-    view: "samples",
-    label: "Samples",
-    icon: svg(<path d="M2 8h1.5M4.5 5v6M6.5 3v10M8.5 5.5v5M10.5 4v8M12.5 6.5v3M14 8h.5" />),
-  },
-  { view: "activity", label: "Activity", icon: svg(<path d="M2 8h3l2-4 2 8 2-6 1.5 2H14" />) },
-];
 
 export function ActivityRail({
   active,
@@ -135,8 +85,7 @@ export function ActivityRail({
           gear. The avatar renders nothing in local/dev mode, so the gear stays put. */}
       <div className="mt-auto flex flex-col items-center w-full">
         <AccountAvatar onClick={onOpenAccount} />
-        {/* Agent settings (BYOK key + provider). A cog (24-unit grid for the toothed ring),
-            not the 16-grid view icons. */}
+        {/* Agent settings (BYOK key + provider). */}
         <button
           type="button"
           title="Settings"
@@ -144,19 +93,7 @@ export function ActivityRail({
           onClick={onOpenSettings}
           className="flex items-center justify-center w-full h-11 cursor-pointer text-faint hover:text-ink"
         >
-          <svg
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-4.5 h-4.5"
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+          <SettingsIcon />
         </button>
       </div>
     </nav>

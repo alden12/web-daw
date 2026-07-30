@@ -46,7 +46,7 @@ export function ResizeHandle({
       aria-orientation={orientation}
       aria-label={ariaLabel}
       onPointerDown={onPointerDown}
-      className={`absolute z-10 bg-transparent hover:bg-you/40 transition-colors ${
+      className={`absolute z-10 bg-transparent hover:bg-you/40 transition-colors touch-none ${
         orientation === "vertical" ? "w-1.5 cursor-col-resize" : "h-1.5 cursor-row-resize"
       }`}
       style={style}

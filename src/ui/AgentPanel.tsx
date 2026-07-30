@@ -185,7 +185,7 @@ export function AgentPanel({
   };
 
   return (
-    <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col min-w-0 overflow-hidden">
+    <div className="[grid-area:agent] bg-panel border-l border-line flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
       <div className="relative flex items-center gap-2 h-11 px-3 border-b border-line shrink-0">
         <span className="w-2 h-2 rounded-full bg-agent shrink-0" />
         <button

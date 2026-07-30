@@ -40,6 +40,14 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    /* Touch shell (MOBILE-1). The app is a fixed-height surface with its own scrolling
+       panels, so page-level touch gestures are all wrong here: `overscroll-behavior`
+       kills pull-to-refresh and rubber-banding at a panel's scroll end, and
+       `touch-action: manipulation` drops the 300ms double-tap-to-zoom delay so taps on
+       transport and tab controls fire immediately. Individual drag surfaces opt out
+       further with `touch-none`. */
+    overscroll-behavior: none;
+    touch-action: manipulation;
   }
 
   /* Low-profile scrollbars app-wide: no track background, just a light, slightly

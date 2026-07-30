@@ -107,10 +107,15 @@ export function ClipRail({
     }
   };
 
+  // The horizontal rail is the touch layout (MOBILE-1), sitting above the roll: no fixed
+  // height, and roomier padding on both axes so the chips are comfortable tap targets
+  // rather than a squashed strip.
   const containerClass = vertical
     ? "flex flex-col gap-1.5 p-2 w-full min-h-0 border-r border-line overflow-y-auto"
-    : "flex items-center gap-1.5 px-4 h-9 border-b border-line overflow-x-auto shrink-0";
-  const chipClass = vertical ? "w-full justify-between" : "shrink-0";
+    : "flex items-center gap-2 px-3 py-2.5 border-b border-line overflow-x-auto shrink-0";
+  // Padding lives here (not in the chip's own class) so the two orientations can differ
+  // without two conflicting Tailwind padding utilities on one element.
+  const chipClass = vertical ? "w-full justify-between py-1" : "shrink-0 py-1.5";
 
   return (
     <div className={`${containerClass} outline-none`} data-clip-rail tabIndex={0} onKeyDown={onKeyDown}>
@@ -130,7 +135,7 @@ export function ClipRail({
               setDraggedClip(content);
             }}
             onDragEnd={() => clearDraggedClip()}
-            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-grab active:cursor-grabbing ${
+            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 rounded-md border cursor-grab active:cursor-grabbing ${
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
@@ -183,7 +188,7 @@ export function ClipRail({
           type="button"
           title="Add a new empty clip"
           onClick={() => dispatch({ type: "addClip", trackId, id: newClipId(), empty: true })}
-          className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
+          className={`${chipClass} font-mono text-[11px] px-2 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
         >
           + Clip
         </button>

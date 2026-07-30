@@ -79,20 +79,24 @@ export function TransportBar({
       >
         {isPlaying ? "■ Stop" : "▶ Play"}
       </button>
-      <label className="inline-flex items-center gap-2 font-mono text-xs text-muted">
-        Tempo
+      {/* The word labels drop below `sm`: on a phone the transport is pinned above every
+          view (MOBILE-1) and has to fit 390px without clipping. The fields keep their
+          `aria-label` / `title`, so nothing is lost to assistive tech. */}
+      <label className="inline-flex items-center gap-2 font-mono text-xs text-muted" title="Tempo">
+        <span className="max-sm:hidden">Tempo</span>
         <input
           type="number"
           min={20}
           max={300}
           value={project.tempoBpm}
+          aria-label="Tempo (BPM)"
           onChange={(e) => dispatch({ type: "setTempo", bpm: Number(e.target.value) })}
           className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
         />
-        BPM
+        <span className="max-sm:hidden">BPM</span>
       </label>
       <label className="inline-flex items-center gap-1.5 font-mono text-xs text-muted" title="Time signature">
-        Meter
+        <span className="max-sm:hidden">Meter</span>
         <input
           type="number"
           min={1}
