@@ -5616,6 +5616,46 @@ projects:
         created_at: 2026-07-29T13:28:34.138Z
         updated_at: 2026-07-29T15:58:16.737Z
         deleted_at: 2026-07-29T15:58:16.737Z
+      - ref: HOST-16
+        area: HOST
+        title: "Offline UI flickers: the banner shifts the whole app, and the chip
+          oscillates"
+        status: to-do
+        sort_path: "000016"
+        priority: 0
+        body: |-
+          Reported by the user, 2026-07-30, on the deployed build with **no internet**: the top bar and the sync chip flash while the client tries to connect, and the result reads as the app being broken rather than as "you are offline".
+
+          Being offline is a **supported, benign state** here - edits are saved locally and flush on reconnect (HOST-5), and the copy already says so. So the UI should settle into a calm offline state, not strobe.
+
+          ## One mechanism is structural and readable from the code
+
+          `AppShell.tsx:375` renders the banner as a **conditional sibling in the flex column above the shell**:
+
+          ```tsx
+          {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
+          ```
+
+          So every time the status enters or leaves `offline`, the banner mounts or unmounts and **the entire app below it shifts by the banner's height** (~29px) - top bar, workspace, timeline, all of it. That is a whole-window jump, which is exactly what "looks broken" describes, and it happens no matter how small the underlying status change was.
+
+          **Fix direction:** take the banner out of the layout flow (overlay it, or reserve its height and slide/fade it in). A transient connection state should never resize the workspace.
+
+          ## The oscillation itself needs reproducing before fixing
+
+          Not yet confirmed - worth reproducing with DevTools offline before changing the transport. What the code shows:
+
+          - `setStatus` (`client.ts:246`) already no-ops on an unchanged value, so a plain retry loop should *not* churn: `drop()` sets `offline`, and the retry path (`client.ts:311-325`) calls `connect()` without setting `connecting`, so repeated failures stay on `offline`.
+          - The path that *does* return to `connecting` is `IdleController.onWake` (`client.ts:294-297`). If idle/hidden wake fires while there is no network - plausible on a phone, where visibility and resize events are frequent - the status cycles `offline -> connecting -> offline` on every wake, with backoff capped at `RECONNECT_MAX_MS = 10s`. That would produce exactly the observed repeating flash.
+          - `connecting` also carries `animate-pulse` on the chip dot (`ConnectionStatus.tsx:13`), so any visit to that state pulses rather than sitting still.
+
+          **Fix direction, once confirmed:** add hysteresis so short-lived transitions do not reach the UI - suppress `connecting` for the first few hundred ms of an attempt, and once `offline` has been entered, stay there visually until genuinely `online` rather than flipping back on each attempt. The transport's state machine can stay as it is; this is about what the UI is allowed to render.
+
+          ## Check the touch shell specifically
+
+          The report came from a phone. The banner sits *above* the shell, so on the touch shell it also shifts the pinned transport and pushes the bottom tab bar - worth confirming the fix on both shells (MOBILE-1).
+        id: 019fb3dc-761a-76ab-8e81-017f725ed09d
+        created_at: 2026-07-30T16:29:57.658Z
+        updated_at: 2026-07-30T16:29:57.658Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
