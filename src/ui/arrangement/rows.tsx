@@ -96,7 +96,6 @@ function TrackHeader({
   selected,
   armed,
   onArmToggle,
-  onActivate,
   projectStore,
   dispatch,
 }: {
@@ -106,8 +105,6 @@ function TrackHeader({
   /** Audio tracks only: armed to receive the next recorded take. */
   armed: boolean;
   onArmToggle: () => void;
-  /** Fired after selecting, for shells that navigate to the editor on a track tap. */
-  onActivate?: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
 }) {
@@ -118,10 +115,7 @@ function TrackHeader({
   const accent = authorHex(projectStore.authorOf(trackKey(track.id)) ?? "you", presence);
   return (
     <div
-      onClick={() => {
-        projectStore.selectTrack(track.id);
-        onActivate?.();
-      }}
+      onClick={() => projectStore.selectTrack(track.id)}
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
         selected ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))]" : "bg-panel"
       }`}
@@ -198,7 +192,6 @@ export function TrackRow({
   onSelect,
   onMark,
   onHover,
-  onActivate,
   stickyHeader = true,
 }: {
   meta: TrackMeta;
@@ -223,8 +216,6 @@ export function TrackRow({
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
   onHover: (beat: number | null) => void;
-  /** Fired when this track's header is tapped, after it is selected. */
-  onActivate?: () => void;
 }) {
   const track = projectStore.getTrack(meta.id);
   return (
@@ -236,7 +227,6 @@ export function TrackRow({
           selected={selectedTrack}
           armed={armed}
           onArmToggle={onArmToggle}
-          onActivate={onActivate}
           projectStore={projectStore}
           dispatch={dispatch}
         />

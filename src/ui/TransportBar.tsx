@@ -20,6 +20,7 @@ export function TransportBar({
   dispatch,
   isPlaying,
   started,
+  compact = false,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -27,20 +28,30 @@ export function TransportBar({
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
+  /**
+   * Touch layout (MOBILE-1): keep only what you reach for mid-idea - record and play -
+   * and let the shell's ⋮ carry tempo, meter and the metronome, which frees the top bar
+   * for undo/redo. The shell owns all three outright while compact, so each has one
+   * writer, not two.
+   */
+  compact?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
   const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
 
-  // The scheduler reads this flag each tick; keep it in sync with the preference.
+  // The scheduler reads this flag each tick; keep it in sync with the preference. While
+  // compact the shell's ⋮ owns the metronome instead, so this stands down rather than
+  // having two writers push the same preference at the same object.
   useEffect(() => {
+    if (compact) return;
     scheduler.setMetronomeEnabled(metronome);
-  }, [scheduler, metronome]);
+  }, [scheduler, metronome, compact]);
 
   const recording = rec.status === "recording" || rec.status === "counting";
 
   return (
-    <div className="flex items-center gap-3">
+    <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
       <button
         type="button"
         disabled={!started}
@@ -54,7 +65,9 @@ export function TransportBar({
             : "Record a clip"
         }
         onClick={() => recorder.toggle()}
-        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+        className={`inline-flex items-center justify-center rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          compact ? "w-9 h-9" : "w-8 h-8"
+        } ${
           recording
             ? "text-claude bg-claude/15 border-claude/55"
             : "text-claude/80 bg-card border-line hover:border-claude/55"
@@ -75,14 +88,16 @@ export function TransportBar({
         // Stopping while recording finalizes the take (recorder.stop also stops the
         // transport), so Stop never leaves a recording dangling.
         onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
-        className="font-mono text-[13px] min-w-18 px-3 py-1.5 rounded-lg text-you bg-you/15 border border-you/45 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        className={`font-mono text-[13px] min-w-18 px-3 rounded-lg text-you bg-you/15 border border-you/45 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+          compact ? "h-9" : "py-1.5"
+        }`}
       >
         {isPlaying ? "■ Stop" : "▶ Play"}
       </button>
       {/* The word labels drop below `sm`: on a phone the transport is pinned above every
           view (MOBILE-1) and has to fit 390px without clipping. The fields keep their
           `aria-label` / `title`, so nothing is lost to assistive tech. */}
-      <label className="inline-flex items-center gap-2 font-mono text-xs text-muted" title="Tempo">
+      <label hidden={compact} className="inline-flex items-center gap-2 font-mono text-xs text-muted" title="Tempo">
         <span className="max-sm:hidden">Tempo</span>
         <input
           type="number"
@@ -95,7 +110,11 @@ export function TransportBar({
         />
         <span className="max-sm:hidden">BPM</span>
       </label>
-      <label className="inline-flex items-center gap-1.5 font-mono text-xs text-muted" title="Time signature">
+      <label
+        hidden={compact}
+        className="inline-flex items-center gap-1.5 font-mono text-xs text-muted"
+        title="Time signature"
+      >
         <span className="max-sm:hidden">Meter</span>
         <input
           type="number"
@@ -134,6 +153,7 @@ export function TransportBar({
       </label>
       <button
         type="button"
+        hidden={compact}
         aria-label="Metronome"
         aria-pressed={metronome}
         title={metronome ? "Metronome on" : "Metronome off"}

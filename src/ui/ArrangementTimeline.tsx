@@ -27,7 +27,7 @@ import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
-import { Menu } from "./Menu";
+import { Menu, type MenuItem } from "./Menu";
 import { GROOVES } from "../audio/grooves/catalog";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
@@ -40,6 +40,8 @@ import { beatToX } from "./timeline/timeGrid";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
+import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
+import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import {
   ROW,
   ROW_PX,
@@ -83,7 +85,7 @@ export function ArrangementTimeline({
   started,
   showTransport = true,
   stickyHeaders = true,
-  onEditTrack,
+  compact = false,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -104,26 +106,30 @@ export function ArrangementTimeline({
    */
   stickyHeaders?: boolean;
   /**
-   * Fired when a tap on a track header or a clip block picks a track to work on. The
-   * touch shell uses it to follow the selection into the Edit tab, where the desktop
-   * shows the timeline and the workbench at once. Deliberately not fired by a click on
-   * empty lane space, which drops a paste marker - jumping away would hide it.
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
+   * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
    */
-  onEditTrack?: () => void;
+  compact?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
-  // Bring the selected track's row into view (e.g. when selection is driven from the
-  // project tree). `nearest` is a no-op when the row is already visible.
+  // Bring the selected track's row into view vertically (e.g. when selection is driven
+  // from the project tree), without touching the time axis. `scrollIntoView` won't do:
+  // giving it only `block` leaves `inline` defaulting to "nearest", so it also nudges the
+  // view sideways - which quietly moved the timeline off the offset just restored for it.
   const selectedTrackId = project.selectedTrackId;
   useEffect(() => {
     if (!selectedTrackId) return;
-    scrollRef.current
-      ?.querySelector(`[data-track-id="${CSS.escape(selectedTrackId)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    const scroller = scrollRef.current;
+    const row = scroller?.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(selectedTrackId)}"]`);
+    if (!scroller || !row) return;
+    const above = row.offsetTop - RULER_H; // the ruler is sticky, so it covers this much
+    const below = row.offsetTop + row.offsetHeight - scroller.clientHeight;
+    if (above < scroller.scrollTop) scroller.scrollTop = above;
+    else if (below > scroller.scrollTop) scroller.scrollTop = below;
   }, [selectedTrackId]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
@@ -179,7 +185,6 @@ export function ArrangementTimeline({
     setMarker(null);
     projectStore.selectTrack(trackId);
     projectStore.selectClip(trackId, p.clipId);
-    onEditTrack?.();
   };
 
   // Clicking an empty lane drops a paste marker (track + beat) and clears the
@@ -321,6 +326,11 @@ export function ArrangementTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, [pxPerBeat, setPxPerBeat, headerW]);
 
+  // Share the time-axis offset with the lane strip, which shows this same grid from
+  // another tab on touch. A sticky header column does not consume scroll, so beat 0 is
+  // at the content's left edge; once it scrolls away with the lanes it leads by headerW.
+  useSharedGridScroll(scrollRef, pxPerBeat, stickyHeaders ? 0 : headerW);
+
   // Drive the playhead off the audio clock (0 when stopped).
   useAnimationFrame(() => {
     const el = playheadRef.current;
@@ -359,12 +369,92 @@ export function ArrangementTimeline({
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
 
+  // The toolbar's options, as data - so the same list can be a kebab on desktop or fold
+  // into the shell's single ⋮ on touch (MOBILE-1).
+  const optionItems: MenuItem[] = [
+    {
+      label: "Add group",
+      onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
+    },
+    // Every track lives in a group, so adding one picks the destination group
+    // (or a fresh group). Nested as submenus so the menu stays short.
+    { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
+    { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
+    { separator: true },
+    // Recording settings live here too (one toolbar menu, not a second kebab).
+    {
+      label: "Count-in",
+      submenu: [
+        {
+          label: "No count-in",
+          checked: countInBars === 0,
+          onClick: () => setCountInBars(0),
+        },
+        {
+          label: "1 bar",
+          checked: countInBars === 1,
+          onClick: () => setCountInBars(1),
+        },
+        {
+          label: "2 bars",
+          checked: countInBars === 2,
+          onClick: () => setCountInBars(2),
+        },
+      ],
+    },
+    { separator: true },
+    // Groove: project-wide swing/feel applied at playback (non-destructive).
+    {
+      label: "Groove",
+      submenu: GROOVES.map((groove) => ({
+        label: groove.name,
+        checked: project.grooveId === groove.id,
+        onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
+      })),
+    },
+    {
+      label: "Groove amount",
+      submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
+        label: `${Math.round(value * 100)}%`,
+        checked: project.grooveAmount === value,
+        onClick: () => dispatch({ type: "setGroove", amount: value }),
+      })),
+    },
+  ];
+
+  // On touch the toolbar row goes away and its contents move to the shell's ⋮: the
+  // options above, plus the snap and zoom controls that sit on the toolbar's right.
+  usePublishSurfaceControls(
+    [
+      { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
+      {
+        label: "Snap to",
+        submenu: SNAP_OPTIONS.map((option) => ({
+          label: option.label,
+          checked: snapDiv === option.value,
+          onClick: () => setSnapDiv(option.value),
+        })),
+      },
+      { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
+      { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
+      { separator: true },
+      ...optionItems,
+    ],
+    compact,
+  );
+
   // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
   // column; as a grid item on desktop it is ignored, so the grid row decides the height.
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col flex-1 min-h-0">
-      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
-        {showTransport && (
+      {/* The whole toolbar row goes when compact - the shell owns the transport and the ⋮ -
+          except the clip-mode indicator, which is live state you need to be able to see. */}
+      <div
+        className={`flex items-center gap-3 px-2.5 border-b border-line bg-rail ${
+          compact ? (clipMode ? "py-1.5" : "hidden") : "py-1.5"
+        }`}
+      >
+        {!compact && showTransport && (
           <>
             <TransportBar
               projectStore={projectStore}
@@ -377,60 +467,7 @@ export function ArrangementTimeline({
             <span className="w-px h-5 bg-line shrink-0" />
           </>
         )}
-        <Menu
-          label="Timeline options"
-          align="left"
-          items={[
-            {
-              label: "Add group",
-              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
-            },
-            // Every track lives in a group, so adding one picks the destination group
-            // (or a fresh group). Nested as submenus so the menu stays short.
-            { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
-            { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
-            { separator: true },
-            // Recording settings live here too (one toolbar menu, not a second kebab).
-            {
-              label: "Count-in",
-              submenu: [
-                {
-                  label: "No count-in",
-                  checked: countInBars === 0,
-                  onClick: () => setCountInBars(0),
-                },
-                {
-                  label: "1 bar",
-                  checked: countInBars === 1,
-                  onClick: () => setCountInBars(1),
-                },
-                {
-                  label: "2 bars",
-                  checked: countInBars === 2,
-                  onClick: () => setCountInBars(2),
-                },
-              ],
-            },
-            { separator: true },
-            // Groove: project-wide swing/feel applied at playback (non-destructive).
-            {
-              label: "Groove",
-              submenu: GROOVES.map((groove) => ({
-                label: groove.name,
-                checked: project.grooveId === groove.id,
-                onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
-              })),
-            },
-            {
-              label: "Groove amount",
-              submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
-                label: `${Math.round(value * 100)}%`,
-                checked: project.grooveAmount === value,
-                onClick: () => dispatch({ type: "setGroove", amount: value }),
-              })),
-            },
-          ]}
-        />
+        {!compact && <Menu label="Timeline options" align="left" items={optionItems} />}
         {clipMode && (
           <button
             type="button"
@@ -444,7 +481,7 @@ export function ArrangementTimeline({
             Back to timeline
           </button>
         )}
-        <div className="ml-auto flex items-center gap-2 text-muted">
+        <div hidden={compact} className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
             <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
             Snap
@@ -544,7 +581,6 @@ export function ArrangementTimeline({
                     onSelect={selectPlacement}
                     onMark={placeMarker}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
-                    onActivate={onEditTrack}
                     stickyHeader={stickyHeaders}
                   />
                 ),
