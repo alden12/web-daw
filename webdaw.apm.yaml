@@ -6725,6 +6725,73 @@ projects:
         id: 019fae0c-b32a-724c-bad1-b354de720785
         created_at: 2026-07-29T13:24:55.722Z
         updated_at: 2026-07-29T16:00:53.403Z
+        notes:
+          - body: >-
+              Observed on the deployed MOBILE-1 build, 2026-07-30: **pinch on
+              the arrangement timeline and the piano roll zooms the whole
+              page.** The body already lists pinch-zoom as work to do, but this
+              is worth recording as a distinct defect rather than a missing
+              feature - the gesture currently does something actively wrong
+              (scales the app's own chrome and breaks the layout) rather than
+              nothing.
+
+
+              **Cause.** There is no pinch or gesture handling anywhere in
+              `src/ui`, and `touch-action` is only set (as Tailwind's
+              `touch-none`) on *individual drag handles* - `Knob`'s three
+              variants, `Lane`'s clip bodies, `PianoRoll`'s note bodies and
+              velocity handles, `ResizeHandle`, `Ruler`'s loop handle,
+              `MixerControls`' fader, `AudioClipPanel`'s waveform. It is never
+              set on the **scroll containers**, so a two-finger gesture landing
+              on the timeline or roll background is unclaimed and the browser
+              takes it as a page zoom.
+
+
+              **Not a viewport-meta fix.** `index.html:8` deliberately omits
+              `user-scalable=no`, iOS Safari has ignored it since iOS 10 anyway,
+              and suppressing page zoom globally would be wrong - it is the only
+              way to read small text elsewhere in the app. The gesture has to be
+              *claimed locally* instead.
+
+
+              **Shape of the fix.** `touch-action: pan-x pan-y` on the scroll
+              containers keeps native scrolling (which `useSharedGridScroll`
+              relies on) while taking pinch away from the browser for that
+              element; then a two-pointer handler owns it. This fits the
+              existing seam - everything already routes through
+              `beginPointerDrag` and Pointer Events give multiple pointers, so
+              it is a matter of tracking two `pointerId`s and deriving scale
+              from the distance ratio. No touch-event path needed.
+
+
+              **Anchor on the pinch centroid, not the scroll origin,** or the
+              content slides out from under the fingers. Convenient consequence
+              of MOBILE-1: the shared arrangement offset is already stored in
+              **beats** (`arrangement/gridView.ts`), so the invariant is
+              literally "keep the beat under the centroid fixed" and the maths
+              falls out of the unit choice rather than needing pixel
+              bookkeeping.
+
+
+              **Three separate zoom states, all persisted and clamped** - pinch
+              must write through the same setters or the surfaces desync:
+
+              - arrangement: `web-daw:arr-zoom` (`ZOOM` 6-96), read by *both*
+              `ArrangementTimeline` and `LaneStrip`, so this one is shared and
+              x-only today;
+
+              - piano roll: `web-daw:roll-zoom-x` (`ZOOM_X`) and
+              `web-daw:roll-zoom-y` (`ZOOM_Y`) - two axes, so the roll wants a
+              genuine two-axis pinch while the arrangement wants one.
+
+
+              Needs a real-device check at the end: `touch-action`'s pinch
+              suppression on iOS Safari is the part most likely to misbehave
+              versus the spec.
+            audience: user
+            id: 019fb304-6a18-739b-b61b-c2d1a71047fe
+            at: 2026-07-30T12:33:58.808Z
+            actor: claude
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"
