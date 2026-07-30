@@ -1668,6 +1668,18 @@ projects:
         id: 019faefe-60a1-731c-b7e1-5284a75111b7
         at: 2026-07-29T17:48:54.305Z
         actor: claude
+      - body: "2026-07-30 session: added the Euclidean sequencer as a third MIDI device,
+          extracting `devices/stepStrategy.ts` (held-note spans + lookahead
+          timer + tempo step grid) so it and the arpeggiator share their
+          machinery, and `devices/rate.ts` so both schemas offer the same note
+          divisions. Custom work was ~200 lines; the UI panel, library entry,
+          MCP palette, persistence, undo, automation and offline render all came
+          for free from the schema keystone. Changes are uncommitted and sitting
+          on the unrelated `slice-96-mobile-shell` branch."
+        audience: user
+        id: 019fb3c7-d8a2-77ee-8909-9936b6b44bc5
+        at: 2026-07-30T16:07:26.626Z
+        actor: claude
     areas: []
     items:
       - ref: AGENT-1
@@ -2755,6 +2767,52 @@ projects:
         created_at: 2026-07-29T13:24:05.620Z
         updated_at: 2026-07-29T15:58:14.035Z
         deleted_at: 2026-07-29T15:58:14.035Z
+      - ref: AGENT-23
+        area: AGENT
+        title: Two MCP clients on one machine collide on the WebSocket port
+        status: to-do
+        sort_path: "000023"
+        priority: 0
+        body: >-
+          `server/index.ts` binds a fixed `ws://localhost:8765` and calls
+          `process.exit(1)` on `EADDRINUSE`. That is deliberate and correct for
+          avoiding orphans, but it means **the second concurrent MCP client on
+          the same machine silently gets no web-daw tools**: its server spawns,
+          exits immediately, and the tool list is simply missing with no in-app
+          signal.
+
+
+          **Hit in practice on 2026-07-30.** A day-old VS Code Claude session
+          still held the port; a new session in the same repo had no `web-daw`
+          MCP at all. Diagnosing it meant `lsof`-ing the port and walking the
+          process tree back to the other editor window. The failure presents to
+          the user as "my MCP won't connect", with nothing pointing at the real
+          cause.
+
+
+          **Options, cheapest first.**
+
+          - *Make the conflict legible.* The exit message already says the right
+          thing but lands on stderr where the client may not surface it. Failing
+          with a tools-visible error, or registering a single tool that reports
+          the conflict, would turn a mystery into a one-line fix.
+
+          - *Probe for a free port* and publish the chosen one where the tab can
+          find it (the tab currently dials a constant). Removes the collision
+          but means the DAW tab has to discover the port.
+
+          - *One server per machine, later clients proxy to it.* Closest to the
+          truth of the system, since the DAW tab is a single WebSocket peer and
+          a second server has nothing to talk to. More work, and it raises the
+          question of which client's edits win.
+
+
+          Low urgency, but it is a sharp edge for exactly the power-user
+          workflow AGENT-1 describes (MCP in a second window), and it will bite
+          harder as more sessions run concurrently.
+        id: 019fb3c7-7c7a-764c-ac83-f5eaef4a3c7f
+        created_at: 2026-07-30T16:07:03.035Z
+        updated_at: 2026-07-30T16:07:03.035Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -2805,9 +2863,10 @@ projects:
           - INST-2
         body: >-
           The MIDI device chain (the note-transform pipeline for the arpeggiator
-          / octavator) looks to **duplicate parts of the audio effect-chain
-          code**: an ordered chain of devices with add / remove / reorder,
-          per-device param stores, and host-addressing are common to both.
+          / octavator / Euclidean sequencer) looks to **duplicate parts of the
+          audio effect-chain code**: an ordered chain of devices with add /
+          remove / reorder, per-device param stores, and host-addressing are
+          common to both.
 
 
           Investigate a shared **"device chain"** abstraction the two families
@@ -2823,9 +2882,48 @@ projects:
           Needs a look at the MIDI-device (`src/audio/midi/device/`) and
           effect-chain code to confirm the shared surface before committing to
           the abstraction.
+
+
+          ## Also in scope: built-ins are registered twice
+
+
+          Adding a built-in device means editing **two hand-maintained lists**
+          plus the def file. For MIDI devices that is `registerMidiDevice({
+          type, label, schema })` in `catalog.ts` *and* the factory list in
+          `registry.ts`; the audio effects have exactly the same split (7
+          `registerEffect` calls in `effects/catalog.ts`, 7
+          `registerEffectFactory` calls in `effects/registry.ts`), as do
+          instruments. The data/code split itself is right and load-bearing -
+          `catalog.ts` must stay DOM-free so the Node MCP server can hold it -
+          but the *list of built-ins* should not be maintained in both halves.
+
+
+          A `MidiDeviceDef` already carries `type`, `label` and `schema`, so the
+          catalog entry is pure restatement. One exported list of defs (e.g.
+          `devices/index.ts`) that both halves derive from would make adding a
+          built-in a single edit. The blocker is a small import cycle to unpick
+          first: the device defs currently import their schemas *from*
+          `catalog.ts`, so `catalog.ts` cannot import the defs. Moving each
+          device's schema into its own device file fixes that and reads better
+          anyway - one file per device, holding its schema and its transform.
+
+
+          The effect side only partly fits the same shape: `delay`, `distortion`
+          and `tremolo` are `GraphEffect` over a def, but `reverb`, `filter`,
+          `chorus` and `bitcrusher` are bespoke classes, so their factories
+          cannot be derived from data alone. A registration helper that takes
+          `(def, factory)` and writes both halves would cover every case without
+          forcing the bespoke ones into a graph.
+
+
+          Worth doing alongside the chain abstraction, since both are about
+          making the device families one thing rather than two parallel ones.
+          Note this is the *built-ins ergonomics* problem, distinct from the
+          third-party loading story (INST-5) and from the missing note-path
+          authoring format (INST-11).
         id: 019fae0d-3a4a-727a-8d2a-2be55efb30f7
         created_at: 2026-07-29T13:25:30.314Z
-        updated_at: 2026-07-29T16:00:50.188Z
+        updated_at: 2026-07-30T16:07:18.050Z
       - ref: ARCH-3
         area: ARCH
         title: Editing preferences are app state, not component state
@@ -4647,6 +4745,51 @@ projects:
         id: 019fb2f0-7f2d-76af-b126-c1034b100965
         created_at: 2026-07-30T12:12:13.485Z
         updated_at: 2026-07-30T12:23:17.566Z
+      - ref: DAW-27
+        area: DAW
+        title: "Clock-driven MIDI generators: phase-lock the cycle to the transport"
+        status: to-do
+        sort_path: "000027"
+        priority: 0
+        body: >-
+          The arpeggiator and the Euclidean sequencer place their *steps* on the
+          transport beat grid while playing (`stepTimes` in
+          `src/audio/midi/device/devices/stepStrategy.ts`), but the **cycle
+          phase is anchored to the note onset, not the bar line**: `stepCount`
+          starts at 0 on the first step after the held set becomes non-empty,
+          and resets whenever it empties.
+
+
+          **Consequence.** A clip whose note starts mid-bar puts the pattern's
+          step 0 mid-bar too. Individual steps stay in time; which step counts
+          as "step 0" floats. For the arpeggiator this is barely noticeable. For
+          a Euclidean pattern it is audible, because `rotate` and `accent` are
+          both defined relative to the cycle start - the accent that should mark
+          the downbeat can land anywhere in the bar, and two tracks meant to
+          interlock by rotation only do so if their notes happen to start
+          together.
+
+
+          **Options.**
+
+          - *Derive the index from transport time.* While playing, compute
+          `stepIndex` from the continuous beat (`floor(beat / stepBeats)`)
+          instead of an incrementing counter, keeping the free-run counter only
+          for the transport-stopped case. Makes pattern position a pure function
+          of transport time, which also makes offline render identical
+          regardless of where the render window starts - worth having for
+          AGENT-21 render fidelity.
+
+          - *Make it a choice.* A `sync` param (free / bar / pattern) so a
+          deliberately drifting part is still possible. Closer to what hardware
+          sequencers offer, and the drift is sometimes the point.
+
+
+          Probably do the first as the default behaviour and add the second only
+          if the free-running feel turns out to be wanted.
+        id: 019fb3c7-4aad-7779-905f-a4c58f59907a
+        created_at: 2026-07-30T16:06:50.285Z
+        updated_at: 2026-07-30T16:06:50.285Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -6542,6 +6685,82 @@ projects:
         id: 019fae09-6e91-763e-b0c9-f627aaa52615
         created_at: 2026-07-29T13:21:21.553Z
         updated_at: 2026-07-29T16:00:49.121Z
+      - ref: INST-11
+        area: INST
+        title: Agent-authored MIDI devices (the note path is code-only)
+        status: planning
+        sort_path: "000011"
+        priority: 0
+        deps:
+          - INST-4
+        body: >-
+          `create_instrument` / `create_effect` (INST-4) let a user or the agent
+          author a new instrument or audio effect declaratively, validated by
+          `parseInstrumentDef` / `parseEffectDef` in `src/audio/graph/zod.ts`.
+          **There is no equivalent for the note path**: no `create_midi_device`
+          verb, and no `parseMidiDeviceDef`. The MIDI-device MCP verbs
+          (`add_midi_device`, `set_midi_device_parameter`, ...) all operate on
+          types that already exist in the catalog.
+
+
+          **Two gaps, not one.**
+
+
+          1. *No authoring surface.* Nothing parses a `MidiDeviceDef` from JSON,
+          and no MCP verb exposes it.
+
+          2. *The declarative format itself is too thin.* Of the `MidiTransform`
+          kinds in `src/audio/midi/device/transform.ts`, only `tap` is genuinely
+          data (a stateless per-note fan-out: pitch, velocity and beat offsets).
+          The generators (`arpeggiate`, `euclid`) only *name* param ids - their
+          behaviour is a strategy class reading a `TransportClock`. That is
+          code, and no amount of JSON reaches it.
+
+
+          **Worked example (why this is concrete).** The Euclidean sequencer
+          shipped 2026-07-30 could not have been authored by the in-app agent. A
+          *fixed* Euclidean pattern is expressible as a tap - E(3,8) is three
+          copies at beat offsets 0, 1.5, 3.0 - but Steps and Pulses as **live
+          knobs** are not, because the number of taps is structural in the data
+          rather than a parameter. The agent's only move today is to bake the
+          rhythm into literal notes via `add_notes`, which loses every knob, all
+          automation, and any response to what is held.
+
+
+          **What would close it.** A declarative *generator* kind: "walk a tempo
+          grid; at each step evaluate a pure function of (stepIndex, held
+          pitches, params) -> notes". `devices/stepStrategy.ts` is already
+          exactly that shape after the Euclidean work - it owns the held-note
+          spans, the lookahead timer and the step grid, and asks the subclass
+          only "how long is a step" and "what does one step play". The missing
+          piece is a safe, declarative way to express that second question (a
+          small expression/rule language, or a curated palette of step-decision
+          primitives, in the spirit of the curated-node-graph approach the DSP
+          side already takes).
+
+
+          Pairs with INST-5, whose shell contract already lists **"note/event
+          in"** and transport context (tempo, beat/bar position, time signature)
+          as capabilities to expose - those are precisely what a device like
+          this needs and what the format lacks today.
+
+
+          See also the "MIDI effects (design)" context section.
+        id: 019fb3c7-2d49-7606-85ba-d12f7460aae0
+        created_at: 2026-07-30T16:06:42.762Z
+        updated_at: 2026-07-30T16:06:42.762Z
+        notes:
+          - body: 'Shipped the Euclidean MIDI device (Torso T-1 style) on branch
+              `slice-96-mobile-shell`, 2026-07-30. The user then asked how much
+              of it the in-app agent could have built itself - the answer was
+              "essentially none", which is what surfaced this ticket. Worth
+              keeping that as the motivating example: it is a clean case of a
+              device that is trivially describable but not expressible in the
+              current declarative MIDI format.'
+            audience: user
+            id: 019fb3c7-cd84-7393-8e2c-c0e0aaa7d43f
+            at: 2026-07-30T16:07:23.780Z
+            actor: claude
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
