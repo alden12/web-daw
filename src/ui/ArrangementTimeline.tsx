@@ -81,6 +81,9 @@ export function ArrangementTimeline({
   dispatch,
   isPlaying,
   started,
+  showTransport = true,
+  stickyHeaders = true,
+  onEditTrack,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -88,6 +91,25 @@ export function ArrangementTimeline({
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
+  /**
+   * Whether the toolbar carries the transport. False in the touch shell (MOBILE-1),
+   * which pins one transport above every view, so this would be a second copy.
+   */
+  showTransport?: boolean;
+  /**
+   * Whether track/group headers stay pinned to the left edge as the lanes scroll.
+   * False on touch: a pinned header column costs the same absolute pixels on a 390px
+   * phone as on a desktop, where it would leave almost no lane. Letting it scroll away
+   * trades "always know which track" for "actually see the arrangement".
+   */
+  stickyHeaders?: boolean;
+  /**
+   * Fired when a tap on a track header or a clip block picks a track to work on. The
+   * touch shell uses it to follow the selection into the Edit tab, where the desktop
+   * shows the timeline and the workbench at once. Deliberately not fired by a click on
+   * empty lane space, which drops a paste marker - jumping away would hide it.
+   */
+  onEditTrack?: () => void;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -157,6 +179,7 @@ export function ArrangementTimeline({
     setMarker(null);
     projectStore.selectTrack(trackId);
     projectStore.selectClip(trackId, p.clipId);
+    onEditTrack?.();
   };
 
   // Clicking an empty lane drops a paste marker (track + beat) and clears the
@@ -336,18 +359,24 @@ export function ArrangementTimeline({
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
 
+  // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
+  // column; as a grid item on desktop it is ignored, so the grid row decides the height.
   return (
-    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
+    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
-        <TransportBar
-          projectStore={projectStore}
-          scheduler={scheduler}
-          recorder={recorder}
-          dispatch={dispatch}
-          isPlaying={isPlaying}
-          started={started}
-        />
-        <span className="w-px h-5 bg-line shrink-0" />
+        {showTransport && (
+          <>
+            <TransportBar
+              projectStore={projectStore}
+              scheduler={scheduler}
+              recorder={recorder}
+              dispatch={dispatch}
+              isPlaying={isPlaying}
+              started={started}
+            />
+            <span className="w-px h-5 bg-line shrink-0" />
+          </>
+        )}
         <Menu
           label="Timeline options"
           align="left"
@@ -460,10 +489,13 @@ export function ArrangementTimeline({
         <div className="relative flex-1 min-h-0">
           <div ref={scrollRef} data-testid="arr-scroll" className="absolute inset-0 overflow-auto">
             <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
-              {/* ruler row: sticky top; the corner cell is sticky on both axes */}
+              {/* ruler row: sticky top; the corner cell is sticky on both axes (on touch
+                  it scrolls horizontally with the headers, so only the top pin remains) */}
               <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
                 <div
-                  className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
+                  className={`shrink-0 bg-rail border-r border-b border-line ${
+                    stickyHeaders ? "sticky left-0 z-10" : ""
+                  }`}
                   style={{ width: headerW, height: RULER_H }}
                 />
                 <Ruler
@@ -480,7 +512,7 @@ export function ArrangementTimeline({
               {rows.map((row) =>
                 row.kind === "group" ? (
                   <div key={row.group.id} className="flex">
-                    <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
+                    <div className={`shrink-0 ${stickyHeaders ? "sticky left-0 z-10" : ""}`} style={{ width: headerW }}>
                       <GroupHeader
                         group={row.group}
                         depth={row.depth}
@@ -512,6 +544,8 @@ export function ArrangementTimeline({
                     onSelect={selectPlacement}
                     onMark={placeMarker}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
+                    onActivate={onEditTrack}
+                    stickyHeader={stickyHeaders}
                   />
                 ),
               )}
@@ -522,20 +556,25 @@ export function ArrangementTimeline({
               />
             </div>
           </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize the header column"
-            onPointerDown={onHeaderResize}
-            // Start below the ruler row: the divider overlaps the loop-start handle
-            // (both land at x = headerW when the loop starts at beat 0), and at z-30
-            // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
-            // px free keeps the marker row draggable.
-            className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
-            style={{ left: headerW, top: RULER_H }}
-          >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
-          </div>
+          {/* The header-column divider is pinned at x = headerW, which only lines up while
+              the headers are pinned there too - and a 2px drag target is not a touch
+              affordance anyway, so it goes with them. */}
+          {stickyHeaders && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize the header column"
+              onPointerDown={onHeaderResize}
+              // Start below the ruler row: the divider overlaps the loop-start handle
+              // (both land at x = headerW when the loop starts at beat 0), and at z-30
+              // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
+              // px free keeps the marker row draggable.
+              className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+              style={{ left: headerW, top: RULER_H }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
+            </div>
+          )}
         </div>
       )}
     </div>

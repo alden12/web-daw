@@ -5,7 +5,7 @@
  * For an audio track, an audio-clip panel takes the place of the instrument +
  * piano roll; the effect chain is shared (audio tracks have inserts too).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProjectStore, Track, AudioTrack, InstrumentTrack } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -38,6 +38,21 @@ import { InlineRename } from "./InlineRename";
 import { ResizeHandle } from "./ResizeHandle";
 import { usePersistentNumber, usePersistentString } from "./usePersistent";
 import type { SampleAsset } from "../audio/samples/catalog";
+
+/**
+ * Pixels of editor (roll / audio clip) the device rack may never take, however tall it
+ * is persisted. Sized for the editor's own chrome (clip label + roll toolbar, ~90px)
+ * plus a usable strip of grid underneath.
+ */
+const MIN_EDITOR = 200;
+/**
+ * When the body is too short to give both their minimum - a phone in landscape is
+ * ~390px tall before the transport and tab bars - neither can win outright, so the
+ * rack falls back to a fixed share and they are both merely cramped.
+ */
+const RACK_SHARE_WHEN_TIGHT = 0.35;
+/** The same floor on the other axis, for the side-by-side layout: enough roll to read. */
+const MIN_EDITOR_W = 260;
 
 // The built-in agent does not need MCP, so a missing connection is not a warning:
 // only "connected" is called out (green + label); otherwise it is a quiet grey dot
@@ -500,6 +515,8 @@ export function CenterWorkbench({
   syncStatus,
   agentCollapsed,
   onExpandAgent,
+  compact = false,
+  sideBySide = false,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -515,6 +532,19 @@ export function CenterWorkbench({
   /** The agent pane is collapsed away; the tab bar hosts its expand control. */
   agentCollapsed: boolean;
   onExpandAgent: () => void;
+  /**
+   * Narrow layout for the touch shell (MOBILE-1): the clip rail moves from a left
+   * column to a row above the editor, so the roll gets the full width. Horizontal
+   * space is the scarce axis on a phone; on desktop the rail beside the roll costs
+   * nothing.
+   */
+  compact?: boolean;
+  /**
+   * Put the device rack beside the editor rather than beneath it. For short viewports
+   * (a phone in landscape, MOBILE-1): stacked, the two bands are each too shallow to
+   * read, and that screen has width to spare where it has no height.
+   */
+  sideBySide?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -525,6 +555,34 @@ export function CenterWorkbench({
   // The clip rail beside the piano roll is drag-resizable too (its own width).
   const [clipRailW, setClipRailW] = usePersistentNumber("web-daw:clip-rail-width", 96, 72, 260);
   const clipRailRef = useRef<HTMLDivElement>(null);
+
+  // The rack's own width, for the side-by-side layout (its height is `deviceH` above).
+  const [deviceW, setDeviceW] = usePersistentNumber("web-daw:devices-width", 320, 180, 720);
+
+  // The device rack is the fixed-size one and the editor beside/above it is flexible, so
+  // an undersized body lets the rack take everything and leave the editor zero pixels.
+  // Measure the body and clamp the rack against it - the same guard the desktop shell
+  // puts on the timeline height.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [bodyH, setBodyH] = useState(0);
+  const [bodyW, setBodyW] = useState(0);
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const measure = () => {
+      setBodyH(el.clientHeight);
+      setBodyW(el.clientWidth);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  /** Clamp a persisted rack size against the axis it competes with the editor on. */
+  const clampRack = (want: number, available: number, minEditor: number) =>
+    available ? Math.min(want, Math.max(Math.round(available * RACK_SHARE_WHEN_TIGHT), available - minEditor)) : want;
+  const effDeviceH = clampRack(deviceH, bodyH, MIN_EDITOR);
+  const effDeviceW = clampRack(deviceW, bodyW, MIN_EDITOR_W);
 
   // The tab bar's right-hand indicator area: the MCP status dot, then (when the
   // agent pane is collapsed away) its expand control - there is no idle rail.
@@ -558,7 +616,7 @@ export function CenterWorkbench({
 
   if (!selectedTrack) {
     return (
-      <div className="[grid-area:center] bg-center flex flex-col min-w-0 min-h-0 overflow-hidden">
+      <div className="[grid-area:center] bg-center flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <div className="flex items-center h-11 border-b border-line shrink-0">{indicators}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
@@ -593,108 +651,135 @@ export function CenterWorkbench({
         {indicators}
       </div>
 
-      {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
-          instrument + effect rack below, then the arrangement output (bottom panel).
-          Both kinds share the resizable clip rail on the left; the right is the piano
-          roll (instrument) or the audio-clip panel (audio). The rail's footer is a
-          record button that records a take into this track (mic / live MIDI). */}
-      <div className="flex-1 min-h-0 flex" key={`${selectedTrack.id}:body`}>
-        <div ref={clipRailRef} className="relative shrink-0 flex" style={{ width: clipRailW }}>
-          <ClipRail
-            projectStore={projectStore}
-            scheduler={scheduler}
-            trackId={selectedTrack.id}
-            dispatch={dispatch}
-            orientation="vertical"
-            footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
-          />
-          <ResizeHandle
-            ariaLabel="Resize clips"
-            onResize={(x) => setClipRailW(x - (clipRailRef.current?.getBoundingClientRect().left ?? 0))}
-            style={{ right: 0, top: 0, bottom: 0 }}
-          />
-        </div>
-        {selectedTrack.kind === "instrument" ? (
-          <InstrumentEditor
-            key={selectedTrack.id}
-            track={selectedTrack}
-            samples={project.samples}
-            scheduler={scheduler}
-            recorder={recorder}
-            dispatch={dispatch}
-            projectStore={projectStore}
-          />
-        ) : (
-          <AudioClipPanel
-            track={selectedTrack}
-            scheduler={scheduler}
-            tempoBpm={project.tempoBpm}
-            timeSignature={project.timeSignature}
-            loopStart={project.loopStart}
-            loopLength={project.lengthBeats - project.loopStart}
-            dispatch={dispatch}
-          />
-        )}
-      </div>
-
-      {/* device rack: instrument + effects, below the notes (resizable height, drag
-          its top edge), so the flow reads notes -> instrument -> effects -> output. */}
-      <div
-        ref={deviceRef}
-        className="relative shrink-0 flex flex-col border-t border-line"
-        style={{ height: deviceH }}
-        key={`${selectedTrack.id}:dev`}
-      >
-        <ResizeHandle
-          ariaLabel="Resize devices"
-          orientation="horizontal"
-          onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
-          style={{ left: 0, right: 0, top: 0 }}
-        />
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line shrink-0">
-          <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Devices</span>
-          {selectedTrack.kind === "instrument" && selectedTrack.instrumentType !== EMPTY_INSTRUMENT && (
-            <span className="ml-auto">
-              <SavePatchControl track={selectedTrack} />
-            </span>
+      {/* Measured so the fixed-size device rack can be clamped against it. Stacked
+          normally (the signal flow reads top to bottom); side by side when the viewport
+          is too short for two bands, where the rack takes a right-hand column instead. */}
+      <div ref={bodyRef} className={`flex-1 min-h-0 min-w-0 flex ${sideBySide ? "flex-row" : "flex-col"}`}>
+        {/* Top-to-bottom signal flow: notes (piano roll) / audio clip on top, then the
+            instrument + effect rack below, then the arrangement output (bottom panel).
+            Both kinds share the resizable clip rail - a left column normally, a row above
+            the editor when compact. The rail's footer is a record button that records a
+            take into this track (mic / live MIDI). */}
+        <div className={`flex-1 min-h-0 min-w-0 flex ${compact ? "flex-col" : ""}`} key={`${selectedTrack.id}:body`}>
+          {compact ? (
+            <div className="shrink-0 border-b border-line">
+              <ClipRail
+                projectStore={projectStore}
+                scheduler={scheduler}
+                trackId={selectedTrack.id}
+                dispatch={dispatch}
+                orientation="horizontal"
+                footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
+              />
+            </div>
+          ) : (
+            <div ref={clipRailRef} className="relative shrink-0 flex" style={{ width: clipRailW }}>
+              <ClipRail
+                projectStore={projectStore}
+                scheduler={scheduler}
+                trackId={selectedTrack.id}
+                dispatch={dispatch}
+                orientation="vertical"
+                footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
+              />
+              <ResizeHandle
+                ariaLabel="Resize clips"
+                onResize={(x) => setClipRailW(x - (clipRailRef.current?.getBoundingClientRect().left ?? 0))}
+                style={{ right: 0, top: 0, bottom: 0 }}
+              />
+            </div>
+          )}
+          {selectedTrack.kind === "instrument" ? (
+            <InstrumentEditor
+              key={selectedTrack.id}
+              track={selectedTrack}
+              samples={project.samples}
+              scheduler={scheduler}
+              recorder={recorder}
+              dispatch={dispatch}
+              projectStore={projectStore}
+            />
+          ) : (
+            <AudioClipPanel
+              track={selectedTrack}
+              scheduler={scheduler}
+              tempoBpm={project.tempoBpm}
+              timeSignature={project.timeSignature}
+              loopStart={project.loopStart}
+              loopLength={project.lengthBeats - project.loopStart}
+              dispatch={dispatch}
+            />
           )}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
-            {/* MIDI devices transform notes before the instrument, so they lead the chain. */}
-            <MidiDeviceChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
-            {selectedTrack.kind === "instrument" &&
-              (selectedTrack.instrumentType === EMPTY_INSTRUMENT ? (
-                <InstrumentPicker trackId={selectedTrack.id} dispatch={dispatch} />
-              ) : (
-                // The instrument is the first device; its trailing arrow (into the first
-                // effect) stays glued to its right edge, so it wraps cleanly. A drum kit
-                // uses its own pad panel in place of the generic knob panel.
-                <div className="flex items-stretch shrink-0">
-                  {selectedTrack.instrumentType === "drumkit" ? (
-                    <DrumkitPanel
-                      params={selectedTrack.params}
-                      trackId={selectedTrack.id}
-                      dispatch={dispatch}
-                      samples={project.samples}
-                      onRevealSamples={onRevealSamples}
-                      projectStore={projectStore}
-                    />
-                  ) : (
-                    <InstrumentPanel
-                      params={selectedTrack.params}
-                      instrumentType={selectedTrack.instrumentType}
-                      trackId={selectedTrack.id}
-                      dispatch={dispatch}
-                      samples={project.samples}
-                      onRevealSamples={onRevealSamples}
-                      projectStore={projectStore}
-                    />
-                  )}
-                  {selectedTrack.effects.length > 0 ? <FlowArrow /> : null}
-                </div>
-              ))}
-            <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+
+        {/* device rack: instrument + effects. Below the notes normally (resizable height,
+            drag its top edge), so the flow reads notes -> instrument -> effects -> output;
+            to their right when side by side, where the flow reads left to right instead. */}
+        <div
+          ref={deviceRef}
+          className={`relative shrink-0 flex flex-col ${sideBySide ? "border-l" : "border-t"} border-line`}
+          style={sideBySide ? { width: effDeviceW } : { height: effDeviceH }}
+          key={`${selectedTrack.id}:dev`}
+        >
+          {sideBySide ? (
+            <ResizeHandle
+              ariaLabel="Resize devices"
+              onResize={(x) => setDeviceW((deviceRef.current?.getBoundingClientRect().right ?? 0) - x)}
+              style={{ left: 0, top: 0, bottom: 0 }}
+            />
+          ) : (
+            <ResizeHandle
+              ariaLabel="Resize devices"
+              orientation="horizontal"
+              onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
+              style={{ left: 0, right: 0, top: 0 }}
+            />
+          )}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line shrink-0">
+            <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Devices</span>
+            {selectedTrack.kind === "instrument" && selectedTrack.instrumentType !== EMPTY_INSTRUMENT && (
+              <span className="ml-auto">
+                <SavePatchControl track={selectedTrack} />
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="flex flex-wrap items-stretch gap-x-1 gap-y-3 p-3">
+              {/* MIDI devices transform notes before the instrument, so they lead the chain. */}
+              <MidiDeviceChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+              {selectedTrack.kind === "instrument" &&
+                (selectedTrack.instrumentType === EMPTY_INSTRUMENT ? (
+                  <InstrumentPicker trackId={selectedTrack.id} dispatch={dispatch} />
+                ) : (
+                  // The instrument is the first device; its trailing arrow (into the first
+                  // effect) stays glued to its right edge, so it wraps cleanly. A drum kit
+                  // uses its own pad panel in place of the generic knob panel.
+                  <div className="flex items-stretch shrink-0">
+                    {selectedTrack.instrumentType === "drumkit" ? (
+                      <DrumkitPanel
+                        params={selectedTrack.params}
+                        trackId={selectedTrack.id}
+                        dispatch={dispatch}
+                        samples={project.samples}
+                        onRevealSamples={onRevealSamples}
+                        projectStore={projectStore}
+                      />
+                    ) : (
+                      <InstrumentPanel
+                        params={selectedTrack.params}
+                        instrumentType={selectedTrack.instrumentType}
+                        trackId={selectedTrack.id}
+                        dispatch={dispatch}
+                        samples={project.samples}
+                        onRevealSamples={onRevealSamples}
+                        projectStore={projectStore}
+                      />
+                    )}
+                    {selectedTrack.effects.length > 0 ? <FlowArrow /> : null}
+                  </div>
+                ))}
+              <EffectChain projectStore={projectStore} trackId={selectedTrack.id} dispatch={dispatch} />
+            </div>
           </div>
         </div>
       </div>

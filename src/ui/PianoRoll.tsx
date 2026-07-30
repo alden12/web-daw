@@ -626,7 +626,7 @@ export function PianoRoll({
                     key={note.id}
                     data-testid="note"
                     onPointerDown={(e) => onNoteDown(note, e)}
-                    className={`absolute rounded-sm box-border cursor-grab border ${
+                    className={`absolute rounded-sm box-border cursor-grab border touch-none ${
                       selected ? "bg-bright" : "hover:brightness-125"
                     }`}
                     style={{
@@ -706,7 +706,7 @@ export function PianoRoll({
                 role="separator"
                 aria-label="Resize velocity lane"
                 onPointerDown={onVelResize}
-                className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10"
+                className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10 touch-none"
               />
               {clip.notes.map((note) => {
                 const selected = selection.has(note.id);
@@ -714,7 +714,7 @@ export function PianoRoll({
                   <div
                     key={note.id}
                     onPointerDown={(e) => onVelDown(note, e)}
-                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
+                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize touch-none ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
                     style={{
                       left: beatToX(note.start, pxPerBeat),
                       width: VEL_BAR_W,

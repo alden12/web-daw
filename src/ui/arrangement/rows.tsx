@@ -96,6 +96,7 @@ function TrackHeader({
   selected,
   armed,
   onArmToggle,
+  onActivate,
   projectStore,
   dispatch,
 }: {
@@ -105,6 +106,8 @@ function TrackHeader({
   /** Audio tracks only: armed to receive the next recorded take. */
   armed: boolean;
   onArmToggle: () => void;
+  /** Fired after selecting, for shells that navigate to the editor on a track tap. */
+  onActivate?: () => void;
   projectStore: ProjectStore;
   dispatch: Dispatch;
 }) {
@@ -115,7 +118,10 @@ function TrackHeader({
   const accent = authorHex(projectStore.authorOf(trackKey(track.id)) ?? "you", presence);
   return (
     <div
-      onClick={() => projectStore.selectTrack(track.id)}
+      onClick={() => {
+        projectStore.selectTrack(track.id);
+        onActivate?.();
+      }}
       className={`${ROW} flex items-center gap-2 pr-2.5 border-b border-r border-line-soft cursor-pointer ${
         selected ? "bg-[color-mix(in_oklab,var(--color-you)_12%,var(--color-panel))]" : "bg-panel"
       }`}
@@ -192,6 +198,8 @@ export function TrackRow({
   onSelect,
   onMark,
   onHover,
+  onActivate,
+  stickyHeader = true,
 }: {
   meta: TrackMeta;
   depth: number;
@@ -201,6 +209,9 @@ export function TrackRow({
   projectStore: ProjectStore;
   dispatch: Dispatch;
   headerW: number;
+  /** Pin the header to the left edge while the lane scrolls. False on touch, where a
+   *  pinned column would eat most of a phone's width (MOBILE-1). */
+  stickyHeader?: boolean;
   laneWidth: number;
   pxPerBeat: number;
   beatsPerBar: number;
@@ -212,17 +223,20 @@ export function TrackRow({
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
   onHover: (beat: number | null) => void;
+  /** Fired when this track's header is tapped, after it is selected. */
+  onActivate?: () => void;
 }) {
   const track = projectStore.getTrack(meta.id);
   return (
     <div className="flex" data-track-id={meta.id}>
-      <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
+      <div className={`shrink-0 ${stickyHeader ? "sticky left-0 z-10" : ""}`} style={{ width: headerW }}>
         <TrackHeader
           track={meta}
           depth={depth}
           selected={selectedTrack}
           armed={armed}
           onArmToggle={onArmToggle}
+          onActivate={onActivate}
           projectStore={projectStore}
           dispatch={dispatch}
         />

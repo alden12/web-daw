@@ -3837,8 +3837,14 @@ projects:
         body: >-
           Make **key** (a `{ tonic: 0-11, scale/mode }`) a first-class musical
           unit that the roll display and the computer-keyboard input are both
-          projections of. Pairs with the flagship synth (INST-5) as its
-          test-bed.
+          projections of. The flagship synth **Nimbus** (INST-1, shipped slice
+          56) is its natural test-bed.
+
+
+          Sits alongside tempo, groove and time signature (DAW-10) as a
+          project-level musical value: same pattern - one value on
+          `ProjectData`, projected into the UI, the schema and MCP rather than
+          branched on.
 
 
           The two halves reinforce each other: a tonic-relative model is
@@ -3877,7 +3883,7 @@ projects:
           autotune scale-snap layer under audio pitch & time (INST-7).
         id: 019fae04-4269-7649-9153-7bd2abce8210
         created_at: 2026-07-29T13:15:42.569Z
-        updated_at: 2026-07-29T16:00:33.171Z
+        updated_at: 2026-07-29T18:26:37.375Z
       - ref: DAW-13
         area: DAW
         title: Audio export and mixdown
@@ -6118,7 +6124,7 @@ projects:
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
-        status: to-do
+        status: in-progress
         sort_path: "000001"
         priority: 0
         body: >-
@@ -6171,7 +6177,110 @@ projects:
           packaging (MOBILE-3).
         id: 019fae0c-8f83-7472-86e9-e1e8f5f0c6cd
         created_at: 2026-07-29T13:24:46.595Z
-        updated_at: 2026-07-29T13:24:46.595Z
+        updated_at: 2026-07-29T18:37:35.521Z
+        notes:
+          - body: "Step 1 of the sequencing (the spike) is built on `slice-96-mobile-shell`:
+              `useDeviceTier` (phone/tablet/desktop from `pointer: coarse` +
+              width), `DesktopShell` extracted out of `AppShell` verbatim, and a
+              new `MobileShell` (pinned transport, one view, bottom tabs
+              Arrange/Edit/Mix/Library/Agent). Both shells render against one
+              `ShellProps` bag, so mobile really is a second projection - no
+              panel was forked. Two findings worth carrying: **MOBILE-2's
+              \"keystone\" Pointer Events migration is already done** (zero
+              `onMouseDown` left in `src/ui`, everything goes through
+              `beginPointerDrag`), and the panels' hardcoded `[grid-area:...]`
+              classes turned out to be a non-issue because grid-area is inert
+              outside a grid container. The one real blocker was that panel
+              roots had no `flex-1` (the desktop grid row sized them), so in a
+              flex column the timeline collapsed to its 38px toolbar; adding
+              `flex-1` is safe because grid items ignore flex properties."
+            audience: user
+            id: 019faf42-e0eb-701c-a556-88826d3e39ac
+            at: 2026-07-29T19:03:43.595Z
+            actor: claude
+          - body: "Known rough edges left for steps 2-4, deliberately not fixed in the
+              spike: (1) the arrangement's track-header column is ~220px of a
+              390px phone screen, leaving little lane - `headerW` is
+              drag-resizable and persisted under one localStorage key shared
+              with desktop, so making it tier-aware is a real decision (whose
+              width wins when you switch device?) rather than a tweak; (2) large
+              scroll surfaces (piano-roll grid background, arrangement lane
+              background) deliberately kept default `touch-action` so a finger
+              can still pan, which means drag-on-background gestures scroll
+              instead of drawing - the explicit draw/select/erase tool model in
+              MOBILE-2 is what resolves that properly; (3) no slide-up sheets or
+              long-press menus yet."
+            audience: user
+            id: 019faf42-fac1-7648-adc4-7316756ce227
+            at: 2026-07-29T19:03:50.209Z
+            actor: claude
+          - body: "Round two of the spike, from using it: track/group headers are non-sticky
+              on phone (`stickyHeaders` prop, so the header column scrolls away
+              with the lanes rather than costing 220 of 390px), the clip rail
+              stacks above the roll instead of beside it (`compact` prop on
+              CenterWorkbench, reusing ClipRail's existing
+              `orientation=\"horizontal\"`), and the device rack is now clamped
+              against a measured body height. That last one was a genuine bug
+              reachable on desktop too: the rack has a fixed persisted height
+              while the editor above it is the flexible one, so any short
+              viewport (phone landscape ~390px) let the rack take everything and
+              leave the piano roll zero pixels. Clamp is `min(deviceH, max(bodyH
+              * 0.35, bodyH - 200))` - the MIN_EDITOR floor normally, falling
+              back to a proportional share when the body cannot give both their
+              minimum. **Landscape phone is still cramped** (roll ends up
+              ~70px); the real fix is making the device rack a slide-up sheet on
+              phone rather than a permanent band, which belongs with the sheets
+              work in step 3."
+            audience: user
+            id: 019faf5d-caea-736d-a27b-6187ef91ceb9
+            at: 2026-07-29T19:33:07.434Z
+            actor: claude
+          - body: "**Round-2 mobile UX agreed (2026-07-30)**, after using the round-1
+              prototype. Mockup: `docs/mockups/mobile-ux-v2.html` (to be
+              committed). The move: bottom tabs mirror the desktop's four
+              surfaces - **Arrangement / Edit / Clips / Devices** - instead of
+              phone-invented navigation, so each tab holds exactly one panel and
+              the mental model transfers both ways. New keystone: a **persistent
+              lane strip** (~56px) showing the selected track's own lane, on
+              every tab except Arrangement, on the shared bar grid + playhead.
+              Library becomes a **left sheet** off a ☰ (the six `RAIL_ITEMS` as
+              a segmented control, tap-to-add: assign if the selected track is
+              empty, else create one in the current group); agent becomes a
+              **right sheet** off a ✦ in the top-right. Top bar reduces to ☰ / ●
+              / ▶ / tempo / ⋮ / ✦, with ⋮ **context-sensitive** (the active
+              surface's controls, then the project's) - that is what lets the
+              piano-roll toolbar disappear. Decisions: Clips keeps its own tab
+              (mode-less launching is the most touch-native surface the app
+              has); the lane strip shows on Devices too; tapping a track in
+              Arrangement now only **selects** (the strip keeps it on screen, so
+              selection stops implying navigation). Tab 2 label stays a fixed
+              **\"Edit\"** - a dynamic Roll/Pads/Sample label would need an
+              `editor` field on `InstrumentInfo`, deferred rather than adding a
+              hardcoded per-type label map."
+            audience: user
+            id: 019fb26f-bc63-756c-b864-ddeb1977efaa
+            at: 2026-07-30T09:51:35.012Z
+            actor: claude
+          - body: "Two corrections from the round-2 design review, both worth keeping
+              because they were wrong in a way that would have cost work. (1) I
+              claimed the bus tree had no mobile home and proposed a new Mixer
+              sheet - wrong: `GroupHeader` in the Arrangement timeline already
+              carries mute/solo/volume per group, so the whole bus tree is
+              reachable, and per-track mixer detail is the existing **Project**
+              rail view which comes across in the library sheet for free.
+              Nothing to build. The one real gap: `ProjectView` gives expandable
+              detail to tracks but not groups, true on desktop too. (2) I
+              claimed the tab label could be derived from the instrument catalog
+              - it can't: `InstrumentInfo` is `{type, label, schema, family,
+              hidden?}` with no editor notion, which is why `CenterWorkbench`
+              hardcodes `kind === \"audio\"` and `instrumentType ===
+              \"drumkit\"`. Adding an `editor` field would drive the label *and*
+              delete that branch; worth doing eventually, out of scope for this
+              slice."
+            audience: user
+            id: 019fb26f-d201-736b-bf57-8660469f1d8c
+            at: 2026-07-30T09:51:40.545Z
+            actor: claude
       - ref: MOBILE-2
         area: MOBILE
         title: Touch and pointer layer
