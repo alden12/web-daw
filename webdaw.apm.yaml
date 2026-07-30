@@ -4449,6 +4449,13 @@ projects:
           *and* a small model addition, not a second playback engine.
 
 
+          Two degenerate cases are worth stating, because together they are the
+          argument that nothing is being given up by dropping the grid: **a
+          launched clip is a one-member section**, and **a scene is a section
+          whose every member sits at offset 0**. Sections are a strict superset
+          of both, and add identity, repeatability and multi-bar span on top.
+
+
           ## Make it feel natural
 
 
@@ -4469,9 +4476,11 @@ projects:
           upgrades a stamp to a live instance, whereas the reverse is not
           cleanly downgradable.
 
-          3. **Drag is the desktop verb, tap-to-launch is the touch verb** - one
-          object, tiered gestures. `ArrangementTimeline` already has the
-          `dropBeat` hover state for a drop ghost.
+          3. **Tier the verb, not the object.** Drag-to-arrangement is
+          desktop/tablet (it needs the tree and the timeline visible at once);
+          tap-to-launch is the phone. One section, different reach.
+          `ArrangementTimeline` already has the `dropBeat` hover state for a
+          drop ghost.
 
           4. **Launch quantised to the bar**, like every clip launcher, or the
           gesture feels broken rather than late.
@@ -4485,6 +4494,33 @@ projects:
           they span tracks, so they cannot live under a single track. Keeps the
           tree at Tracks -> track -> clip and Sections -> section -> member,
           rather than one four-deep spine.
+
+
+          ## Effort: the selection model is the bulk of it, not the section
+
+
+          Checked 2026-07-30: **the arrangement has no multi-select.**
+          `arrangement/shared.ts` has `export type Selection = { trackId:
+          string; id: string } | null` - one placement, and there is no range
+          concept anywhere in `ArrangementTimeline` (only `markerBeat`, the
+          paste marker). So "select these eight bars and save them" needs a
+          selection model that does not exist. The section object itself is
+          small (a schema addition, a scheduler generalisation at one line, a
+          tree branch); the capture gesture is the real cost, and it should
+          drive the estimate.
+
+
+          **A bar range is probably cheaper than general multi-select, and a
+          better fit.** A section *is* a bar range across tracks, so the
+          selection can be a single `{ startBeat, endBeat, trackIds }` value
+          with membership *derived* (every placement intersecting the range),
+          rather than a set of individually-selected placement ids. One value to
+          hold, one gesture to build it (a ruler drag or a marquee), and it
+          generalises to the other things a range unlocks later -
+          loop-to-selection, duplicate a range, delete a range. Worth deciding
+          this first, because general multi-select is a much larger surface
+          (shift-click, marquee, group drag, group resize) and would dwarf the
+          feature it was added for.
 
 
           ## Open questions / risks
@@ -4503,12 +4539,15 @@ projects:
           per-track, so leaving them is the cheap and probably correct answer,
           with `stopAllClips` as the escape.
 
-          - **Multi-select in the arrangement** may not exist yet as a selection
-          model - check before assuming "select a range of placements" is
-          available.
+          - **Where does the composing view live?** The user's framing is "a
+          different view altogether", with sections appearing as a branch of the
+          tree. The tree branch is the *browse/launch* surface; whether building
+          one needs more than capture-from-arrangement plus add/remove-member on
+          the branch is undecided, and the answer may be "no", which would be
+          the cheapest good outcome.
         id: 019fb2f0-7f2d-76af-b126-c1034b100965
         created_at: 2026-07-30T12:12:13.485Z
-        updated_at: 2026-07-30T12:12:13.485Z
+        updated_at: 2026-07-30T12:23:17.566Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
