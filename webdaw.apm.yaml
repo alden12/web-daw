@@ -3070,16 +3070,25 @@ projects:
           cross-type paste is refused).
 
 
-          **Remaining in this theme:** the optional multi-track **Session grid
-          view** + scenes on the same launched-clip model (each track a column
-          of its clips, scenes launching a row across tracks). One model, two
-          views - a view, not a model change.
+          **The remaining "Session grid view + scenes" item is dropped,
+          2026-07-30.** It was carried here as optional: each track a column of
+          its clips, scenes launching a row across tracks. The user's decision
+          was not to copy Ableton verbatim, and to reach the same expressive
+          goal with a different object instead: **DAW-26 (sections)** - named,
+          reusable, position-free multi-track clip fragments that appear as a
+          branch of the project tree, can be launched, and can be dragged onto
+          the arrangement as a unit. A section is a superset of a scene (it has
+          identity, can repeat, and can span a bar range rather than a single
+          instant), and it keeps the "one model, two views" property this item
+          wanted: `scheduler.ts`'s launched-clip substitution generalises from
+          one synthetic placement to a list. See also DAW-25 for the tree's
+          clip-browsing depth, which is the separate half of the same review.
 
 
           Deps: DAW-2.
         id: 019fae02-e437-74ac-8464-f94bd7bcaf7a
         created_at: 2026-07-29T13:14:12.919Z
-        updated_at: 2026-07-29T16:00:26.219Z
+        updated_at: 2026-07-30T12:12:44.113Z
       - ref: DAW-4
         area: DAW
         title: Arrangement timeline
@@ -4316,70 +4325,190 @@ projects:
         deleted_at: 2026-07-29T15:58:09.331Z
       - ref: DAW-25
         area: DAW
-        title: "Project tree: a clip depth, launchable - and the touch shell's Clips
-          tab"
+        title: "Project tree: a clip depth (browse, select, drag) - and the touch
+          shell's Clips tab"
         status: planning
         sort_path: "000025"
         priority: 0
         deps:
-          - DAW-3
           - MOBILE-1
         body: >-
           Give the **Project** rail view (`ProjectView`) a third depth: group ->
-          track -> **its clips**, each with a launch / stop toggle. The tree
-          becomes a whole-project overview - structure, per-track mixer (already
-          there), record, and every clip in the project, launchable from one
-          place.
+          track -> **its clips**. The tree becomes a whole-project overview:
+          structure, per-track mixer (already there), record, and every clip in
+          the project in one place.
+
+
+          **Scoped down 2026-07-30 after review.** This ticket originally had
+          the clip rows launchable, framed as "the vertical answer to DAW-3's
+          deferred session grid". The user's steer was that these are two
+          separate ideas and should stay separate: **the tree is for browsing -
+          selecting a clip for edit and dragging clips around** (into the
+          arrangement, onto another track). *Composing* and *triggering* clips
+          is a different surface, now DAW-26 (sections), whose sections appear
+          as their own branch of the same tree. So no launch control on a clip
+          row here; a clip row selects, and drags.
 
 
           **Then the touch shell's Clips tab becomes this view instead of the
           selected track's clip pool** (MOBILE-1 round 2 shipped it as a
-          per-track grid). That is a strict upgrade on a phone: launching across
-          *several* tracks is the performance gesture, and the phone tier is
-          explicitly "play / tweak / agent-driven" rather than precise editing.
-          It also folds record-into-track and the mixer into the same surface,
-          so one tab covers what three would.
+          per-track grid). On a phone that is a strict upgrade: every clip in
+          the project rather than one track's, plus record-into-track and the
+          mixer folded into the same surface, so one tab covers what three
+          would. Note the tier honesty - dragging a clip from a tree onto the
+          timeline needs both visible at once, which is a desktop/tablet
+          gesture; the phone gets tap-to-select and (via DAW-26) tap-to-launch.
 
 
-          **This is the vertical answer to a deferred roadmap item.** DAW-3's
-          remaining piece is "the optional multi-track **Session grid** view +
-          scenes on the same launched-clip model - each track a column of its
-          clips, scenes launching a row across tracks. One model, two views." A
-          grid needs width, so it was always a desktop shape; a *tree* is the
-          same idea in the axis a phone actually has. Worth building the tree
-          first and seeing whether the grid is still wanted afterwards.
+          **No model change:** clips, `selectClip` and placement drag-and-drop
+          all exist and flow through dispatch, so anything done from here is
+          undoable, in the feed, two-voice coloured and MCP-addressable for
+          free.
 
 
-          **No model change**, which is what makes it cheap: `launchClip` /
-          `stopAllClips` already exist and already flow through dispatch, so
-          launching from here is undoable, in the feed, two-voice coloured,
-          MCP-addressable and persisted for free.
+          **One design caution:** a row that both selects and drags is fine, but
+          if DAW-26's section rows land in the same tree, their launch control
+          must be its own hit target or a tap meant to select starts audio.
+          `ClipRail` already solves that with a play/stop button inside each
+          chip - reuse it, don't invent.
 
 
-          **Two design cautions:**
-
-          - A row that both selects and launches needs the launch control to be
-          its own target, or a tap meant to select starts audio. `ClipRail`
-          already solves this with a separate play/stop button inside each chip
-          - reuse that, don't invent.
-
-          - **Scenes do not fit a tree.** Launching a row across tracks is the
-          grid's actual advantage, so this does not close DAW-3's remaining
-          item; it delivers cross-track *clip* launching without cross-track
-          *scene* launching.
-
-
-          **Effort:** small-to-medium. `ProjectView` is ~200 lines with a
-          `flattenTree` and a `Row` union, so this is a new `{ kind: "clip" }`
-          row plus a clip-row component; `scheduler` needs threading in (launch
-          auto-starts the transport, which the view does not take today).
-          Roughly one slice.
+          **Effort:** small. `ProjectView` is ~200 lines with a `flattenTree`
+          and a `Row` union, so this is a new `{ kind: "clip" }` row plus a row
+          component.
 
 
           Proposed by the user, 2026-07-30, while reviewing the touch shell.
         id: 019fb2df-c389-7732-ba9d-0c2758f5d908
         created_at: 2026-07-30T11:53:56.873Z
-        updated_at: 2026-07-30T11:53:56.873Z
+        updated_at: 2026-07-30T12:12:28.192Z
+      - ref: DAW-26
+        area: DAW
+        title: "Sections: reusable multi-track clip fragments (instead of a session
+          grid)"
+        status: planning
+        sort_path: "000026"
+        priority: 0
+        deps:
+          - DAW-3
+        body: >
+          Proposed by the user, 2026-07-30, explicitly **in place of** copying
+          Ableton's session grid: "if we wanted a way to compose clips, I might
+          vote for a different view altogether where you could have multiple
+          clip groups which you could build and would appear as a branch of the
+          tree. Then you could trigger them from there, or drag them onto the
+          timeline to bring in the whole clip group."
+
+
+          A **section** is a named, reusable, position-free arrangement
+          fragment: a set of clips across tracks at relative offsets. It can be
+          launched (loop it instead of the timeline) or dragged onto the
+          arrangement (stamp it in at a beat). This supersedes DAW-3's deferred
+          "Session grid + scenes" item.
+
+
+          **Name it `section`, not `group`.** `groups` is already taken in
+          `schema.ts` (`groupDataSchema`: bus/mixer groups with
+          `parentId`/`muted`/`solo`/`volume`) and across the MCP surface
+          (`create_group`, `set_group`, `list_groups`). "Section" is also the
+          musical word for what a captured bar range actually is.
+
+
+          ## Why it is one model, not a bolted-on mode
+
+
+          A section is a **nameless mini-arrangement**, so its data shape is a
+          placement list minus the absolute start:
+
+
+          ```
+
+          Section = { id, name, members: Array<{ trackId, clipId, offsetBeats,
+          offset, length }> }
+
+          ```
+
+
+          And the existing launched clip turns out to be **the one-member case
+          of launching a section**. `scheduler.ts:261-262` already substitutes a
+          synthetic placement array for a track's arrangement:
+
+
+          ```ts
+
+          const placements = track.launchedClipId
+            ? [{ id: "__launch", clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
+            : track.placements;
+          ```
+
+
+          Launching a section is the same substitution with the member's
+          `offsetBeats` added and the loop taken from the section's length
+          rather than the transport's. That is the whole scheduler change - the
+          same seam, generalised from one placement to a list. So this is a view
+          *and* a small model addition, not a second playback engine.
+
+
+          ## Make it feel natural
+
+
+          1. **Capture, don't compose.** The primary way to make a section is to
+          select a bar range or a set of placements in the arrangement and "Save
+          as section", auto-named (`Section 1`, or from its bars). Composing
+          into an empty container is work with a deferred reward; naming eight
+          bars you just liked is a reward for free. This is the single biggest
+          naturalness lever, and it is what stops the Sections branch being
+          permanently empty.
+
+          2. **A section is a stamp, not a live instance (v1).** Dragging one in
+          expands to real placements with no back-link. This dodges the entire
+          instance/override/detach design space, and costs less than it sounds:
+          **the clips are already shared references**, so editing the chorus
+          bass line still changes every stamped copy. Only the *layout* is
+          copied. Forward-compatible - adding an `instanceOf` field later
+          upgrades a stamp to a live instance, whereas the reverse is not
+          cleanly downgradable.
+
+          3. **Drag is the desktop verb, tap-to-launch is the touch verb** - one
+          object, tiered gestures. `ArrangementTimeline` already has the
+          `dropBeat` hover state for a drop ghost.
+
+          4. **Launch quantised to the bar**, like every clip launcher, or the
+          gesture feels broken rather than late.
+
+          5. **Separate hit targets on a tree row.** A row that both selects and
+          launches must keep the launch control as its own target, or a tap
+          meant to select starts audio. `ClipRail` already solves this with a
+          play/stop button inside each chip.
+
+          6. **Sections are a sibling branch of Tracks, not nested under one** -
+          they span tracks, so they cannot live under a single track. Keeps the
+          tree at Tracks -> track -> clip and Sections -> section -> member,
+          rather than one four-deep spine.
+
+
+          ## Open questions / risks
+
+
+          - **Dangling members.** A section referencing a deleted track or clip.
+          Resolve-at-use (skip missing members) is probably right, with a heal
+          pass in `ProjectRepository.load` alongside the other bundle healing.
+
+          - **Schema bump.** Sections live in `project.json`, so this needs a
+          forward upcaster in `documentMigration.ts` (required now that projects
+          are hosted).
+
+          - **Does launching a section clear other tracks?** Ableton scenes
+          leave non-member tracks alone; the current `launchedClipId` model is
+          per-track, so leaving them is the cheap and probably correct answer,
+          with `stopAllClips` as the escape.
+
+          - **Multi-select in the arrangement** may not exist yet as a selection
+          model - check before assuming "select a range of placements" is
+          available.
+        id: 019fb2f0-7f2d-76af-b126-c1034b100965
+        created_at: 2026-07-30T12:12:13.485Z
+        updated_at: 2026-07-30T12:12:13.485Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
