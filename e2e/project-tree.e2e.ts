@@ -17,7 +17,7 @@ async function dismissStart(page: Page) {
   }
 }
 
-const openProjects = (page: Page) => page.getByRole("button", { name: "Projects" }).click();
+const openProjects = (page: Page) => page.getByRole("button", { name: "Project", exact: true }).click();
 
 test("expanding a track in the tree reveals mixer controls and toggles mute", async ({ page }) => {
   await page.goto("/");

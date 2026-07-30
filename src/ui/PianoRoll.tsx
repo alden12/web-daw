@@ -41,6 +41,7 @@ import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
+import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { isBlackKey, pitchName } from "./noteNames";
 
 const MIN_PITCH = 24; // C1
@@ -117,6 +118,7 @@ export function PianoRoll({
   dispatch,
   projectStore,
   rows = CHROMATIC_ROWS,
+  compact = false,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
@@ -130,6 +132,12 @@ export function PianoRoll({
   projectStore?: ProjectStore;
   /** Row labelling/tinting/framing; defaults to the chromatic keyboard. */
   rows?: RollRows;
+  /**
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its controls to the shell's
+   * single ⋮ instead. A 390px screen has no room for snap, grid, quantize and four zoom
+   * buttons in a row, and every surface having its own toolbar would stack three of them.
+   */
+  compact?: boolean;
 }) {
   const clip = useClip(clipStore);
   const presence = useAuthorPresence();
@@ -146,12 +154,31 @@ export function PianoRoll({
   const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
   const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
+  // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
+  // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
+  // Toggled from the roll's settings menu, so it is reachable in both shells.
+  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", true);
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
   const [quantStrength, setQuantStrength] = usePersistentNumber(QUANT_KEYS.strength, 1, 0, 1);
   const [quantEnds, setQuantEnds] = usePersistentBoolean(QUANT_KEYS.ends, false);
   const [quantOnRecord, setQuantOnRecord] = usePersistentBoolean(QUANT_KEYS.onRecord, false);
+
+  // Measure the scroll viewport so the velocity lane can never take most of it. Same
+  // guard as the workbench puts on the device rack: a persisted size competing with a
+  // flexible one has to be clamped, or a short window lets it win outright.
+  const [viewH, setViewH] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewH(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const effVelH = viewH ? Math.min(velH, Math.max(VEL.min, Math.round(viewH * 0.4))) : velH;
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -447,7 +474,7 @@ export function PianoRoll({
     e.preventDefault();
     e.stopPropagation();
     const startY = e.clientY;
-    const startH = velH;
+    const startH = effVelH; // drag from where it actually is, not the unclamped preference
     beginPointerDrag((ev) => setVelH(startH + (startY - ev.clientY)));
   };
 
@@ -466,7 +493,31 @@ export function PianoRoll({
     dispatch({ type: "editNotes", trackId, clipId, notes });
   };
 
-  const settingsItems: MenuItem[] = [
+  /**
+   * Snap, quantize and the velocity lane, as data. One list, two homes: the toolbar's
+   * kebab on desktop, and the shell's single ⋮ on touch.
+   *
+   * They live in a menu rather than on the toolbar because the toolbar could not hold
+   * them: with the agent panel open the row overflowed below ~1150px and pushed the zoom
+   * cluster clean out of view, so the controls that got hidden were the ones you reach
+   * for most. The toolbar now keeps only the label, this menu and zoom.
+   */
+  const rollControls: MenuItem[] = [
+    { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
+    {
+      label: "Grid",
+      submenu: GRID_DIVISIONS.map((division) => ({
+        label: division.label,
+        checked: snapDiv === division.beats,
+        onClick: () => setSnapDiv(division.beats),
+      })),
+    },
+    { separator: true },
+    {
+      label: selection.size ? `Quantize ${selection.size} selected` : "Quantize all notes",
+      disabled: !targets.length,
+      onClick: quantize,
+    },
     {
       label: "Strength",
       submenu: STRENGTH_OPTIONS.map((value) => ({
@@ -476,9 +527,25 @@ export function PianoRoll({
       })),
     },
     { label: "Quantize note ends", checked: quantEnds, onClick: () => setQuantEnds(!quantEnds) },
-    { separator: true },
     { label: "Auto-quantize recordings", checked: quantOnRecord, onClick: () => setQuantOnRecord(!quantOnRecord) },
+    { separator: true },
+    { label: "Velocity lane", checked: velOpen, onClick: () => setVelOpen(!velOpen) },
   ];
+
+  // Touch gets the zoom buttons as menu entries too, since the toolbar is gone there.
+  // Each closes the menu, so they are a fallback rather than the gesture: pinch-zoom is
+  // the real answer and belongs to MOBILE-2.
+  usePublishSurfaceControls(
+    [
+      ...rollControls,
+      { separator: true },
+      { label: "Zoom in", onClick: () => setPxPerBeat(Math.round(pxPerBeat * 1.25)) },
+      { label: "Zoom out", onClick: () => setPxPerBeat(Math.round(pxPerBeat / 1.25)) },
+      { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
+      { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
+    ],
+    compact,
+  );
 
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
@@ -487,24 +554,15 @@ export function PianoRoll({
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
-      {/* toolbar */}
-      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail shrink-0 text-muted">
+      {/* toolbar - replaced by the shell's ⋮ when compact (see compactControls above) */}
+      <div
+        hidden={compact}
+        className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail shrink-0 text-muted"
+      >
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Piano roll</span>
-        <label className="flex items-center gap-1.5 font-mono text-[11px]">
-          <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
-          Snap
-        </label>
-        <select
-          value={snapDiv}
-          onChange={(e) => setSnapDiv(Number(e.target.value))}
-          className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
-        >
-          {GRID_DIVISIONS.map((division) => (
-            <option key={division.label} value={division.beats}>
-              {division.label}
-            </option>
-          ))}
-        </select>
+        <Menu items={rollControls} label="Roll settings" align="left" />
+        {/* Quantize keeps a button as well as its menu entry: it is the one action here
+            you repeat, and it reads the selection, so its label is worth seeing. */}
         <button
           type="button"
           title={selection.size ? "Quantize selected notes to the grid" : "Quantize all notes to the grid"}
@@ -514,16 +572,6 @@ export function PianoRoll({
         >
           Quantize{selection.size ? " sel" : ""}
         </button>
-        <button
-          type="button"
-          title="Auto-quantize notes as they're recorded"
-          aria-pressed={quantOnRecord}
-          className={`${toolBtn} ${quantOnRecord ? "border-you text-you" : ""}`}
-          onClick={() => setQuantOnRecord(!quantOnRecord)}
-        >
-          Auto-Q
-        </button>
-        <Menu items={settingsItems} label="Quantize settings" align="left" />
         <div className="ml-auto flex items-center gap-1.5">
           <span className="font-mono text-[10px] text-faint">zoom</span>
           <button
@@ -694,11 +742,12 @@ export function PianoRoll({
               />
             </div>
 
-            {/* velocity lane */}
+            {/* velocity lane (collapsible - see velOpen) */}
             <div
               ref={velRef}
+              hidden={!velOpen}
               className="sticky bottom-0 z-10 border-t border-line bg-rail"
-              style={{ width, height: velH }}
+              style={{ width, height: effVelH }}
               title="Velocity - drag a bar"
             >
               {/* resize the lane by dragging its top edge */}
@@ -718,7 +767,7 @@ export function PianoRoll({
                     style={{
                       left: beatToX(note.start, pxPerBeat),
                       width: VEL_BAR_W,
-                      height: Math.max(2, note.velocity * (velH - 3)),
+                      height: Math.max(2, note.velocity * (effVelH - 3)),
                     }}
                   />
                 );

@@ -47,7 +47,7 @@ export const RAIL_ITEMS: RailItem[] = [
   },
   {
     view: "project",
-    label: "Projects",
+    label: "Project",
     icon: svg(
       <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" />,
     ),

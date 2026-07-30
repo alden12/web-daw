@@ -129,3 +129,45 @@ test("clips sit in a rail to the left of the roll", async ({ page }) => {
   const gb = (await page.getByTestId("piano-grid").boundingBox())!;
   expect(tb.x).toBeLessThan(gb.x); // the clip rail is left of the grid
 });
+
+test("the roll toolbar fits when the panel is narrow, keeping zoom reachable", async ({ page }) => {
+  // Snap and quantize settings used to sit on the toolbar as controls. With the agent
+  // panel open the row overflowed below ~1150px and pushed the zoom cluster clean out of
+  // view - the controls you reach for most were the ones that got hidden. They live in
+  // the roll's settings menu now, so the row fits.
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.goto("/");
+  await dismissStart(page);
+  await page.getByRole("button", { name: /expand agent panel/i }).click();
+  await expect.poll(() => page.getByTitle("Zoom out (time)").isVisible()).toBe(true);
+
+  const toolbar = page.getByText("Piano roll", { exact: true }).locator("..");
+  const size = await toolbar.evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
+  expect(size.scroll, "the toolbar row must not overflow").toBeLessThanOrEqual(size.client);
+
+  // Zoom sits inside the toolbar's own box rather than beyond its right edge.
+  const bar = (await toolbar.boundingBox())!;
+  const zoom = (await page.getByTitle("Zoom out (time)").boundingBox())!;
+  expect(zoom.x + zoom.width).toBeLessThanOrEqual(bar.x + size.client + 1);
+
+  // Snap and quantize are still reachable, in the settings menu.
+  await page.getByRole("button", { name: "Roll settings" }).click();
+  await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /Quantize all notes|Quantize \d+ selected/ })).toBeVisible();
+});
+
+test("the velocity lane collapses from the roll settings menu", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  const lane = page.getByTitle("Velocity - drag a bar");
+  await expect(lane).toBeVisible();
+
+  await page.getByRole("button", { name: "Roll settings" }).click();
+  await page.getByRole("menuitemradio", { name: /Velocity lane/i }).click();
+  await expect(lane).toBeHidden();
+
+  // Persisted, so a short screen stays uncluttered across a reload.
+  await page.reload();
+  await dismissStart(page);
+  await expect(page.getByTitle("Velocity - drag a bar")).toBeHidden();
+});

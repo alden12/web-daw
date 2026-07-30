@@ -84,7 +84,7 @@ test("the project switcher creates a project that survives a reload", async ({ p
   await dismissStart(page);
 
   // Open the Project view, then its switcher menu: one project is listed (checked).
-  await page.getByRole("button", { name: "Projects" }).click();
+  await page.getByRole("button", { name: "Project", exact: true }).click();
   await page.getByRole("button", { name: "Project menu" }).click();
   await expect(page.getByRole("menuitemradio")).toHaveCount(1);
   await page.getByRole("menuitem", { name: "New project" }).click();
