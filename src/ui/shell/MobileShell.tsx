@@ -475,9 +475,15 @@ export function MobileShell({
       ],
     },
   ];
-  const overflowItems: MenuItem[] = surfaceControls
-    ? [...surfaceControls(), { separator: true }, ...projectItems]
-    : projectItems;
+  /**
+   * A getter, not an array: the shell is not re-rendered when the active surface's own
+   * state changes (the registry only notifies on mount/unmount, by design), so an array
+   * built here would hold whatever was true at the shell's last unrelated render - a
+   * "Velocity lane" tick still on after the lane was hidden, or a stale `disabled`.
+   * `Menu` calls this while it is open, so the rows always reflect now.
+   */
+  const overflowItems = (): MenuItem[] =>
+    surfaceControls ? [...surfaceControls(), { separator: true }, ...projectItems] : projectItems;
 
   // Built once, framed twice: a sheet on a phone, a docked column on a tablet.
   const library = (
