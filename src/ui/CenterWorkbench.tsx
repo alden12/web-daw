@@ -31,6 +31,13 @@ import { TrackRecordButton } from "./workbench/TrackRecordButton";
  * Pixels of editor (roll / audio clip) the device rack may never take, however tall it
  * is persisted. Sized for the editor's own chrome (clip label + roll toolbar, ~90px)
  * plus a usable strip of grid underneath.
+ *
+ * This and `RACK_SHARE_WHEN_TIGHT` guard the **desktop**, despite having been found on a
+ * phone (MOBILE-1, where a rack height saved on a big window left a ~30px roll). The
+ * touch shell no longer stacks the two - the rack has its own tab - but here they still
+ * share one vertical box, and `deviceH` is a persisted absolute while the body's height
+ * moves with the window. Drag the rack tall, then shrink the window or reopen on a
+ * smaller screen, and the squeeze is identical. Not mobile leftovers; do not delete.
  */
 const MIN_EDITOR = 200;
 /**
