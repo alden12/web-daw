@@ -58,28 +58,35 @@
      ::-webkit-scrollbar, so we give the standard props to Firefox only (via a feature
      query it matches and Chrome does not) and style Chrome/WebKit through the
      pseudo-elements, which render always-on. */
-  @supports not selector(::-webkit-scrollbar) {
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+  /* Fine pointers only (MOBILE-5). With a mouse a scrollbar is a *control* you can grab,
+     so it earns permanent space. With a thumb it is only an indicator - you scroll the
+     content directly - and a persistent 10px gutter down every panel is pure loss on a
+     390px screen. Leaving the pseudo-elements unstyled on a coarse pointer hands the job
+     back to the platform's overlay scrollbars, which fade out on their own. */
+  @media (pointer: fine) {
+    @supports not selector(::-webkit-scrollbar) {
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+      }
     }
-  }
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  *::-webkit-scrollbar-track,
-  *::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-  *::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.35);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-    border-radius: 999px;
-  }
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.5);
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    *::-webkit-scrollbar-track,
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background-color: rgba(255, 255, 255, 0.35);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      border-radius: 999px;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(255, 255, 255, 0.5);
+    }
   }
 }
 
