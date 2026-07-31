@@ -341,7 +341,7 @@ test.describe("tablet", () => {
     await tab(page, "Edit").tap();
     const roll = page.getByTestId("roll-scroll");
 
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    // Already open: a tablet starts with the library docked, so there is nothing to tap.
     const library = page.getByRole("complementary", { name: "Library" });
     await expect(library).toBeVisible();
     // Docked, not overlaid: no dialog, and the workspace is still there beside it.
@@ -366,6 +366,37 @@ test.describe("tablet", () => {
     // The same button closes it again.
     await page.getByRole("button", { name: "Agent", exact: true }).tap();
     await expect(agent).toHaveCount(0);
+  });
+
+  test("opens with the library already docked, and the toggle still closes it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    const library = page.getByRole("complementary", { name: "Library" });
+    // No tap: there is room for it beside the workspace, so a tablet starts with it open.
+    await expect(library).toBeVisible();
+
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await expect(library).toHaveCount(0);
+  });
+
+  test("keeps the tab bar over the workspace, not under the docked panels", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    const library = page.getByRole("complementary", { name: "Library" });
+    await expect(library).toBeVisible();
+
+    const libraryBox = (await library.boundingBox())!;
+    const barBox = (await tabBar(page).boundingBox())!;
+    // The tabs switch the workspace column, so they start where the library ends.
+    expect(barBox.x, "the tab bar starts right of the docked library").toBeGreaterThanOrEqual(
+      libraryBox.x + libraryBox.width - 1,
+    );
+
+    // ...and closing the library hands that width back.
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await expect(library).toHaveCount(0);
+    const barFull = (await tabBar(page).boundingBox())!;
+    expect(barFull.width, "the tab bar spans the full width once nothing is docked").toBeGreaterThan(barBox.width);
   });
 });
 

@@ -323,7 +323,15 @@ export function MobileShell({
   onOpenShare,
 }: ShellProps & { shape: DeviceShape }) {
   const [tab, setTab] = useState<MobileTab>("arrange");
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  /**
+   * A tablet opens with the library already docked: there is width for it beside the
+   * workspace, and it is the first thing you reach for on a new project (add a track,
+   * pick an instrument). Only where it *docks* - a phone, or a landscape phone sharing
+   * the tablet tier, would open onto a full-screen overlay instead, which is a worse
+   * first impression than an empty workspace. Same condition as `docked` below, read at
+   * mount only, so toggling it later sticks.
+   */
+  const [libraryOpen, setLibraryOpen] = useState(() => shape.tier === "tablet" && !shape.short);
   const [agentOpen, setAgentOpen] = useState(false);
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -581,6 +589,38 @@ export function MobileShell({
             />
           )}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{views[tab]}</div>
+          {/* Inside the workspace column, not below the whole band: the tabs switch *this*
+              column, so on a tablet they should not run under a docked library or agent,
+              which own their full height. On a phone the column is the full width anyway,
+              so this is the same full-width bar it has always been. */}
+          <nav
+            aria-label="Views"
+            role="tablist"
+            className="shrink-0 flex items-stretch border-t border-line bg-rail"
+            // Keep the tabs clear of the home indicator / gesture bar on iOS.
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            {TAB_ITEMS.map((item) => {
+              const selected = item.tab === tab;
+              return (
+                <button
+                  key={item.tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-label={item.label}
+                  onClick={() => setTab(item.tab)}
+                  className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 h-14 cursor-pointer ${
+                    selected ? "text-you" : "text-muted"
+                  }`}
+                >
+                  {selected && <span className="absolute top-0 left-3 right-3 h-0.5 bg-you rounded-full" />}
+                  {item.icon}
+                  <span className="text-[10px] leading-none">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
         {docked && agentOpen && (
           <DockedPanel side="right" label="Agent">
@@ -588,35 +628,6 @@ export function MobileShell({
           </DockedPanel>
         )}
       </div>
-
-      <nav
-        aria-label="Views"
-        role="tablist"
-        className="shrink-0 flex items-stretch border-t border-line bg-rail"
-        // Keep the tabs clear of the home indicator / gesture bar on iOS.
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        {TAB_ITEMS.map((item) => {
-          const selected = item.tab === tab;
-          return (
-            <button
-              key={item.tab}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-label={item.label}
-              onClick={() => setTab(item.tab)}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 h-14 cursor-pointer ${
-                selected ? "text-you" : "text-muted"
-              }`}
-            >
-              {selected && <span className="absolute top-0 left-3 right-3 h-0.5 bg-you rounded-full" />}
-              {item.icon}
-              <span className="text-[10px] leading-none">{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       {!docked && (
         <>
