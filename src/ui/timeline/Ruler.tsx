@@ -82,7 +82,7 @@ export function Ruler({
           aria-valuenow={loopStart}
           title={`Loop start: beat ${loopStart} - drag to move`}
           onPointerDown={(e) => drag(e, (b) => onSetLoopStart(Math.min(b, loopEnd - minLoop)))}
-          className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you"
+          className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you touch-none"
           style={{ left: beatToX(loopStart, pxPerBeat) }}
         />
       )}

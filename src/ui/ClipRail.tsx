@@ -32,8 +32,13 @@ export function ClipRail({
   scheduler: Scheduler;
   trackId: string;
   dispatch: Dispatch;
-  /** 'horizontal' chip row; 'vertical' left rail (stacked, beside the roll). */
-  orientation?: "horizontal" | "vertical";
+  /**
+   * 'vertical' left rail (stacked, beside the roll); 'horizontal' a single scrolling
+   * chip row; 'grid' a wrapping field of larger chips filling a whole panel - the touch
+   * shell's Clips tab (MOBILE-1), where launching is a performance gesture and the
+   * targets should be big.
+   */
+  orientation?: "horizontal" | "vertical" | "grid";
   /** Bottom action below the clip list (e.g. a record button), for either kind. */
   footer?: ReactNode;
 }) {
@@ -44,6 +49,7 @@ export function ClipRail({
 
   const { clips, activeClipId, launchedClipId } = track;
   const vertical = orientation === "vertical";
+  const grid = orientation === "grid";
 
   // Delete a clip. A track must keep at least one clip, so deleting the last one
   // replaces it with a fresh empty clip (a blank-slate reset). The new id is minted
@@ -107,14 +113,29 @@ export function ClipRail({
     }
   };
 
+  // The horizontal and grid layouts are the touch ones (MOBILE-1): roomier padding on
+  // both axes so the chips are comfortable tap targets rather than a squashed strip.
   const containerClass = vertical
     ? "flex flex-col gap-1.5 p-2 w-full min-h-0 border-r border-line overflow-y-auto"
-    : "flex items-center gap-1.5 px-4 h-9 border-b border-line overflow-x-auto shrink-0";
-  const chipClass = vertical ? "w-full justify-between" : "shrink-0";
+    : grid
+      ? "flex flex-wrap content-start gap-2 p-3 flex-1 min-h-0 overflow-y-auto"
+      : "flex items-center gap-2 px-3 py-2.5 border-b border-line overflow-x-auto shrink-0";
+  // Padding lives here (not in the chip's own class) so the orientations can differ
+  // without two conflicting Tailwind padding utilities on one element.
+  // Two per row in the grid, so a chip is a comfortable target and the names have room.
+  const chipClass = vertical
+    ? "w-full justify-between py-1"
+    : grid
+      ? "grow basis-[calc(50%-0.25rem)] justify-between py-2.5"
+      : "shrink-0 py-1.5";
 
   return (
     <div className={`${containerClass} outline-none`} data-clip-rail tabIndex={0} onKeyDown={onKeyDown}>
-      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1">Clips</span>
+      <span
+        className={`font-mono text-[10px] tracking-[0.16em] uppercase text-faint shrink-0 mr-1 ${grid ? "w-full" : ""}`}
+      >
+        Clips
+      </span>
       {clips.map((clip) => {
         const active = clip.id === activeClipId;
         return (
@@ -130,7 +151,7 @@ export function ClipRail({
               setDraggedClip(content);
             }}
             onDragEnd={() => clearDraggedClip()}
-            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 py-1 rounded-md border cursor-grab active:cursor-grabbing ${
+            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 rounded-md border cursor-grab active:cursor-grabbing ${
               active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
@@ -168,7 +189,10 @@ export function ClipRail({
                   e.stopPropagation();
                   deleteClip(clip.id);
                 }}
-                className="font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+                // Touch has no hover, so the grid shows it outright rather than on reveal.
+                className={`font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink cursor-pointer ${
+                  grid ? "" : "opacity-0 group-hover:opacity-100"
+                }`}
               >
                 ×
               </button>
@@ -183,7 +207,7 @@ export function ClipRail({
           type="button"
           title="Add a new empty clip"
           onClick={() => dispatch({ type: "addClip", trackId, id: newClipId(), empty: true })}
-          className={`${chipClass} font-mono text-[11px] px-2 py-1 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
+          className={`${chipClass} font-mono text-[11px] px-2 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
         >
           + Clip
         </button>

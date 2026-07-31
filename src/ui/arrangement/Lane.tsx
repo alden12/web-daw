@@ -49,7 +49,7 @@ function Block({
       data-testid="placement"
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
-      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${
+      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab touch-none ${
         selected ? "" : "border-t-2 border-line bg-card hover:bg-card/70"
       }`}
       style={{ ...authorBlockStyle(author, selected, presence), left, width: Math.max(3, width) }}

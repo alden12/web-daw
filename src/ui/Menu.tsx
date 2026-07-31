@@ -127,7 +127,15 @@ export function Menu({
   triggerClassName = "shrink-0 px-1 text-[15px] leading-none text-muted hover:text-ink cursor-pointer",
   trigger = "⋮",
 }: {
-  items: MenuItem[];
+  /**
+   * The rows, or a getter for them. Pass a **getter** when the items are derived from
+   * state this component does not re-render for - notably the touch shell's ⋮, which
+   * folds in the active surface's controls (`surfaceControls.ts`) and is not re-rendered
+   * when that surface's own state changes. An array captured by the caller's last render
+   * would show a stale `checked` tick or a stale `disabled`; a getter is read while the
+   * menu is open, so it always reflects now.
+   */
+  items: MenuItem[] | (() => MenuItem[]);
   label?: string;
   align?: "left" | "right";
   triggerClassName?: string;
@@ -141,6 +149,10 @@ export function Menu({
   const open = coords !== null;
   // Right-aligned menus sit near the viewport's right edge, so their submenus fly left.
   const submenuSide = align === "right" ? "left" : "right";
+
+  // Resolved on every render while open, not when the prop arrives: that is what lets a
+  // getter reflect state the menu's owner did not re-render for.
+  const rows = open && typeof items === "function" ? items() : Array.isArray(items) ? items : [];
 
   const closeMenu = () => setCoords(null);
 
@@ -229,13 +241,13 @@ export function Menu({
             style={{ position: "fixed", top: coords.top, left: coords.left }}
             className="z-50 min-w-40 py-1 rounded-lg border border-line bg-card shadow-lg"
           >
-            {items.map((item, i) => (
+            {rows.map((item, i) => (
               <Row
                 key={item.label ?? i}
                 item={item}
                 side={submenuSide}
                 onClose={closeMenu}
-                reserveCheck={items.some((other) => other.checked !== undefined)}
+                reserveCheck={rows.some((other) => other.checked !== undefined)}
               />
             ))}
           </div>,

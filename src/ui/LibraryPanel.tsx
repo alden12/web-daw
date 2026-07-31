@@ -568,7 +568,7 @@ export function LibraryPanel({
   };
 
   return (
-    <div className="[grid-area:library] min-w-0 bg-rail border-r border-line flex flex-col min-h-0">
+    <div className="[grid-area:library] min-w-0 bg-rail border-r border-line flex flex-col flex-1 min-h-0">
       {/* Search sits above the view title; typing jumps to the Search results view. */}
       <div className="shrink-0 p-2 border-b border-line">
         <input

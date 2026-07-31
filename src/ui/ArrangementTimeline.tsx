@@ -27,7 +27,7 @@ import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
-import { Menu } from "./Menu";
+import { Menu, type MenuItem } from "./Menu";
 import { GROOVES } from "../audio/grooves/catalog";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
@@ -40,6 +40,8 @@ import { beatToX } from "./timeline/timeGrid";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
+import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
+import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import {
   ROW,
   ROW_PX,
@@ -81,6 +83,9 @@ export function ArrangementTimeline({
   dispatch,
   isPlaying,
   started,
+  showTransport = true,
+  stickyHeaders = true,
+  compact = false,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -88,20 +93,43 @@ export function ArrangementTimeline({
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
+  /**
+   * Whether the toolbar carries the transport. False in the touch shell (MOBILE-1),
+   * which pins one transport above every view, so this would be a second copy.
+   */
+  showTransport?: boolean;
+  /**
+   * Whether track/group headers stay pinned to the left edge as the lanes scroll.
+   * False on touch: a pinned header column costs the same absolute pixels on a 390px
+   * phone as on a desktop, where it would leave almost no lane. Letting it scroll away
+   * trades "always know which track" for "actually see the arrangement".
+   */
+  stickyHeaders?: boolean;
+  /**
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
+   * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
+   */
+  compact?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
-  // Bring the selected track's row into view (e.g. when selection is driven from the
-  // project tree). `nearest` is a no-op when the row is already visible.
+  // Bring the selected track's row into view vertically (e.g. when selection is driven
+  // from the project tree), without touching the time axis. `scrollIntoView` won't do:
+  // giving it only `block` leaves `inline` defaulting to "nearest", so it also nudges the
+  // view sideways - which quietly moved the timeline off the offset just restored for it.
   const selectedTrackId = project.selectedTrackId;
   useEffect(() => {
     if (!selectedTrackId) return;
-    scrollRef.current
-      ?.querySelector(`[data-track-id="${CSS.escape(selectedTrackId)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    const scroller = scrollRef.current;
+    const row = scroller?.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(selectedTrackId)}"]`);
+    if (!scroller || !row) return;
+    const above = row.offsetTop - RULER_H; // the ruler is sticky, so it covers this much
+    const below = row.offsetTop + row.offsetHeight - scroller.clientHeight;
+    if (above < scroller.scrollTop) scroller.scrollTop = above;
+    else if (below > scroller.scrollTop) scroller.scrollTop = below;
   }, [selectedTrackId]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
@@ -298,6 +326,11 @@ export function ArrangementTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, [pxPerBeat, setPxPerBeat, headerW]);
 
+  // Share the time-axis offset with the lane strip, which shows this same grid from
+  // another tab on touch. A sticky header column does not consume scroll, so beat 0 is
+  // at the content's left edge; once it scrolls away with the lanes it leads by headerW.
+  useSharedGridScroll(scrollRef, pxPerBeat, stickyHeaders ? 0 : headerW);
+
   // Drive the playhead off the audio clock (0 when stopped).
   useAnimationFrame(() => {
     const el = playheadRef.current;
@@ -336,72 +369,105 @@ export function ArrangementTimeline({
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
 
+  // The toolbar's options, as data - so the same list can be a kebab on desktop or fold
+  // into the shell's single ⋮ on touch (MOBILE-1).
+  const optionItems: MenuItem[] = [
+    {
+      label: "Add group",
+      onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
+    },
+    // Every track lives in a group, so adding one picks the destination group
+    // (or a fresh group). Nested as submenus so the menu stays short.
+    { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
+    { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
+    { separator: true },
+    // Recording settings live here too (one toolbar menu, not a second kebab).
+    {
+      label: "Count-in",
+      submenu: [
+        {
+          label: "No count-in",
+          checked: countInBars === 0,
+          onClick: () => setCountInBars(0),
+        },
+        {
+          label: "1 bar",
+          checked: countInBars === 1,
+          onClick: () => setCountInBars(1),
+        },
+        {
+          label: "2 bars",
+          checked: countInBars === 2,
+          onClick: () => setCountInBars(2),
+        },
+      ],
+    },
+    { separator: true },
+    // Groove: project-wide swing/feel applied at playback (non-destructive).
+    {
+      label: "Groove",
+      submenu: GROOVES.map((groove) => ({
+        label: groove.name,
+        checked: project.grooveId === groove.id,
+        onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
+      })),
+    },
+    {
+      label: "Groove amount",
+      submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
+        label: `${Math.round(value * 100)}%`,
+        checked: project.grooveAmount === value,
+        onClick: () => dispatch({ type: "setGroove", amount: value }),
+      })),
+    },
+  ];
+
+  // On touch the toolbar row goes away and its contents move to the shell's ⋮: the
+  // options above, plus the snap and zoom controls that sit on the toolbar's right.
+  usePublishSurfaceControls(
+    [
+      { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
+      {
+        label: "Snap to",
+        submenu: SNAP_OPTIONS.map((option) => ({
+          label: option.label,
+          checked: snapDiv === option.value,
+          onClick: () => setSnapDiv(option.value),
+        })),
+      },
+      { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
+      { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
+      { separator: true },
+      ...optionItems,
+    ],
+    compact,
+  );
+
+  // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
+  // column; as a grid item on desktop it is ignored, so the grid row decides the height.
   return (
-    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
-      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
-        <TransportBar
-          projectStore={projectStore}
-          scheduler={scheduler}
-          recorder={recorder}
-          dispatch={dispatch}
-          isPlaying={isPlaying}
-          started={started}
-        />
-        <span className="w-px h-5 bg-line shrink-0" />
-        <Menu
-          label="Timeline options"
-          align="left"
-          items={[
-            {
-              label: "Add group",
-              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
-            },
-            // Every track lives in a group, so adding one picks the destination group
-            // (or a fresh group). Nested as submenus so the menu stays short.
-            { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
-            { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
-            { separator: true },
-            // Recording settings live here too (one toolbar menu, not a second kebab).
-            {
-              label: "Count-in",
-              submenu: [
-                {
-                  label: "No count-in",
-                  checked: countInBars === 0,
-                  onClick: () => setCountInBars(0),
-                },
-                {
-                  label: "1 bar",
-                  checked: countInBars === 1,
-                  onClick: () => setCountInBars(1),
-                },
-                {
-                  label: "2 bars",
-                  checked: countInBars === 2,
-                  onClick: () => setCountInBars(2),
-                },
-              ],
-            },
-            { separator: true },
-            // Groove: project-wide swing/feel applied at playback (non-destructive).
-            {
-              label: "Groove",
-              submenu: GROOVES.map((groove) => ({
-                label: groove.name,
-                checked: project.grooveId === groove.id,
-                onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
-              })),
-            },
-            {
-              label: "Groove amount",
-              submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
-                label: `${Math.round(value * 100)}%`,
-                checked: project.grooveAmount === value,
-                onClick: () => dispatch({ type: "setGroove", amount: value }),
-              })),
-            },
-          ]}
-        />
+    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col flex-1 min-h-0">
+      {/* The whole toolbar row goes when compact - the shell owns the transport and the ⋮ -
+          except the clip-mode indicator, which is live state you need to be able to see. */}
+      <div
+        className={`flex items-center gap-3 px-2.5 border-b border-line bg-rail ${
+          compact ? (clipMode ? "py-1.5" : "hidden") : "py-1.5"
+        }`}
+      >
+        {!compact && showTransport && (
+          <>
+            <TransportBar
+              projectStore={projectStore}
+              scheduler={scheduler}
+              recorder={recorder}
+              dispatch={dispatch}
+              isPlaying={isPlaying}
+              started={started}
+            />
+            <span className="w-px h-5 bg-line shrink-0" />
+          </>
+        )}
+        {!compact && <Menu label="Timeline options" align="left" items={optionItems} />}
         {clipMode && (
           <button
             type="button"
@@ -415,7 +481,7 @@ export function ArrangementTimeline({
             Back to timeline
           </button>
         )}
-        <div className="ml-auto flex items-center gap-2 text-muted">
+        <div hidden={compact} className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
             <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
             Snap
@@ -460,10 +526,13 @@ export function ArrangementTimeline({
         <div className="relative flex-1 min-h-0">
           <div ref={scrollRef} data-testid="arr-scroll" className="absolute inset-0 overflow-auto">
             <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
-              {/* ruler row: sticky top; the corner cell is sticky on both axes */}
+              {/* ruler row: sticky top; the corner cell is sticky on both axes (on touch
+                  it scrolls horizontally with the headers, so only the top pin remains) */}
               <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
                 <div
-                  className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
+                  className={`shrink-0 bg-rail border-r border-b border-line ${
+                    stickyHeaders ? "sticky left-0 z-10" : ""
+                  }`}
                   style={{ width: headerW, height: RULER_H }}
                 />
                 <Ruler
@@ -480,7 +549,7 @@ export function ArrangementTimeline({
               {rows.map((row) =>
                 row.kind === "group" ? (
                   <div key={row.group.id} className="flex">
-                    <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
+                    <div className={`shrink-0 ${stickyHeaders ? "sticky left-0 z-10" : ""}`} style={{ width: headerW }}>
                       <GroupHeader
                         group={row.group}
                         depth={row.depth}
@@ -512,6 +581,7 @@ export function ArrangementTimeline({
                     onSelect={selectPlacement}
                     onMark={placeMarker}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
+                    stickyHeader={stickyHeaders}
                   />
                 ),
               )}
@@ -522,20 +592,25 @@ export function ArrangementTimeline({
               />
             </div>
           </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize the header column"
-            onPointerDown={onHeaderResize}
-            // Start below the ruler row: the divider overlaps the loop-start handle
-            // (both land at x = headerW when the loop starts at beat 0), and at z-30
-            // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
-            // px free keeps the marker row draggable.
-            className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
-            style={{ left: headerW, top: RULER_H }}
-          >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
-          </div>
+          {/* The header-column divider is pinned at x = headerW, which only lines up while
+              the headers are pinned there too - and a 2px drag target is not a touch
+              affordance anyway, so it goes with them. */}
+          {stickyHeaders && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize the header column"
+              onPointerDown={onHeaderResize}
+              // Start below the ruler row: the divider overlaps the loop-start handle
+              // (both land at x = headerW when the loop starts at beat 0), and at z-30
+              // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
+              // px free keeps the marker row draggable.
+              className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+              style={{ left: headerW, top: RULER_H }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
+            </div>
+          )}
         </div>
       )}
     </div>

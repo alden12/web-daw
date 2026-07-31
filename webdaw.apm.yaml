@@ -2826,6 +2826,105 @@ projects:
         id: 019fae0d-3a4a-727a-8d2a-2be55efb30f7
         created_at: 2026-07-29T13:25:30.314Z
         updated_at: 2026-07-29T16:00:50.188Z
+      - ref: ARCH-3
+        area: ARCH
+        title: Editing preferences are app state, not component state
+        status: in-progress
+        sort_path: "000003"
+        priority: 0
+        body: >-
+          Raised during the MOBILE-1 code review, as a deliberate architectural
+          decision rather than a drive-by cleanup.
+
+
+          **The observation.** The touch shell needs the active surface's
+          toolbar in its single ⋮, so surfaces publish menu items through
+          `surfaceControls.ts`. That inversion (a child authoring what a parent
+          renders) prompted the question: should an outer component own all of
+          this state and render the controls per view, later per route?
+
+
+          **Half yes.** The *state* those items are built from is genuinely
+          app-level and was misfiled as component state. The *composition* -
+          which items a surface offers - should stay with the surface.
+
+
+          **We were already paying for the misfiling.** `usePersistent*` was a
+          plain `useState` seeded once on mount with **no cross-instance
+          notification**, so two components reading one key diverged silently
+          the moment either wrote. Not hypothetical: `web-daw:metronome` is read
+          by both `TransportBar.tsx:41` and `MobileShell.tsx:341`, mounted
+          together on touch, and only stayed correct because of a hand-written
+          guard (`if (compact) return`) standing one copy down. Ownership was
+          being negotiated per feature, in prose.
+
+
+          **The line to draw** is the one `ShellProps` already draws for the two
+          shells: anything a shell may not differ on is shared; pure geometry
+          stays private. The ~21 persisted keys split cleanly along it:
+
+
+          - *Semantic editing preferences* - `roll-snap-on`, `arr-snap-on`,
+          `arr-snap-div`, `count-in-bars`, `QUANT_KEYS.*`, `metronome`,
+          `roll-vel-open`. The user's editing intent; belongs to no component.
+
+          - *Pure geometry* - `lib-width`, `agent-width`, `timeline-height`,
+          `devices-height`, `arr-header-w`, `roll-vel-height`, the zoom levels,
+          the collapsed flags. One shell's layout; stays where it is.
+
+
+          **Why composition stays with the surface.** A central owner knowing
+          that the Edit view offers snap/quantize/velocity means the shell knows
+          every surface's feature set, and adding a surface edits the shell -
+          the "hardcode the catalog" shape ruled out for instruments and
+          effects, and the reason the code prefers object maps to `switch`.
+          Routing does not change this: the route decides what mounts and the
+          mounted thing declares what it offers, rather than a hand-maintained
+          route -> controls map.
+
+
+          **Plan, in order.**
+
+          1. **Done** (in the MOBILE-1 branch). Extracted
+          `src/ui/persistentStore.ts` - one raw value per storage key, cached
+          and authoritative, with a subscribe seam - and made `usePersistent*` a
+          thin `useSyncExternalStore` binding over it. Every reader of a key now
+          sees one value. The public hook API is unchanged, so none of the 37
+          call sites moved. Covered by `test/persistentStore.test.ts` (8 tests:
+          the drift case, per-key isolation, no-notify-on-unchanged,
+          unsubscribe, and the private-mode path where storage throws).
+
+          2. Move the ~7 semantic preferences behind a small prefs store on the
+          same pattern (`currentUser.ts`, `authorColors.ts`, `gridView.ts`).
+          Leave the geometry keys alone. Then `TransportBar`'s `if (compact)
+          return` guard can be re-examined on its own merits, as a question of
+          who drives the scheduler rather than a workaround for drift.
+
+          3. Keep the `surfaceControls` registry, now thin: items become
+          `f(store, a few local actions)` rather than stateful publishing.
+
+
+          **Not adopting a state library (zustand et al.) for this.** The
+          problem was one hook that did not notify, not the ergonomics of
+          writing stores. The ~10 existing stores are already granular enough
+          that selector subscriptions would buy little, and the audio layer must
+          stay framework-free for the Node MCP server, so a React-oriented
+          library would split the codebase into two store patterns rather than
+          one. Worth revisiting if we need cross-store derived state or
+          middleware we would otherwise hand-roll (undo, devtools, persistence -
+          zustand's `persist` is close to what step 1 hand-rolls). Deferring is
+          cheap because every store exposes read/subscribe, so one can be
+          swapped underneath without touching consumers.
+
+
+          **Related.** The staleness bug fixed in the same review (`Menu` now
+          takes a getter, so the shell's ⋮ cannot show a stale tick or a stale
+          `disabled`) is a symptom of the same root cause: the shell does not
+          re-render for state it does not own. Step 2 removes that condition
+          rather than working around it.
+        id: 019fb7bf-253b-735e-bcb3-2cf3eeaddc1c
+        created_at: 2026-07-31T10:36:25.275Z
+        updated_at: 2026-07-31T10:36:25.275Z
       - ref: COLLAB-1
         area: COLLAB
         title: Real identity on the log
@@ -3070,16 +3169,25 @@ projects:
           cross-type paste is refused).
 
 
-          **Remaining in this theme:** the optional multi-track **Session grid
-          view** + scenes on the same launched-clip model (each track a column
-          of its clips, scenes launching a row across tracks). One model, two
-          views - a view, not a model change.
+          **The remaining "Session grid view + scenes" item is dropped,
+          2026-07-30.** It was carried here as optional: each track a column of
+          its clips, scenes launching a row across tracks. The user's decision
+          was not to copy Ableton verbatim, and to reach the same expressive
+          goal with a different object instead: **DAW-26 (sections)** - named,
+          reusable, position-free multi-track clip fragments that appear as a
+          branch of the project tree, can be launched, and can be dragged onto
+          the arrangement as a unit. A section is a superset of a scene (it has
+          identity, can repeat, and can span a bar range rather than a single
+          instant), and it keeps the "one model, two views" property this item
+          wanted: `scheduler.ts`'s launched-clip substitution generalises from
+          one synthetic placement to a list. See also DAW-25 for the tree's
+          clip-browsing depth, which is the separate half of the same review.
 
 
           Deps: DAW-2.
         id: 019fae02-e437-74ac-8464-f94bd7bcaf7a
         created_at: 2026-07-29T13:14:12.919Z
-        updated_at: 2026-07-29T16:00:26.219Z
+        updated_at: 2026-07-30T12:12:44.113Z
       - ref: DAW-4
         area: DAW
         title: Arrangement timeline
@@ -3837,8 +3945,14 @@ projects:
         body: >-
           Make **key** (a `{ tonic: 0-11, scale/mode }`) a first-class musical
           unit that the roll display and the computer-keyboard input are both
-          projections of. Pairs with the flagship synth (INST-5) as its
-          test-bed.
+          projections of. The flagship synth **Nimbus** (INST-1, shipped slice
+          56) is its natural test-bed.
+
+
+          Sits alongside tempo, groove and time signature (DAW-10) as a
+          project-level musical value: same pattern - one value on
+          `ProjectData`, projected into the UI, the schema and MCP rather than
+          branched on.
 
 
           The two halves reinforce each other: a tonic-relative model is
@@ -3877,7 +3991,7 @@ projects:
           autotune scale-snap layer under audio pitch & time (INST-7).
         id: 019fae04-4269-7649-9153-7bd2abce8210
         created_at: 2026-07-29T13:15:42.569Z
-        updated_at: 2026-07-29T16:00:33.171Z
+        updated_at: 2026-07-29T18:26:37.375Z
       - ref: DAW-13
         area: DAW
         title: Audio export and mixdown
@@ -4308,6 +4422,231 @@ projects:
         created_at: 2026-07-29T13:17:06.886Z
         updated_at: 2026-07-29T15:58:09.331Z
         deleted_at: 2026-07-29T15:58:09.331Z
+      - ref: DAW-25
+        area: DAW
+        title: "Project tree: a clip depth (browse, select, drag) - and the touch
+          shell's Clips tab"
+        status: planning
+        sort_path: "000025"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Give the **Project** rail view (`ProjectView`) a third depth: group ->
+          track -> **its clips**. The tree becomes a whole-project overview:
+          structure, per-track mixer (already there), record, and every clip in
+          the project in one place.
+
+
+          **Scoped down 2026-07-30 after review.** This ticket originally had
+          the clip rows launchable, framed as "the vertical answer to DAW-3's
+          deferred session grid". The user's steer was that these are two
+          separate ideas and should stay separate: **the tree is for browsing -
+          selecting a clip for edit and dragging clips around** (into the
+          arrangement, onto another track). *Composing* and *triggering* clips
+          is a different surface, now DAW-26 (sections), whose sections appear
+          as their own branch of the same tree. So no launch control on a clip
+          row here; a clip row selects, and drags.
+
+
+          **Then the touch shell's Clips tab becomes this view instead of the
+          selected track's clip pool** (MOBILE-1 round 2 shipped it as a
+          per-track grid). On a phone that is a strict upgrade: every clip in
+          the project rather than one track's, plus record-into-track and the
+          mixer folded into the same surface, so one tab covers what three
+          would. Note the tier honesty - dragging a clip from a tree onto the
+          timeline needs both visible at once, which is a desktop/tablet
+          gesture; the phone gets tap-to-select and (via DAW-26) tap-to-launch.
+
+
+          **No model change:** clips, `selectClip` and placement drag-and-drop
+          all exist and flow through dispatch, so anything done from here is
+          undoable, in the feed, two-voice coloured and MCP-addressable for
+          free.
+
+
+          **One design caution:** a row that both selects and drags is fine, but
+          if DAW-26's section rows land in the same tree, their launch control
+          must be its own hit target or a tap meant to select starts audio.
+          `ClipRail` already solves that with a play/stop button inside each
+          chip - reuse it, don't invent.
+
+
+          **Effort:** small. `ProjectView` is ~200 lines with a `flattenTree`
+          and a `Row` union, so this is a new `{ kind: "clip" }` row plus a row
+          component.
+
+
+          Proposed by the user, 2026-07-30, while reviewing the touch shell.
+        id: 019fb2df-c389-7732-ba9d-0c2758f5d908
+        created_at: 2026-07-30T11:53:56.873Z
+        updated_at: 2026-07-30T12:12:28.192Z
+      - ref: DAW-26
+        area: DAW
+        title: "Sections: reusable multi-track clip fragments (instead of a session
+          grid)"
+        status: planning
+        sort_path: "000026"
+        priority: 0
+        deps:
+          - DAW-3
+        body: >
+          Proposed by the user, 2026-07-30, explicitly **in place of** copying
+          Ableton's session grid: "if we wanted a way to compose clips, I might
+          vote for a different view altogether where you could have multiple
+          clip groups which you could build and would appear as a branch of the
+          tree. Then you could trigger them from there, or drag them onto the
+          timeline to bring in the whole clip group."
+
+
+          A **section** is a named, reusable, position-free arrangement
+          fragment: a set of clips across tracks at relative offsets. It can be
+          launched (loop it instead of the timeline) or dragged onto the
+          arrangement (stamp it in at a beat). This supersedes DAW-3's deferred
+          "Session grid + scenes" item.
+
+
+          **Name it `section`, not `group`.** `groups` is already taken in
+          `schema.ts` (`groupDataSchema`: bus/mixer groups with
+          `parentId`/`muted`/`solo`/`volume`) and across the MCP surface
+          (`create_group`, `set_group`, `list_groups`). "Section" is also the
+          musical word for what a captured bar range actually is.
+
+
+          ## Why it is one model, not a bolted-on mode
+
+
+          A section is a **nameless mini-arrangement**, so its data shape is a
+          placement list minus the absolute start:
+
+
+          ```
+
+          Section = { id, name, members: Array<{ trackId, clipId, offsetBeats,
+          offset, length }> }
+
+          ```
+
+
+          And the existing launched clip turns out to be **the one-member case
+          of launching a section**. `scheduler.ts:261-262` already substitutes a
+          synthetic placement array for a track's arrangement:
+
+
+          ```ts
+
+          const placements = track.launchedClipId
+            ? [{ id: "__launch", clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
+            : track.placements;
+          ```
+
+
+          Launching a section is the same substitution with the member's
+          `offsetBeats` added and the loop taken from the section's length
+          rather than the transport's. That is the whole scheduler change - the
+          same seam, generalised from one placement to a list. So this is a view
+          *and* a small model addition, not a second playback engine.
+
+
+          Two degenerate cases are worth stating, because together they are the
+          argument that nothing is being given up by dropping the grid: **a
+          launched clip is a one-member section**, and **a scene is a section
+          whose every member sits at offset 0**. Sections are a strict superset
+          of both, and add identity, repeatability and multi-bar span on top.
+
+
+          ## Make it feel natural
+
+
+          1. **Capture, don't compose.** The primary way to make a section is to
+          select a bar range or a set of placements in the arrangement and "Save
+          as section", auto-named (`Section 1`, or from its bars). Composing
+          into an empty container is work with a deferred reward; naming eight
+          bars you just liked is a reward for free. This is the single biggest
+          naturalness lever, and it is what stops the Sections branch being
+          permanently empty.
+
+          2. **A section is a stamp, not a live instance (v1).** Dragging one in
+          expands to real placements with no back-link. This dodges the entire
+          instance/override/detach design space, and costs less than it sounds:
+          **the clips are already shared references**, so editing the chorus
+          bass line still changes every stamped copy. Only the *layout* is
+          copied. Forward-compatible - adding an `instanceOf` field later
+          upgrades a stamp to a live instance, whereas the reverse is not
+          cleanly downgradable.
+
+          3. **Tier the verb, not the object.** Drag-to-arrangement is
+          desktop/tablet (it needs the tree and the timeline visible at once);
+          tap-to-launch is the phone. One section, different reach.
+          `ArrangementTimeline` already has the `dropBeat` hover state for a
+          drop ghost.
+
+          4. **Launch quantised to the bar**, like every clip launcher, or the
+          gesture feels broken rather than late.
+
+          5. **Separate hit targets on a tree row.** A row that both selects and
+          launches must keep the launch control as its own target, or a tap
+          meant to select starts audio. `ClipRail` already solves this with a
+          play/stop button inside each chip.
+
+          6. **Sections are a sibling branch of Tracks, not nested under one** -
+          they span tracks, so they cannot live under a single track. Keeps the
+          tree at Tracks -> track -> clip and Sections -> section -> member,
+          rather than one four-deep spine.
+
+
+          ## Effort: the selection model is the bulk of it, not the section
+
+
+          Checked 2026-07-30: **the arrangement has no multi-select.**
+          `arrangement/shared.ts` has `export type Selection = { trackId:
+          string; id: string } | null` - one placement, and there is no range
+          concept anywhere in `ArrangementTimeline` (only `markerBeat`, the
+          paste marker). So "select these eight bars and save them" needs a
+          selection model that does not exist. The section object itself is
+          small (a schema addition, a scheduler generalisation at one line, a
+          tree branch); the capture gesture is the real cost, and it should
+          drive the estimate.
+
+
+          **A bar range is probably cheaper than general multi-select, and a
+          better fit.** A section *is* a bar range across tracks, so the
+          selection can be a single `{ startBeat, endBeat, trackIds }` value
+          with membership *derived* (every placement intersecting the range),
+          rather than a set of individually-selected placement ids. One value to
+          hold, one gesture to build it (a ruler drag or a marquee), and it
+          generalises to the other things a range unlocks later -
+          loop-to-selection, duplicate a range, delete a range. Worth deciding
+          this first, because general multi-select is a much larger surface
+          (shift-click, marquee, group drag, group resize) and would dwarf the
+          feature it was added for.
+
+
+          ## Open questions / risks
+
+
+          - **Dangling members.** A section referencing a deleted track or clip.
+          Resolve-at-use (skip missing members) is probably right, with a heal
+          pass in `ProjectRepository.load` alongside the other bundle healing.
+
+          - **Schema bump.** Sections live in `project.json`, so this needs a
+          forward upcaster in `documentMigration.ts` (required now that projects
+          are hosted).
+
+          - **Does launching a section clear other tracks?** Ableton scenes
+          leave non-member tracks alone; the current `launchedClipId` model is
+          per-track, so leaving them is the cheap and probably correct answer,
+          with `stopAllClips` as the escape.
+
+          - **Where does the composing view live?** The user's framing is "a
+          different view altogether", with sections appearing as a branch of the
+          tree. The tree branch is the *browse/launch* surface; whether building
+          one needs more than capture-from-arrangement plus add/remove-member on
+          the branch is undecided, and the answer may be "no", which would be
+          the cheapest good outcome.
+        id: 019fb2f0-7f2d-76af-b126-c1034b100965
+        created_at: 2026-07-30T12:12:13.485Z
+        updated_at: 2026-07-30T12:23:17.566Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -5376,6 +5715,94 @@ projects:
         created_at: 2026-07-29T13:28:34.138Z
         updated_at: 2026-07-29T15:58:16.737Z
         deleted_at: 2026-07-29T15:58:16.737Z
+      - ref: HOST-16
+        area: HOST
+        title: "Offline UI flickers: the banner shifts the whole app, and the chip
+          oscillates"
+        status: to-do
+        sort_path: "000016"
+        priority: 0
+        body: >-
+          Reported by the user, 2026-07-30, on the deployed build with **no
+          internet**: the top bar and the sync chip flash while the client tries
+          to connect, and the result reads as the app being broken rather than
+          as "you are offline".
+
+
+          Being offline is a **supported, benign state** here - edits are saved
+          locally and flush on reconnect (HOST-5), and the copy already says so.
+          So the UI should settle into a calm offline state, not strobe.
+
+
+          ## One mechanism is structural and readable from the code
+
+
+          `AppShell.tsx:375` renders the banner as a **conditional sibling in
+          the flex column above the shell**:
+
+
+          ```tsx
+
+          {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject}
+          />}
+
+          ```
+
+
+          So every time the status enters or leaves `offline`, the banner mounts
+          or unmounts and **the entire app below it shifts by the banner's
+          height** (~29px) - top bar, workspace, timeline, all of it. That is a
+          whole-window jump, which is exactly what "looks broken" describes, and
+          it happens no matter how small the underlying status change was.
+
+
+          **Fix direction:** take the banner out of the layout flow (overlay it,
+          or reserve its height and slide/fade it in). A transient connection
+          state should never resize the workspace.
+
+
+          ## The oscillation itself needs reproducing before fixing
+
+
+          Not yet confirmed - worth reproducing with DevTools offline before
+          changing the transport. What the code shows:
+
+
+          - `setStatus` (`client.ts:246`) already no-ops on an unchanged value,
+          so a plain retry loop should *not* churn: `drop()` sets `offline`, and
+          the retry path (`client.ts:311-325`) calls `connect()` without setting
+          `connecting`, so repeated failures stay on `offline`.
+
+          - The path that *does* return to `connecting` is
+          `IdleController.onWake` (`client.ts:294-297`). If idle/hidden wake
+          fires while there is no network - plausible on a phone, where
+          visibility and resize events are frequent - the status cycles `offline
+          -> connecting -> offline` on every wake, with backoff capped at
+          `RECONNECT_MAX_MS = 10s`. That would produce exactly the observed
+          repeating flash.
+
+          - `connecting` also carries `animate-pulse` on the chip dot
+          (`ConnectionStatus.tsx:13`), so any visit to that state pulses rather
+          than sitting still.
+
+
+          **Fix direction, once confirmed:** add hysteresis so short-lived
+          transitions do not reach the UI - suppress `connecting` for the first
+          few hundred ms of an attempt, and once `offline` has been entered,
+          stay there visually until genuinely `online` rather than flipping back
+          on each attempt. The transport's state machine can stay as it is; this
+          is about what the UI is allowed to render.
+
+
+          ## Check the touch shell specifically
+
+
+          The report came from a phone. The banner sits *above* the shell, so on
+          the touch shell it also shifts the pinned transport and pushes the
+          bottom tab bar - worth confirming the fix on both shells (MOBILE-1).
+        id: 019fb3dc-761a-76ab-8e81-017f725ed09d
+        created_at: 2026-07-30T16:29:57.658Z
+        updated_at: 2026-07-30T16:29:57.658Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
@@ -6118,7 +6545,7 @@ projects:
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
-        status: to-do
+        status: in-progress
         sort_path: "000001"
         priority: 0
         body: >-
@@ -6171,7 +6598,269 @@ projects:
           packaging (MOBILE-3).
         id: 019fae0c-8f83-7472-86e9-e1e8f5f0c6cd
         created_at: 2026-07-29T13:24:46.595Z
-        updated_at: 2026-07-29T13:24:46.595Z
+        updated_at: 2026-07-29T18:37:35.521Z
+        notes:
+          - body: "Step 1 of the sequencing (the spike) is built on `slice-96-mobile-shell`:
+              `useDeviceTier` (phone/tablet/desktop from `pointer: coarse` +
+              width), `DesktopShell` extracted out of `AppShell` verbatim, and a
+              new `MobileShell` (pinned transport, one view, bottom tabs
+              Arrange/Edit/Mix/Library/Agent). Both shells render against one
+              `ShellProps` bag, so mobile really is a second projection - no
+              panel was forked. Two findings worth carrying: **MOBILE-2's
+              \"keystone\" Pointer Events migration is already done** (zero
+              `onMouseDown` left in `src/ui`, everything goes through
+              `beginPointerDrag`), and the panels' hardcoded `[grid-area:...]`
+              classes turned out to be a non-issue because grid-area is inert
+              outside a grid container. The one real blocker was that panel
+              roots had no `flex-1` (the desktop grid row sized them), so in a
+              flex column the timeline collapsed to its 38px toolbar; adding
+              `flex-1` is safe because grid items ignore flex properties."
+            audience: user
+            id: 019faf42-e0eb-701c-a556-88826d3e39ac
+            at: 2026-07-29T19:03:43.595Z
+            actor: claude
+          - body: "Known rough edges left for steps 2-4, deliberately not fixed in the
+              spike: (1) the arrangement's track-header column is ~220px of a
+              390px phone screen, leaving little lane - `headerW` is
+              drag-resizable and persisted under one localStorage key shared
+              with desktop, so making it tier-aware is a real decision (whose
+              width wins when you switch device?) rather than a tweak; (2) large
+              scroll surfaces (piano-roll grid background, arrangement lane
+              background) deliberately kept default `touch-action` so a finger
+              can still pan, which means drag-on-background gestures scroll
+              instead of drawing - the explicit draw/select/erase tool model in
+              MOBILE-2 is what resolves that properly; (3) no slide-up sheets or
+              long-press menus yet."
+            audience: user
+            id: 019faf42-fac1-7648-adc4-7316756ce227
+            at: 2026-07-29T19:03:50.209Z
+            actor: claude
+          - body: "Round two of the spike, from using it: track/group headers are non-sticky
+              on phone (`stickyHeaders` prop, so the header column scrolls away
+              with the lanes rather than costing 220 of 390px), the clip rail
+              stacks above the roll instead of beside it (`compact` prop on
+              CenterWorkbench, reusing ClipRail's existing
+              `orientation=\"horizontal\"`), and the device rack is now clamped
+              against a measured body height. That last one was a genuine bug
+              reachable on desktop too: the rack has a fixed persisted height
+              while the editor above it is the flexible one, so any short
+              viewport (phone landscape ~390px) let the rack take everything and
+              leave the piano roll zero pixels. Clamp is `min(deviceH, max(bodyH
+              * 0.35, bodyH - 200))` - the MIN_EDITOR floor normally, falling
+              back to a proportional share when the body cannot give both their
+              minimum. **Landscape phone is still cramped** (roll ends up
+              ~70px); the real fix is making the device rack a slide-up sheet on
+              phone rather than a permanent band, which belongs with the sheets
+              work in step 3."
+            audience: user
+            id: 019faf5d-caea-736d-a27b-6187ef91ceb9
+            at: 2026-07-29T19:33:07.434Z
+            actor: claude
+          - body: "**Round-2 mobile UX agreed (2026-07-30)**, after using the round-1
+              prototype. Mockup: `docs/mockups/mobile-ux-v2.html` (to be
+              committed). The move: bottom tabs mirror the desktop's four
+              surfaces - **Arrangement / Edit / Clips / Devices** - instead of
+              phone-invented navigation, so each tab holds exactly one panel and
+              the mental model transfers both ways. New keystone: a **persistent
+              lane strip** (~56px) showing the selected track's own lane, on
+              every tab except Arrangement, on the shared bar grid + playhead.
+              Library becomes a **left sheet** off a ☰ (the six `RAIL_ITEMS` as
+              a segmented control, tap-to-add: assign if the selected track is
+              empty, else create one in the current group); agent becomes a
+              **right sheet** off a ✦ in the top-right. Top bar reduces to ☰ / ●
+              / ▶ / tempo / ⋮ / ✦, with ⋮ **context-sensitive** (the active
+              surface's controls, then the project's) - that is what lets the
+              piano-roll toolbar disappear. Decisions: Clips keeps its own tab
+              (mode-less launching is the most touch-native surface the app
+              has); the lane strip shows on Devices too; tapping a track in
+              Arrangement now only **selects** (the strip keeps it on screen, so
+              selection stops implying navigation). Tab 2 label stays a fixed
+              **\"Edit\"** - a dynamic Roll/Pads/Sample label would need an
+              `editor` field on `InstrumentInfo`, deferred rather than adding a
+              hardcoded per-type label map."
+            audience: user
+            id: 019fb26f-bc63-756c-b864-ddeb1977efaa
+            at: 2026-07-30T09:51:35.012Z
+            actor: claude
+          - body: "Two corrections from the round-2 design review, both worth keeping
+              because they were wrong in a way that would have cost work. (1) I
+              claimed the bus tree had no mobile home and proposed a new Mixer
+              sheet - wrong: `GroupHeader` in the Arrangement timeline already
+              carries mute/solo/volume per group, so the whole bus tree is
+              reachable, and per-track mixer detail is the existing **Project**
+              rail view which comes across in the library sheet for free.
+              Nothing to build. The one real gap: `ProjectView` gives expandable
+              detail to tracks but not groups, true on desktop too. (2) I
+              claimed the tab label could be derived from the instrument catalog
+              - it can't: `InstrumentInfo` is `{type, label, schema, family,
+              hidden?}` with no editor notion, which is why `CenterWorkbench`
+              hardcodes `kind === \"audio\"` and `instrumentType ===
+              \"drumkit\"`. Adding an `editor` field would drive the label *and*
+              delete that branch; worth doing eventually, out of scope for this
+              slice."
+            audience: user
+            id: 019fb26f-d201-736b-bf57-8660469f1d8c
+            at: 2026-07-30T09:51:40.545Z
+            actor: claude
+          - body: "**Round 2 built** (uncommitted on `slice-96-mobile-shell`, all gates
+              green: 630 unit, 83 e2e). Four new seams, all reusable beyond
+              mobile: (1) **CenterWorkbench split 788 -> 228 lines** into
+              `workbench/{TrackEditor,InstrumentEditor,AudioClipPanel,DeviceRac\
+              k,TrackRecordButton}` - it was one component holding four surfaces
+              that now live in different tabs, and CLAUDE.md already flagged it
+              for splitting. (2) `arrangement/gridView.ts` +
+              `useSharedGridScroll` - the arrangement's view offset shared
+              between the full timeline and the lane strip. Stored in **beats,
+              not pixels**, because the two surfaces have different chrome
+              before beat 0 (the timeline scrolls a header column inside its
+              scroller; the strip's header sits outside it) so a shared pixel
+              offset points at different bars in each, and beats also survive a
+              zoom change. (3) `shell/surfaceControls.ts` +
+              `usePublishSurfaceControls` - the active workspace publishes its
+              toolbar as `MenuItem[]` for the shell's single ⋮. Publishes a
+              **getter backed by a ref**, not the array, so a surface whose
+              controls depend on its own state needs no dependency list and the
+              registry never churns. (4) `shell/Sheet.tsx` - stays mounted once
+              opened (slides out, `inert`), because unmounting the agent panel
+              mid-run would abort an interruptible AGENT-10 request. `LaneStrip`
+              reuses `Lane` rather than redrawing placements, so
+              tap/drag/resize/split behave identically to the full arrangement."
+            audience: user
+            id: 019fb29a-f2ae-75ee-aad6-c693ca3746cc
+            at: 2026-07-30T10:38:46.958Z
+            actor: claude
+          - body: "Two things found while building round 2, worth keeping. **A real UX flaw
+              in `Menu`:** it dismisses on any scroll (so the portal-positioned
+              popover never detaches from its trigger), but on touch a surface
+              that has just mounted may still be restoring its own scroll
+              offset, which closes the ⋮ the instant it opens. The e2e helper
+              retries around it; the app-level fix is to ignore scroll events
+              for a beat after opening, or to only close on a scroll of the
+              popover's own scroll parent. Left alone because changing it
+              affects desktop too. **A selector gotcha for future tests:**
+              `Menu` renders checkable rows as `role=\"menuitemradio\"` (not
+              `menuitem`) whenever `checked` is defined, so
+              `getByRole(\"menuitem\")` silently misses Snap/Metronome-style
+              toggles. Also: `MuteSolo` stretches to fill a flex *column* (its
+              bordered box spans the column with the buttons adrift at one end)
+              - it needs `items-start` on the parent, which bit the lane strip's
+              header."
+            audience: user
+            id: 019fb29b-1bd3-7301-aff0-bef5fcef0653
+            at: 2026-07-30T10:38:57.491Z
+            actor: claude
+          - body: "Three fixes from using round 2, all with regression tests. (1) **A bug I
+              introduced in the shared grid view:** `writeGridScrollBeats`
+              floors at 0, and the hook also *subscribed* and pushed the shared
+              value back into the DOM - so scrolling left into the header gutter
+              published 0, which notified the surface, which yanked `scrollLeft`
+              forward to the gutter edge. The timeline visibly caught on the
+              headers at the start every time. Fixed by dropping the
+              subscription entirely: only one arrangement surface is ever
+              mounted, so following changes bought nothing and cost that. (2)
+              **A pre-existing desktop bug**, not a mobile one: the roll's
+              toolbar held snap + grid + Quantize + Auto-Q + kebab + zoom in one
+              no-wrap row, so with the agent panel open it overflowed below
+              ~1150px and pushed the zoom cluster clean out of view - the
+              most-used controls were the ones hidden. Snap/quantize/settings
+              now live in one `rollControls` list with two homes (the roll's
+              kebab on desktop, the shell's ⋮ on touch); the toolbar keeps label
+              + menu + Quantize + zoom. (3) The **velocity lane is now
+              collapsible** (`web-daw:roll-vel-open`, toggled from the same
+              list) and clamped to 40% of the roll's viewport, because at ~390px
+              tall the lane plus ruler was most of the available height."
+            audience: user
+            id: 019fb2ad-34a8-764b-9253-1371f5378eba
+            at: 2026-07-30T10:58:43.496Z
+            actor: claude
+          - body: "Round-2 refinements (all green: 630 unit, 92 e2e). **Scroll restore,
+              fully fixed** - the earlier fix only stopped the mid-scroll catch.
+              Two more causes of losing your place on a tab switch: the shared
+              offset floored at 0, so \"showing the header gutter\" and
+              \"showing bar 1\" stored the same value and returning always
+              landed at `headerW` with the headers scrolled off; and the lane
+              strip *published its own restore*, which the browser had clamped
+              to 0 (its content starts at beat 0, so it cannot show a gutter),
+              quietly overwriting the offset the timeline needed. Now: negative
+              beats are legal, and a restore never publishes (a rAF flag
+              distinguishes it from user scrolling). Also found the
+              arrangement's selected-track `scrollIntoView({block:\"nearest\"})`
+              was nudging the view *sideways* - `inline` defaults to \"nearest\"
+              too - so it fought the restore; replaced with a manual
+              scrollTop-only adjustment. **Tablet panels now dock** rather than
+              overlay (`docked = tier === \"tablet\" && !short`):
+              `LibraryContent` is wrapper-agnostic, framed by a `Sheet` on a
+              phone and a `DockedPanel` aside on a tablet. Landscape phone stays
+              sheets - same tier, but only ~390px tall. **Top bar**: undo/redo
+              added with real disabled states, tempo moved into ⋮ (joining meter
+              and metronome). **Lane strip** lost its header column for a slim
+              title row: record button (audio tracks only) left, track name
+              centre, gain fader right, lane full-width below."
+            audience: user
+            id: 019fb2ce-2cc3-7168-be0d-503867d4c220
+            at: 2026-07-30T11:34:44.163Z
+            actor: claude
+          - body: >-
+              Round 2 (same branch, `slice-96-mobile-shell`) replaced the
+              round-1 tab set after review: the bottom tabs now mirror the
+              **desktop workspace areas** rather than the `ActivityRail` view
+              list - Arrange / Edit / Clips / Devices - with the library moved
+              to a burger sheet and the agent to a right sheet launched from the
+              top bar. A mockup of the agreed design is at
+              `docs/mockups/mobile-ux-v2.html`.
+
+
+              Three pieces of machinery came out of it, all reusable beyond
+              mobile:
+
+
+              - **`LaneStrip` + a shared grid view in beats** (`gridView.ts`,
+              `useSharedGridScroll`). Off the Arrange tab, the selected track's
+              own lane is pinned above the workspace on the same grid, zoom,
+              scroll offset and playhead, so editing a clip never loses where it
+              sits in the song. The offset is stored in **beats, not pixels**,
+              because the timeline scrolls a header column *inside* its scroller
+              while the strip's title sits outside it, and beats also survive a
+              zoom change. Negative beats are legal and mean "showing the header
+              gutter" - flooring at 0 was a bug that made returning to the tab
+              land at `headerW` instead of bar 1. `LaneStrip` reuses `Lane`, so
+              tap/drag/resize/split behave identically with no second lane
+              implementation.
+
+              - **A surface-controls registry** (`surfaceControls.ts` /
+              `usePublishSurfaceControls`). The phone top bar cannot hold a
+              workspace's own toolbar, so the active workspace *publishes* its
+              overflow items and the shell's ⋮ renders them. The registry holds
+              a **getter backed by a ref**, not the array, so it only changes on
+              mount/unmount while the shell still reads current values at
+              menu-open time. Same `MenuItem[]` feeds the desktop kebab, so
+              there is one list per surface, not two.
+
+              - **`Sheet`** stays mounted once opened (slides out, `inert`)
+              rather than unmounting, because unmounting `AgentPanel` mid-run
+              would abort an interruptible AGENT-10 request.
+
+
+              Also: `CenterWorkbench` split 788 -> 228 lines
+              (`workbench/TrackEditor`, `InstrumentEditor`, `AudioClipPanel`,
+              `DeviceRack`, `TrackRecordButton`), `PianoRoll` and
+              `ArrangementTimeline` gained a `compact` mode, the piano roll's
+              velocity lane became collapsible (landscape left it no room), and
+              the tablet tier keeps library/agent **docked beside** the
+              workspace instead of overlaying.
+
+
+              Still open, and the reason the epic stays in-progress: **touch
+              itself.** Device sliders, the piano roll and the instrument panel
+              are all still mouse-shaped in practice - that is step 3 (the
+              gesture/tool layer). One app-level flaw surfaced and was left
+              alone because it affects desktop too: `Menu` closes on any scroll
+              event, so a menu opened immediately after a tab switch can close
+              as it opens.
+            audience: user
+            id: 019fb2ea-d44b-7774-aab3-0a225043a499
+            at: 2026-07-30T12:06:02.059Z
+            actor: claude
       - ref: MOBILE-2
         area: MOBILE
         title: Touch and pointer layer
@@ -6223,6 +6912,73 @@ projects:
         id: 019fae0c-b32a-724c-bad1-b354de720785
         created_at: 2026-07-29T13:24:55.722Z
         updated_at: 2026-07-29T16:00:53.403Z
+        notes:
+          - body: >-
+              Observed on the deployed MOBILE-1 build, 2026-07-30: **pinch on
+              the arrangement timeline and the piano roll zooms the whole
+              page.** The body already lists pinch-zoom as work to do, but this
+              is worth recording as a distinct defect rather than a missing
+              feature - the gesture currently does something actively wrong
+              (scales the app's own chrome and breaks the layout) rather than
+              nothing.
+
+
+              **Cause.** There is no pinch or gesture handling anywhere in
+              `src/ui`, and `touch-action` is only set (as Tailwind's
+              `touch-none`) on *individual drag handles* - `Knob`'s three
+              variants, `Lane`'s clip bodies, `PianoRoll`'s note bodies and
+              velocity handles, `ResizeHandle`, `Ruler`'s loop handle,
+              `MixerControls`' fader, `AudioClipPanel`'s waveform. It is never
+              set on the **scroll containers**, so a two-finger gesture landing
+              on the timeline or roll background is unclaimed and the browser
+              takes it as a page zoom.
+
+
+              **Not a viewport-meta fix.** `index.html:8` deliberately omits
+              `user-scalable=no`, iOS Safari has ignored it since iOS 10 anyway,
+              and suppressing page zoom globally would be wrong - it is the only
+              way to read small text elsewhere in the app. The gesture has to be
+              *claimed locally* instead.
+
+
+              **Shape of the fix.** `touch-action: pan-x pan-y` on the scroll
+              containers keeps native scrolling (which `useSharedGridScroll`
+              relies on) while taking pinch away from the browser for that
+              element; then a two-pointer handler owns it. This fits the
+              existing seam - everything already routes through
+              `beginPointerDrag` and Pointer Events give multiple pointers, so
+              it is a matter of tracking two `pointerId`s and deriving scale
+              from the distance ratio. No touch-event path needed.
+
+
+              **Anchor on the pinch centroid, not the scroll origin,** or the
+              content slides out from under the fingers. Convenient consequence
+              of MOBILE-1: the shared arrangement offset is already stored in
+              **beats** (`arrangement/gridView.ts`), so the invariant is
+              literally "keep the beat under the centroid fixed" and the maths
+              falls out of the unit choice rather than needing pixel
+              bookkeeping.
+
+
+              **Three separate zoom states, all persisted and clamped** - pinch
+              must write through the same setters or the surfaces desync:
+
+              - arrangement: `web-daw:arr-zoom` (`ZOOM` 6-96), read by *both*
+              `ArrangementTimeline` and `LaneStrip`, so this one is shared and
+              x-only today;
+
+              - piano roll: `web-daw:roll-zoom-x` (`ZOOM_X`) and
+              `web-daw:roll-zoom-y` (`ZOOM_Y`) - two axes, so the roll wants a
+              genuine two-axis pinch while the arrangement wants one.
+
+
+              Needs a real-device check at the end: `touch-action`'s pinch
+              suppression on iOS Safari is the part most likely to misbehave
+              versus the spec.
+            audience: user
+            id: 019fb304-6a18-739b-b61b-c2d1a71047fe
+            at: 2026-07-30T12:33:58.808Z
+            actor: claude
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"

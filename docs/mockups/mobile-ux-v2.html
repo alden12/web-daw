@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>web-daw - mobile UX, design round 2</title>
+  <!-- Self-contained design mockup (concept only, not a working build). Open directly in a browser.
+       Round 2 of the touch layout: bottom tabs mirror the desktop's four surfaces, a persistent lane
+       strip keeps the selected track on screen, and the library / agent become sheets. Palette + type
+       from src/index.css so the mock chrome matches the real chrome. Supersedes the layout half of
+       mobile-ux.html (its principles and tablet framing still stand). See MOBILE-1 in webdaw.apm.yaml. -->
+  <style>html,body{margin:0;padding:0;background:#0a0c0f}</style>
+</head>
+<body>
+<style>
+  :root {
+    /* web-daw design tokens, verbatim from src/index.css */
+    --ground: #101216;
+    --rail: #14171c;
+    --panel: #1a1d24;
+    --center: #22262f;
+    --card: #2b313c;
+    --line: #363d49;
+    --line-soft: #282e38;
+    --ink: #e8e6e0;
+    --bright: #ffffff;
+    --muted: #868c99;
+    --faint: #5c626e;
+    --you: #56c7c2;
+    --agent: #a884f3;
+    --claude: #d9775a;
+    --warn: #f1c40f;
+    --canvas: #0a0c0f;
+
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --step-0: 15px;
+    --step-1: 17px;
+    --step-2: 22px;
+    --step-3: 30px;
+  }
+
+  * { box-sizing: border-box; }
+
+  .page {
+    background:
+      radial-gradient(1100px 520px at 18% -8%, #17222b 0%, transparent 62%),
+      var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.6;
+    padding: 56px 22px 96px;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+
+  /* ---------- type ---------- */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--you);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0 0 18px;
+  }
+  h2 {
+    font-size: var(--step-3);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h3 {
+    font-size: var(--step-1);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--bright);
+  }
+  .standfirst {
+    font-size: var(--step-2);
+    line-height: 1.45;
+    color: var(--muted);
+    max-width: 62ch;
+    text-wrap: pretty;
+    margin: 0;
+  }
+  p { margin: 0; max-width: 68ch; text-wrap: pretty; }
+  .lede { color: var(--muted); }
+  strong { color: var(--bright); font-weight: 600; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.88em;
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    padding: 0.1em 0.36em;
+    color: var(--ink);
+  }
+
+  /* ---------- structure ---------- */
+  header.top { display: flex; flex-direction: column; gap: 0; margin-bottom: 14px; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    font-family: var(--mono); font-size: 11.5px;
+    margin-top: 26px;
+  }
+  .meta span {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+    color: var(--muted);
+  }
+  .meta span.on { border-color: color-mix(in oklab, var(--you) 55%, var(--line)); color: var(--you); }
+
+  section { margin-top: 72px; display: flex; flex-direction: column; gap: 22px; }
+  .shead { display: flex; flex-direction: column; gap: 10px; }
+  .rule { height: 1px; background: var(--line-soft); margin-top: 8px; }
+  .num {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--faint);
+  }
+
+  /* ---------- phone frames ---------- */
+  .frames {
+    display: flex; gap: 20px; align-items: flex-start;
+    overflow-x: auto; padding-bottom: 12px;
+    scrollbar-width: thin;
+  }
+  .fcol { display: flex; flex-direction: column; gap: 12px; flex: 0 0 auto; width: 268px; }
+  .fcap { display: flex; flex-direction: column; gap: 5px; }
+  .fcap b { font-size: 14.5px; color: var(--bright); font-weight: 600; }
+  .fcap span { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  .phone {
+    width: 268px; height: 560px;
+    background: var(--ground);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 5px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 18px 44px -20px #000;
+  }
+  .screen {
+    flex: 1; min-height: 0;
+    background: var(--ground);
+    border-radius: 17px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+  .phone.wide { width: 560px; height: 268px; }
+  .fcol.wide { width: 560px; }
+
+  /* toolbar */
+  .tbar {
+    flex: 0 0 auto; height: 34px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px;
+    padding: 0 7px;
+    font-family: var(--mono); font-size: 9.5px;
+  }
+  .ic {
+    width: 20px; height: 20px; flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 5px;
+    background: var(--card); color: var(--muted);
+    display: grid; place-items: center; font-size: 10px; line-height: 1;
+  }
+  .ic.rec { color: var(--claude); border-color: color-mix(in oklab, var(--claude) 45%, var(--line)); }
+  .ic.ag { color: var(--agent); border-color: color-mix(in oklab, var(--agent) 45%, var(--line)); }
+  .ic.wide-btn { width: auto; padding: 0 8px; color: var(--you); border-color: color-mix(in oklab, var(--you) 45%, var(--line)); background: color-mix(in oklab, var(--you) 12%, var(--card)); }
+  .field {
+    border: 1px solid var(--line); border-radius: 4px; background: var(--ground);
+    color: var(--bright); padding: 2px 5px; font-size: 9.5px;
+  }
+  .spacer { flex: 1; }
+
+  /* lane strip */
+  .lane {
+    flex: 0 0 auto; height: 44px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: stretch;
+    position: relative;
+  }
+  .lane-head {
+    width: 78px; flex: 0 0 auto;
+    border-right: 1px solid var(--line);
+    box-shadow: inset 3px 0 0 var(--you);
+    padding: 5px 6px;
+    display: flex; flex-direction: column; gap: 3px; justify-content: center;
+    background: color-mix(in oklab, var(--you) 9%, var(--panel));
+  }
+  .lane-head b { font-size: 9.5px; color: var(--bright); font-weight: 600; letter-spacing: -0.01em; }
+  .lane-head .ms { display: flex; gap: 3px; font-family: var(--mono); font-size: 7.5px; color: var(--faint); }
+  .lane-head .ms i { border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; font-style: normal; }
+  .lane-track { flex: 1; position: relative; background:
+      repeating-linear-gradient(to right, var(--line-soft) 0 1px, transparent 1px 34px); }
+  .blk {
+    position: absolute; top: 6px; bottom: 6px;
+    border-radius: 3px; border: 1px solid color-mix(in oklab, var(--you) 55%, var(--line));
+    background: color-mix(in oklab, var(--you) 22%, var(--card));
+    font-family: var(--mono); font-size: 7.5px; color: var(--bright);
+    padding: 1px 4px; overflow: hidden;
+  }
+  .ph { position: absolute; top: 0; bottom: 0; width: 1.5px; background: var(--you); }
+
+  /* body + tabs */
+  .body { flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--center); }
+  .tabs {
+    flex: 0 0 auto; height: 46px;
+    background: var(--rail); border-top: 1px solid var(--line);
+    display: flex; align-items: stretch;
+  }
+  .tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.04em;
+    color: var(--faint); position: relative;
+  }
+  .tab .g { font-size: 13px; line-height: 1; }
+  .tab.sel { color: var(--you); }
+  .tab.sel::before {
+    content: ""; position: absolute; top: 0; left: 22%; right: 22%; height: 2px;
+    background: var(--you); border-radius: 999px;
+  }
+
+  /* body contents */
+  .sub {
+    height: 24px; flex: 0 0 auto; border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; gap: 6px; padding: 0 7px;
+    font-family: var(--mono); font-size: 8px; color: var(--faint);
+    background: var(--panel);
+  }
+  .col { display: flex; flex-direction: column; height: 100%; }
+  .grid-roll {
+    flex: 1; position: relative;
+    background:
+      repeating-linear-gradient(to right, var(--line-soft) 0 1px, transparent 1px 26px),
+      repeating-linear-gradient(to bottom, var(--line-soft) 0 1px, transparent 1px 15px),
+      var(--ground);
+  }
+  .keys {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 22px;
+    background: var(--rail); border-right: 1px solid var(--line);
+    font-family: var(--mono); font-size: 6.5px; color: var(--faint);
+  }
+  .keys i { position: absolute; left: 3px; font-style: normal; }
+  .note {
+    position: absolute; height: 13px; border-radius: 2px;
+    background: color-mix(in oklab, var(--you) 78%, var(--card));
+    border: 1px solid color-mix(in oklab, var(--you) 62%, var(--line));
+  }
+  .note.ag { background: color-mix(in oklab, var(--agent) 72%, var(--card)); border-color: color-mix(in oklab, var(--agent) 58%, var(--line)); }
+
+  .rows { display: flex; flex-direction: column; }
+  .trow {
+    display: flex; align-items: stretch; height: 34px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .trow .th {
+    width: 88px; flex: 0 0 auto; background: var(--panel);
+    border-right: 1px solid var(--line-soft);
+    padding: 0 6px; display: flex; align-items: center; gap: 4px;
+    font-size: 9px; color: var(--ink);
+  }
+  .trow.grp .th { background: var(--rail); font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+  .trow .tl { flex: 1; position: relative; background:
+      repeating-linear-gradient(to right, var(--line-soft) 0 1px, transparent 1px 30px); }
+  .dot { width: 5px; height: 5px; border-radius: 999px; flex: 0 0 auto; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px; }
+  .chip {
+    font-family: var(--mono); font-size: 8.5px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--card);
+    color: var(--muted); padding: 6px 8px; display: flex; align-items: center; gap: 5px;
+  }
+  .chip.on { border-color: color-mix(in oklab, var(--you) 58%, var(--line)); background: color-mix(in oklab, var(--you) 14%, var(--card)); color: var(--bright); }
+  .chip.launch { border-color: color-mix(in oklab, var(--you) 70%, var(--line)); color: var(--you); }
+  .chip.add { border-color: color-mix(in oklab, var(--you) 42%, var(--line)); color: var(--you); background: color-mix(in oklab, var(--you) 10%, var(--card)); }
+
+  .devcard {
+    margin: 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+    overflow: hidden;
+  }
+  .devcard > b {
+    display: flex; align-items: center; gap: 5px;
+    padding: 6px 8px; border-bottom: 1px solid var(--line-soft);
+    font-size: 9.5px; color: var(--bright); font-weight: 600;
+  }
+  .knobs { display: flex; gap: 10px; padding: 9px; }
+  .knob { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .knob .k { width: 5px; height: 30px; border-radius: 999px; background: var(--ground); border: 1px solid var(--line); position: relative; }
+  .knob .k::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 55%; background: var(--you); border-radius: 999px; }
+  .knob span { font-family: var(--mono); font-size: 6.5px; color: var(--faint); letter-spacing: 0.06em; }
+  .flow { align-self: center; color: var(--faint); font-family: var(--mono); font-size: 10px; padding: 0 2px; }
+
+  /* overlays */
+  .scrim { position: absolute; inset: 0; background: #000; opacity: 0.55; }
+  .sheet {
+    position: absolute; top: 0; bottom: 0;
+    background: var(--panel); display: flex; flex-direction: column;
+  }
+  .sheet.left { left: 0; width: 84%; border-right: 1px solid var(--line); box-shadow: 14px 0 40px -12px #000; }
+  .sheet.right { right: 0; width: 88%; border-left: 1px solid var(--line); box-shadow: -14px 0 40px -12px #000; }
+  .sheet-head {
+    flex: 0 0 auto; height: 34px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 6px; padding: 0 8px;
+    font-size: 10px; color: var(--bright); font-weight: 600;
+  }
+  .seg { display: flex; gap: 4px; padding: 8px; flex-wrap: wrap; }
+  .seg b {
+    font-family: var(--mono); font-size: 8px; padding: 5px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); font-weight: 400;
+  }
+  .seg b.on { border-color: color-mix(in oklab, var(--you) 58%, var(--line)); color: var(--you); background: color-mix(in oklab, var(--you) 12%, var(--card)); }
+  .list { flex: 1; overflow: hidden; }
+  .li {
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 10px; border-bottom: 1px solid var(--line-soft);
+    font-size: 10px; color: var(--ink);
+  }
+  .li em { margin-left: auto; font-family: var(--mono); font-size: 7.5px; color: var(--faint); font-style: normal; }
+  .sheet-foot {
+    flex: 0 0 auto; border-top: 1px solid var(--line); padding: 8px 10px;
+    display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 8px; color: var(--faint);
+  }
+  .msg { margin: 9px; padding: 7px 9px; border-radius: 8px; font-size: 9.5px; line-height: 1.5; }
+  .msg.u { background: color-mix(in oklab, var(--you) 14%, var(--card)); border: 1px solid color-mix(in oklab, var(--you) 34%, var(--line)); }
+  .msg.a { background: color-mix(in oklab, var(--agent) 12%, var(--card)); border: 1px solid color-mix(in oklab, var(--agent) 30%, var(--line)); }
+  .composer {
+    flex: 0 0 auto; margin: 9px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--ground); padding: 8px 9px; font-size: 9.5px; color: var(--faint);
+    display: flex; align-items: center;
+  }
+
+  /* menu popover */
+  .menu {
+    position: absolute; top: 38px; right: 30px; width: 150px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 18px 40px -14px #000; overflow: hidden; z-index: 3;
+  }
+  .menu i {
+    display: flex; align-items: center; gap: 6px; font-style: normal;
+    padding: 7px 9px; font-size: 9.5px; color: var(--ink);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .menu i:last-child { border-bottom: 0; }
+  .menu i u { margin-left: auto; text-decoration: none; font-family: var(--mono); font-size: 8px; color: var(--faint); }
+  .menu .sep { padding: 4px 9px; font-family: var(--mono); font-size: 7px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); background: var(--panel); }
+
+  /* ---------- annotated diagram ---------- */
+  .anat { display: flex; flex-direction: column; gap: 0; }
+  .anat .bar {
+    background: var(--rail); border: 1px solid var(--line); border-radius: 10px;
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    font-family: var(--mono); font-size: 13px; overflow-x: auto;
+  }
+  .anat .bar .ic { width: 30px; height: 30px; font-size: 14px; border-radius: 7px; }
+  .anat .bar .ic.wide-btn { width: auto; padding: 0 12px; }
+  .anat .bar .field { font-size: 13px; padding: 5px 9px; }
+  .legs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .leg {
+    flex: 1 1 210px; border-left: 2px solid var(--line);
+    padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .leg b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--you); font-weight: 400; }
+  .leg span { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+
+  /* ---------- cards / lists ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 14px; }
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+    padding: 18px; display: flex; flex-direction: column; gap: 9px;
+  }
+  .card p { font-size: 14px; color: var(--muted); }
+  .tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--faint);
+  }
+  .card.gone { border-color: color-mix(in oklab, var(--claude) 28%, var(--line)); }
+  .card.gone .tag { color: var(--claude); }
+
+  .qs { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line-soft); }
+  .q {
+    display: grid; grid-template-columns: 30px 1fr; gap: 16px;
+    padding: 20px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .q > .qn { font-family: var(--mono); font-size: 12px; color: var(--faint); padding-top: 3px; }
+  .q > div { display: flex; flex-direction: column; gap: 8px; }
+  .q h3 { font-size: 16.5px; }
+  .q p { font-size: 14px; color: var(--muted); }
+  .rec {
+    font-size: 13.5px; border-left: 2px solid var(--you); padding-left: 12px;
+    color: var(--ink);
+  }
+  .rec b { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--you); display: block; margin-bottom: 3px; font-weight: 400; }
+
+  .editors { display: flex; flex-direction: column; gap: 1px; background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
+  .editors > div {
+    display: grid; grid-template-columns: 132px 1fr auto; gap: 14px; align-items: baseline;
+    background: var(--panel); padding: 11px 13px;
+  }
+  .editors b { font-size: 13.5px; color: var(--bright); font-weight: 600; }
+  .editors span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .editors u { text-decoration: none; font-family: var(--mono); font-size: 11px; color: var(--you); white-space: nowrap; }
+  @media (max-width: 620px) {
+    .editors > div { grid-template-columns: 1fr; gap: 4px; }
+  }
+
+  .foot { margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: 13px; font-family: var(--mono); }
+
+  @media (max-width: 620px) {
+    .page { padding: 40px 16px 72px; }
+    .q { grid-template-columns: 1fr; gap: 8px; }
+    .q > .qn { padding-top: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="page">
+<div class="wrap">
+
+  <header class="top">
+    <p class="eyebrow">MOBILE-1 · design round 2</p>
+    <h1>The bottom tabs become the desktop's four surfaces</h1>
+    <p class="standfirst">
+      Round one proved the shell can swap. This round fixes what the prototype revealed: tabs
+      that mirrored a phone's idea of an app rather than the desktop's actual workspaces, and
+      a workbench trying to hold two panels on a screen with room for one.
+    </p>
+    <div class="meta">
+      <span class="on">Prototype running on slice-96</span>
+      <span>Phone 390 × 844</span>
+      <span>Landscape 844 × 390</span>
+      <span>Palette: src/index.css</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="shead">
+      <p class="num">01 — the move</p>
+      <h2>One tab per workspace, not one tab per phone convention</h2>
+      <div class="rule"></div>
+    </div>
+    <p class="lede">
+      The desktop shows arrangement, editor, clips and devices <em>at once</em>. A phone can show one.
+      So the tab bar stops being navigation invented for mobile and becomes a switch between the four
+      surfaces that already exist — which means the mental model transfers in both directions.
+    </p>
+    <p class="lede">
+      That reframing does something else: it makes the editor the only thing in its tab. The prototype's
+      two worst compromises — the clip rail crammed above the roll, and the device rack fighting the roll
+      for vertical space — were both artefacts of stacking surfaces that now have their own tabs.
+    </p>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">02 — chrome</p>
+      <h2>Top bar: five controls, everything else behind ⋮</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="anat">
+      <div class="bar">
+        <span class="ic">☰</span>
+        <span class="ic rec">●</span>
+        <span class="ic wide-btn">▶ Play</span>
+        <span class="field">120</span>
+        <span class="spacer"></span>
+        <span class="ic">⋮</span>
+        <span class="ic ag">✦</span>
+      </div>
+      <div class="legs">
+        <div class="leg">
+          <b>☰ library</b>
+          <span>Opens the library over the app. Instruments, effects, samples, patches, projects.</span>
+        </div>
+        <div class="leg">
+          <b>● ▶ transport</b>
+          <span>Record and play stay permanent — they are the two controls you reach for mid-idea.</span>
+        </div>
+        <div class="leg">
+          <b>120 tempo</b>
+          <span>The one project value worth a permanent slot. Tap to edit.</span>
+        </div>
+        <div class="leg">
+          <b>⋮ overflow</b>
+          <span>Meter, metronome, groove, count-in — <strong>plus the active tab's own toolbar</strong>.</span>
+        </div>
+        <div class="leg">
+          <b>✦ agent</b>
+          <span>Slides the agent in from the right. Top-right on every tab.</span>
+        </div>
+      </div>
+    </div>
+    <p class="lede">
+      The ⋮ menu being context-sensitive is what lets the piano roll's toolbar disappear. Snap, quantize,
+      auto-Q, zoom and note length are roll controls, so they appear in ⋮ only while the roll is open —
+      no second toolbar, and no truncated row of buttons competing for 390 pixels.
+    </p>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">03 — the keystone</p>
+      <h2>The selected track's lane never leaves the screen</h2>
+      <div class="rule"></div>
+    </div>
+    <p class="lede">
+      Above the workspace on every tab except Arrangement: one row, the selected track's own lane, on the
+      same bar grid and playhead as the full arrangement. You can see where the thing you're editing sits
+      in the song, and move it, without switching away.
+    </p>
+    <div class="frames">
+      <div class="fcol wide">
+        <div class="phone wide">
+          <div class="screen">
+            <div class="tbar">
+              <span class="ic">☰</span><span class="ic rec">●</span>
+              <span class="ic wide-btn">▶ Play</span><span class="field">120</span>
+              <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+            </div>
+            <div class="lane" style="height:56px">
+              <div class="lane-head">
+                <b>Subtractive 1</b>
+                <span class="ms"><i>M</i><i>S</i><i>▤</i></span>
+              </div>
+              <div class="lane-track">
+                <div class="blk" style="left:6px;width:96px">A</div>
+                <div class="blk" style="left:112px;width:62px">A</div>
+                <div class="blk" style="left:210px;width:130px;background:color-mix(in oklab,#a884f3 20%,#2b313c);border-color:color-mix(in oklab,#a884f3 52%,#363d49)">B</div>
+                <div class="ph" style="left:130px"></div>
+              </div>
+            </div>
+            <div class="body" style="display:grid;place-items:center;color:var(--faint);font-family:var(--mono);font-size:10px">
+              workspace — roll / clips / devices
+            </div>
+            <div class="tabs">
+              <div class="tab"><span class="g">▤</span>Arrange</div>
+              <div class="tab sel"><span class="g">♪</span>Roll</div>
+              <div class="tab"><span class="g">▦</span>Clips</div>
+              <div class="tab"><span class="g">⚙</span>Devices</div>
+            </div>
+          </div>
+        </div>
+        <div class="fcap">
+          <b>The lane strip, at ~56px</b>
+          <span>
+            Track name with mute / solo / arm on the left; placements on the shared grid to the right,
+            horizontally scrollable and zoom-linked to the Arrangement tab. The violet block is the
+            agent's — authorship colour survives at this size, which is the point of encoding it in hue.
+          </span>
+        </div>
+      </div>
+    </div>
+    <p class="lede">
+      This is also what earns the change you asked for: tapping a track in Arrangement now just
+      <strong>selects</strong> it. It no longer needs to navigate, because the selection is already visible
+      at the top of wherever you go next. Selection and navigation stop being the same gesture.
+    </p>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">04 — the four tabs</p>
+      <h2>Each tab is one surface, full height</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="frames">
+
+      <!-- ARRANGEMENT -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span>
+            <span class="ic wide-btn">▶ Play</span><span class="field">120</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="body">
+            <div class="col">
+              <div class="sub">1 · · · 2 · · · 3 · · · 4 · · ·</div>
+              <div class="rows">
+                <div class="trow grp"><div class="th">▾ Main</div><div class="tl"></div></div>
+                <div class="trow"><div class="th"><span class="dot" style="background:var(--you)"></span>Subtractive 1</div>
+                  <div class="tl"><div class="blk" style="left:4px;width:52px">A</div><div class="blk" style="left:62px;width:34px">A</div><div class="ph" style="left:70px"></div></div></div>
+                <div class="trow"><div class="th"><span class="dot" style="background:var(--agent)"></span>Nimbus pad</div>
+                  <div class="tl"><div class="blk" style="left:30px;width:88px;background:color-mix(in oklab,#a884f3 20%,#2b313c);border-color:color-mix(in oklab,#a884f3 52%,#363d49)">B</div></div></div>
+                <div class="trow"><div class="th"><span class="dot" style="background:var(--claude)"></span>Drum Kit</div>
+                  <div class="tl"><div class="blk" style="left:4px;width:120px;background:color-mix(in oklab,#d9775a 18%,#2b313c);border-color:color-mix(in oklab,#d9775a 48%,#363d49)">beat</div></div></div>
+                <div class="trow"><div class="th"><span class="dot" style="background:var(--you)"></span>Vocal take</div>
+                  <div class="tl"><div class="blk" style="left:66px;width:74px">wav</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab sel"><span class="g">▤</span>Arrange</div>
+            <div class="tab"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Arrangement</b>
+          <span>All tracks. No lane strip here — it <em>is</em> the lanes. Headers scroll away with the grid
+          rather than pinning a 220px column. Tap selects; the tab bar stays put.</span>
+        </div>
+      </div>
+
+      <!-- ROLL -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span>
+            <span class="ic wide-btn">▶ Play</span><span class="field">120</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="lane">
+            <div class="lane-head"><b>Subtractive 1</b><span class="ms"><i>M</i><i>S</i></span></div>
+            <div class="lane-track">
+              <div class="blk" style="left:4px;width:56px">A</div>
+              <div class="blk" style="left:66px;width:36px">A</div>
+              <div class="ph" style="left:74px"></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="col">
+              <div class="sub">clip A · 4 bars</div>
+              <div class="grid-roll">
+                <div class="keys"><i style="top:6px">C5</i><i style="top:96px">C4</i><i style="top:186px">C3</i></div>
+                <div class="note" style="left:30px;top:66px;width:24px"></div>
+                <div class="note" style="left:56px;top:96px;width:24px"></div>
+                <div class="note" style="left:82px;top:51px;width:50px"></div>
+                <div class="note ag" style="left:134px;top:81px;width:24px"></div>
+                <div class="note ag" style="left:160px;top:66px;width:50px"></div>
+                <div class="note" style="left:30px;top:141px;width:76px"></div>
+                <div class="ph" style="left:74px"></div>
+              </div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab sel"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Roll — label follows the track</b>
+          <span>“Roll” for an instrument, <em>Sample</em> for audio, <em>Pads</em> for a drum kit. The roll gets the
+          whole screen: no clip rail beside it, no device rack under it, no toolbar of its own.</span>
+        </div>
+      </div>
+
+      <!-- CLIPS -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span>
+            <span class="ic wide-btn">▶ Play</span><span class="field">120</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="lane">
+            <div class="lane-head"><b>Subtractive 1</b><span class="ms"><i>M</i><i>S</i></span></div>
+            <div class="lane-track">
+              <div class="blk" style="left:4px;width:56px">A</div>
+              <div class="blk" style="left:66px;width:36px">A</div>
+              <div class="ph" style="left:74px"></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="col">
+              <div class="sub">clips · tap to launch, hold to drag onto the lane</div>
+              <div class="chips">
+                <span class="chip on"><span class="chip-g" style="color:var(--you)">▶</span><span class="dot" style="background:var(--you)"></span>A</span>
+                <span class="chip launch"><span>■</span><span class="dot" style="background:var(--you)"></span>A2</span>
+                <span class="chip"><span>▶</span><span class="dot" style="background:var(--agent)"></span>B</span>
+                <span class="chip"><span>▶</span><span class="dot" style="background:var(--agent)"></span>B alt</span>
+                <span class="chip"><span>▶</span><span class="dot" style="background:var(--claude)"></span>fill</span>
+                <span class="chip add">+ Clip</span>
+              </div>
+              <div style="flex:1"></div>
+              <div style="padding:9px;border-top:1px solid var(--line-soft)">
+                <span class="chip" style="border-color:color-mix(in oklab,#d9775a 45%,#363d49);color:var(--claude);width:100%;justify-content:center">● Record into this track</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab"><span class="g">♪</span>Roll</div>
+            <div class="tab sel"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Clips — the playable surface</b>
+          <span>Given room, launching becomes a performance gesture instead of a cramped strip: big targets,
+          no precision needed, variants visible. This is the most touch-native thing the app does.</span>
+        </div>
+      </div>
+
+      <!-- DEVICES -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span>
+            <span class="ic wide-btn">▶ Play</span><span class="field">120</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="lane">
+            <div class="lane-head"><b>Subtractive 1</b><span class="ms"><i>M</i><i>S</i></span></div>
+            <div class="lane-track">
+              <div class="blk" style="left:4px;width:56px">A</div>
+              <div class="blk" style="left:66px;width:36px">A</div>
+              <div class="ph" style="left:74px"></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="col" style="overflow:hidden">
+              <div class="sub">notes → devices → instrument → effects → out</div>
+              <div class="devcard">
+                <b><span class="dot" style="background:var(--you)"></span>Subtractive</b>
+                <div class="knobs">
+                  <div class="knob"><div class="k"></div><span>WAVE</span></div>
+                  <div class="knob"><div class="k"></div><span>DETUNE</span></div>
+                  <div class="knob"><div class="k"></div><span>CUTOFF</span></div>
+                  <div class="knob"><div class="k"></div><span>RES</span></div>
+                  <div class="knob"><div class="k"></div><span>ATTACK</span></div>
+                </div>
+              </div>
+              <div class="devcard">
+                <b><span class="dot" style="background:var(--claude)"></span>Reverb</b>
+                <div class="knobs">
+                  <div class="knob"><div class="k"></div><span>SIZE</span></div>
+                  <div class="knob"><div class="k"></div><span>MIX</span></div>
+                  <div class="knob"><div class="k"></div><span>DAMP</span></div>
+                </div>
+              </div>
+              <div style="padding:0 9px 9px"><span class="chip add" style="width:100%;justify-content:center">+ Effect</span></div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab sel"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Devices</b>
+          <span>The signal chain as a vertical stack instead of a horizontal strip — the chain reads
+          top-to-bottom, one card per device, knobs at a size a finger can actually hit.</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">05 — overlays</p>
+      <h2>Library from the left, agent from the right</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="frames">
+
+      <!-- BURGER -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic" style="color:var(--you);border-color:color-mix(in oklab,#56c7c2 50%,#363d49)">☰</span>
+            <span class="ic rec">●</span><span class="ic wide-btn">▶ Play</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="body">
+            <div class="scrim"></div>
+            <div class="sheet left">
+              <div class="sheet-head">Library <span class="spacer"></span><span class="ic">✕</span></div>
+              <div class="seg">
+                <b class="on">Instruments</b><b>Effects</b><b>Patches</b><b>Samples</b><b>Project</b><b>Activity</b>
+              </div>
+              <div class="list">
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Subtractive</div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>FM</div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Supersaw</div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Nimbus <em>11 patches</em></div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Wavetable</div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Sampler</div>
+                <div class="li"><span class="dot" style="background:var(--faint)"></span>Drum Kit</div>
+              </div>
+              <div class="sheet-foot">
+                <span class="ic">⌕</span><span>Search</span><span class="spacer"></span>
+                <span class="ic">◔</span><span class="ic">⚙</span>
+              </div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab sel"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Library — ☰, 84% width, scrim</b>
+          <span>The six rail views as a segmented control, driven by the same <code>RAIL_ITEMS</code> data the
+          desktop rail uses — <strong>including Project</strong>, which is where the mixer lives. Search,
+          settings and account sit in the footer. Tapping an entry adds it and closes.</span>
+        </div>
+      </div>
+
+      <!-- AGENT -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span><span class="ic wide-btn">▶ Play</span>
+            <span class="spacer"></span><span class="ic">⋮</span>
+            <span class="ic ag" style="background:color-mix(in oklab,#a884f3 18%,#2b313c)">✦</span>
+          </div>
+          <div class="body">
+            <div class="scrim"></div>
+            <div class="sheet right">
+              <div class="sheet-head"><span class="dot" style="background:var(--agent)"></span>New chat <span class="spacer"></span><span class="ic">+</span><span class="ic">✕</span></div>
+              <div class="list" style="display:flex;flex-direction:column">
+                <div class="msg u">Add a four-on-the-floor kick and a clap on the offbeats.</div>
+                <div class="msg a">Added <strong>Drum Kit</strong> with a 4-bar clip: kick on every beat, clap on 2 and 4. Want it busier in bar 4?</div>
+                <div class="msg u">Yes, and make the pad wider.</div>
+              </div>
+              <div class="composer">Message the agent</div>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab sel"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Agent — ✦, 88% width, scrim</b>
+          <span>The roadmap calls the agent the phone's superpower: describing beats poking. It gets the
+          near-full screen when open, and stays one thumb-reach away when not.</span>
+        </div>
+      </div>
+
+      <!-- OVERFLOW MENU -->
+      <div class="fcol">
+        <div class="phone"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span><span class="ic wide-btn">▶ Play</span>
+            <span class="field">120</span><span class="spacer"></span>
+            <span class="ic" style="color:var(--you);border-color:color-mix(in oklab,#56c7c2 50%,#363d49)">⋮</span>
+            <span class="ic ag">✦</span>
+          </div>
+          <div class="lane">
+            <div class="lane-head"><b>Subtractive 1</b><span class="ms"><i>M</i><i>S</i></span></div>
+            <div class="lane-track"><div class="blk" style="left:4px;width:56px">A</div><div class="ph" style="left:74px"></div></div>
+          </div>
+          <div class="body">
+            <div class="col">
+              <div class="sub">clip A · 4 bars</div>
+              <div class="grid-roll">
+                <div class="keys"><i style="top:6px">C5</i><i style="top:96px">C4</i></div>
+                <div class="note" style="left:30px;top:66px;width:24px"></div>
+                <div class="note" style="left:56px;top:96px;width:24px"></div>
+              </div>
+            </div>
+            <div class="menu">
+              <div class="sep">Roll</div>
+              <i>Snap <u>1/16</u></i>
+              <i>Quantize</i>
+              <i>Auto-Q <u>off</u></i>
+              <i>Zoom <u>− +</u></i>
+              <div class="sep">Transport</div>
+              <i>Meter <u>4/4</u></i>
+              <i>Metronome <u>off</u></i>
+              <i>Groove <u>straight</u></i>
+              <i>Count-in <u>1 bar</u></i>
+            </div>
+          </div>
+          <div class="tabs">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab sel"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>⋮ — the active tab's toolbar, then the transport's</b>
+          <span>Two labelled groups, so the menu's contents are predictable: what this surface does, then
+          what the project does. On the Arrangement tab the top group is snap and zoom instead.</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">06 — landscape</p>
+      <h2>The side-by-side workbench stops being necessary</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="frames">
+      <div class="fcol wide">
+        <div class="phone wide"><div class="screen">
+          <div class="tbar">
+            <span class="ic">☰</span><span class="ic rec">●</span><span class="ic wide-btn">▶ Play</span>
+            <span class="field">120</span><span class="field">4/4</span>
+            <span class="spacer"></span><span class="ic">⋮</span><span class="ic ag">✦</span>
+          </div>
+          <div class="lane" style="height:38px">
+            <div class="lane-head" style="width:96px"><b>Subtractive 1</b><span class="ms"><i>M</i><i>S</i></span></div>
+            <div class="lane-track">
+              <div class="blk" style="left:6px;width:120px">A</div>
+              <div class="blk" style="left:134px;width:74px">A</div>
+              <div class="blk" style="left:250px;width:150px;background:color-mix(in oklab,#a884f3 20%,#2b313c);border-color:color-mix(in oklab,#a884f3 52%,#363d49)">B</div>
+              <div class="ph" style="left:150px"></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="col">
+              <div class="sub">clip A · 4 bars</div>
+              <div class="grid-roll">
+                <div class="keys"><i style="top:6px">C5</i><i style="top:66px">C4</i></div>
+                <div class="note" style="left:40px;top:36px;width:40px"></div>
+                <div class="note" style="left:86px;top:66px;width:40px"></div>
+                <div class="note" style="left:132px;top:21px;width:80px"></div>
+                <div class="note ag" style="left:218px;top:51px;width:40px"></div>
+                <div class="note ag" style="left:264px;top:36px;width:80px"></div>
+                <div class="ph" style="left:150px"></div>
+              </div>
+            </div>
+          </div>
+          <div class="tabs" style="height:38px">
+            <div class="tab"><span class="g">▤</span>Arrange</div>
+            <div class="tab sel"><span class="g">♪</span>Roll</div>
+            <div class="tab"><span class="g">▦</span>Clips</div>
+            <div class="tab"><span class="g">⚙</span>Devices</div>
+          </div>
+        </div></div>
+        <div class="fcap">
+          <b>Landscape — the same shell, wider</b>
+          <span>
+            One surface per tab means nothing has to share the 390px of height. The roll gets a genuinely
+            wide grid, the lane strip shows four bars at once, and the meter earns a permanent slot again
+            because there is room. No special-case layout at all.
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">07 — consequences</p>
+      <h2>What this removes from the prototype</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="cards">
+      <div class="card gone">
+        <span class="tag">delete</span>
+        <h3>The side-by-side rack</h3>
+        <p>The <code>sideBySide</code> prop, the rack's width state, and the second measurement axis. Devices
+        having a tab means it never competes with the roll for height.</p>
+      </div>
+      <div class="card gone">
+        <span class="tag">delete</span>
+        <h3>The compact clip rail</h3>
+        <p><code>compact</code> and the horizontal <code>ClipRail</code> variant. Clips get a tab, so the rail
+        stops being a strip squeezed above the roll.</p>
+      </div>
+      <div class="card gone">
+        <span class="tag">delete</span>
+        <h3>Tap-to-navigate</h3>
+        <p><code>onEditTrack</code> on the timeline. Selection stops implying navigation, because the lane
+        strip keeps the selected track on screen anyway.</p>
+      </div>
+      <div class="card gone">
+        <span class="tag">simplify</span>
+        <h3>The rack height clamp</h3>
+        <p><code>MIN_EDITOR</code> and the proportional fallback stay as a desktop guard — a real bug either
+        way — but stop carrying the mobile case.</p>
+      </div>
+      <div class="card">
+        <span class="tag">keep</span>
+        <h3>Non-sticky headers</h3>
+        <p>Still right on Arrangement: a pinned 220px column costs the same absolute pixels on a phone as
+        on a desktop.</p>
+      </div>
+      <div class="card">
+        <span class="tag">new</span>
+        <h3>Lane strip + two sheets</h3>
+        <p>One new component and two overlays, against four conditional-layout props removed. The shell
+        gets simpler, not more complex.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="shead">
+      <p class="num">08 — decisions</p>
+      <h2>Settled: four agreed, one revised, one elaborated</h2>
+      <div class="rule"></div>
+    </div>
+    <div class="qs">
+
+      <div class="q">
+        <span class="qn">01</span>
+        <div>
+          <h3>Does Clips earn a tab, or fold into the lane strip?</h3>
+          <p>You flagged it as a maybe. Folding it in would mean tapping the lane strip's track name opens a
+          clip sheet, leaving three tabs and less chrome.</p>
+          <div class="rec"><b>Agreed — keep the tab</b>
+          Mode-less clip launching is one of the things the app has that Ableton's grid doesn't do this way,
+          and it is the single most touch-native surface here: big targets, no precision, immediate sound.
+          A sheet would bury the app's most demo-able feature one tap deeper.</div>
+        </div>
+      </div>
+
+      <div class="q">
+        <span class="qn">02</span>
+        <div>
+          <h3>Where do mixer controls live now? <em style="color:var(--you);font-style:normal;font-family:var(--mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase">&nbsp;· revised</em></h3>
+          <p>You were right, and my flag was wrong twice over. There is no missing surface and nothing new to
+          build.</p>
+          <p><strong>It is the Project view</strong>, one of the six rail views, so it comes across in the ☰ sheet
+          for free — same component, same name, no "Mixer" invented alongside it. Expanding a track there reveals
+          its mute / solo / gain exactly as on desktop.</p>
+          <p>And <strong>group faders were never missing</strong>. I said the bus tree had nowhere to go; in fact
+          every group header in the Arrangement tab already carries mute, solo and a volume fader
+          (<code>GroupHeader</code>), so the whole bus tree is reachable on mobile as it stands. The one real gap
+          is that <em>Project</em> gives detail to tracks but not to groups — true on desktop too, and a separate
+          fix if it bothers you.</p>
+          <div class="rec"><b>Settled — call it Project, build nothing</b>
+          Decision 02 closes with less work than it opened with.</div>
+        </div>
+      </div>
+
+      <div class="q">
+        <span class="qn">03</span>
+        <div>
+          <h3>Library adds by tap — what does a tap mean?</h3>
+          <p>On desktop you drag an instrument onto a lane. You cannot drag out of an overlay that has to close,
+          so tapping has to decide for you: assign to the selected track, or create a new one?</p>
+          <div class="rec"><b>Agreed — assign if empty, else create</b>
+          Tapping an instrument assigns it to the selected track when that track has none, and otherwise
+          creates a new track in the current group. Effects always append to the selected track's chain.
+          Samples and patches follow the same rule as instruments.</div>
+        </div>
+      </div>
+
+      <div class="q">
+        <span class="qn">04</span>
+        <div>
+          <h3>Does the lane strip show on the Devices tab?</h3>
+          <p>Devices is the one surface with no relationship to arrangement time, so the strip is arguably
+          56px of wasted height there.</p>
+          <div class="rec"><b>Agreed — yes, keep it</b>
+          Consistency is worth more than the pixels: the strip is also where you confirm you are editing the
+          right track, and tweaking a filter while a clip loops is exactly when you want the playhead visible.</div>
+        </div>
+      </div>
+
+      <div class="q">
+        <span class="qn">05</span>
+        <div>
+          <h3>Is the tab label dynamic, or fixed? <em style="color:var(--you);font-style:normal;font-family:var(--mono);font-size:11px;letter-spacing:0.14em;text-transform:uppercase">&nbsp;· elaborated</em></h3>
+          <p>Tab 2 is "the editor for the selected track" — but there isn't <em>one</em> editor. Which component
+          you land on already depends on what you selected:</p>
+          <div class="editors">
+            <div><b>Instrument track</b><span>Subtractive, FM, Supersaw, Organ, Mellotron, Wavetable, Nimbus, Sampler</span><u>PianoRoll</u></div>
+            <div><b>Drum kit</b><span>Its own pad grid, with the existing Pads / Keys toggle</span><u>DrumRoll · StepGrid</u></div>
+            <div><b>Audio track</b><span>Waveform, loop region, grid slide — no notes at all</span><u>AudioClipPanel</u></div>
+            <div><b>Empty track</b><span>No instrument chosen yet</span><u>InstrumentPicker</u></div>
+          </div>
+          <p>So the only question is what the <em>tab</em> is called. Two options:</p>
+          <p><strong>Dynamic</strong> — the label follows the selection: "Roll" on a synth, "Pads" on a drum kit,
+          "Sample" on an audio track. You know what you'll get before you tap. The cost is that the tab bar
+          rewrites itself when you change track, so a target you were already reaching for gets renamed
+          mid-reach — which matters more on a phone, where the tab bar is muscle memory.</p>
+          <p><strong>Fixed</strong> — always "Edit". Stable muscle memory, and the icon can still hint at the
+          kind. The cost is it tells you nothing about where you'll land.</p>
+          <div class="rec"><b>Recommendation — dynamic, and make the catalog say so</b>
+          One correction to how I put this the first time: I implied the label could be read off the catalog
+          today. It can't. <code>InstrumentInfo</code> carries <code>type</code>, <code>label</code>,
+          <code>schema</code>, <code>family</code> — no notion of an editor, so <code>CenterWorkbench</code>
+          currently hardcodes <code>kind === "audio"</code> and <code>instrumentType === "drumkit"</code>.
+          Doing this properly means adding an <code>editor</code> field to the catalog entry, which pays for
+          itself twice: it drives the tab label <em>and</em> deletes that existing hardcoded branch, so a
+          future instrument declares its editor instead of editing the workbench. That is the version worth
+          building; if you'd rather not touch the catalog in this slice, take the fixed "Edit" instead of a
+          hardcoded label map.</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <p class="foot">
+    Concept only — not a working build. Palette and type from src/index.css so the mock chrome matches the
+    real chrome. Successor to docs/mockups/mobile-ux.html · MOBILE-1.
+  </p>
+
+</div>
+</div>
+</body>
+</html>
