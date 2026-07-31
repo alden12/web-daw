@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChatTurn } from "./useAgentChat";
+import { randomUuid } from "../audio/randomUuid";
 
 const KEY = "web-daw:agent-sessions:v1";
 const NEW_TITLE = "New chat";
@@ -33,7 +34,7 @@ export function titleFrom(turns: ChatTurn[]): string {
 }
 
 function blankSession(now: number): AgentSession {
-  return { id: `s-${crypto.randomUUID().slice(0, 8)}`, title: NEW_TITLE, createdAt: now, updatedAt: now, turns: [] };
+  return { id: `s-${randomUuid().slice(0, 8)}`, title: NEW_TITLE, createdAt: now, updatedAt: now, turns: [] };
 }
 
 function load(): SessionState {

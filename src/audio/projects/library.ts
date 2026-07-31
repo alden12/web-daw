@@ -12,6 +12,7 @@
  * (create/switch/rename/delete) live in `operations.ts`.
  */
 import { getProjectStorage, type ProjectListing, type ProjectStorage } from "../bundleStore";
+import { randomUuid } from "../randomUuid";
 
 /** A project in the library list. Re-exported from the storage seam (id + name + modifiedAt + role). */
 export type ProjectMeta = ProjectListing;
@@ -59,5 +60,5 @@ export async function refreshProjects(storage: ProjectStorage = getProjectStorag
 
 /** A fresh project id. */
 export function newProjectId(): string {
-  return `p-${crypto.randomUUID().slice(0, 8)}`;
+  return `p-${randomUuid().slice(0, 8)}`;
 }

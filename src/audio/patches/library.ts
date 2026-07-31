@@ -13,6 +13,7 @@
  */
 import type { Author } from "../commands/types";
 import type { PatchValues } from "../params/types";
+import { randomUuid } from "../randomUuid";
 
 /** One effect in a saved patch: its type, bypass state, and parameter values. */
 export interface PatchEffect {
@@ -91,5 +92,5 @@ export function subscribePatches(listener: () => void): () => void {
 
 /** A fresh patch id. */
 export function newPatchId(): string {
-  return `pt-${crypto.randomUUID().slice(0, 8)}`;
+  return `pt-${randomUuid().slice(0, 8)}`;
 }
