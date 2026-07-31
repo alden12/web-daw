@@ -28,6 +28,7 @@ import type { EditLog } from "../commands/editLog";
 import type { Author, EditCommand, EditEntry } from "../commands/types";
 import type { ProjectData } from "../project/types";
 import type { ClientMessage, ServerMessage } from "../../contract/ws";
+import { randomUuid } from "../randomUuid";
 
 /** A typed, ordered message pipe to the authority. `createWsClient` (src/contract/client.ts) is one. */
 export interface SyncTransport {
@@ -126,7 +127,7 @@ export class SharedSession {
     this.editLog = options.editLog;
     this.transport = options.transport;
     this.projectId = options.projectId;
-    this.newOpId = options.newOpId ?? (() => crypto.randomUUID());
+    this.newOpId = options.newOpId ?? (() => randomUuid());
     this.onError = options.onError;
     this.onRemoteEdit = options.onRemoteEdit;
     this.onConflict = options.onConflict;

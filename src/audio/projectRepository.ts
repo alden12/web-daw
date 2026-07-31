@@ -23,6 +23,7 @@ import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
 import { applyEdit } from "./commands/applyEdit";
 import { commitKeyframePath } from "./history/paths";
+import { randomUuid } from "./randomUuid";
 
 /** `project.json` carries this keyframe marker: the edit `seq` the snapshot reflects, so load
  *  knows which log tail to replay on top. A persistence detail (the domain ignores it); the
@@ -278,7 +279,7 @@ export class ProjectRepository {
   }
 
   private async writeKeyframeNow(project: ProjectData, headSeq: number): Promise<void> {
-    if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
+    if (!this.projectId) this.projectId = `p-${randomUuid().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
       projectId: this.projectId,
@@ -325,7 +326,7 @@ export class ProjectRepository {
    * live snapshot + log + notes so it is always current.
    */
   async exportBundle(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<BundleFiles> {
-    if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
+    if (!this.projectId) this.projectId = `p-${randomUuid().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
       projectId: this.projectId,

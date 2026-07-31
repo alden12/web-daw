@@ -47,6 +47,7 @@ import {
 } from "./schema";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
+import { randomUuid } from "../randomUuid";
 import type {
   ProjectData,
   TrackMeta,
@@ -209,22 +210,22 @@ export class ProjectStore {
 
   /** Short but globally unique, so server- and browser-created ids never collide. */
   private nextId(): string {
-    return `t-${crypto.randomUUID().slice(0, 8)}`;
+    return `t-${randomUuid().slice(0, 8)}`;
   }
   private nextGroupId(): string {
-    return `g-${crypto.randomUUID().slice(0, 8)}`;
+    return `g-${randomUuid().slice(0, 8)}`;
   }
   private nextEffectId(): string {
-    return `fx-${crypto.randomUUID().slice(0, 8)}`;
+    return `fx-${randomUuid().slice(0, 8)}`;
   }
   private nextMidiDeviceId(): string {
-    return `md-${crypto.randomUUID().slice(0, 8)}`;
+    return `md-${randomUuid().slice(0, 8)}`;
   }
   private nextClipId(): string {
-    return `c-${crypto.randomUUID().slice(0, 8)}`;
+    return `c-${randomUuid().slice(0, 8)}`;
   }
   private nextPlacementId(): string {
-    return `p-${crypto.randomUUID().slice(0, 8)}`;
+    return `p-${randomUuid().slice(0, 8)}`;
   }
 
   private rebuild(): void {
