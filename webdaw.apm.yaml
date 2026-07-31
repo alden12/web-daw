@@ -2826,6 +2826,105 @@ projects:
         id: 019fae0d-3a4a-727a-8d2a-2be55efb30f7
         created_at: 2026-07-29T13:25:30.314Z
         updated_at: 2026-07-29T16:00:50.188Z
+      - ref: ARCH-3
+        area: ARCH
+        title: Editing preferences are app state, not component state
+        status: in-progress
+        sort_path: "000003"
+        priority: 0
+        body: >-
+          Raised during the MOBILE-1 code review, as a deliberate architectural
+          decision rather than a drive-by cleanup.
+
+
+          **The observation.** The touch shell needs the active surface's
+          toolbar in its single ⋮, so surfaces publish menu items through
+          `surfaceControls.ts`. That inversion (a child authoring what a parent
+          renders) prompted the question: should an outer component own all of
+          this state and render the controls per view, later per route?
+
+
+          **Half yes.** The *state* those items are built from is genuinely
+          app-level and was misfiled as component state. The *composition* -
+          which items a surface offers - should stay with the surface.
+
+
+          **We were already paying for the misfiling.** `usePersistent*` was a
+          plain `useState` seeded once on mount with **no cross-instance
+          notification**, so two components reading one key diverged silently
+          the moment either wrote. Not hypothetical: `web-daw:metronome` is read
+          by both `TransportBar.tsx:41` and `MobileShell.tsx:341`, mounted
+          together on touch, and only stayed correct because of a hand-written
+          guard (`if (compact) return`) standing one copy down. Ownership was
+          being negotiated per feature, in prose.
+
+
+          **The line to draw** is the one `ShellProps` already draws for the two
+          shells: anything a shell may not differ on is shared; pure geometry
+          stays private. The ~21 persisted keys split cleanly along it:
+
+
+          - *Semantic editing preferences* - `roll-snap-on`, `arr-snap-on`,
+          `arr-snap-div`, `count-in-bars`, `QUANT_KEYS.*`, `metronome`,
+          `roll-vel-open`. The user's editing intent; belongs to no component.
+
+          - *Pure geometry* - `lib-width`, `agent-width`, `timeline-height`,
+          `devices-height`, `arr-header-w`, `roll-vel-height`, the zoom levels,
+          the collapsed flags. One shell's layout; stays where it is.
+
+
+          **Why composition stays with the surface.** A central owner knowing
+          that the Edit view offers snap/quantize/velocity means the shell knows
+          every surface's feature set, and adding a surface edits the shell -
+          the "hardcode the catalog" shape ruled out for instruments and
+          effects, and the reason the code prefers object maps to `switch`.
+          Routing does not change this: the route decides what mounts and the
+          mounted thing declares what it offers, rather than a hand-maintained
+          route -> controls map.
+
+
+          **Plan, in order.**
+
+          1. **Done** (in the MOBILE-1 branch). Extracted
+          `src/ui/persistentStore.ts` - one raw value per storage key, cached
+          and authoritative, with a subscribe seam - and made `usePersistent*` a
+          thin `useSyncExternalStore` binding over it. Every reader of a key now
+          sees one value. The public hook API is unchanged, so none of the 37
+          call sites moved. Covered by `test/persistentStore.test.ts` (8 tests:
+          the drift case, per-key isolation, no-notify-on-unchanged,
+          unsubscribe, and the private-mode path where storage throws).
+
+          2. Move the ~7 semantic preferences behind a small prefs store on the
+          same pattern (`currentUser.ts`, `authorColors.ts`, `gridView.ts`).
+          Leave the geometry keys alone. Then `TransportBar`'s `if (compact)
+          return` guard can be re-examined on its own merits, as a question of
+          who drives the scheduler rather than a workaround for drift.
+
+          3. Keep the `surfaceControls` registry, now thin: items become
+          `f(store, a few local actions)` rather than stateful publishing.
+
+
+          **Not adopting a state library (zustand et al.) for this.** The
+          problem was one hook that did not notify, not the ergonomics of
+          writing stores. The ~10 existing stores are already granular enough
+          that selector subscriptions would buy little, and the audio layer must
+          stay framework-free for the Node MCP server, so a React-oriented
+          library would split the codebase into two store patterns rather than
+          one. Worth revisiting if we need cross-store derived state or
+          middleware we would otherwise hand-roll (undo, devtools, persistence -
+          zustand's `persist` is close to what step 1 hand-rolls). Deferring is
+          cheap because every store exposes read/subscribe, so one can be
+          swapped underneath without touching consumers.
+
+
+          **Related.** The staleness bug fixed in the same review (`Menu` now
+          takes a getter, so the shell's ⋮ cannot show a stale tick or a stale
+          `disabled`) is a symptom of the same root cause: the shell does not
+          re-render for state it does not own. Step 2 removes that condition
+          rather than working around it.
+        id: 019fb7bf-253b-735e-bcb3-2cf3eeaddc1c
+        created_at: 2026-07-31T10:36:25.275Z
+        updated_at: 2026-07-31T10:36:25.275Z
       - ref: COLLAB-1
         area: COLLAB
         title: Real identity on the log
@@ -5623,36 +5722,84 @@ projects:
         status: to-do
         sort_path: "000016"
         priority: 0
-        body: |-
-          Reported by the user, 2026-07-30, on the deployed build with **no internet**: the top bar and the sync chip flash while the client tries to connect, and the result reads as the app being broken rather than as "you are offline".
+        body: >-
+          Reported by the user, 2026-07-30, on the deployed build with **no
+          internet**: the top bar and the sync chip flash while the client tries
+          to connect, and the result reads as the app being broken rather than
+          as "you are offline".
 
-          Being offline is a **supported, benign state** here - edits are saved locally and flush on reconnect (HOST-5), and the copy already says so. So the UI should settle into a calm offline state, not strobe.
+
+          Being offline is a **supported, benign state** here - edits are saved
+          locally and flush on reconnect (HOST-5), and the copy already says so.
+          So the UI should settle into a calm offline state, not strobe.
+
 
           ## One mechanism is structural and readable from the code
 
-          `AppShell.tsx:375` renders the banner as a **conditional sibling in the flex column above the shell**:
+
+          `AppShell.tsx:375` renders the banner as a **conditional sibling in
+          the flex column above the shell**:
+
 
           ```tsx
-          {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
+
+          {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject}
+          />}
+
           ```
 
-          So every time the status enters or leaves `offline`, the banner mounts or unmounts and **the entire app below it shifts by the banner's height** (~29px) - top bar, workspace, timeline, all of it. That is a whole-window jump, which is exactly what "looks broken" describes, and it happens no matter how small the underlying status change was.
 
-          **Fix direction:** take the banner out of the layout flow (overlay it, or reserve its height and slide/fade it in). A transient connection state should never resize the workspace.
+          So every time the status enters or leaves `offline`, the banner mounts
+          or unmounts and **the entire app below it shifts by the banner's
+          height** (~29px) - top bar, workspace, timeline, all of it. That is a
+          whole-window jump, which is exactly what "looks broken" describes, and
+          it happens no matter how small the underlying status change was.
+
+
+          **Fix direction:** take the banner out of the layout flow (overlay it,
+          or reserve its height and slide/fade it in). A transient connection
+          state should never resize the workspace.
+
 
           ## The oscillation itself needs reproducing before fixing
 
-          Not yet confirmed - worth reproducing with DevTools offline before changing the transport. What the code shows:
 
-          - `setStatus` (`client.ts:246`) already no-ops on an unchanged value, so a plain retry loop should *not* churn: `drop()` sets `offline`, and the retry path (`client.ts:311-325`) calls `connect()` without setting `connecting`, so repeated failures stay on `offline`.
-          - The path that *does* return to `connecting` is `IdleController.onWake` (`client.ts:294-297`). If idle/hidden wake fires while there is no network - plausible on a phone, where visibility and resize events are frequent - the status cycles `offline -> connecting -> offline` on every wake, with backoff capped at `RECONNECT_MAX_MS = 10s`. That would produce exactly the observed repeating flash.
-          - `connecting` also carries `animate-pulse` on the chip dot (`ConnectionStatus.tsx:13`), so any visit to that state pulses rather than sitting still.
+          Not yet confirmed - worth reproducing with DevTools offline before
+          changing the transport. What the code shows:
 
-          **Fix direction, once confirmed:** add hysteresis so short-lived transitions do not reach the UI - suppress `connecting` for the first few hundred ms of an attempt, and once `offline` has been entered, stay there visually until genuinely `online` rather than flipping back on each attempt. The transport's state machine can stay as it is; this is about what the UI is allowed to render.
+
+          - `setStatus` (`client.ts:246`) already no-ops on an unchanged value,
+          so a plain retry loop should *not* churn: `drop()` sets `offline`, and
+          the retry path (`client.ts:311-325`) calls `connect()` without setting
+          `connecting`, so repeated failures stay on `offline`.
+
+          - The path that *does* return to `connecting` is
+          `IdleController.onWake` (`client.ts:294-297`). If idle/hidden wake
+          fires while there is no network - plausible on a phone, where
+          visibility and resize events are frequent - the status cycles `offline
+          -> connecting -> offline` on every wake, with backoff capped at
+          `RECONNECT_MAX_MS = 10s`. That would produce exactly the observed
+          repeating flash.
+
+          - `connecting` also carries `animate-pulse` on the chip dot
+          (`ConnectionStatus.tsx:13`), so any visit to that state pulses rather
+          than sitting still.
+
+
+          **Fix direction, once confirmed:** add hysteresis so short-lived
+          transitions do not reach the UI - suppress `connecting` for the first
+          few hundred ms of an attempt, and once `offline` has been entered,
+          stay there visually until genuinely `online` rather than flipping back
+          on each attempt. The transport's state machine can stay as it is; this
+          is about what the UI is allowed to render.
+
 
           ## Check the touch shell specifically
 
-          The report came from a phone. The banner sits *above* the shell, so on the touch shell it also shifts the pinned transport and pushes the bottom tab bar - worth confirming the fix on both shells (MOBILE-1).
+
+          The report came from a phone. The banner sits *above* the shell, so on
+          the touch shell it also shifts the pinned transport and pushes the
+          bottom tab bar - worth confirming the fix on both shells (MOBILE-1).
         id: 019fb3dc-761a-76ab-8e81-017f725ed09d
         created_at: 2026-07-30T16:29:57.658Z
         updated_at: 2026-07-30T16:29:57.658Z
