@@ -262,6 +262,23 @@ test.describe("phone", () => {
     await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
   });
 
+  test("the overflow menu reflects the surface's state, not the shell's last render", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await tab(page, "Edit").tap();
+    const velocity = () => page.getByRole("menuitemradio", { name: /Velocity lane/i });
+
+    await openOverflow(page);
+    await expect(velocity()).toHaveAttribute("aria-checked", "true");
+    await velocity().click();
+
+    // The surface's controls are published as a getter and the shell is *not* re-rendered
+    // when the surface's own state changes, so an items array captured at the shell's last
+    // render would still tick this row. `Menu` reads the getter while open instead.
+    await openOverflow(page);
+    await expect(velocity()).toHaveAttribute("aria-checked", "false");
+  });
+
   test("the library opens as a sheet from the left and closes again", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
