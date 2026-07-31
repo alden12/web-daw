@@ -7256,6 +7256,24 @@ projects:
             id: 019fb2ea-d44b-7774-aab3-0a225043a499
             at: 2026-07-30T12:06:02.059Z
             actor: claude
+          - body: "Found 2026-07-31 while testing the touch shell on a real phone: **the app
+              could not run in an insecure context at all.**
+              `crypto.randomUUID()` is secure-context-only, so over plain http
+              from a LAN address (`vite --host`, opened at the laptop's IP - the
+              only practical way to try the shell on a device) it is
+              `undefined`, the first generated id throws, `AppShell` fails to
+              mount and the page is blank with nothing to say why. Auth mode
+              masked it: the login gate rendered before any `ProjectStore` was
+              built. Fixed by `src/audio/randomUuid.ts` (falls back to a v4
+              assembled from `crypto.getRandomValues`, which has no such
+              restriction) with all 19 client call sites moved onto it;
+              `server/` still uses the platform one. Also relevant to MOBILE-3:
+              a PWA needs HTTPS anyway, but device testing before that should
+              not require it."
+            audience: user
+            id: 019fb920-4db8-777a-b6bb-4ed499566e10
+            at: 2026-07-31T17:02:09.848Z
+            actor: claude
       - ref: MOBILE-2
         area: MOBILE
         title: "Touch gestures: pinch-zoom, two-finger pan, hit-target floors"
@@ -7475,7 +7493,7 @@ projects:
       - ref: MOBILE-5
         area: MOBILE
         title: "The editor sheet: throwable detents over the arrangement"
-        status: to-do
+        status: in-progress
         sort_path: "000005"
         priority: 0
         deps:
@@ -7560,7 +7578,7 @@ projects:
           "the desktop split four ways" but "the desktop, occluded".
         id: 019fb8bf-4e50-76ff-9b52-af40940356fa
         created_at: 2026-07-31T15:16:13.008Z
-        updated_at: 2026-07-31T15:16:13.008Z
+        updated_at: 2026-07-31T15:56:44.507Z
       - ref: MOBILE-6
         area: MOBILE
         title: Clips and pads as sections under the roll
@@ -7803,3 +7821,41 @@ projects:
         id: 019fb8bf-e9cf-7295-984e-c64745fd5f32
         created_at: 2026-07-31T15:16:52.815Z
         updated_at: 2026-07-31T15:16:52.815Z
+      - ref: MOBILE-9
+        area: MOBILE
+        title: Adding from the library should get out of the way on a phone
+        status: to-do
+        sort_path: "000009"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          Noticed on a device 2026-07-31. Tapping an instrument or device in the
+          library adds it, but the library stays open over the workspace, so you
+          cannot see the thing you just added. You have to dismiss the panel
+          yourself before the action has any visible result.
+
+
+          **Close the library after an add, but only where it is an overlay.**
+          On a phone it is a `Sheet` over the app, so it hides the outcome and
+          should get out of the way. On a tablet it is a docked column beside
+          the workspace - it occludes nothing, and closing it there would be
+          actively annoying when adding several tracks in a row. The `docked`
+          flag in `MobileShell` already draws exactly that distinction.
+
+
+          Worth confirming while implementing: the same argument probably
+          applies to any library action with a visible result in the workspace
+          (adding a track, loading a patch, dropping in a sample), not just
+          instruments. Do it as one rule rather than per-action, or it will
+          drift.
+
+
+          There is a precedent in the other direction to keep in mind -
+          `onRevealSamples` deliberately *opens* the library from the rack,
+          because there the library is the destination rather than the source.
+          So the rule is about where the user's attention is going, not about
+          the library as such.
+        id: 019fb948-6bc4-73dc-b70a-8c29daf6002f
+        created_at: 2026-07-31T17:45:58.980Z
+        updated_at: 2026-07-31T17:45:58.980Z
