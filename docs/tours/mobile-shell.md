@@ -54,7 +54,7 @@ forever.
 ## 3. The touch shell's three bands
 
 - file: `src/ui/shell/MobileShell.tsx`
-- lines: 502-590
+- lines: 572-620
 - symbol: `MobileShell`
 
 A fixed top bar, a flexible middle, fixed bottom tabs. The middle band is where the
@@ -69,7 +69,7 @@ tablet tier but must not dock.
 ## 4. Tabs and views as data
 
 - file: `src/ui/shell/MobileShell.tsx`
-- lines: 353-415
+- lines: 363-423
 - symbol: `views`
 
 The tabs mirror the **desktop workspace areas** (Arrange / Edit / Clips / Devices) rather
@@ -181,14 +181,22 @@ idiomatic form for state derived from a prop.
 - lines: 100-115
 - symbol: `CenterWorkbench`
 
-`CenterWorkbench` went from 788 lines to 228 by extracting `workbench/TrackEditor`,
+`CenterWorkbench` went from 703 lines to 231 by extracting `workbench/TrackEditor`,
 `InstrumentEditor`, `AudioClipPanel`, `DeviceRack` and `TrackRecordButton` - which is
 what let the touch shell host the same editor without duplicating it.
 
-The clamp shown here is the interesting survivor: a persisted device-rack height that was
-fine on a desktop left a 30px piano roll on a phone, because the editor's own chrome eats
-~90px before the roll gets any. `MIN_EDITOR` plus a proportional fallback keeps both
-usable at any height.
+The clamp shown here is the interesting survivor, though not where you would expect: a
+persisted device-rack height that was fine on a desktop left a ~30px piano roll on a
+phone, because the editor's own chrome eats ~90px before the roll gets any. `MIN_EDITOR`
+plus a proportional fallback keeps both usable at any height.
+
+The phone was the **discovery mechanism, not the beneficiary**. `CenterWorkbench` is
+desktop-only (`DesktopShell` is its sole importer) and the touch shell gives the rack its
+own tab, so the two never compete for height there any more. The clamp still earns its
+place here, because on desktop they do share one vertical box and `deviceH` is a
+persisted absolute while the body moves with the window - drag the rack tall, then shrink
+the window, and the squeeze is identical. A small screen forcing a pathological ratio
+immediately is a good way to find a latent desktop bug.
 
 Related: `workbench/TrackEditor.tsx:18` reads tempo/meter/loop from the store itself so
 neither shell has to thread them through.
@@ -199,7 +207,7 @@ neither shell has to thread them through.
 - lines: 1-60
 - symbol: `test.describe`
 
-21 tests across phone portrait, phone landscape and tablet viewports. Worth knowing the
+24 tests across phone portrait, phone landscape, tablet and desktop viewports. Worth knowing the
 limit: Vitest here is node-env with no jsdom, so there are no React component tests and
 Playwright is the only thing exercising this UI.
 
