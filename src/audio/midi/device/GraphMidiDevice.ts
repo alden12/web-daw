@@ -6,15 +6,36 @@
  * DOM-free.
  *
  * The def is data; the behavior is a strategy chosen from `transform.kind` (see strategy.ts):
- * `tap` is a stateless fan-out, `arpeggiate` a stateful clock-driven generator. The device owns
- * bypass + the downstream link and delegates the note calls to its strategy, so the whole family
- * stays one class over pure-data defs.
+ * `tap` is a stateless fan-out, `arpeggiate` and `euclid` are stateful clock-driven generators.
+ * The device owns bypass + the downstream link and delegates the note calls to its strategy, so
+ * the whole family stays one class over pure-data defs.
  */
 import type { ParamStore } from "../../params/store";
-import type { MidiDeviceDef } from "./transform";
+import type { MidiDeviceDef, MidiTransform } from "./transform";
 import type { TransportClock } from "./clock";
 import { type MidiStrategy, type StrategyContext, TapStrategy } from "./strategy";
 import { ArpStrategy } from "./devices/arp/arpStrategy";
+import { EuclidStrategy } from "./devices/euclid/euclidStrategy";
+
+/**
+ * Transform kind -> the strategy that runs it: the one place kinds are dispatched. Typed off
+ * the union, so adding a kind to MidiTransform without a strategy here is a compile error.
+ */
+const STRATEGIES: {
+  [Kind in MidiTransform["kind"]]: (
+    transform: Extract<MidiTransform, { kind: Kind }>,
+    ctx: StrategyContext,
+  ) => MidiStrategy;
+} = {
+  tap: (transform, ctx) => new TapStrategy(transform, ctx),
+  arpeggiate: (transform, ctx) => new ArpStrategy(transform, ctx),
+  euclid: (transform, ctx) => new EuclidStrategy(transform, ctx),
+};
+
+/** The lookup narrows per key at the definition site above; TS can't correlate the two sides
+ *  of the index here, so this is the single cast that ties them together. */
+const createStrategy = (transform: MidiTransform, ctx: StrategyContext): MidiStrategy =>
+  (STRATEGIES[transform.kind] as (transform: MidiTransform, ctx: StrategyContext) => MidiStrategy)(transform, ctx);
 
 /** The note-driving subset of an instrument. An `Instrument` structurally satisfies it. */
 export interface NoteTarget {
@@ -35,8 +56,7 @@ export class GraphMidiDevice implements NoteTarget {
     this.type = def.type;
     this.next = next;
     const ctx: StrategyContext = { store, clock, next: () => this.next };
-    this.strategy =
-      def.transform.kind === "arpeggiate" ? new ArpStrategy(def.transform, ctx) : new TapStrategy(def.transform, ctx);
+    this.strategy = createStrategy(def.transform, ctx);
   }
 
   /** Relink to the next target in the chain (the engine calls this on reconcile). */

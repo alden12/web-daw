@@ -9,6 +9,7 @@
  * its def in devices/ (registry.ts wires the factory); only the schema is data here.
  */
 import type { ParamSchema } from "../../params/types";
+import { RATE_OPTIONS } from "./devices/rate";
 
 export const octavatorSchema: ParamSchema = [
   { id: "octaveUp", label: "Octave up", kind: "boolean", default: true },
@@ -17,16 +18,32 @@ export const octavatorSchema: ParamSchema = [
 ] as const;
 
 export const arpeggiatorSchema: ParamSchema = [
-  {
-    id: "rate",
-    label: "Rate",
-    kind: "enum",
-    options: ["1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"],
-    default: "1/8",
-  },
+  { id: "rate", label: "Rate", kind: "enum", options: RATE_OPTIONS, default: "1/8" },
   { id: "pattern", label: "Pattern", kind: "enum", options: ["up", "down", "updown", "random"], default: "up" },
   { id: "octaves", label: "Octaves", kind: "number", min: 1, max: 4, default: 1, step: 1, taper: "linear" },
   { id: "gate", label: "Gate", kind: "number", min: 0.05, max: 1, default: 0.5, taper: "linear" },
+] as const;
+
+/**
+ * Euclidean sequencer params, following the Torso T-1's rhythm section: steps/pulses/rotate
+ * shape the pattern, repeats ratchets a hit, accent leans on the cycle's first hit, and voicing
+ * says whether an onset plays the whole held chord or walks it like an arp.
+ */
+export const euclideanSchema: ParamSchema = [
+  { id: "rate", label: "Rate", kind: "enum", options: RATE_OPTIONS, default: "1/16" },
+  {
+    id: "voicing",
+    label: "Voicing",
+    kind: "enum",
+    options: ["chord", "up", "down", "updown", "random"],
+    default: "chord",
+  },
+  { id: "steps", label: "Steps", kind: "number", min: 1, max: 32, default: 16, step: 1, taper: "linear" },
+  { id: "pulses", label: "Pulses", kind: "number", min: 0, max: 32, default: 4, step: 1, taper: "linear" },
+  { id: "rotate", label: "Rotate", kind: "number", min: 0, max: 31, default: 0, step: 1, taper: "linear" },
+  { id: "repeats", label: "Repeats", kind: "number", min: 1, max: 8, default: 1, step: 1, taper: "linear" },
+  { id: "gate", label: "Gate", kind: "number", min: 0.05, max: 1, default: 0.5, taper: "linear" },
+  { id: "accent", label: "Accent", kind: "number", min: 0, max: 1, default: 0, taper: "linear" },
 ] as const;
 
 export interface MidiDeviceInfo {
@@ -68,3 +85,4 @@ export function midiDeviceSchema(type: string): ParamSchema {
 // --- built-in MIDI devices (self-registered) ------------------------------
 registerMidiDevice({ type: "octavator", label: "Octavator", schema: octavatorSchema });
 registerMidiDevice({ type: "arpeggiator", label: "Arpeggiator", schema: arpeggiatorSchema });
+registerMidiDevice({ type: "euclidean", label: "Euclidean", schema: euclideanSchema });
