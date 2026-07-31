@@ -119,6 +119,7 @@ export function PianoRoll({
   projectStore,
   rows = CHROMATIC_ROWS,
   compact = false,
+  isActiveSurface = true,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
@@ -138,6 +139,8 @@ export function PianoRoll({
    * buttons in a row, and every surface having its own toolbar would stack three of them.
    */
   compact?: boolean;
+  /** Whether this surface owns the shell's ⋮ - see ArrangementTimeline (MOBILE-5). */
+  isActiveSurface?: boolean;
 }) {
   const clip = useClip(clipStore);
   const presence = useAuthorPresence();
@@ -544,7 +547,7 @@ export function PianoRoll({
       { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
       { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
     ],
-    compact,
+    compact && isActiveSurface,
   );
 
   const zoomBtn =

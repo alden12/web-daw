@@ -22,6 +22,7 @@ export function TrackEditor({
   dispatch,
   projectStore,
   compact = false,
+  isActiveSurface = true,
 }: {
   track: Track;
   scheduler: Scheduler;
@@ -30,6 +31,8 @@ export function TrackEditor({
   projectStore: ProjectStore;
   /** Touch layout: the editor hands its toolbar to the shell's ⋮ (MOBILE-1). */
   compact?: boolean;
+  /** Whether this surface owns the shell's ⋮ - see ArrangementTimeline (MOBILE-5). */
+  isActiveSurface?: boolean;
 }) {
   const project = useProject(projectStore);
 
@@ -44,6 +47,7 @@ export function TrackEditor({
         dispatch={dispatch}
         projectStore={projectStore}
         compact={compact}
+        isActiveSurface={isActiveSurface}
       />
     );
 

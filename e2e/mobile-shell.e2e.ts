@@ -1,14 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * The touch shell (MOBILE-1). At phone/tablet size the app swaps the four-region desktop
- * grid for a pinned transport, a lane strip, one workspace, and a bottom tab bar whose
- * tabs are the desktop's four surfaces - hosting the same panels from the same stores.
+ * The touch shell (MOBILE-1, restructured by MOBILE-5). At phone/tablet size the app swaps
+ * the four-region desktop grid for a pinned transport, the arrangement, and an **editor
+ * sheet** over it that is dragged or thrown between three detents.
  *
- * The gesture layer (pinch, tool model, long-press) is MOBILE-2 and not covered here.
+ * The throw maths itself (velocity fitting, projection, snapping) is pure and covered by
+ * unit tests in `test/detents.test.ts`; what is worth a browser is the wiring - that the
+ * arrangement stays live behind the sheet, that each detent leaves the surfaces a usable
+ * and *reachable* box, and that exactly one surface owns the shell's ⋮.
+ *
+ * The gesture layer (pinch, long-press) is MOBILE-2 and not covered here.
  */
 
 const PHONE = { width: 390, height: 844 };
+const LANDSCAPE = { width: 844, height: 390 };
+const TABLET = { width: 1024, height: 768 };
 
 /** Dismiss the audio-start modal so the shell is interactive. */
 async function dismissStart(page: Page) {
@@ -19,12 +26,32 @@ async function dismissStart(page: Page) {
   }
 }
 
-const tabBar = (page: Page) => page.getByRole("tablist", { name: "Views" });
-const tab = (page: Page, name: string) => tabBar(page).getByRole("tab", { name });
-const desktopRail = (page: Page) => page.locator('[class*="grid-area:rail"]');
 const shell = (page: Page) => page.locator("[data-device-tier]");
-const laneStrip = (page: Page) => page.getByTestId("lane-strip");
+const desktopRail = (page: Page) => page.locator('[class*="grid-area:rail"]');
+const sheet = (page: Page) => page.getByTestId("editor-sheet");
+/** One of the sheet's Edit / Clips / Rack segments. Scoped, so it cannot match the desktop's editor tabs. */
+const segment = (page: Page, name: string) => sheet(page).getByRole("tab", { name });
+const grabber = (page: Page) => page.getByRole("slider", { name: "Editor height" });
 const trackHeader = (page: Page) => page.locator("[data-track-id]").first().locator("> div").first();
+const detentOf = (page: Page) => sheet(page).getAttribute("data-detent");
+
+/**
+ * Step the sheet to a detent from the keyboard. Deterministic where a synthetic flick is
+ * not - the velocity projection has its own unit tests, so the browser only needs to prove
+ * that landing on a detent lays the surfaces out correctly.
+ */
+async function setDetent(page: Page, target: "peek" | "half" | "full") {
+  const order = ["peek", "half", "full"];
+  await grabber(page).focus();
+  for (let step = 0; step < order.length; step++) {
+    const current = await detentOf(page);
+    if (current === target) break;
+    await page.keyboard.press(order.indexOf(current!) < order.indexOf(target) ? "ArrowUp" : "ArrowDown");
+  }
+  await expect.poll(() => detentOf(page)).toBe(target);
+  // Let the settle spring finish before anything is measured.
+  await page.waitForTimeout(500);
+}
 
 /**
  * Open the shell's ⋮. Retried because `Menu` dismisses itself on any scroll and a surface
@@ -44,7 +71,7 @@ async function openOverflow(page: Page) {
 test.describe("phone", () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
-  test("swaps in the touch shell: four workspace tabs, one pinned transport", async ({ page }) => {
+  test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
@@ -52,90 +79,128 @@ test.describe("phone", () => {
     // The desktop spine is gone entirely - this is a swap, not a reflow.
     await expect(desktopRail(page)).toHaveCount(0);
 
-    // The tabs are the desktop's surfaces, not phone-invented navigation.
-    await expect(tabBar(page).getByRole("tab")).toHaveCount(4);
-    for (const name of ["Arrangement", "Edit", "Clips", "Devices"]) {
-      await expect(tab(page, name)).toBeVisible();
-    }
+    // The arrangement is the background, not one option among four.
+    await expect(page.locator('[class*="grid-area:timeline"]')).toBeVisible();
+    await expect(sheet(page)).toBeVisible();
+    // The tab bar it replaced is gone, and with it the "which surface am I on" question.
+    await expect(page.getByRole("tablist", { name: "Views" })).toHaveCount(0);
 
-    // One transport, above every tab, and only one.
+    // One transport, above everything, and only one.
     await expect(page.getByRole("button", { name: "Record" })).toHaveCount(1);
     await expect(page.getByRole("button", { name: /play|stop/i }).first()).toBeVisible();
   });
 
-  test("the tab bar sits in the thumb zone with generous hit targets", async ({ page }) => {
+  test("opens parked, so you land on the arrangement rather than under a panel", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    const bar = (await tabBar(page).boundingBox())!;
-    expect(bar.y + bar.height).toBeGreaterThan(PHONE.height - 40);
+    await expect.poll(() => detentOf(page)).toBe("peek");
 
-    for (const item of await tabBar(page).getByRole("tab").all()) {
-      const box = (await item.boundingBox())!;
-      expect(box.height, "tab height").toBeGreaterThanOrEqual(44);
-      expect(box.width, "tab width").toBeGreaterThanOrEqual(44);
-    }
+    // Parked still names the track and offers the surfaces - that is what teaches the drag.
+    await expect(segment(page, "Edit")).toBeVisible();
+    const box = (await sheet(page).boundingBox())!;
+    expect(box.height, "parked is a lip, not a panel").toBeLessThan(PHONE.height * 0.25);
+    expect(box.y + box.height, "and it sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
   });
 
-  test("each tab hosts one surface, and the transport survives switching", async ({ page }) => {
+  test("picking a surface raises the sheet, so nothing is more than one tap away", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await expect.poll(() => detentOf(page)).toBe("peek");
+
+    await segment(page, "Edit").tap();
+    await expect.poll(() => detentOf(page)).toBe("half");
+    await expect(page.getByTestId("roll-scroll")).toBeVisible();
+  });
+
+  test("each segment hosts one surface, and the transport survives switching", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    await expect(page.locator('[class*="grid-area:timeline"]')).toBeVisible();
-
-    await tab(page, "Edit").tap();
+    await segment(page, "Edit").tap();
     await expect(page.getByTestId("roll-scroll")).toBeVisible();
 
-    await tab(page, "Clips").tap();
+    await segment(page, "Clips").tap();
     await expect(page.getByRole("button", { name: /^\+ Clip$/ })).toBeVisible();
 
-    await tab(page, "Devices").tap();
-    // "Devices" also names the tab, so assert on something only the rack has.
+    await segment(page, "Rack").tap();
     await expect(page.getByRole("button", { name: "Save as patch" })).toBeVisible();
 
     await expect(page.getByRole("button", { name: "Record" })).toHaveCount(1);
   });
 
-  test("the lane strip keeps the selected track visible on every tab but Arrangement", async ({ page }) => {
+  /**
+   * The bug that made the sheet unusable on a device: it was laid out at the full workspace
+   * height and merely translated down, so at Half the roll's scroller was ~800px tall inside
+   * a ~400px window. It never overflowed, so it never scrolled, and every row below the fold
+   * was unreachable. "Transform while moving, commit layout on settle" is what fixes it.
+   */
+  test("every detent leaves the editor a box that fits on screen and scrolls", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    // Arrangement *is* the lanes, so no strip there.
-    await expect(laneStrip(page)).toHaveCount(0);
+    for (const detent of ["half", "full"] as const) {
+      await setDetent(page, detent);
+      await segment(page, "Edit").tap();
+      // Wait on the surface itself rather than measuring into a re-render.
+      await expect(page.getByTestId("roll-scroll")).toBeVisible();
 
-    for (const name of ["Edit", "Clips", "Devices"]) {
-      await tab(page, name).tap();
-      await expect(laneStrip(page), `strip on ${name}`).toBeVisible();
-      // It names the selected track, so you can tell what you are editing.
-      await expect(laneStrip(page).getByText("Subtractive 1")).toBeVisible();
+      const sheetBox = (await sheet(page).boundingBox())!;
+      expect(sheetBox.y + sheetBox.height, `sheet bottom at ${detent}`).toBeLessThanOrEqual(PHONE.height + 1);
+
+      const roll = await page.getByTestId("roll-scroll").evaluate((el) => ({
+        bottom: Math.round(el.getBoundingClientRect().bottom),
+        canScroll: el.scrollHeight > el.clientHeight,
+      }));
+      expect(roll.bottom, `roll bottom at ${detent}`).toBeLessThanOrEqual(PHONE.height);
+      expect(roll.canScroll, `roll scrolls at ${detent}`).toBe(true);
     }
   });
 
-  test("tapping a track in Arrangement selects it without navigating away", async ({ page }) => {
+  test("the arrangement stays behind the sheet, and gets the band above it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    const timeline = page.locator('[class*="grid-area:timeline"]');
+
+    await setDetent(page, "peek");
+    const parked = (await timeline.boundingBox())!;
+    await setDetent(page, "full");
+    const raised = (await timeline.boundingBox())!;
+
+    // It is not merely occluded - it lays out in what is left, so its own scrollers stay
+    // on screen rather than sitting underneath the sheet.
+    expect(raised.height, "the arrangement gives up height to the sheet").toBeLessThan(parked.height);
+    expect(raised.height, "but never disappears").toBeGreaterThan(40);
+    const sheetBox = (await sheet(page).boundingBox())!;
+    expect(raised.y + raised.height).toBeLessThanOrEqual(sheetBox.y + 2);
+  });
+
+  test("tapping a track selects it without moving the sheet - it is not modal", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "half");
 
     await trackHeader(page).tap();
 
-    // Still on Arrangement: the lane strip is what keeps the selection visible, so
-    // selection no longer has to imply navigation.
-    await expect(tab(page, "Arrangement")).toHaveAttribute("aria-selected", "true");
+    // The whole reason this cannot be an off-the-shelf bottom sheet: the arrangement behind
+    // stays live, so selection never has to imply navigation.
+    await expect.poll(() => detentOf(page)).toBe("half");
     await expect(page.locator('[class*="grid-area:timeline"]')).toBeVisible();
   });
 
-  test("the lane strip is on the same stretch of timeline as the Arrangement tab", async ({ page }) => {
+  test("the arrangement keeps its scroll position when the sheet moves", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    const scroller = () => page.getByTestId("arr-scroll");
 
-    // Scroll the arrangement well along the time axis, then switch tabs.
-    await page.getByTestId("arr-scroll").evaluate((el) => (el.scrollLeft = 600));
-    await tab(page, "Edit").tap();
-    await expect(laneStrip(page)).toBeVisible();
+    await scroller().evaluate((el) => (el.scrollLeft = 500));
+    await expect.poll(() => scroller().evaluate((el) => el.scrollLeft)).toBe(500);
 
-    // The strip picks up where the arrangement was rather than snapping back to bar 1.
-    // Its header sits outside its scroller, so it leads by the header width less.
-    const stripScroll = await page.getByTestId("lane-strip-scroll").evaluate((el) => el.scrollLeft);
-    expect(stripScroll).toBeGreaterThan(300);
+    // Raising the sheet resizes the arrangement, which is exactly when a restored offset
+    // is easiest to lose.
+    await setDetent(page, "full");
+    await setDetent(page, "peek");
+    await expect.poll(() => scroller().evaluate((el) => el.scrollLeft)).toBe(500);
   });
 
   test("scrolling the arrangement back to the start does not snap forward again", async ({ page }) => {
@@ -144,40 +209,53 @@ test.describe("phone", () => {
     const scroller = page.getByTestId("arr-scroll");
 
     // The shared view offset used to floor at beat 0 and get pushed back into the DOM, so
-    // scrolling left into the header gutter yanked you forward to the gutter's edge. The
-    // timeline caught on the headers every time.
+    // scrolling left into the header gutter yanked you forward to the gutter's edge.
     await scroller.evaluate((el) => (el.scrollLeft = 500));
     await scroller.evaluate((el) => (el.scrollLeft = 0));
     await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBe(0);
 
-    // ...and anywhere inside the gutter stays put too.
     await scroller.evaluate((el) => (el.scrollLeft = 60));
     await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBe(60);
   });
 
-  // Leaving and returning must keep your place. Inside the header gutter is the case that
-  // regressed: the lane strip cannot show a gutter, so restoring its own scroll clamped to
-  // 0, and publishing that clamped value overwrote the offset the timeline needed.
-  for (const { name, target } of [
-    { name: "well along the timeline", target: 500 },
-    { name: "inside the header gutter", target: 100 },
-  ]) {
-    test(`the arrangement keeps its scroll position across a tab switch (${name})`, async ({ page }) => {
-      await page.goto("/");
-      await dismissStart(page);
-      const scroller = () => page.getByTestId("arr-scroll");
+  test("dragging the header moves the sheet and it settles on a detent", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await expect.poll(() => detentOf(page)).toBe("peek");
 
-      await scroller().evaluate((el, value) => (el.scrollLeft = value), target);
-      await expect.poll(() => scroller().evaluate((el) => el.scrollLeft)).toBe(target);
+    // The whole header is the drag surface, not just the grabber pill.
+    const header = (await sheet(page).boundingBox())!;
+    const startX = header.x + header.width / 2;
+    const startY = header.y + 20;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    for (let step = 1; step <= 8; step++) await page.mouse.move(startX, startY - step * 40);
+    await page.mouse.up();
 
-      await tab(page, "Edit").tap();
-      await expect(laneStrip(page)).toBeVisible();
-      await tab(page, "Arrangement").tap();
-      await expect(scroller()).toBeVisible();
+    // Dragged well up and released: it lands on a detent rather than wherever it was let go.
+    await expect.poll(() => detentOf(page)).not.toBe("peek");
+    await page.waitForTimeout(500);
+    const box = (await sheet(page).boundingBox())!;
+    expect(box.y + box.height, "still anchored to the bottom edge").toBeGreaterThan(PHONE.height - 4);
+  });
 
-      await expect.poll(() => scroller().evaluate((el) => el.scrollLeft)).toBe(target);
+  test("the arrangement pins the selected lane once the sheet covers it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await trackHeader(page).tap();
+    await setDetent(page, "full");
+
+    // At Full only a sliver of arrangement is left, and it should be the lane being edited -
+    // the job LaneStrip used to do from a second copy of the grid.
+    const pinned = await page.getByTestId("arr-scroll").evaluate((el) => {
+      const row = el.querySelector("[data-track-id]") as HTMLElement | null;
+      if (!row) return null;
+      const offset = row.offsetTop - el.scrollTop;
+      return { visible: offset >= 0 && offset < el.clientHeight, band: el.clientHeight };
     });
-  }
+    expect(pinned?.visible, "the selected lane is in view").toBe(true);
+    expect(pinned?.band, "and the band really is a sliver").toBeLessThan(PHONE.height * 0.3);
+  });
 
   test("undo and redo are in the top bar, and tempo has moved to the overflow menu", async ({ page }) => {
     await page.goto("/");
@@ -185,7 +263,6 @@ test.describe("phone", () => {
 
     const undo = page.getByRole("button", { name: "Undo" });
     const redo = page.getByRole("button", { name: "Redo" });
-    // Nothing to undo on a fresh project, so both start unavailable.
     await expect(undo).toBeDisabled();
     await expect(redo).toBeDisabled();
 
@@ -195,42 +272,20 @@ test.describe("phone", () => {
     await expect(page.getByRole("menuitem", { name: "Tempo" })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // Make an edit, then undo it: 120 -> 140 -> 120.
     await openOverflow(page);
     await page.getByRole("menuitem", { name: "Tempo" }).click();
     await page.getByRole("menuitemradio", { name: "140 BPM" }).click();
     await expect(undo).toBeEnabled();
 
-    // Undoing the tempo change puts the log back where it started: nothing left to undo,
-    // something to redo.
     await undo.tap();
     await expect(undo).toBeDisabled();
     await expect(redo).toBeEnabled();
   });
 
-  test("the lane strip is a title row over a full-width lane, not a header column", async ({ page }) => {
-    await page.goto("/");
-    await dismissStart(page);
-    await tab(page, "Edit").tap();
-
-    const strip = laneStrip(page);
-    await expect(strip.getByText("Subtractive 1")).toBeVisible();
-    // The track's gain is the one per-track control worth reaching for while editing.
-    await expect(strip.getByRole("slider", { name: "Track gain" })).toBeVisible();
-
-    // No header column: the lane runs the width of the strip rather than starting after one.
-    const stripBox = (await strip.boundingBox())!;
-    const laneBox = (await strip.getByTestId("lane").boundingBox())!;
-    expect(laneBox.x - stripBox.x, "the lane starts at the strip's left edge").toBeLessThan(4);
-
-    // An instrument track records from the Clips tab, so no record button here.
-    await expect(strip.getByRole("button", { name: /record/i })).toHaveCount(0);
-  });
-
   test("the roll has no toolbar of its own - its controls are in the shell's menu", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await tab(page, "Edit").tap();
+    await segment(page, "Edit").tap();
     await expect(page.getByTestId("roll-scroll")).toBeVisible();
 
     // The toolbar row is hidden, so its label is not shown...
@@ -238,25 +293,29 @@ test.describe("phone", () => {
 
     // ...and the controls turn up in the one overflow menu, above the project's.
     await openOverflow(page);
-    // Checkable rows are `menuitemradio`; plain actions are `menuitem`.
     await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: /Zoom in/i })).toBeVisible();
-    // ...and the project group is below the surface's own controls.
     await expect(page.getByRole("menuitemradio", { name: /Metronome/i })).toBeVisible();
   });
 
-  test("the overflow menu follows the active surface", async ({ page }) => {
+  /**
+   * Un-tabbing meant the arrangement and the editor are mounted *at the same time*, so both
+   * would publish to the shell's ⋮ and whichever mounted later would silently win. The
+   * detent decides instead: parked, the arrangement keeps its own controls.
+   */
+  test("the overflow menu follows whichever surface is in front", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    // On Arrangement it carries the timeline's own options...
+    // Parked: the timeline's own options, even though the editor is mounted behind the sheet.
+    await setDetent(page, "peek");
     await openOverflow(page);
     await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /Count-in/ })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // ...and on Edit it carries the roll's instead.
-    await tab(page, "Edit").tap();
+    // Raised: the roll's instead.
+    await setDetent(page, "half");
+    await segment(page, "Edit").tap();
     await openOverflow(page);
     await expect(page.getByRole("menuitem", { name: /Quantize/i }).first()).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
@@ -265,7 +324,7 @@ test.describe("phone", () => {
   test("the overflow menu reflects the surface's state, not the shell's last render", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await tab(page, "Edit").tap();
+    await segment(page, "Edit").tap();
     const velocity = () => page.getByRole("menuitemradio", { name: /Velocity lane/i });
 
     await openOverflow(page);
@@ -283,55 +342,69 @@ test.describe("phone", () => {
     await page.goto("/");
     await dismissStart(page);
 
-    const sheet = page.getByRole("dialog", { name: "Library" });
-    await expect(sheet).toHaveCount(0); // lazily mounted: never opened, never built
+    const panel = page.getByRole("dialog", { name: "Library" });
+    await expect(panel).toHaveCount(0); // lazily mounted: never opened, never built
 
-    await page.getByRole("button", { name: "Library" }).tap();
-    await expect(sheet).toBeVisible();
-    // It carries the same view set as the desktop rail.
-    await expect(sheet.getByRole("navigation", { name: "Library views" })).toBeVisible();
-    await expect(sheet.getByText("Subtractive")).toBeVisible();
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("navigation", { name: "Library views" })).toBeVisible();
+    await expect(panel.getByText("Subtractive")).toBeVisible();
 
     await page.keyboard.press("Escape");
     // Still mounted (so reopening is instant) but inert and out of reach.
-    await expect(sheet).toHaveAttribute("inert", "");
+    await expect(panel).toHaveAttribute("inert", "");
   });
 
   test("the agent opens as a sheet from the right and stays mounted when closed", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    const sheet = page.getByRole("dialog", { name: "Agent" });
+    const panel = page.getByRole("dialog", { name: "Agent" });
     await page.getByRole("button", { name: "Agent" }).tap();
-    await expect(sheet).toBeVisible();
+    await expect(panel).toBeVisible();
 
     await page.keyboard.press("Escape");
     // Deliberately not unmounted: an interruptible agent run must survive a close.
-    await expect(sheet).toHaveCount(1);
-    await expect(sheet).toHaveAttribute("inert", "");
+    await expect(panel).toHaveCount(1);
+    await expect(panel).toHaveAttribute("inert", "");
   });
 });
 
 test.describe("phone, landscape", () => {
-  test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+  test.use({ viewport: LANDSCAPE, hasTouch: true, isMobile: true });
 
-  test("needs no special case: one surface per tab fits a short screen", async ({ page }) => {
+  test("gets its own detents, because it is wide but very short", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await setDetent(page, "full");
+    // Of the *workspace*, which is what a detent is a fraction of - the viewport also
+    // holds the top bar, so measuring against that folds in a constant and tells you less.
+    const share = await sheet(page).evaluate((el) => el.clientHeight / (el.parentElement?.clientHeight ?? 1));
+    // Its Full covers more than a portrait phone's 0.86, or the sliver left over on a
+    // ~390px-tall screen would be too small to be worth leaving.
+    expect(share).toBeGreaterThan(0.9);
+  });
+
+  test("needs no special case: the editor has the sheet to itself", async ({ page }) => {
     // A rack taller than the viewport used to squeeze the roll to nothing when the two
-    // shared a tab. They no longer do.
+    // shared a surface. They no longer do.
     await page.addInitScript(() => localStorage.setItem("web-daw:devices-height", "600"));
     await page.goto("/");
     await dismissStart(page);
-    await tab(page, "Edit").tap();
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
 
     const roll = (await page.getByTestId("roll-scroll").boundingBox())!;
-    expect(roll.height, "the roll has the tab to itself").toBeGreaterThan(150);
+    expect(roll.height, "the roll has the sheet to itself").toBeGreaterThan(120);
     expect(roll.width, "and the full width").toBeGreaterThan(700);
   });
 
   test("the velocity lane can be collapsed to give the notes the height", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await tab(page, "Edit").tap();
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
 
     const lane = page.getByTitle("Velocity - drag a bar");
     await expect(lane).toBeVisible();
@@ -343,90 +416,72 @@ test.describe("phone, landscape", () => {
 });
 
 test.describe("tablet", () => {
-  test.use({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true });
+  test.use({ viewport: TABLET, hasTouch: true, isMobile: true });
 
   test("gets the touch shell too, tiered as tablet", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await expect(shell(page)).toHaveAttribute("data-device-tier", "tablet");
-    await expect(tabBar(page)).toBeVisible();
+    await expect(sheet(page)).toBeVisible();
+    await expect(desktopRail(page)).toHaveCount(0);
   });
 
   test("docks the library and agent beside the workspace instead of over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await tab(page, "Edit").tap();
-    const roll = page.getByTestId("roll-scroll");
 
     // Already open: a tablet starts with the library docked, so there is nothing to tap.
     const library = page.getByRole("complementary", { name: "Library" });
     await expect(library).toBeVisible();
-    // Docked, not overlaid: no dialog, and the workspace is still there beside it.
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(roll).toBeVisible();
-    const libraryBox = (await library.boundingBox())!;
-    const rollBox = (await roll.boundingBox())!;
-    expect(libraryBox.x + libraryBox.width, "the library sits left of the workspace").toBeLessThanOrEqual(
-      rollBox.x + 1,
-    );
+    // Docked, not a sheet: no scrim, and it sits beside the workspace rather than over it.
+    await expect(page.getByRole("dialog", { name: "Library" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Agent", exact: true }).tap();
+    await page.getByRole("button", { name: "Agent" }).tap();
     const agent = page.getByRole("complementary", { name: "Agent" });
     await expect(agent).toBeVisible();
-    // ...and the agent to the right, with all three on screen at once.
-    const agentBox = (await agent.boundingBox())!;
-    const rollAfter = (await roll.boundingBox())!;
-    expect(agentBox.x, "the agent sits right of the workspace").toBeGreaterThanOrEqual(
-      rollAfter.x + rollAfter.width - 1,
-    );
 
-    // The same button closes it again.
-    await page.getByRole("button", { name: "Agent", exact: true }).tap();
-    await expect(agent).toHaveCount(0);
+    const libraryBox = (await library.boundingBox())!;
+    const agentBox = (await agent.boundingBox())!;
+    expect(libraryBox.x, "library on the left").toBeLessThan(TABLET.width / 2);
+    expect(agentBox.x, "agent on the right").toBeGreaterThan(TABLET.width / 2);
   });
 
   test("opens with the library already docked, and the toggle still closes it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    const library = page.getByRole("complementary", { name: "Library" });
-    // No tap: there is room for it beside the workspace, so a tablet starts with it open.
-    await expect(library).toBeVisible();
 
+    const library = page.getByRole("complementary", { name: "Library" });
+    await expect(library).toBeVisible();
     await page.getByRole("button", { name: "Library", exact: true }).tap();
     await expect(library).toHaveCount(0);
   });
 
-  test("keeps the tab bar over the workspace, not under the docked panels", async ({ page }) => {
+  test("keeps the sheet over the workspace, not under the docked panels", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+
     const library = page.getByRole("complementary", { name: "Library" });
     await expect(library).toBeVisible();
-
     const libraryBox = (await library.boundingBox())!;
-    const barBox = (await tabBar(page).boundingBox())!;
-    // The tabs switch the workspace column, so they start where the library ends.
-    expect(barBox.x, "the tab bar starts right of the docked library").toBeGreaterThanOrEqual(
+    const sheetBox = (await sheet(page).boundingBox())!;
+
+    // The sheet belongs to the workspace column: a docked panel owns its full height, so
+    // the sheet must start where the panel ends rather than sliding underneath it.
+    expect(sheetBox.x, "sheet starts after the docked library").toBeGreaterThanOrEqual(
       libraryBox.x + libraryBox.width - 1,
     );
-
-    // ...and closing the library hands that width back.
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
-    await expect(library).toHaveCount(0);
-    const barFull = (await tabBar(page).boundingBox())!;
-    expect(barFull.width, "the tab bar spans the full width once nothing is docked").toBeGreaterThan(barBox.width);
   });
 });
 
 test.describe("desktop", () => {
-  test("keeps the four-region grid, its own toolbars and no tab bar", async ({ page }) => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("keeps the four-region grid, its own toolbars and no editor sheet", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await expect(shell(page)).toHaveCount(0);
     await expect(desktopRail(page)).toBeVisible();
-    await expect(tabBar(page)).toHaveCount(0);
-    // The roll keeps its toolbar and the timeline its options menu.
-    await expect(page.getByText("Piano roll", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Timeline options" })).toBeVisible();
+    await expect(sheet(page)).toHaveCount(0);
   });
 
   test("a window too narrow for the grid falls back to the touch shell", async ({ page }) => {
@@ -434,14 +489,9 @@ test.describe("desktop", () => {
     await dismissStart(page);
     await expect(desktopRail(page)).toBeVisible();
 
-    // No touch hardware here - width alone is enough once the grid has no room.
     await page.setViewportSize({ width: 700, height: 900 });
-    await expect(shell(page)).toHaveAttribute("data-device-tier", "phone");
+    await expect(shell(page)).toBeVisible();
+    await expect(sheet(page)).toBeVisible();
     await expect(desktopRail(page)).toHaveCount(0);
-
-    // ...and it swaps back, so this is a live tier, not a load-time decision.
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await expect(desktopRail(page)).toBeVisible();
-    await expect(tabBar(page)).toHaveCount(0);
   });
 });
