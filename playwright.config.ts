@@ -6,7 +6,14 @@ import { defineConfig, devices } from "@playwright/test";
  * (Vitest, in `test/`) can't reach. E2E specs are named `*.e2e.ts` so Vitest
  * (which matches `*.test.ts` / `*.spec.ts`) never tries to run them.
  */
-const PORT = 5179;
+/**
+ * Deliberately well clear of 517x. The `apm` roadmap viewer binds 5179 and *wanders* to
+ * the next free port in that range when it restarts, and `reuseExistingServer` below
+ * adopts whatever is already listening without checking what it is. Running `open_viewer`
+ * and `yarn test:e2e` in the same session then silently tests the roadmap viewer instead
+ * of the app: every locator misses and the failures point nowhere near the cause.
+ */
+const PORT = 4319;
 
 export default defineConfig({
   testDir: "./e2e",
