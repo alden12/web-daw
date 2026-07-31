@@ -2813,6 +2813,60 @@ projects:
         id: 019fb3c7-7c7a-764c-ac83-f5eaef4a3c7f
         created_at: 2026-07-30T16:07:03.035Z
         updated_at: 2026-07-30T16:07:03.035Z
+        notes:
+          - body: >-
+              **Reviewed 2026-07-31; two refinements that change the option
+              ordering above.**
+
+
+              **`WEBDAW_WS_PORT` is not merely unfinished - setting it today
+              actively breaks the app.** `server/index.ts:14` honours the env
+              var, but `AppShell.tsx:272` calls `connectMcpBridge` with no
+              `url`, so the tab always dials the constant at `bridge.ts:40`.
+              Moving the server therefore moves it away from the only address
+              the tab knows, and the bridge silently stops connecting. So the
+              case for wiring the client half is not "the seam is incomplete",
+              it is "there is a documented knob that breaks the product" - which
+              makes it the cheapest and highest-value item here, ahead of both
+              port-probing and the proxy.
+
+
+              **The tab should name the server it connected to.** Suggested from
+              the apm side, whose viewer feed returns the store path so the page
+              can say which file it is showing; the analogue here would have
+              turned this ticket's diagnosis (`lsof` the port, walk the process
+              tree back to another editor window) into reading the screen.
+
+
+              **Sharper still, found while checking the code:** the tab does not
+              merely fail to say *which* server - it says nothing at all.
+              `McpStatus` is a bare `"connecting" | "connected" |
+              "disconnected"` with no endpoint in it, and
+              `CenterWorkbench.tsx:119` renders the chip **only** when
+              connected. That was a deliberate call (commit `6d514b4`, "quiet
+              the MCP indicator when disconnected") and it is right for the
+              common case, where MCP is not in use and a permanent dead dot
+              would be noise. But it means the collision is invisible from both
+              ends at once: no `web-daw` tools in the MCP client, no indicator
+              in the tab, and nothing anywhere saying something tried to connect
+              and failed.
+
+
+              Suggested resolution keeping that intent: stay quiet while
+              `disconnected` *and* never-connected, but surface the chip - with
+              the endpoint and an error tint - once a connection has been
+              attempted and refused. Carrying the resolved URL on `McpStatus` is
+              the enabling change and is small.
+
+
+              Also worth noting this is the third instance of one pattern across
+              yesterday's bugs: a silent failure where the diagnostic exists but
+              is not surfaced (this hidden chip, the apm server's stderr-only
+              port message, and the acknowledged-but-unwritten ticket).
+            audience: user
+            id: 019fb782-dfea-733c-8879-dc89ef9ccdae
+            at: 2026-07-31T09:30:35.370Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
