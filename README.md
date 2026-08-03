@@ -47,6 +47,10 @@ The certificate is self-signed, so the device shows a warning once: on iOS, **Sh
 -> visit this website**; on Android Chrome, **Advanced -> Proceed**. The certificate is
 cached, so this is a one-off per device rather than per run.
 
+`ERR_EMPTY_RESPONSE` means the browser asked for `http://` and the server only speaks TLS -
+usually the address bar autocompleting a remembered plain-http URL. Type the `https://`
+prefix explicitly.
+
 `dev:mobile` runs in Vite's `test` mode, which loads the committed `.env.test` and so blanks
 `VITE_SUPABASE_*` and `VITE_DAW_API_URL`. That skips the login gate and persists locally to
 OPFS, which is what you want for UI work. To exercise the real backend from a device instead,

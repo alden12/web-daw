@@ -7576,9 +7576,58 @@ projects:
 
           Rewrite `MobileShell`'s header comment while here: mobile is no longer
           "the desktop split four ways" but "the desktop, occluded".
+
+
+          ---
+
+
+          **Also landed here: a device-testing procedure (`yarn dev:mobile`).**
+          Not in the original scope, but validating this ticket on real hardware
+          forced it, and it is dev-only so it does not widen the shipped
+          surface.
+
+
+          Testing on a phone meant `vite --host` at the laptop's LAN address,
+          which is plain http and not `localhost`, so an **insecure context** -
+          and four things the app needs are gated on a secure one, all failing
+          silently:
+
+
+          - `crypto.randomUUID` - the first id thrown on, `AppShell` never
+          mounted, blank white page. Fixed with a `getRandomValues` fallback in
+          `src/audio/randomUuid.ts`.
+
+          - `AudioWorklet` - `loadWorklets` threw, so the engine never started
+          and nothing played.
+
+          - `navigator.storage` - no OPFS, so `getProjectStorage()` fell through
+          to `MemoryProjectStorage` and nothing persisted.
+
+          - `getUserMedia` - no mic recording.
+
+
+          `yarn dev:mobile` serves https with a self-signed certificate
+          (`@vitejs/plugin-basic-ssl`), opt-in via `MOBILE_HTTPS` so everyday
+          `yarn dev` stays on plain `http://localhost` (already a secure
+          context, no certificate warning) and Playwright is untouched.
+          `strictPort` on, because the URL is typed into a phone by hand and a
+          silent drift to the next port leaves the remembered address pointing
+          at an orphaned earlier run - which answers, so it looks like your
+          changes had no effect. Procedure and the `ERR_EMPTY_RESPONSE` gotcha
+          are in the README.
+
+
+          The failures are now legible as well as fixed: `loadWorklets` rejects
+          with an explanation rather than "cannot read addModule of undefined",
+          and `StartDialog` shows it instead of the button appearing dead.
+
+
+          A trusted certificate (`mkcert` plus its root installed on the device)
+          is still needed before service workers and PWA install can be tested -
+          relevant to the packaging epic, not to this ticket.
         id: 019fb8bf-4e50-76ff-9b52-af40940356fa
         created_at: 2026-07-31T15:16:13.008Z
-        updated_at: 2026-07-31T17:49:52.761Z
+        updated_at: 2026-08-03T19:46:58.146Z
       - ref: MOBILE-6
         area: MOBILE
         title: Clips and pads as sections under the roll
