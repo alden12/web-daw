@@ -7493,7 +7493,7 @@ projects:
       - ref: MOBILE-5
         area: MOBILE
         title: "The editor sheet: throwable detents over the arrangement"
-        status: in-progress
+        status: review
         sort_path: "000005"
         priority: 0
         deps:
@@ -7578,7 +7578,7 @@ projects:
           "the desktop split four ways" but "the desktop, occluded".
         id: 019fb8bf-4e50-76ff-9b52-af40940356fa
         created_at: 2026-07-31T15:16:13.008Z
-        updated_at: 2026-07-31T15:56:44.507Z
+        updated_at: 2026-07-31T17:49:52.761Z
       - ref: MOBILE-6
         area: MOBILE
         title: Clips and pads as sections under the roll
