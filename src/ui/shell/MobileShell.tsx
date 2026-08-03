@@ -280,14 +280,32 @@ export function MobileShell({
    * surface owns the ⋮, and MOBILE-6's sections will read the detent too. The sheet is
    * handed them and reports changes back.
    *
-   * It opens **parked**. The arrangement is the background and the thing you orient
-   * yourself in, so landing on a project with the editor already over half of it reads as
-   * a panel you did not ask for. Parked still shows the track name and the surface switch,
-   * which is the affordance that teaches the drag - and picking a surface raises it, so
-   * nothing is more than one tap away.
+   * It opens **parked**, but Half is the working default and switching track is what gets
+   * you there. The distinction is between arriving and asking: landing on a project with
+   * the editor already over half of it reads as a panel you did not ask for, whereas
+   * tapping a lane is a request to edit that track, so the sheet meets you at Half.
+   *
+   * Parked still names the track and offers the surface switch, which is the affordance
+   * that teaches the drag; picking a surface raises it too.
    */
   const [detent, setDetent] = useState<Detent>("peek");
   const [surface, setSurface] = useState<EditorSurface>("edit");
+  /**
+   * Raise on an *explicit* selection. State rather than a ref, and adjusted during render
+   * rather than in an effect: this is React's documented "adjusting state when a prop
+   * changes" pattern, so the re-render happens before the browser paints (no visible frame
+   * at the old detent) and it stays safe under concurrent rendering, which a ref written
+   * mid-render would not be.
+   *
+   * Seeded with the current id, so a project that loads with a track already selected does
+   * not count as a selection and stays parked. Raises only *from* parked, so a sheet you
+   * have already thrown to Full is left where you put it rather than dragged back down.
+   */
+  const [lastRaisedFor, setLastRaisedFor] = useState(selectedTrack?.id);
+  if (selectedTrack && selectedTrack.id !== lastRaisedFor) {
+    setLastRaisedFor(selectedTrack.id);
+    if (detent === "peek") setDetent("half");
+  }
   /**
    * A tablet opens with the library already docked: there is width for it beside the
    * workspace, and it is the first thing you reach for on a new project (add a track,
