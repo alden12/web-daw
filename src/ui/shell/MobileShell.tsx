@@ -291,22 +291,6 @@ export function MobileShell({
   const [detent, setDetent] = useState<Detent>("peek");
   const [surface, setSurface] = useState<EditorSurface>("edit");
   /**
-   * Raise on an *explicit* selection. State rather than a ref, and adjusted during render
-   * rather than in an effect: this is React's documented "adjusting state when a prop
-   * changes" pattern, so the re-render happens before the browser paints (no visible frame
-   * at the old detent) and it stays safe under concurrent rendering, which a ref written
-   * mid-render would not be.
-   *
-   * Seeded with the current id, so a project that loads with a track already selected does
-   * not count as a selection and stays parked. Raises only *from* parked, so a sheet you
-   * have already thrown to Full is left where you put it rather than dragged back down.
-   */
-  const [lastRaisedFor, setLastRaisedFor] = useState(selectedTrack?.id);
-  if (selectedTrack && selectedTrack.id !== lastRaisedFor) {
-    setLastRaisedFor(selectedTrack.id);
-    if (detent === "peek") setDetent("half");
-  }
-  /**
    * A tablet opens with the library already docked: there is width for it beside the
    * workspace, and it is the first thing you reach for on a new project (add a track,
    * pick an instrument). Only where it *docks* - a phone, or a landscape phone sharing
@@ -317,6 +301,30 @@ export function MobileShell({
   const [libraryOpen, setLibraryOpen] = useState(() => shape.tier === "tablet" && !shape.short);
   const [agentOpen, setAgentOpen] = useState(false);
   const project = useProject(projectStore);
+  /**
+   * Raise on an *explicit* selection. State rather than a ref, and adjusted during render
+   * rather than in an effect: this is React's documented "adjusting state when a prop
+   * changes" pattern, so the re-render lands before the browser paints (no visible frame at
+   * the old detent) and it stays safe under concurrent rendering, which a ref written
+   * mid-render would not be.
+   *
+   * The test is **whether the track we last saw still exists**, not whether the id changed,
+   * because a changed id does not mean anybody chose anything. Loading a project is the
+   * case that forces this: the app mounts a seed project, then the saved one replaces it
+   * wholesale a moment later, so the selected track's id changes on its own and the sheet
+   * would open over the arrangement on every reload - exactly what parking exists to avoid.
+   * A project swap takes the old track with it; selecting a lane or adding a track leaves it
+   * standing. Deleting the selected track lands on a neighbour you did not ask for, and that
+   * fails the test too, which is the behaviour we want.
+   *
+   * Raises only *from* parked, so a sheet already thrown to Full is left where you put it.
+   */
+  const [lastSeenTrack, setLastSeenTrack] = useState<string | null>(selectedTrack?.id ?? null);
+  if (selectedTrack && selectedTrack.id !== lastSeenTrack) {
+    const sameProject = lastSeenTrack !== null && project.tracks.some((track) => track.id === lastSeenTrack);
+    setLastSeenTrack(selectedTrack.id);
+    if (sameProject && detent === "peek") setDetent("half");
+  }
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The compact transport drops the metronome button, so the shell's ⋮ owns it - reading

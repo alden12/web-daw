@@ -131,6 +131,56 @@ test.describe("phone", () => {
     await expect(sheet(page).getByText("sampler", { exact: true })).toBeVisible();
   });
 
+  test("a reload lands parked, however the project restores", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await expect.poll(() => detentOf(page)).toBe("peek");
+
+    // The app mounts a seed project and swaps the saved one in behind it, so the selected
+    // track's id changes with nobody having chosen anything. Reading that as a selection
+    // opened the sheet on every reload - the exact thing parking exists to prevent.
+    await page.reload();
+    await dismissStart(page);
+    await expect.poll(() => detentOf(page)).toBe("peek");
+    await page.waitForTimeout(600);
+    expect(await detentOf(page), "still parked once the project has settled").toBe("peek");
+  });
+
+  test("the roll centres on the notes at whatever height the sheet settles at", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // Centred means the same content row sits at the middle of the viewport whatever the
+    // viewport's height is - so this sum is the invariant, not the scroll offset.
+    const centredOn = () =>
+      page.getByTestId("roll-scroll").evaluate((el) => Math.round(el.scrollTop + el.clientHeight / 2));
+
+    await setDetent(page, "half");
+    const atHalf = await centredOn();
+    await setDetent(page, "full");
+    const atFull = await centredOn();
+
+    // The roll is mounted while the sheet is parked (0px tall) and is held at the full
+    // workspace height mid-throw, so fitting at either of those moments centres for a
+    // viewport that is not the one you end up with. Only the settled height is true.
+    expect(Math.abs(atFull - atHalf), `centred on ${atHalf} at Half, ${atFull} at Full`).toBeLessThanOrEqual(2);
+  });
+
+  test("the roll stops re-centring once you have scrolled it yourself", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+
+    const roll = page.getByTestId("roll-scroll");
+    await roll.evaluate((el) => (el.scrollTop = el.scrollHeight - el.clientHeight));
+    const parked = await roll.evaluate((el) => Math.round(el.scrollTop));
+
+    await setDetent(page, "half");
+    // Re-fitting on every resize is what keeps Half honest; handing over on the first real
+    // scroll is what keeps it from overriding you afterwards.
+    expect(await roll.evaluate((el) => Math.round(el.scrollTop))).toBe(parked);
+  });
+
   test("picking a surface raises the sheet, so nothing is more than one tap away", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
