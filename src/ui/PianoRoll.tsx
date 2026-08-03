@@ -215,17 +215,53 @@ export function PianoRoll({
   // Fit the clip's notes into view on first load of this track (the component
   // remounts per track, so this runs once each time). Scrolls only - zoom is the
   // user's. Empty clip -> center on middle C.
+  //
+  // Re-fits on **every** resize until the user scrolls, rather than once on mount, because
+  // under the editor sheet (MOBILE-5) the roll is never the right size at mount and is
+  // lied to twice on the way up. Parked, its scroller is 0px tall, and centring on no
+  // height degenerates to "put the middle row at the top edge". Mid-throw the sheet is
+  // held at `height: 100%` and translated (cheap, no relayout), so the roll briefly reads
+  // the *whole workspace* - fitting there centres for a viewport twice the one you end up
+  // with, which put the notes below the fold at Half while Full stayed tall enough to hide
+  // the mistake. Only the settled height is true, and the settle is the last resize.
+  //
+  // Handing over on the first real scroll is what keeps this from fighting anybody: after
+  // that the roll stays exactly where it was put, however the sheet moves.
+  const handedOver = useRef(false);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const notes = clipStore.getClip().notes;
-    const pitches = notes.map((note) => note.pitch);
-    const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
-    const lo = pitches.length ? Math.min(...pitches) : rows.frame.lo;
-    const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
-    requestAnimationFrame(() => {
+    let selfScroll = false;
+    let settle = 0;
+    const fit = () => {
+      if (handedOver.current || !el.clientHeight) return;
+      const notes = clipStore.getClip().notes;
+      const pitches = notes.map((note) => note.pitch);
+      const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
+      const lo = pitches.length ? Math.min(...pitches) : rows.frame.lo;
+      const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
+      selfScroll = true;
       el.scrollTop = clamp(centerRow * rowH + rowH / 2 - el.clientHeight / 2, 0, height - el.clientHeight);
-    });
+      // Our own write lands as a scroll event within the frame; anything after is the user.
+      // Same tell as `useSharedGridScroll` uses to part a restore from a real scroll.
+      cancelAnimationFrame(settle);
+      settle = requestAnimationFrame(() => {
+        selfScroll = false;
+      });
+    };
+    const onScroll = () => {
+      if (!selfScroll) handedOver.current = true;
+    };
+    // The observer reports the initial size too, so a roll that already has a height (every
+    // desktop mount) fits immediately and behaves exactly as it did before.
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(settle);
+      observer.disconnect();
+      el.removeEventListener("scroll", onScroll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
