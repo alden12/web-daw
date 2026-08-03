@@ -24,10 +24,41 @@ This project uses [Yarn Classic](https://classic.yarnpkg.com/) (v1).
 ```bash
 yarn             # install dependencies
 yarn dev         # start the dev server
+yarn dev:mobile  # serve over https on the LAN, for testing on a real device
 yarn build       # type-check and build for production
 yarn lint        # lint
 yarn test        # run tests
 ```
+
+### Testing on a phone or tablet
+
+Use `yarn dev:mobile` and open the `https://<lan-ip>:5155/` address it prints. Do **not**
+just use `yarn dev --host`: an origin that is plain http and is not `localhost` is an
+**insecure context**, and three things the app depends on are gated on a secure one.
+
+| API | Gated | Symptom on plain http |
+| --- | --- | --- |
+| `AudioWorklet` | yes | nothing plays; the start dialog now says why |
+| `navigator.storage` (OPFS) | yes | persistence silently falls back to memory |
+| `getUserMedia` | yes | no mic recording |
+| `crypto.randomUUID` | yes | (handled - see `src/audio/randomUuid.ts`) |
+
+The certificate is self-signed, so the device shows a warning once: on iOS, **Show Details
+-> visit this website**; on Android Chrome, **Advanced -> Proceed**. The certificate is
+cached, so this is a one-off per device rather than per run.
+
+`dev:mobile` runs in Vite's `test` mode, which loads the committed `.env.test` and so blanks
+`VITE_SUPABASE_*` and `VITE_DAW_API_URL`. That skips the login gate and persists locally to
+OPFS, which is what you want for UI work. To exercise the real backend from a device instead,
+run `MOBILE_HTTPS=1 yarn dev --host` so your own `.env` applies.
+
+If the device cannot reach the laptop at all (client isolation on the network), tunnel
+instead - `cloudflared tunnel --url https://localhost:5155` - the tunnel hostnames are
+already in `allowedHosts`.
+
+Note that a trusted certificate (`mkcert`, plus its root installed on the device) will be
+needed before service workers and PWA install can be tested; a self-signed one is enough
+for everything above.
 
 ## Contributing
 

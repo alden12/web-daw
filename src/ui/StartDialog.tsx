@@ -3,7 +3,7 @@
  * user interacts with the page, so we make that requirement explicit with a modal
  * rather than an easy-to-miss button. Shown until the engine has started.
  */
-export function StartDialog({ onStart }: { onStart: () => void }) {
+export function StartDialog({ onStart, error }: { onStart: () => void; error?: string }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ground/85 backdrop-blur-sm"
@@ -31,6 +31,14 @@ export function StartDialog({ onStart }: { onStart: () => void }) {
         >
           ▶ Start audio
         </button>
+        {/* Startup can fail for reasons the page cannot fix by retrying - most often an
+            insecure context, where AudioWorklet is unavailable and the button otherwise
+            just appears to do nothing. Say so rather than leaving the modal sitting there. */}
+        {error && (
+          <p role="alert" className="text-xs text-red-300 leading-relaxed">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
