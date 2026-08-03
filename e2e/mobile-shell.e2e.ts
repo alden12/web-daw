@@ -103,6 +103,34 @@ test.describe("phone", () => {
     expect(box.y + box.height, "and it sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
   });
 
+  test("opens on the lane headers, not on beat 0", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // Phone portrait scrolls its header column rather than sticking it, so beat 0 is the
+    // *right* edge of the track names. Opening there hides them before you have touched
+    // anything; the shared offset starts unset so the surface opens at its left edge.
+    await expect.poll(() => page.getByTestId("arr-scroll").evaluate((el) => el.scrollLeft)).toBe(0);
+    await expect(page.locator("[data-track-id]").first()).toBeVisible();
+  });
+
+  test("choosing a different track raises the sheet, but arriving on one does not", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    // Landing on a project with a track already selected is arriving, not asking.
+    await expect.poll(() => detentOf(page)).toBe("peek");
+
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    // The row's "+", not the row itself: a primary tap applies the instrument to the
+    // selected track, where "+" adds a new one and selects it.
+    await page.getByRole("button", { name: "Add a Sampler track", exact: true }).tap();
+    await page.keyboard.press("Escape");
+
+    // A new selection is a request to edit that track, so the sheet meets you at Half.
+    await expect.poll(() => detentOf(page)).toBe("half");
+    await expect(sheet(page).getByText("sampler", { exact: true })).toBeVisible();
+  });
+
   test("picking a surface raises the sheet, so nothing is more than one tap away", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

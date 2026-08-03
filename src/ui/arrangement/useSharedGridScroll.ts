@@ -28,9 +28,12 @@ export function useSharedGridScroll(ref: RefObject<HTMLElement | null>, pxPerBea
     const el = ref.current;
     if (!el || pxPerBeat <= 0) return;
 
-    // Restore before paint, so the surface never flashes at bar 1 first.
+    // Restore before paint, so the surface never flashes at bar 1 first. With nothing to
+    // restore, open at the content's left edge rather than at beat 0: where the header
+    // column scrolls, beat 0 has already pushed the track names off screen.
     let restoring = true;
-    el.scrollLeft = leadPx + readGridScrollBeats() * pxPerBeat;
+    const stored = readGridScrollBeats();
+    el.scrollLeft = stored === null ? 0 : leadPx + stored * pxPerBeat;
 
     const onScroll = () => {
       // The restore's own scroll event lands before the frame it was applied in ends;
