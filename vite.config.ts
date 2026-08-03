@@ -23,8 +23,17 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), ...(mobileHttps ? [basicSsl()] : [])],
   server: {
     port: 5155,
-    // Tunnels (cloudflared, ngrok) address the dev server by hostname rather than IP, and
-    // Vite rejects unknown hosts by default. Only opened up in mobile mode.
-    ...(mobileHttps ? { allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"] } : {}),
+    ...(mobileHttps
+      ? {
+          // Tunnels (cloudflared, ngrok) address the dev server by hostname rather than
+          // IP, and Vite rejects unknown hosts by default.
+          allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"],
+          // Fail rather than wander to the next free port. The URL here is typed into a
+          // phone by hand, so a silent drift to 5156 means the address you remember now
+          // points at whatever still holds 5155 - most likely an orphaned earlier run,
+          // which answers, so it looks like your changes simply had no effect.
+          strictPort: true,
+        }
+      : {}),
   },
 });
