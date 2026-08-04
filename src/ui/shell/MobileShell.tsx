@@ -1,18 +1,25 @@
 /**
- * The touch shell (MOBILE-1 round 2), used on phones and tablets and on any window too
- * narrow for the desktop grid. Same stores, same leaf panels - only the layout differs.
+ * The touch shell (MOBILE-1, restructured by MOBILE-5), used on phones and tablets and on
+ * any window too narrow for the desktop grid. Same stores, same leaf panels - only the
+ * layout differs.
  *
- * The bottom tabs are **the desktop's four surfaces**, not navigation invented for
- * mobile: Arrangement, Edit, Clips, Devices. The desktop shows all four at once and a
- * phone can show one, so the tab bar switches between the same workspaces rather than
- * introducing new ones - the mental model transfers in both directions, and each tab
- * holds exactly one panel at full height (which is why nothing here needs a
- * side-by-side or squeezed-in special case).
+ * **Mobile is the desktop occluded, not the desktop split four ways.** This used to be
+ * four bottom tabs, on the argument that they were the desktop's own surfaces rather than
+ * navigation invented for mobile. That argument was right and it pointed somewhere better:
+ * the desktop does not tab between them either, it *stacks and occludes* -
+ * `CenterWorkbench` is editor-above-rack floating over the timeline. So the arrangement is
+ * simply the background here, and the editor is an `EditorSheet` over it, thrown between
+ * three detents (parked, half, covering all but the selected lane).
  *
- * Above every tab except Arrangement sits the **lane strip**: the selected track's own
- * lane, on the same grid, zoom, scroll offset and playhead as the Arrangement tab. That
- * is what lets tapping a track merely *select* it - the selection stays on screen, so
- * selection no longer has to imply navigation.
+ * That deleted three things rather than adding one: the tab bar (~56px of a phone, plus
+ * the safe area), the `LaneStrip` special case (it existed only because the Edit tab took
+ * the arrangement away, and the Full detent now *is* that strip), and the question of
+ * where selection navigates to - it does not, because the arrangement never leaves.
+ *
+ * Because the arrangement and the editor are now mounted at the same time, exactly one of
+ * them owns the shell's ⋮ at a time: `isActiveSurface` follows the detent, so the
+ * arrangement keeps its snap and zoom while the sheet is parked and hands them over once
+ * it is up.
  *
  * Library and agent are reached from the same ☰ / ✦ buttons at either end of the top bar,
  * but framed by device: a phone gets a sheet over the app, a tablet **docks** them as
@@ -20,11 +27,10 @@
  * editing to pick an instrument for it is a phone compromise rather than a virtue.
  *
  * The top bar keeps only what you reach for mid-idea - record, play, undo, redo - and
- * everything else is behind ⋮, which carries the active surface's own controls (published
- * through `surfaceControls.ts`) above the project's tempo, meter and metronome.
+ * everything else is behind ⋮, above the project's tempo, meter and metronome.
  *
- * Deliberately not here yet (MOBILE-2): pinch-zoom, an explicit draw/select/erase tool
- * model, long-press menus, and the on-screen keyboard/pads.
+ * Deliberately not here yet: pinch-zoom and long-press menus (MOBILE-2), clips and pads as
+ * sections under the roll (MOBILE-6), and the select-then-handles editing model (MOBILE-7).
  */
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { LibraryPanel } from "../LibraryPanel";
@@ -36,7 +42,6 @@ import { AccountAvatar } from "../AccountAvatar";
 import { SettingsIcon } from "../ActivityRail";
 import { Menu, type MenuItem } from "../Menu";
 import { RAIL_ITEMS } from "../libraryViews";
-import { LaneStrip } from "../arrangement/LaneStrip";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
 import { TrackRecordButton } from "../workbench/TrackRecordButton";
@@ -46,34 +51,24 @@ import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean } from "../usePersistent";
 import { TIME_SIGNATURE_DENOMINATORS, TIME_SIGNATURE_NUMERATOR_RANGE } from "../../audio/project/schema";
 import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
+import { detentsFor, type Detent } from "./detents";
+import { EditorSheet } from "./EditorSheet";
 import { Sheet } from "./Sheet";
+import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
 import type { DeviceShape } from "./useDeviceShape";
 
-type MobileTab = "arrange" | "edit" | "clips" | "devices";
+/**
+ * What the editor sheet is showing. Clips is here rather than a section under the roll for
+ * now - that is MOBILE-6, and dropping the tab before building the section would leave a
+ * phone with no way to switch take.
+ */
+type EditorSurface = "edit" | "clips" | "devices";
 
-interface TabItem {
-  tab: MobileTab;
+interface SurfaceItem {
+  surface: EditorSurface;
   label: string;
-  icon: ReactNode;
 }
-
-// 24px line icons - the tab bar is the primary navigation and is touched, not pointed
-// at, so these are deliberately larger than the desktop rail's 16px glyphs.
-const svg = (children: ReactNode) => (
-  <svg
-    viewBox="0 0 16 16"
-    aria-hidden="true"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.3"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="w-6 h-6"
-  >
-    {children}
-  </svg>
-);
 
 /**
  * The meters worth a menu entry. The schema allows 1..32 beats per bar, but a submenu of
@@ -91,52 +86,10 @@ const COMMON_NUMERATORS = [2, 3, 4, 5, 6, 7, 9, 12].filter(
  */
 const TEMPO_STEPS = [70, 80, 90, 100, 110, 120, 128, 140, 150, 160, 174, 180];
 
-const TAB_ITEMS: TabItem[] = [
-  {
-    tab: "arrange",
-    label: "Arrangement",
-    icon: svg(
-      <>
-        <rect x="1.75" y="3.25" width="7" height="3.5" rx="1" />
-        <rect x="6.25" y="9.25" width="8" height="3.5" rx="1" />
-      </>,
-    ),
-  },
-  {
-    tab: "edit",
-    label: "Edit",
-    // A beamed pair: two noteheads, two stems, one beam across the top.
-    icon: svg(
-      <>
-        <circle cx="4" cy="12" r="2" />
-        <circle cx="12.5" cy="10.5" r="2" />
-        <path d="M6 12V3.25l8.5-1.75V10.5" />
-      </>,
-    ),
-  },
-  {
-    tab: "clips",
-    label: "Clips",
-    icon: svg(
-      <>
-        <rect x="2" y="2.5" width="5" height="5" rx="1" />
-        <rect x="9" y="2.5" width="5" height="5" rx="1" />
-        <rect x="2" y="9" width="5" height="4.5" rx="1" />
-        <rect x="9" y="9" width="5" height="4.5" rx="1" />
-      </>,
-    ),
-  },
-  {
-    tab: "devices",
-    label: "Devices",
-    icon: svg(
-      <>
-        <path d="M4.5 2v12M11.5 2v12" />
-        <circle cx="4.5" cy="5.75" r="1.75" />
-        <circle cx="11.5" cy="10.25" r="1.75" />
-      </>,
-    ),
-  },
+const SURFACE_ITEMS: SurfaceItem[] = [
+  { surface: "edit", label: "Edit" },
+  { surface: "clips", label: "Clips" },
+  { surface: "devices", label: "Rack" },
 ];
 
 /** A square icon button sized for a finger, not a cursor. */
@@ -322,7 +275,23 @@ export function MobileShell({
   onOpenAccount,
   onOpenShare,
 }: ShellProps & { shape: DeviceShape }) {
-  const [tab, setTab] = useState<MobileTab>("arrange");
+  /**
+   * Detent and surface are **shell state, not the sheet's** (ARCH-3): they decide which
+   * surface owns the ⋮, and MOBILE-6's sections will read the detent too. The sheet is
+   * handed them and reports changes back.
+   *
+   * It opens at **Half**, and that follows from a property of the app rather than a taste:
+   * there is always a track and a clip selected, so there is always something to edit and
+   * showing it is not presuming. Opening parked was tried and reads as the editor having
+   * failed to open - you land on a project, the thing you came to edit is a lip at the
+   * bottom, and the tap that fixes that carries no information.
+   *
+   * **This flips if an empty selection ever becomes possible.** Nothing to edit means the
+   * honest states are parked, or no sheet at all, and Half would then be the panel you did
+   * not ask for. Keep the reasoning attached to the constraint, not to the number.
+   */
+  const [detent, setDetent] = useState<Detent>("half");
+  const [surface, setSurface] = useState<EditorSurface>("edit");
   /**
    * A tablet opens with the library already docked: there is width for it beside the
    * workspace, and it is the first thing you reach for on a new project (add a track,
@@ -334,6 +303,49 @@ export function MobileShell({
   const [libraryOpen, setLibraryOpen] = useState(() => shape.tier === "tablet" && !shape.short);
   const [agentOpen, setAgentOpen] = useState(false);
   const project = useProject(projectStore);
+  /**
+   * Raise on an *explicit* selection. State rather than a ref, and adjusted during render
+   * rather than in an effect: this is React's documented "adjusting state when a prop
+   * changes" pattern, so the re-render lands before the browser paints (no visible frame at
+   * the old detent) and it stays safe under concurrent rendering, which a ref written
+   * mid-render would not be.
+   *
+   * The test is **whether the track we last saw still exists**, not whether the id changed,
+   * because a changed id does not mean anybody chose anything. Switching project is the case
+   * that forces it: the tracks are replaced wholesale, so the selected id changes on its own.
+   * A project swap takes the old track with it; selecting a lane or adding a track leaves it
+   * standing. Deleting the selected track lands on a neighbour you did not ask for, and that
+   * fails the test too, which is the behaviour we want.
+   *
+   * Raises only *from* parked, so a sheet already thrown to Full is left where you put it.
+   * With Half the arrival default this now only fires after you have deliberately parked it.
+   */
+  const [lastSeenTrack, setLastSeenTrack] = useState<string | null>(selectedTrack?.id ?? null);
+  if (selectedTrack && selectedTrack.id !== lastSeenTrack) {
+    const sameProject = lastSeenTrack !== null && project.tracks.some((track) => track.id === lastSeenTrack);
+    setLastSeenTrack(selectedTrack.id);
+    if (sameProject && detent === "peek") setDetent("half");
+  }
+
+  /**
+   * ...and raise on a lane tap that selects *nothing new*, which the rule above cannot see.
+   * `selectTrack` is a no-op when the id already matches, so on a single-track project -
+   * the state every new project starts in - tapping the only lane changed nothing and the
+   * sheet stayed parked. Tapping a track means "edit this" whether or not it was already
+   * selected.
+   *
+   * Reads the tap off the DOM rather than threading a callback down through the timeline:
+   * `data-track-id` is already the timeline's own handle for a row (its scroll-into-view
+   * finds rows by it), so this borrows an existing contract instead of adding a prop to a
+   * component that does not otherwise care. Buttons opt out, as they do on the sheet's own
+   * drag surface, so muting a track from its header does not also open the editor over it.
+   */
+  const onWorkspaceClick = (event: React.MouseEvent) => {
+    if (detent !== "peek") return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, select")) return;
+    if (target.closest("[data-track-id]")) setDetent("half");
+  };
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The compact transport drops the metronome button, so the shell's ⋮ owns it - reading
@@ -358,56 +370,43 @@ export function MobileShell({
    */
   const docked = shape.tier === "tablet" && !shape.short;
 
-  // Tab -> the panel it hosts. An object map keyed by tab, so adding a tab is one entry
-  // here plus one in TAB_ITEMS (and a missing case is a type error).
-  const views: Record<MobileTab, ReactNode> = {
-    arrange: (
-      <ArrangementTimeline
-        projectStore={projectStore}
-        scheduler={scheduler}
-        recorder={recorder}
-        dispatch={dispatch}
-        isPlaying={isPlaying}
-        started={started}
-        // One transport is pinned above every tab, so the timeline must not render a
-        // second copy, and its own options move into the shell's ⋮.
-        showTransport={false}
-        stickyHeaders={!isPhone}
-        compact
-      />
-    ),
-    edit: selectedTrack ? (
+  const detents = detentsFor(shape);
+  // The arrangement hands the ⋮ over once the sheet is up: both are mounted now, so
+  // "compact" alone would have them both publishing and the later mount silently winning.
+  const sheetIsUp = Boolean(selectedTrack) && detent !== "peek";
+
+  // Surface -> the panel it hosts, as an object map so adding one is an entry here plus
+  // one in SURFACE_ITEMS, and a missing case is a type error.
+  const surfacesFor = (track: Track): Record<EditorSurface, ReactNode> => ({
+    edit: (
       <TrackEditor
-        track={selectedTrack}
+        track={track}
         scheduler={scheduler}
         recorder={recorder}
         dispatch={dispatch}
         projectStore={projectStore}
         compact
+        isActiveSurface={sheetIsUp}
       />
-    ) : (
-      <EmptyTab>No track selected. Pick one in Arrangement, or add an instrument from the library.</EmptyTab>
     ),
-    clips: selectedTrack ? (
+    clips: (
       <div className="flex-1 min-h-0 flex flex-col">
         <ClipRail
           projectStore={projectStore}
           scheduler={scheduler}
-          trackId={selectedTrack.id}
+          trackId={track.id}
           dispatch={dispatch}
           orientation="grid"
         />
         <div className="mt-auto shrink-0 p-3 border-t border-line">
-          <TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />
+          <TrackRecordButton trackId={track.id} recorder={recorder} recording={recording} />
         </div>
       </div>
-    ) : (
-      <EmptyTab>No track selected.</EmptyTab>
     ),
-    devices: selectedTrack ? (
+    devices: (
       <div className="flex-1 min-h-0 flex flex-col">
         <DeviceRack
-          track={selectedTrack}
+          track={track}
           samples={project.samples}
           dispatch={dispatch}
           projectStore={projectStore}
@@ -417,10 +416,8 @@ export function MobileShell({
           }}
         />
       </div>
-    ) : (
-      <EmptyTab>No track selected.</EmptyTab>
     ),
-  };
+  });
 
   // ⋮ - the active surface's own controls, then the project's. Two groups, so the menu's
   // contents stay predictable rather than becoming a junk drawer.
@@ -583,50 +580,80 @@ export function MobileShell({
             {library}
           </DockedPanel>
         )}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {/* The selected track's lane, on every tab but Arrangement (which is the lanes). */}
-          {tab !== "arrange" && selectedTrack && (
-            <LaneStrip
-              track={selectedTrack}
+        {/* `relative` because the sheet is absolutely positioned against this column,
+            not the shell: on a tablet it must not run under a docked library or agent,
+            which own their full height. On a phone the column is the whole width anyway. */}
+        <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+          <div
+            className="min-h-0 flex flex-col"
+            // The band above the sheet, so the timeline's own horizontal scroller stays on
+            // screen instead of sitting under it. Committed detents only - during a drag
+            // the sheet slides over this rather than resizing it every frame.
+            style={{ height: selectedTrack ? `${(1 - detents[detent]) * 100}%` : "100%" }}
+            // A click, not a pointerdown: scrolling the arrangement while parked must not
+            // count as asking to edit, and a click is exactly the tap that is left over.
+            onClick={onWorkspaceClick}
+          >
+            <ArrangementTimeline
               projectStore={projectStore}
               scheduler={scheduler}
               recorder={recorder}
               dispatch={dispatch}
+              isPlaying={isPlaying}
+              started={started}
+              // One transport is pinned above the workspace, so the timeline must not render
+              // a second copy, and its own options move into the shell's ⋮.
+              showTransport={false}
+              stickyHeaders={!isPhone}
+              compact
+              isActiveSurface={!sheetIsUp}
+              // At Full the arrangement is a sliver, so make it the lane being edited.
+              pinSelectedTrack={detent === "full"}
             />
-          )}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{views[tab]}</div>
-          {/* Inside the workspace column, not below the whole band: the tabs switch *this*
-              column, so on a tablet they should not run under a docked library or agent,
-              which own their full height. On a phone the column is the full width anyway,
-              so this is the same full-width bar it has always been. */}
-          <nav
-            aria-label="Views"
-            role="tablist"
-            className="shrink-0 flex items-stretch border-t border-line bg-rail"
-            // Keep the tabs clear of the home indicator / gesture bar on iOS.
-            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-          >
-            {TAB_ITEMS.map((item) => {
-              const selected = item.tab === tab;
-              return (
-                <button
-                  key={item.tab}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  aria-label={item.label}
-                  onClick={() => setTab(item.tab)}
-                  className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 h-14 cursor-pointer ${
-                    selected ? "text-you" : "text-muted"
-                  }`}
+          </div>
+          {/* No sheet without a track: there is nothing to edit, and an empty sheet over
+              the arrangement would just be a lid. Selecting a track brings it back at
+              whatever detent it was left at. */}
+          {selectedTrack && (
+            <EditorSheet
+              detent={detent}
+              detents={detents}
+              onDetentChange={setDetent}
+              title={selectedTrack.name}
+              subtitle={selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType}
+              controls={
+                <div
+                  role="tablist"
+                  aria-label="Editor surface"
+                  className="ml-auto shrink-0 flex gap-0.5 p-0.5 rounded-lg border border-line bg-ground"
                 >
-                  {selected && <span className="absolute top-0 left-3 right-3 h-0.5 bg-you rounded-full" />}
-                  {item.icon}
-                  <span className="text-[10px] leading-none">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+                  {SURFACE_ITEMS.map((item) => {
+                    const selected = item.surface === surface;
+                    return (
+                      <button
+                        key={item.surface}
+                        type="button"
+                        role="tab"
+                        aria-selected={selected}
+                        onClick={() => {
+                          setSurface(item.surface);
+                          // Asking for a surface while parked means you want to see it.
+                          if (detent === "peek") setDetent("half");
+                        }}
+                        className={`px-2.5 h-8 rounded-md font-mono text-[11px] uppercase tracking-wide cursor-pointer ${
+                          selected ? "bg-you/20 text-you" : "text-muted"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              }
+            >
+              {surfacesFor(selectedTrack)[surface]}
+            </EditorSheet>
+          )}
         </div>
         {docked && agentOpen && (
           <DockedPanel side="right" label="Agent">
@@ -653,8 +680,4 @@ export function MobileShell({
       )}
     </div>
   );
-}
-
-function EmptyTab({ children }: { children: ReactNode }) {
-  return <div className="flex-1 grid place-items-center p-6 text-center text-sm text-muted">{children}</div>;
 }

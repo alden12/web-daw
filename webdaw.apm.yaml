@@ -1138,6 +1138,92 @@ projects:
         UI/model rides on top. Staged plan: web-first with hardware monitoring +
         latency compensation (covers most recording), then the native backend
         for users who need monitored low-latency input.
+      Mobile editing surfaces (design): |-
+        How the phone and tablet edit, decided 2026-07-31 against a working gesture prototype rather than on paper. The prototype is a self-contained page (Pointer Events, one canvas, no framework) iterated on a real device across a session: **https://claude.ai/code/artifact/9072c7ef-cebf-4ba2-a344-689cea364e22**. Where a decision below says something "felt wrong", that is what it means.
+
+        Built by MOBILE-5 (the sheet), MOBILE-6 (the sections), MOBILE-7 (touch editing), MOBILE-8 (safe areas), DAW-28 (note names).
+
+        ## The sheet replaces the tabs
+
+        MOBILE-1 shipped four bottom tabs - Arrangement, Edit, Clips, Devices - on the argument that they are *the desktop's four surfaces*, not navigation invented for mobile. That argument was right, and it points somewhere better: the desktop does not tab between them, it **occludes**. `CenterWorkbench` is editor-above-rack floating over the timeline.
+
+        So the editor becomes a **bottom sheet over the arrangement**, thrown between three detents:
+
+        - **Peek** - parked; the grabber and the Edit/Rack switch only.
+        - **Half** - edit and arrange at once. The detent the whole idea is for.
+        - **Full** - covers everything but the selected lane.
+
+        Consequences, all of them simplifications:
+
+        - **`LaneStrip` stops being a special case.** It existed only because the Edit tab took the arrangement away, so the selected lane had to be smuggled back above it. Now the detents are a continuum of *how much arrangement you can see*, and Full is what `LaneStrip` was.
+        - **The tab bar goes**, reclaiming ~56px plus the safe area on a phone. Edit and Rack become a segmented control in the sheet header; Arrangement is the background; Clips is a section (below).
+        - **Mobile stops being "the desktop split four ways" and becomes "the desktop, occluded"** - a better story than the one in `MobileShell`'s header comment, which should be rewritten to it.
+
+        **The sheet is non-modal, and that is load-bearing.** You must be able to tap a track in the arrangement while it is up. Every off-the-shelf bottom sheet (`vaul` and friends) is built on a modal dialog primitive, so it traps focus and `inert`s the background - exactly backwards. It is also why this must not share an implementation with `Sheet.tsx`, whose library and agent sheets genuinely *are* modal.
+
+        ## The throw gesture is ordinary web
+
+        No native mechanics involved. What iOS and Android supply (`UISheetPresentationController.detents`, `BottomSheetBehavior`) is a tuned spring curve and a velocity threshold, not a capability. The parts:
+
+        - Pointer Events with `setPointerCapture`; `touch-action: none` on the drag surface - the single most important line, because without it iOS claims the gesture before the first event arrives.
+        - Velocity from ~100ms of `(y, timestamp)` history. A single frame delta is far too noisy to threshold at 120Hz.
+        - **The throw is one line:** `landing = release + velocity * ~130ms`, snapped to the nearest detent. That projection *is* the feel; at 0 flicking stops working and it only ever snaps to whichever detent is nearest.
+        - **Seed the settle spring with the release velocity.** A CSS transition discards it and restarts from rest; carrying it through is what people recognise as "native". A/B'd in the prototype, and the difference is much larger than expected for about ten lines of rAF.
+        - Transform while moving, **commit layout once on settle**. Animating height would relayout the piano roll every frame. Same discipline as `useSharedGridScroll`: write the transform straight to the node during the drag, touch app state only at rest.
+        - Nested scrolling: a scroller inside the sheet keeps the drag unless it is already at `scrollTop` 0 and you are pulling down. Find the scroller from the event target rather than assuming one - the roll has its own.
+
+        ## Sections, not tabs, under the roll
+
+        Clips and pads are **collapsible sections beneath the piano roll**, in that order, sharing one drawer component.
+
+        **A section's height is a function of its content, never a drag.** Adding a pad row grows it by exactly one row and the roll gives up exactly that much. An earlier prototype let the roll resize as the keyboard appeared, and it was confusing precisely because the amount was unpredictable.
+
+        Clips are the thin horizontal chip rail. Visibility is the section's disclosure and nothing else - an earlier version tied it to the detent as well, and two mechanisms fighting over one thing means you collapse it and the detent reopens it.
+
+        ## Pads, not keys
+
+        An on-screen piano keyboard on a 390px phone gives ~27px keys, which is unplayable. Pads give 50px+ and a legible note name. The layout generalises the piano rather than imitating it:
+
+        - **In-scale notes take the full-width row; everything else sits above, between them.** In C major that lands the accidentals exactly where the black keys are. Because the gaps derive from *the scale's own interval pattern*, the shape holds for any key or mode with only the labels moving.
+        - **Each row closes on the next tonic**, exactly as a piano octave ends on C. Without it the leading tone has no gap to sit in and silently disappears - found by testing the layout across six scales, not by looking at it.
+        - Every pad carries its **interval to the tonic** (`1`, `2`, `b3`, `5`), which is what you think in once a key is set. This is the first real consumer of a project-level key/scale.
+        - Accidentals can be switched off, for a row you cannot play a wrong note in. On a phone this may be the better default.
+        - A tablet fits **two octaves per row**, a phone one. Below ~44px per pad the layout is wrong, not merely tight.
+
+        ## Touch editing: select, then handles and a kebab
+
+        Touch has no hover, no modifiers, and a 44px finger, so the desktop roll's 4px drag-edges cannot transfer. **Selection is the substitute for hover:** only the selected object grows handles, so they can be finger-sized without turning every neighbour into a grab target. One model for notes in the roll and clips in the timeline.
+
+        - Drag the body to move, drag an end handle to resize or trim.
+        - **Actions hang off a kebab pinned to the object's right edge**, not a bar pinned to the screen. It costs no permanent space (which landscape cannot spare), and it means the actions are ordinary `MenuItem`s, so `Menu.tsx` is reused rather than a bespoke toolbar grown. Clamp it to the visible edge; an affordance you have to scroll to find is one you stop reaching for.
+        - **Velocity lives in that menu as an inline row of values, not a submenu.** `Menu.tsx` opens submenus on hover, which does not exist on touch, and a nested flyout near a screen edge is a cramped thing to aim at. Velocity also renders as note fill strength, which is what earns the right to drop the velocity lane on a phone.
+        - **Split at the playhead, not at a tap point.** Splitting where you tap needs precision; the playhead is already positioned and already on screen. The touch version is the *easy* one, so it belongs in the first slice rather than a later one.
+
+        **Creating differs by surface, deliberately** (settled 2026-07-31). A note has an obvious default and a clip does not: tap a grid cell and you have stated pitch and position, and one beat is a fine length, whereas a clip's length and position *are* its substance.
+
+        - **In the roll, tap to create.** A tap on empty space means *deselect if something is selected, otherwise create a note there*. The ordering is the point - you cannot fat-finger a note into existence while editing one, and creation is still one tap the rest of the time. MOBILE-2's explicit draw/select tool model is **not** adopted.
+        - **In the timeline, drag a range then pick from a menu.** Highlighting empty lane space raises a kebab offering **Create clip**, and **Paste** when the clipboard holds something. The range states what a tap could not.
+        - **The playhead is a valid target on its own** - paste should work with no selection at all, at the ticker. Same reasoning as split-at-playhead: something already positioned and already on screen beats asking for precision.
+
+        Worth keeping straight: this makes an empty-space drag mean *scroll* in the roll and *define a range* in the timeline. The roll scrolls in the axis it creates in; the timeline does not.
+
+        ## Sustain by drag-down
+
+        Press a pad, drag down past a threshold, and the note latches on; drag up on it to release. **Playing a new note releases the held ones** - decided 2026-07-31, knowing the limitation.
+
+        The limitation, recorded so it is not rediscovered: that rule means you can only hold *instead of* playing, never *while* playing, which is the main reason to want sustain. The alternative (latches persist, release is explicit) was prototyped alongside it and is one flag away. Ship the simple form, expect to revisit.
+
+        ## Safe areas: sit below the notch
+
+        `index.html` already sets `viewport-fit=cover`, with a comment saying the shell pads itself back with `env(safe-area-inset-*)` - but only `safe-area-inset-bottom` was ever implemented. So the top bar's ☰ and ✦ sit under the corner radius and, in landscape, the notch takes a column off the arrangement. **Decision: keep `cover` and pad all four sides** rather than dropping it, because landscape is where the app is most starved of width.
+
+        **The trap:** an absolutely positioned box resolves against its containing block's *padding box*, so padding on the container is ignored by exactly the children that need it. The insets must go on the positioned boxes themselves. This looks correct in review and does nothing - it caught the prototype, and `MobileShell`'s sheets are positioned the same way.
+
+        The top bar also loses its readouts. Tempo and meter do not fit at 390px and already live in the ⋮ menu; the position counter is on the timeline ruler, which is on screen at every detent but Full. Controls only, which buys back roughly what the notch costs.
+
+        ## Landscape phone
+
+        Still the weak spot: ~390px tall *and*, with the insets, ~94px narrower. Half-and-half may not survive there, in which case the detent set becomes a function of `shape` rather than a constant. Deliberately not designed around yet - it needs real use first.
       MIDI effects (design): >-
         A **MIDI effect** transforms the stream of note events *before* it
         reaches the instrument - the symmetric counterpart to an audio effect,
@@ -4844,6 +4930,42 @@ projects:
         id: 019fb3c7-4aad-7779-905f-a4c58f59907a
         created_at: 2026-07-30T16:06:50.285Z
         updated_at: 2026-07-30T16:06:50.285Z
+      - ref: DAW-28
+        area: DAW
+        title: Note names on notes in the piano roll
+        status: to-do
+        sort_path: "000028"
+        priority: 0
+        body: >-
+          Draw each note's name (`C4`, `F#3`) inside the note, in low-contrast
+          ink, always on - not on hover, not selection-only.
+
+
+          **Not a mobile-only improvement.** Reading pitch off a grid position
+          against a key gutter is a chore at any screen size, and it gets worse
+          the further a note sits from the gutter. This lands on desktop too; it
+          surfaced while designing the touch roll (see the **Mobile editing
+          surfaces (design)** context section) but nothing about it is
+          phone-specific.
+
+
+          - Hide the label below roughly 21px of note width, rather than
+          clipping it.
+
+          - On a selected note, shift the label clear of the resize handle.
+
+          - Keep the contrast low enough that a dense roll still reads as shapes
+          first. The label is for confirmation, not for scanning - if it
+          competes with the note block for attention it has gone too far.
+
+
+          Related: MOBILE-7 renders velocity as note fill strength. The two
+          together are what let a phone drop the velocity lane entirely, and on
+          desktop they mean the roll answers "what note, how hard" without a
+          second lane or a hover.
+        id: 019fb8c0-0fcb-7420-acaa-00a45ee59c2d
+        created_at: 2026-07-31T15:17:02.539Z
+        updated_at: 2026-07-31T15:17:02.539Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -7134,57 +7256,86 @@ projects:
             id: 019fb2ea-d44b-7774-aab3-0a225043a499
             at: 2026-07-30T12:06:02.059Z
             actor: claude
+          - body: "Found 2026-07-31 while testing the touch shell on a real phone: **the app
+              could not run in an insecure context at all.**
+              `crypto.randomUUID()` is secure-context-only, so over plain http
+              from a LAN address (`vite --host`, opened at the laptop's IP - the
+              only practical way to try the shell on a device) it is
+              `undefined`, the first generated id throws, `AppShell` fails to
+              mount and the page is blank with nothing to say why. Auth mode
+              masked it: the login gate rendered before any `ProjectStore` was
+              built. Fixed by `src/audio/randomUuid.ts` (falls back to a v4
+              assembled from `crypto.getRandomValues`, which has no such
+              restriction) with all 19 client call sites moved onto it;
+              `server/` still uses the platform one. Also relevant to MOBILE-3:
+              a PWA needs HTTPS anyway, but device testing before that should
+              not require it."
+            audience: user
+            id: 019fb920-4db8-777a-b6bb-4ed499566e10
+            at: 2026-07-31T17:02:09.848Z
+            actor: claude
       - ref: MOBILE-2
         area: MOBILE
-        title: Touch and pointer layer
+        title: "Touch gestures: pinch-zoom, two-finger pan, hit-target floors"
         status: to-do
         sort_path: "000002"
         priority: 0
         deps:
           - MOBILE-1
         body: >-
-          *Deps: MOBILE-1.*
+          **Scope corrected 2026-07-31 after checking the code - most of what
+          this ticket described as the work is already done**, and it was gating
+          tickets it had no business gating. What it used to say, and the
+          reality:
 
 
-          **Touch-first affordances (a design principle to apply now, not just
-          for mobile).** Even before a full responsive layout, build
-          interactions so they also work by touch, because retrofitting hover-
-          and right-click-only UI later is expensive. Concretely:
+          - *"The keystone is migrating drag logic to the Pointer Events API."*
+          **Done.** `src/ui/pointerDrag.ts` is the shared seam
+          (`beginPointerDrag`), used by 11 files - `PianoRoll`, `Lane`, `Ruler`,
+          `Knob`, `MixerControls`, `ResizeHandle`, `AudioClipPanel`,
+          `ArrangementTimeline`, `rows`, `InlineRename`, `Menu`. There are
+          **zero** `mousedown`/`mousemove` handlers left anywhere in `src`.
+
+          - *"Heavier reliance on grid snap/quantize."* **Done.** `PianoRoll`
+          has snap, grid division, quantize strength, quantize-ends and
+          auto-quantize-on-record; `Lane` snaps drags and resizes.
+
+          - *"An explicit tool model (draw / select / erase)."* **Rejected**,
+          see MOBILE-7. Selection promotes one object to an editable state and
+          only that object grows finger-sized handles, so a drag is never
+          ambiguous and no tool palette is needed. Do not build one without
+          reading MOBILE-7 first.
 
 
-          - prefer **persistent ⋮ menus over hover-only kebabs**;
-
-          - always pair a **right-click context menu with a tap-reachable
-          equivalent** (a ⋮ button, a long-press, or a mode);
-
-          - keep **hit targets generous** (glyph icons sized up, not tiny -
-          ~16-18px with a ~`w-6`/`w-7` hit area).
+          **What actually remains, and it is all gesture work:**
 
 
-          This is the cheap groundwork that keeps the tablet / mobile goal
-          reachable without a rewrite, and it is why DAW-20 (timeline & clip
-          editing gaps) specifies a touch path for each new action.
+          - **Pinch-zoom and two-finger pan.** Not merely missing - see the note
+          below, the gesture currently does something actively wrong (zooms the
+          whole page and breaks the layout). Three separate zoom states to write
+          through.
+
+          - **Hit-target floors** - minimum note height, resize-handle size, the
+          fixed keyboard edge. MOBILE-7 sets the affordance sizes for selected
+          objects; this is the floor for everything else.
 
 
-          **The editing surfaces are the real work, and the keystone is
-          migrating drag logic to the Pointer Events API**
-          (`pointerdown/move/up`, one path for mouse/touch/Pencil,
-          `touch-action: none` to own gestures) - do it once and every pointer
-          surface benefits. Then layer:
+          **The standing principle stays, and applies to every ticket, not just
+          this one.** Build interactions so they also work by touch, because
+          retrofitting hover- and right-click-only UI is expensive: prefer
+          persistent ⋮ menus over hover-only kebabs; always pair a right-click
+          context menu with a tap-reachable equivalent; keep hit targets
+          generous (~16-18px glyphs with a ~`w-6`/`w-7` hit area). This is why
+          DAW-20 specifies a touch path for each new action.
 
 
-          - **pinch-zoom + two-finger pan** on both axes;
-
-          - an **explicit tool model** (draw / select / erase) to disambiguate a
-          drag without modifier keys;
-
-          - **hit-target floors** (min note height + resize handles, fixed
-          keyboard edge);
-
-          - heavier reliance on **grid snap/quantize**.
+          **Nothing in the mobile editing slice depends on this any more.**
+          MOBILE-5, MOBILE-6 and MOBILE-7 all build on the pointer seam that
+          already exists; this ticket is now independent of them and can land
+          before, after or alongside.
         id: 019fae0c-b32a-724c-bad1-b354de720785
         created_at: 2026-07-29T13:24:55.722Z
-        updated_at: 2026-07-29T16:00:53.403Z
+        updated_at: 2026-07-31T15:33:36.331Z
         notes:
           - body: >-
               Observed on the deployed MOBILE-1 build, 2026-07-30: **pinch on
@@ -7251,6 +7402,67 @@ projects:
             audience: user
             id: 019fb304-6a18-739b-b61b-c2d1a71047fe
             at: 2026-07-30T12:33:58.808Z
+            actor: claude
+          - body: "Verified against the code 2026-07-31: `grep` finds **zero**
+              `onMouseDown`/`onMouseMove`/`\"mousedown\"`/`\"mousemove\"` in
+              `src`, and `src/ui/pointerDrag.ts` (`beginPointerDrag`) is used by
+              11 files. The Pointer Events migration this ticket called its
+              keystone shipped some time ago; snap/quantize likewise. Body and
+              title rewritten to the gesture work that genuinely remains, and
+              MOBILE-7's dependency on this ticket dropped as a result."
+            audience: user
+            id: 019fb8cf-68a4-77fe-bd07-f56d4050b659
+            at: 2026-07-31T15:33:48.324Z
+            actor: claude
+          - body: >-
+              Observed on the MOBILE-5 build, 2026-08-04: **on first load the
+              platform scroll indicators appear on every overflowing scroller
+              and never fade** - the roll horizontally and vertically, the track
+              lanes horizontally. They behave normally (fade on their own) from
+              the first manual scroll onwards.
+
+
+              **Not our doing, and worth recording so it is not re-diagnosed
+              from scratch.** Measured during boot at phone size:
+
+
+              - each scroller reaches its final size exactly once, at ~159ms,
+              and never resizes again - so we are not re-triggering the flash;
+
+              - exactly one programmatic scroll happens in the whole load (the
+              roll centring itself at ~183ms);
+
+              - the main thread is then blocked for **123ms from ~248ms** - a
+              single long task, on a laptop.
+
+
+              Every overflowing scroller flashes its indicator when created or
+              resized; that is the platform advertising scrollability, and it
+              explains all three axes lighting up when only one was scrolled.
+              The fade is scheduled ~500ms later on the main thread, and the
+              long task lands inside that window. On a phone that block is
+              several times longer, which fits it looking stuck on device and
+              fine on desktop. The block is boot work - worklet compilation,
+              project load, engine start.
+
+
+              **Deliberately not fixed.** The options were: suppress indicators
+              on coarse pointers (`scrollbar-width: none` + `::-webkit-scrollbar
+              { display: none }`), which throws away the indicator the touch
+              scrollbar rule was written to keep (see `src/index.css`, `@media
+              (pointer: fine)`); cut boot main-thread work, which is worth doing
+              on its own merits but is a project rather than a fix and would
+              only make the fade *more likely* to land; or drop the roll's
+              centring scroll, which removes one trigger of three and loses a
+              feature. One flash per load that clears on first touch is the
+              cheaper outcome.
+
+
+              If boot cost is ever attacked for its own sake, expect this to
+              improve as a side effect. It is cosmetic, not a functional defect.
+            audience: user
+            id: 019fcef0-99d2-7443-ac7c-58de74c4b1e4
+            at: 2026-08-04T22:41:42.355Z
             actor: claude
       - ref: MOBILE-3
         area: MOBILE
@@ -7328,3 +7540,525 @@ projects:
         id: 019fae0c-fc9e-77fe-ae9f-e17f910bf35f
         created_at: 2026-07-29T13:25:14.526Z
         updated_at: 2026-07-29T16:00:54.810Z
+      - ref: MOBILE-5
+        area: MOBILE
+        title: "The editor sheet: throwable detents over the arrangement"
+        status: review
+        sort_path: "000005"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Replaces MOBILE-1's four bottom tabs with a **non-modal bottom sheet
+          over the arrangement**, thrown between three detents. The **Mobile
+          editing surfaces (design)** context section carries the reasoning and
+          the prototype link; this ticket is the build.
+
+
+          **Detents.** Peek (parked - grabber and the Edit/Rack switch only),
+          Half (edit and arrange at once), Full (covers everything but the
+          selected lane). Held as *fraction of the workspace covered*, per
+          device shape - a landscape phone may need its own set, or only two of
+          them.
+
+
+          **The gesture.**
+
+
+          - Pointer Events with `setPointerCapture`; `touch-action: none` on the
+          drag surface. Without that line iOS claims the gesture before the
+          first event arrives.
+
+          - Velocity from ~100ms of `(y, timestamp)` history, not a frame delta
+          - far too noisy at 120Hz.
+
+          - `landing = release + velocity * ~130ms`, snapped to the nearest
+          detent. That projection is the entire feel of a throw; at 0 flicking
+          stops working.
+
+          - **Seed the settle spring with the release velocity.** A CSS
+          transition discards it and restarts from rest; carrying it through is
+          what reads as native. A/B'd in the prototype and the difference is
+          large for about ten lines of rAF.
+
+          - Transform while moving, commit layout once on settle - animating
+          height would relayout the roll every frame. Same discipline as
+          `useSharedGridScroll`.
+
+          - Nested scrolling: a scroller inside the sheet keeps the drag unless
+          it is at `scrollTop` 0 and you are pulling down. Find the scroller
+          from the event target rather than assuming one; the roll has its own.
+
+
+          **The whole header is the drag surface**, not just the grabber - it is
+          the easiest thing on screen to catch, and a 4px pill is a cruel target
+          mid-idea. Buttons inside it opt out.
+
+
+          **Non-modal is load-bearing.** Tapping a track in the arrangement
+          while the sheet is up must select it, with the sheet staying put. That
+          is why no off-the-shelf sheet library will do (all are built on a
+          modal dialog primitive), and why this must not share an implementation
+          with `Sheet.tsx`, whose library and agent sheets genuinely are modal.
+
+
+          **Deletions this earns:**
+
+
+          - the bottom tab bar (~56px plus the safe area back on a phone); Edit
+          and Rack become a segmented control in the sheet header;
+
+          - `LaneStrip` as a special case - it existed only because the Edit tab
+          took the arrangement away, and the Full detent is now what it was;
+
+          - the top bar's tempo / meter / position readouts. They do not fit at
+          390px; tempo and meter are already in the ⋮ menu, and position is on
+          the timeline ruler, which is visible at every detent but Full.
+
+
+          **Detent state belongs in shell state, not inside the sheet** - the
+          sections read it, and that is a straight application of ARCH-3 (state
+          central, composition local). On a tablet the sheet is positioned
+          inside the workspace column, not the shell, so it does not run under a
+          docked library or agent - the same rule already applied to the tab
+          bar.
+
+
+          Rewrite `MobileShell`'s header comment while here: mobile is no longer
+          "the desktop split four ways" but "the desktop, occluded".
+
+
+          ---
+
+
+          **Also landed here: a device-testing procedure (`yarn dev:mobile`).**
+          Not in the original scope, but validating this ticket on real hardware
+          forced it, and it is dev-only so it does not widen the shipped
+          surface.
+
+
+          Testing on a phone meant `vite --host` at the laptop's LAN address,
+          which is plain http and not `localhost`, so an **insecure context** -
+          and four things the app needs are gated on a secure one, all failing
+          silently:
+
+
+          - `crypto.randomUUID` - the first id thrown on, `AppShell` never
+          mounted, blank white page. Fixed with a `getRandomValues` fallback in
+          `src/audio/randomUuid.ts`.
+
+          - `AudioWorklet` - `loadWorklets` threw, so the engine never started
+          and nothing played.
+
+          - `navigator.storage` - no OPFS, so `getProjectStorage()` fell through
+          to `MemoryProjectStorage` and nothing persisted.
+
+          - `getUserMedia` - no mic recording.
+
+
+          `yarn dev:mobile` serves https with a self-signed certificate
+          (`@vitejs/plugin-basic-ssl`), opt-in via `MOBILE_HTTPS` so everyday
+          `yarn dev` stays on plain `http://localhost` (already a secure
+          context, no certificate warning) and Playwright is untouched.
+          `strictPort` on, because the URL is typed into a phone by hand and a
+          silent drift to the next port leaves the remembered address pointing
+          at an orphaned earlier run - which answers, so it looks like your
+          changes had no effect. Procedure and the `ERR_EMPTY_RESPONSE` gotcha
+          are in the README.
+
+
+          The failures are now legible as well as fixed: `loadWorklets` rejects
+          with an explanation rather than "cannot read addModule of undefined",
+          and `StartDialog` shows it instead of the button appearing dead.
+
+
+          A trusted certificate (`mkcert` plus its root installed on the device)
+          is still needed before service workers and PWA install can be tested -
+          relevant to the packaging epic, not to this ticket.
+        id: 019fb8bf-4e50-76ff-9b52-af40940356fa
+        created_at: 2026-07-31T15:16:13.008Z
+        updated_at: 2026-08-03T19:46:58.146Z
+      - ref: MOBILE-6
+        area: MOBILE
+        title: Clips and pads as sections under the roll
+        status: to-do
+        sort_path: "000006"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          Two collapsible sections beneath the piano roll, in that order,
+          sharing one drawer component. Not tabs, and not a separate Keys
+          surface - you play a phrase and watch it land without changing
+          surface.
+
+
+          **A section's height is a function of its content, never a drag.**
+          Adding a pad row grows it by exactly one row, and the roll gives up
+          exactly that much. An earlier prototype let the roll resize as the
+          keyboard appeared and it was confusing precisely because the amount
+          was unpredictable.
+
+
+          **Clips** are the thin horizontal chip rail. `ClipRail` already takes
+          `orientation` as data, so a horizontal value is additive rather than a
+          special case. Visibility is the section's disclosure and nothing else
+          - an earlier version tied it to the detent as well, which means you
+          collapse it and the detent reopens it.
+
+
+          **Pads, not keys.** ~27px keys on a 390px phone are unplayable; pads
+          give 50px+ and a legible note name.
+
+
+          - In-scale notes take the full-width row; everything else sits above,
+          between them. Derive the gaps from **the scale's own interval
+          pattern**, so the shape holds for any key or mode with only the labels
+          moving. In C major it lands exactly where the black keys are.
+
+          - **Each row closes on the next tonic**, as a piano octave ends on C.
+          Without it the leading tone has no gap to sit in and vanishes - found
+          by testing the layout across six scales, not by looking at it.
+
+          - Each pad carries its **interval to the tonic** (`1`, `2`, `b3`,
+          `5`). This is the first real consumer of a project-level key and
+          scale; until that exists, a local setting.
+
+          - Accidentals switchable off, for a row you cannot play a wrong note
+          in. Possibly the better default on a phone.
+
+          - Multi-touch, so chords work, and slide-to-glissando.
+
+          - Octave range is **one control, not two**: a pair of buttons to move
+          the range and a pair to size it, sharing the label between them. Each
+          pair disables at its limit.
+
+          - **A tablet fits two octaves per row, a phone one.** Below ~44px per
+          pad the layout is wrong, not merely tight.
+
+
+          **Sustain by drag-down.** Press a pad, drag down past a threshold and
+          it latches; drag up on it to release. **Playing a new note releases
+          the held ones** - decided 2026-07-31 knowing the limitation: that rule
+          means you can only hold *instead of* playing, never *while* playing,
+          which is the main reason to want sustain in the first place. Ship the
+          simple form, expect to revisit. The alternative (latches persist,
+          release is explicit) is prototyped and is one flag away.
+
+
+          Note the drawer component is worth extracting properly - the device
+          rack will likely want one too.
+        id: 019fb8bf-839d-75ab-bdf2-caf8358426c2
+        created_at: 2026-07-31T15:16:26.653Z
+        updated_at: 2026-07-31T15:16:26.653Z
+      - ref: MOBILE-7
+        area: MOBILE
+        title: "Touch editing: select, then handles and a kebab"
+        status: to-do
+        sort_path: "000007"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          One editing model for notes in the piano roll and clips in the
+          timeline. **This answers the "explicit tool model (draw / select /
+          erase)" question MOBILE-2 raises** - differently, and that ticket has
+          been corrected to point here.
+
+
+          Touch has no hover, no modifiers, and a 44px finger, so the desktop
+          roll's 4px drag-edges cannot transfer. **Selection is the substitute
+          for hover:** only the selected object grows handles, so they can be
+          finger-sized without turning every neighbour into a grab target.
+
+
+          - Drag the body to move; drag an end handle to resize (notes) or trim
+          (clips). Grid-snapped throughout - snap is doing the work precision
+          cannot.
+
+          - **Actions hang off a kebab pinned to the object's right edge**, not
+          a bar pinned to the screen. It costs no permanent space, which
+          landscape cannot spare, and it means the actions are ordinary
+          `MenuItem`s, so `Menu.tsx` is reused rather than a bespoke toolbar
+          grown. Clamp it to the visible edge - an affordance you have to scroll
+          to find is one you stop reaching for.
+
+          - **Velocity in that menu as an inline row of values, not a submenu.**
+          `Menu.tsx` opens submenus on hover, which does not exist on touch, and
+          a nested flyout near a screen edge is a cramped thing to aim at.
+          Velocity also renders as **note fill strength**, which is what earns
+          the right to drop the velocity lane on a phone.
+
+          - **Split at the playhead**, not at a tap point. No precision needed,
+          because the playhead is already positioned and already on screen. The
+          touch version is the easy one, so it ships here rather than being
+          deferred.
+
+          - Duplicate and delete in the same menu.
+
+
+          ## Creating: the two surfaces differ, deliberately
+
+
+          Settled 2026-07-31. They differ because **a note has an obvious
+          default and a clip does not**: tap a grid cell and you have stated
+          pitch and position, and one beat is a fine length. A clip's length and
+          position *are* its substance, so a tap states nothing useful.
+
+
+          **In the roll - tap to create.** A tap on empty space means *deselect
+          if something is selected, otherwise create a note there*. That
+          ordering is the point: you cannot fat-finger a note into existence
+          while editing one, and creation is still a single tap the rest of the
+          time.
+
+
+          **In the timeline - a range, then a menu.** Drag across empty lane
+          space to highlight a range; a kebab appears on it offering **Create
+          clip**, and **Paste** when the clipboard holds something. The range
+          states the length and position that a tap could not.
+
+
+          **The playhead is a valid target on its own.** Paste should be
+          reachable with no selection at all, at the ticker - which is the same
+          reasoning as split-at-playhead. Something already positioned and
+          already on screen beats asking for precision.
+
+
+          This also gives range operations a natural home later (duplicate a
+          range, set the loop from it) without inventing a second mechanism.
+
+
+          **Implementation note.** The roll canvas must own its gestures
+          (`touch-action: none`) and scroll itself on an empty-space drag.
+          Letting the browser pan means every vertical note drag races the
+          scroller for the same pixels, and the browser wins those races.
+          Consequently in the roll an empty-space *drag* scrolls while an
+          empty-space *tap* creates or deselects, distinguished by a movement
+          threshold - note this is the opposite assignment to the timeline,
+          where an empty-space drag defines a range. That is a real asymmetry to
+          keep straight: the roll scrolls in the axis it creates in, the
+          timeline does not.
+
+
+          Applies to the desktop surfaces too wherever it costs nothing -
+          MOBILE-2's standing point is that touch-reachable equivalents are
+          cheap to build in and expensive to retrofit.
+        id: 019fb8bf-be5a-756f-9c63-7d0ac202be7f
+        created_at: 2026-07-31T15:16:41.690Z
+        updated_at: 2026-07-31T15:33:36.974Z
+        notes:
+          - body: "**Settled 2026-07-31, same day it was raised** (the note previously
+              flagged it as blocking). In the roll, a tap on empty space means
+              *deselect if something is selected, otherwise create a note* - the
+              prototype's behaviour, kept because it prevents fat-fingering a
+              note into existence mid-edit. MOBILE-2's explicit draw/select tool
+              model is **not** adopted. The timeline diverges: drag an empty
+              range, then a kebab offering Create clip / Paste, because a clip's
+              length and position are its substance and a tap states neither.
+              Both behaviours are live in the prototype:
+              https://claude.ai/code/artifact/9072c7ef-cebf-4ba2-a344-689cea364\
+              e22"
+            audience: user
+            id: 019fb8c0-66da-76ff-8744-626e64529fe1
+            at: 2026-07-31T15:17:24.826Z
+            actor: claude
+      - ref: MOBILE-8
+        area: MOBILE
+        title: "Safe areas: pad all four insets, not just the bottom"
+        status: to-do
+        sort_path: "000008"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          A defect in the shipped MOBILE-1 build, found on a device 2026-07-31.
+
+
+          `index.html:8` sets `viewport-fit=cover`, with a comment saying the
+          touch shell "pads itself back with the `env(safe-area-inset-*)`
+          values" - but the only `env()` in the codebase is
+          `safe-area-inset-bottom`, in `MobileShell.tsx:607` and `Sheet.tsx:74`.
+          We opted into going edge-to-edge and then handled one of the four
+          edges.
+
+
+          **Symptoms.** The top bar's ☰ and ✦ buttons sit under the display's
+          corner radius and are clipped. In landscape the notch takes a column
+          off the arrangement.
+
+
+          **Decision: keep `cover` and pad all four sides**, rather than
+          dropping `cover` and letting iOS inset the viewport for us. Landscape
+          is where the app is most starved of width, and we want that width
+          back; the letterboxed alternative gives it away permanently.
+
+
+          **The trap that makes this worth a ticket rather than a two-line
+          fix.** An absolutely positioned box resolves against its containing
+          block's **padding box**, so padding on a container is ignored by
+          exactly the children that need it. The insets have to go on the
+          positioned boxes themselves. This looks correct in review and does
+          nothing - it caught the prototype, where the workspace carried the
+          padding and both its children were absolute.
+
+
+          **Scope.** The top bar (top, left, right), the workspace's positioned
+          children (the arrangement and the sheet), and anything else absolutely
+          positioned inside the shell. The rail background should run up behind
+          the status bar so the inset reads as deliberate rather than as a
+          letterbox.
+
+
+          **Verify on a notched device in landscape both ways up** - the notch
+          swaps sides with rotation direction, and iOS reports the insets
+          accordingly.
+
+
+          Related: MOBILE-5 removes the top bar's readouts, which buys back
+          roughly what the notch costs on the horizontal.
+        id: 019fb8bf-e9cf-7295-984e-c64745fd5f32
+        created_at: 2026-07-31T15:16:52.815Z
+        updated_at: 2026-07-31T15:16:52.815Z
+      - ref: MOBILE-9
+        area: MOBILE
+        title: Adding from the library should get out of the way on a phone
+        status: to-do
+        sort_path: "000009"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          Noticed on a device 2026-07-31. Tapping an instrument or device in the
+          library adds it, but the library stays open over the workspace, so you
+          cannot see the thing you just added. You have to dismiss the panel
+          yourself before the action has any visible result.
+
+
+          **Close the library after an add, but only where it is an overlay.**
+          On a phone it is a `Sheet` over the app, so it hides the outcome and
+          should get out of the way. On a tablet it is a docked column beside
+          the workspace - it occludes nothing, and closing it there would be
+          actively annoying when adding several tracks in a row. The `docked`
+          flag in `MobileShell` already draws exactly that distinction.
+
+
+          Worth confirming while implementing: the same argument probably
+          applies to any library action with a visible result in the workspace
+          (adding a track, loading a patch, dropping in a sample), not just
+          instruments. Do it as one rule rather than per-action, or it will
+          drift.
+
+
+          There is a precedent in the other direction to keep in mind -
+          `onRevealSamples` deliberately *opens* the library from the rack,
+          because there the library is the destination rather than the source.
+          So the rule is about where the user's attention is going, not about
+          the library as such.
+        id: 019fb948-6bc4-73dc-b70a-8c29daf6002f
+        created_at: 2026-07-31T17:45:58.980Z
+        updated_at: 2026-07-31T17:45:58.980Z
+      - ref: MOBILE-10
+        area: MOBILE
+        title: Swipe the library and agent sheets closed
+        status: to-do
+        sort_path: "000010"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Drag the library or agent sheet off its own edge to dismiss it, with
+          the throw deciding whether it goes or springs back. **Closing only** -
+          see the constraint below for why opening is not part of this.
+
+
+          Only applies where the panels are sheets. A tablet docks them
+          (`docked` in `MobileShell`) and there is nothing to swipe away.
+
+
+          ## Why it is cheaper than MOBILE-5 was
+
+
+          `Sheet.tsx` is `absolute top-0 bottom-0` at a fixed width, so
+          **nothing inside it depends on measuring a mid-flight size**. The
+          "transform while moving, commit layout on settle" split - and every
+          bug that came out of code believing the travelling height - simply
+          does not arise here. Transform is the only representation the sheet
+          ever needs.
+
+
+          It is also two states rather than three, so the projection is a
+          threshold rather than a nearest-detent search, and it is modal, so
+          there is no live background to keep interactive.
+
+
+          ## Closing only, because the OS owns the edges
+
+
+          iOS Safari and Android Chrome claim edge swipes for back/forward
+          navigation, and a system gesture cannot be `preventDefault`ed.
+
+
+          - **Dismissing works.** The touch starts inside the sheet, which is
+          `w-[88%]`, so it never begins in the system's edge zone.
+
+          - **Opening by edge-swipe does not**, and on the left it would fight
+          the back gesture directly. The ☰ / ✦ buttons stay the only way in. Do
+          not add an edge-swipe-to-open affordance without testing it on a real
+          iOS device first; expect it to lose.
+
+
+          ## `touch-action: pan-y`, not `none`
+
+
+          The library list scrolls vertically, so claiming both axes would kill
+          it. `pan-y` leaves vertical panning to the browser and hands
+          horizontal to us. Same shape MOBILE-2 needs on the arrangement and
+          roll scroll containers, so the two should agree on the approach.
+
+
+          ## Extract the gesture primitives rather than writing a second copy
+
+
+          This is the part that pays for itself. `detents.ts` is already
+          DOM-free and its hard parts are axis-agnostic - `velocityFrom` fitted
+          across a ~100ms window, `trimSamples`, `PROJECTION_MS` and the
+          projection - with unit tests that cover the maths a swipe needs
+          unchanged. `useSheetDrag` is vertical only (`clientY`, `clientHeight`)
+          but the shape transfers.
+
+
+          So: lift velocity, projection and the velocity-seeded spring into a
+          shared primitive that the editor sheet and this both use, rather than
+          duplicating. MOBILE-2's pinch handling wants the same seam, so doing
+          it here means it exists by the time that lands.
+
+
+          Replace the CSS `transition-transform duration-200` with that spring
+          for the gesture path. A transition stays correct for a scrim tap or
+          Escape, which start from rest; it is wrong after a throw, because it
+          discards the speed you built. Fade the scrim **with** the drag rather
+          than only at the end, or a half-dragged sheet looks detached from it.
+
+
+          ## Testing
+
+
+          Same split MOBILE-5 settled on: the projection maths is pure and
+          unit-tested, and the browser only proves the wiring. Playwright should
+          not synthesise a swipe - Escape and the scrim tap are already covered,
+          so e2e needs nothing new beyond confirming the sheet still closes by
+          those paths. The gesture itself wants a real-device check.
+
+
+          ## Scope note
+
+
+          The win is real but modest: scrim tap and Escape already dismiss, so
+          this is polish that makes the shell feel native rather than a
+          capability gap. Worth doing when the gesture layer gets attention -
+          ideally alongside MOBILE-2, which shares the `touch-action` decision
+          and the extracted primitives - not before.
+        id: 019fcf0a-d942-71ef-8a6b-fd508694a8b7
+        created_at: 2026-08-04T23:10:22.531Z
+        updated_at: 2026-08-04T23:10:22.531Z

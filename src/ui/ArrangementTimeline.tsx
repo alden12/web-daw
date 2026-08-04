@@ -84,6 +84,8 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
+  isActiveSurface = true,
+  pinSelectedTrack = false,
   stickyHeaders = true,
   compact = false,
 }: {
@@ -110,6 +112,22 @@ export function ArrangementTimeline({
    * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
    */
   compact?: boolean;
+  /**
+   * Whether this surface currently owns the shell's ⋮ (MOBILE-5). Since the editor sheet
+   * replaced the tabs, the arrangement and the editor are mounted *at the same time*, so
+   * "compact" alone is no longer enough to decide who publishes - both would, and the
+   * later mount would silently win. The shell hands this to whichever surface is in front:
+   * the arrangement while the sheet is parked, the editor once it is up.
+   */
+  isActiveSurface?: boolean;
+  /**
+   * Pin the selected track's row to the top rather than merely scrolling it into view
+   * (MOBILE-5). At the editor sheet's Full detent only a sliver of arrangement shows, and
+   * it should be the lane being edited - which is the job `LaneStrip` used to do from a
+   * separate copy of the grid. Doing it by scroll position instead means there is one
+   * arrangement rather than two that have to be kept in step.
+   */
+  pinSelectedTrack?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -127,10 +145,14 @@ export function ArrangementTimeline({
     const row = scroller?.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(selectedTrackId)}"]`);
     if (!scroller || !row) return;
     const above = row.offsetTop - RULER_H; // the ruler is sticky, so it covers this much
+    if (pinSelectedTrack) {
+      scroller.scrollTop = above;
+      return;
+    }
     const below = row.offsetTop + row.offsetHeight - scroller.clientHeight;
     if (above < scroller.scrollTop) scroller.scrollTop = above;
     else if (below > scroller.scrollTop) scroller.scrollTop = below;
-  }, [selectedTrackId]);
+  }, [selectedTrackId, pinSelectedTrack]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
@@ -326,9 +348,9 @@ export function ArrangementTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, [pxPerBeat, setPxPerBeat, headerW]);
 
-  // Share the time-axis offset with the lane strip, which shows this same grid from
-  // another tab on touch. A sticky header column does not consume scroll, so beat 0 is
-  // at the content's left edge; once it scrolls away with the lanes it leads by headerW.
+  // Keep the time-axis offset across remounts (a shell swap, or a phone rotated into the
+  // tablet tier). A sticky header column does not consume scroll, so beat 0 is at the
+  // content's left edge; once it scrolls away with the lanes it leads by headerW.
   useSharedGridScroll(scrollRef, pxPerBeat, stickyHeaders ? 0 : headerW);
 
   // Drive the playhead off the audio clock (0 when stopped).
@@ -440,7 +462,7 @@ export function ArrangementTimeline({
       { separator: true },
       ...optionItems,
     ],
-    compact,
+    compact && isActiveSurface,
   );
 
   // `flex-1` on the root is for the touch shell, which stacks the panels in a flex

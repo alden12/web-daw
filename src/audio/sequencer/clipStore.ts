@@ -7,6 +7,7 @@
  */
 import { GRID, type ClipData, type NoteEvent } from "./types";
 import { clamp } from "../../util";
+import { randomUuid } from "../randomUuid";
 
 const DEFAULT_LENGTH = 16;
 
@@ -79,7 +80,7 @@ export class ClipStore {
   }
 
   addNote(input: NoteInput): string {
-    const id = crypto.randomUUID();
+    const id = randomUuid();
     this.notes.set(id, this.normalize(input, id));
     this.emit();
     return id;

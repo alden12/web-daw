@@ -18,6 +18,7 @@ import { diffProjects } from "./diff";
 import type { Author, EditEntry } from "./types";
 import type { EditLog, FeedNote } from "./editLog";
 import { getRepository, type Commit, type ProjectRepository, type Refs } from "../projectRepository";
+import { randomUuid } from "../randomUuid";
 
 /** A burst of edits within this window collapses into one auto-checkpoint. */
 const CHECKPOINT_DEBOUNCE_MS = 4000;
@@ -194,7 +195,7 @@ export class VersionStore {
       this.commitsSinceKeyframe + 1 >= KEYFRAME_INTERVAL ||
       entries.some((entry) => entry.kind === "undo" || entry.kind === "redo");
     const commit: Commit = {
-      id: `cm-${crypto.randomUUID().slice(0, 8)}`,
+      id: `cm-${randomUuid().slice(0, 8)}`,
       parent: this.headId(),
       author: author ?? entries[entries.length - 1].author,
       message: message ?? autoMessage(entries),
@@ -244,7 +245,7 @@ export class VersionStore {
       notes.reduce((highest, note) => Math.max(highest, note.seq), -1),
     ); // the jump consumes pending edits + notes
     const commit: Commit = {
-      id: `cm-${crypto.randomUUID().slice(0, 8)}`,
+      id: `cm-${randomUuid().slice(0, 8)}`,
       parent: this.headId(),
       author,
       message: `Revert to "${target.message}"`,

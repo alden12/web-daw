@@ -88,6 +88,7 @@ export function AppShell() {
   const [engine] = useState(() => new AudioEngine());
   const [editLog] = useState(() => new EditLog(projectStore));
   const [started, setStarted] = useState(false);
+  const [startError, setStartError] = useState<string | undefined>();
   const [isPlaying, setIsPlaying] = useState(false);
   const [scheduler] = useState(() => new Scheduler(engine, projectStore, setIsPlaying));
   // MIDI devices read the transport (tempo/beat grid/playing) through the scheduler. Wire it before
@@ -329,7 +330,16 @@ export function AppShell() {
   }, [started, liveNotes]);
 
   const handleStart = async () => {
-    await engine.start(projectStore);
+    try {
+      await engine.start(projectStore);
+    } catch (error) {
+      // Surface it in the dialog rather than rejecting into nothing: the most likely cause
+      // is an insecure context (no AudioWorklet), and the failure is otherwise completely
+      // silent - the button appears dead and the modal never goes away.
+      setStartError(error instanceof Error ? error.message : "The audio engine failed to start.");
+      return;
+    }
+    setStartError(undefined);
     setStarted(true);
     // Route to the remembered output device (if any) now that the context exists.
     const outputId = readOutputDeviceId();
@@ -391,7 +401,7 @@ export function AppShell() {
         )}
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
         {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
-        {!started && <StartDialog onStart={handleStart} />}
+        {!started && <StartDialog onStart={handleStart} error={startError} />}
         {!projectLoaded && <LoadingOverlay />}
         {conflict && (
           <ConflictDialog
