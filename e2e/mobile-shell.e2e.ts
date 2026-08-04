@@ -49,8 +49,12 @@ async function setDetent(page: Page, target: "peek" | "half" | "full") {
     await page.keyboard.press(order.indexOf(current!) < order.indexOf(target) ? "ArrowUp" : "ArrowDown");
   }
   await expect.poll(() => detentOf(page)).toBe(target);
-  // Let the settle spring finish before anything is measured.
-  await page.waitForTimeout(500);
+  // Wait for the settle to *commit* rather than for a fixed time. `data-detent` flips the
+  // instant the key is pressed, but the sheet is still mid-spring and laid out at
+  // `height: 100%` with a transform until it comes to rest - so measuring on the attribute
+  // alone reads the travelling size, and any fixed timeout is only as good as the longest
+  // throw in the suite. Committed layout is the honest signal that it has landed.
+  await expect.poll(() => sheet(page).evaluate((el) => (el as HTMLElement).style.height)).not.toBe("100%");
 }
 
 /**
@@ -90,16 +94,31 @@ test.describe("phone", () => {
     await expect(page.getByRole("button", { name: /play|stop/i }).first()).toBeVisible();
   });
 
-  test("opens parked, so you land on the arrangement rather than under a panel", async ({ page }) => {
+  test("opens at Half, showing the track that is already selected", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    await expect.poll(() => detentOf(page)).toBe("peek");
+    // There is always a track and a clip selected, so there is always something to edit and
+    // showing it presumes nothing. Opening parked read as the editor having failed to open.
+    await expect.poll(() => detentOf(page)).toBe("half");
+    await expect(segment(page, "Edit")).toBeVisible();
+    await expect(page.getByTestId("roll-scroll")).toBeVisible();
+
+    // Still a sheet over a live arrangement, not a full-screen editor.
+    const box = (await sheet(page).boundingBox())!;
+    expect(box.height, "leaves the arrangement half the screen").toBeLessThan(PHONE.height * 0.7);
+    expect(box.y + box.height, "and sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
+  });
+
+  test("parked is a lip, not a panel", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
 
     // Parked still names the track and offers the surfaces - that is what teaches the drag.
     await expect(segment(page, "Edit")).toBeVisible();
     const box = (await sheet(page).boundingBox())!;
-    expect(box.height, "parked is a lip, not a panel").toBeLessThan(PHONE.height * 0.25);
+    expect(box.height, "parked is a lip").toBeLessThan(PHONE.height * 0.25);
     expect(box.y + box.height, "and it sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
   });
 
@@ -114,11 +133,10 @@ test.describe("phone", () => {
     await expect(page.locator("[data-track-id]").first()).toBeVisible();
   });
 
-  test("choosing a different track raises the sheet, but arriving on one does not", async ({ page }) => {
+  test("choosing a track while parked raises the sheet back to Half", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    // Landing on a project with a track already selected is arriving, not asking.
-    await expect.poll(() => detentOf(page)).toBe("peek");
+    await setDetent(page, "peek");
 
     await page.getByRole("button", { name: "Library", exact: true }).tap();
     // The row's "+", not the row itself: a primary tap applies the instrument to the
@@ -131,19 +149,26 @@ test.describe("phone", () => {
     await expect(sheet(page).getByText("sampler", { exact: true })).toBeVisible();
   });
 
-  test("a reload lands parked, however the project restores", async ({ page }) => {
+  test("tapping the already-selected lane raises it too", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await expect.poll(() => detentOf(page)).toBe("peek");
+    await setDetent(page, "peek");
 
-    // The app mounts a seed project and swaps the saved one in behind it, so the selected
-    // track's id changes with nobody having chosen anything. Reading that as a selection
-    // opened the sheet on every reload - the exact thing parking exists to prevent.
-    await page.reload();
+    // `selectTrack` is a no-op when the id already matches, so on a one-track project - the
+    // state every new project starts in - watching the selection alone can never fire.
+    await trackHeader(page).tap();
+    await expect.poll(() => detentOf(page)).toBe("half");
+  });
+
+  test("scrolling the arrangement while parked is not a request to edit", async ({ page }) => {
+    await page.goto("/");
     await dismissStart(page);
-    await expect.poll(() => detentOf(page)).toBe("peek");
-    await page.waitForTimeout(600);
-    expect(await detentOf(page), "still parked once the project has settled").toBe("peek");
+    await setDetent(page, "peek");
+
+    await page.getByTestId("arr-scroll").evaluate((el) => (el.scrollLeft = 400));
+    await page.waitForTimeout(300);
+    // Hence a click handler rather than a pointerdown: a scroll leaves no click behind.
+    expect(await detentOf(page)).toBe("peek");
   });
 
   test("the roll centres on the notes at whatever height the sheet settles at", async ({ page }) => {
@@ -184,7 +209,7 @@ test.describe("phone", () => {
   test("picking a surface raises the sheet, so nothing is more than one tap away", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await expect.poll(() => detentOf(page)).toBe("peek");
+    await setDetent(page, "peek");
 
     await segment(page, "Edit").tap();
     await expect.poll(() => detentOf(page)).toBe("half");
@@ -299,7 +324,7 @@ test.describe("phone", () => {
   test("dragging the header moves the sheet and it settles on a detent", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await expect.poll(() => detentOf(page)).toBe("peek");
+    await setDetent(page, "peek");
 
     // The whole header is the drag surface, not just the grabber pill.
     const header = (await sheet(page).boundingBox())!;
