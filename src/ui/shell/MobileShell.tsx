@@ -280,15 +280,17 @@ export function MobileShell({
    * surface owns the ⋮, and MOBILE-6's sections will read the detent too. The sheet is
    * handed them and reports changes back.
    *
-   * It opens **parked**, but Half is the working default and switching track is what gets
-   * you there. The distinction is between arriving and asking: landing on a project with
-   * the editor already over half of it reads as a panel you did not ask for, whereas
-   * tapping a lane is a request to edit that track, so the sheet meets you at Half.
+   * It opens at **Half**, and that follows from a property of the app rather than a taste:
+   * there is always a track and a clip selected, so there is always something to edit and
+   * showing it is not presuming. Opening parked was tried and reads as the editor having
+   * failed to open - you land on a project, the thing you came to edit is a lip at the
+   * bottom, and the tap that fixes that carries no information.
    *
-   * Parked still names the track and offers the surface switch, which is the affordance
-   * that teaches the drag; picking a surface raises it too.
+   * **This flips if an empty selection ever becomes possible.** Nothing to edit means the
+   * honest states are parked, or no sheet at all, and Half would then be the panel you did
+   * not ask for. Keep the reasoning attached to the constraint, not to the number.
    */
-  const [detent, setDetent] = useState<Detent>("peek");
+  const [detent, setDetent] = useState<Detent>("half");
   const [surface, setSurface] = useState<EditorSurface>("edit");
   /**
    * A tablet opens with the library already docked: there is width for it beside the
@@ -309,15 +311,14 @@ export function MobileShell({
    * mid-render would not be.
    *
    * The test is **whether the track we last saw still exists**, not whether the id changed,
-   * because a changed id does not mean anybody chose anything. Loading a project is the
-   * case that forces this: the app mounts a seed project, then the saved one replaces it
-   * wholesale a moment later, so the selected track's id changes on its own and the sheet
-   * would open over the arrangement on every reload - exactly what parking exists to avoid.
+   * because a changed id does not mean anybody chose anything. Switching project is the case
+   * that forces it: the tracks are replaced wholesale, so the selected id changes on its own.
    * A project swap takes the old track with it; selecting a lane or adding a track leaves it
    * standing. Deleting the selected track lands on a neighbour you did not ask for, and that
    * fails the test too, which is the behaviour we want.
    *
    * Raises only *from* parked, so a sheet already thrown to Full is left where you put it.
+   * With Half the arrival default this now only fires after you have deliberately parked it.
    */
   const [lastSeenTrack, setLastSeenTrack] = useState<string | null>(selectedTrack?.id ?? null);
   if (selectedTrack && selectedTrack.id !== lastSeenTrack) {
@@ -325,6 +326,26 @@ export function MobileShell({
     setLastSeenTrack(selectedTrack.id);
     if (sameProject && detent === "peek") setDetent("half");
   }
+
+  /**
+   * ...and raise on a lane tap that selects *nothing new*, which the rule above cannot see.
+   * `selectTrack` is a no-op when the id already matches, so on a single-track project -
+   * the state every new project starts in - tapping the only lane changed nothing and the
+   * sheet stayed parked. Tapping a track means "edit this" whether or not it was already
+   * selected.
+   *
+   * Reads the tap off the DOM rather than threading a callback down through the timeline:
+   * `data-track-id` is already the timeline's own handle for a row (its scroll-into-view
+   * finds rows by it), so this borrows an existing contract instead of adding a prop to a
+   * component that does not otherwise care. Buttons opt out, as they do on the sheet's own
+   * drag surface, so muting a track from its header does not also open the editor over it.
+   */
+  const onWorkspaceClick = (event: React.MouseEvent) => {
+    if (detent !== "peek") return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, select")) return;
+    if (target.closest("[data-track-id]")) setDetent("half");
+  };
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The compact transport drops the metronome button, so the shell's ⋮ owns it - reading
@@ -569,6 +590,9 @@ export function MobileShell({
             // screen instead of sitting under it. Committed detents only - during a drag
             // the sheet slides over this rather than resizing it every frame.
             style={{ height: selectedTrack ? `${(1 - detents[detent]) * 100}%` : "100%" }}
+            // A click, not a pointerdown: scrolling the arrangement while parked must not
+            // count as asking to edit, and a click is exactly the tap that is left over.
+            onClick={onWorkspaceClick}
           >
             <ArrangementTimeline
               projectStore={projectStore}
