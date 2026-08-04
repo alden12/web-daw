@@ -7958,3 +7958,107 @@ projects:
         id: 019fb948-6bc4-73dc-b70a-8c29daf6002f
         created_at: 2026-07-31T17:45:58.980Z
         updated_at: 2026-07-31T17:45:58.980Z
+      - ref: MOBILE-10
+        area: MOBILE
+        title: Swipe the library and agent sheets closed
+        status: to-do
+        sort_path: "000010"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Drag the library or agent sheet off its own edge to dismiss it, with
+          the throw deciding whether it goes or springs back. **Closing only** -
+          see the constraint below for why opening is not part of this.
+
+
+          Only applies where the panels are sheets. A tablet docks them
+          (`docked` in `MobileShell`) and there is nothing to swipe away.
+
+
+          ## Why it is cheaper than MOBILE-5 was
+
+
+          `Sheet.tsx` is `absolute top-0 bottom-0` at a fixed width, so
+          **nothing inside it depends on measuring a mid-flight size**. The
+          "transform while moving, commit layout on settle" split - and every
+          bug that came out of code believing the travelling height - simply
+          does not arise here. Transform is the only representation the sheet
+          ever needs.
+
+
+          It is also two states rather than three, so the projection is a
+          threshold rather than a nearest-detent search, and it is modal, so
+          there is no live background to keep interactive.
+
+
+          ## Closing only, because the OS owns the edges
+
+
+          iOS Safari and Android Chrome claim edge swipes for back/forward
+          navigation, and a system gesture cannot be `preventDefault`ed.
+
+
+          - **Dismissing works.** The touch starts inside the sheet, which is
+          `w-[88%]`, so it never begins in the system's edge zone.
+
+          - **Opening by edge-swipe does not**, and on the left it would fight
+          the back gesture directly. The ☰ / ✦ buttons stay the only way in. Do
+          not add an edge-swipe-to-open affordance without testing it on a real
+          iOS device first; expect it to lose.
+
+
+          ## `touch-action: pan-y`, not `none`
+
+
+          The library list scrolls vertically, so claiming both axes would kill
+          it. `pan-y` leaves vertical panning to the browser and hands
+          horizontal to us. Same shape MOBILE-2 needs on the arrangement and
+          roll scroll containers, so the two should agree on the approach.
+
+
+          ## Extract the gesture primitives rather than writing a second copy
+
+
+          This is the part that pays for itself. `detents.ts` is already
+          DOM-free and its hard parts are axis-agnostic - `velocityFrom` fitted
+          across a ~100ms window, `trimSamples`, `PROJECTION_MS` and the
+          projection - with unit tests that cover the maths a swipe needs
+          unchanged. `useSheetDrag` is vertical only (`clientY`, `clientHeight`)
+          but the shape transfers.
+
+
+          So: lift velocity, projection and the velocity-seeded spring into a
+          shared primitive that the editor sheet and this both use, rather than
+          duplicating. MOBILE-2's pinch handling wants the same seam, so doing
+          it here means it exists by the time that lands.
+
+
+          Replace the CSS `transition-transform duration-200` with that spring
+          for the gesture path. A transition stays correct for a scrim tap or
+          Escape, which start from rest; it is wrong after a throw, because it
+          discards the speed you built. Fade the scrim **with** the drag rather
+          than only at the end, or a half-dragged sheet looks detached from it.
+
+
+          ## Testing
+
+
+          Same split MOBILE-5 settled on: the projection maths is pure and
+          unit-tested, and the browser only proves the wiring. Playwright should
+          not synthesise a swipe - Escape and the scrim tap are already covered,
+          so e2e needs nothing new beyond confirming the sheet still closes by
+          those paths. The gesture itself wants a real-device check.
+
+
+          ## Scope note
+
+
+          The win is real but modest: scrim tap and Escape already dismiss, so
+          this is polish that makes the shell feel native rather than a
+          capability gap. Worth doing when the gesture layer gets attention -
+          ideally alongside MOBILE-2, which shares the `touch-action` decision
+          and the extracted primitives - not before.
+        id: 019fcf0a-d942-71ef-8a6b-fd508694a8b7
+        created_at: 2026-08-04T23:10:22.531Z
+        updated_at: 2026-08-04T23:10:22.531Z
