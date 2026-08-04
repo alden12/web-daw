@@ -183,12 +183,16 @@ test.describe("phone", () => {
     await setDetent(page, "half");
     const atHalf = await centredOn();
     await setDetent(page, "full");
-    const atFull = await centredOn();
 
+    // Polled, not read once: the re-fit waits for the run of resizes to stop, so it lands a
+    // beat after the sheet commits its layout. Reading immediately catches the pre-fit value.
+    //
     // The roll is mounted while the sheet is parked (0px tall) and is held at the full
     // workspace height mid-throw, so fitting at either of those moments centres for a
     // viewport that is not the one you end up with. Only the settled height is true.
-    expect(Math.abs(atFull - atHalf), `centred on ${atHalf} at Half, ${atFull} at Full`).toBeLessThanOrEqual(2);
+    await expect
+      .poll(async () => Math.abs((await centredOn()) - atHalf), { message: `centred on ${atHalf} at Half` })
+      .toBeLessThanOrEqual(2);
   });
 
   test("the roll stops re-centring once you have scrolled it yourself", async ({ page }) => {
