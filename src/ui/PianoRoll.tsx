@@ -47,6 +47,8 @@ import { isBlackKey, pitchName } from "./noteNames";
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
 const ROWS = MAX_PITCH - MIN_PITCH + 1;
+/** How long the roll waits for a run of resizes to stop before re-centring on the notes. */
+const FIT_SETTLE_MS = 150;
 const RESIZE_PX = 6; // grab zone on a note's right edge
 const DRAG_THRESH = 4; // px before an empty-grid press becomes a marquee
 const TRAIL_BEATS = 8; // empty grid drawn past the loop end (room to expand into)
@@ -227,14 +229,34 @@ export function PianoRoll({
   //
   // Handing over on the first real scroll is what keeps this from fighting anybody: after
   // that the roll stays exactly where it was put, however the sheet moves.
+  //
+  // Two guards keep "re-fit on resize" from becoming a scroll generator, because a scroll is
+  // not a private event: `Menu` closes on any of them, captured at the window, so a stray
+  // fit dismisses whatever popover happens to be opening. Both were found by a CI failure in
+  // an unrelated test that opens the roll's settings menu right after expanding the agent
+  // panel, which transitions its width over several frames.
+  //
+  // - **Only a materially changed height re-fits.** Changing the height by `delta` moves the
+  //   centred row by `delta / 2`, so the honest test is whether that shift is big enough to
+  //   see: more than a row. Expanding the agent panel moved the roll 323 -> 317px, a 3px
+  //   shift nobody could notice; a detent change moves it 319 -> 566px. One threshold, in
+  //   the unit the thing is actually measured in, separates them.
+  // - **Resizes are coalesced.** A transition resizes every frame, so waiting for the burst
+  //   to stop means one decision on the final size rather than a scroll per frame. The very
+  //   first fit skips the wait, since there is nothing to settle and delaying it would show
+  //   the roll uncentred.
   const handedOver = useRef(false);
+  const fittedAt = useRef(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let selfScroll = false;
     let settle = 0;
+    let coalesce: ReturnType<typeof setTimeout> | undefined;
     const fit = () => {
       if (handedOver.current || !el.clientHeight) return;
+      if (Math.abs(el.clientHeight - fittedAt.current) < rowH * 2) return;
+      fittedAt.current = el.clientHeight;
       const notes = clipStore.getClip().notes;
       const pitches = notes.map((note) => note.pitch);
       const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
@@ -254,10 +276,16 @@ export function PianoRoll({
     };
     // The observer reports the initial size too, so a roll that already has a height (every
     // desktop mount) fits immediately and behaves exactly as it did before.
-    const observer = new ResizeObserver(fit);
+    const onResize = () => {
+      if (!fittedAt.current) return fit();
+      clearTimeout(coalesce);
+      coalesce = setTimeout(fit, FIT_SETTLE_MS);
+    };
+    const observer = new ResizeObserver(onResize);
     observer.observe(el);
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
+      clearTimeout(coalesce);
       cancelAnimationFrame(settle);
       observer.disconnect();
       el.removeEventListener("scroll", onScroll);
