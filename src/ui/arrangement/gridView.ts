@@ -2,27 +2,33 @@
  * The arrangement's shared horizontal view: which beat sits at the left edge of the
  * time axis.
  *
- * Zoom already survives across mounts because it is persisted (`web-daw:arr-zoom`), but
- * scroll position lived in a DOM ref inside `ArrangementTimeline`. That was fine while
- * the timeline was always mounted; the touch shell (MOBILE-1) shows the full arrangement
- * and the selected track's lane strip in *different tabs*, so only one is mounted at a
- * time and a local ref means switching tabs silently loses your place.
+ * Zoom already survives across mounts because it is persisted (`web-daw:arr-zoom`); scroll
+ * position lived in a DOM ref inside `ArrangementTimeline`, which loses your place whenever
+ * that component unmounts. It was introduced for MOBILE-1, where the arrangement and the
+ * selected track's lane strip were separate tabs and only one could be mounted at a time.
  *
- * Stored in **beats, not pixels**, for two reasons: the two surfaces have different
- * amounts of chrome before beat 0 (the timeline scrolls a header column inside its
- * scroller; the strip's header sits outside it), so a shared pixel offset would point at
- * different bars in each; and beats survive a zoom change, where pixels would drift.
+ * **That is no longer why it exists.** MOBILE-5 deleted the lane strip - the sheet's Full
+ * detent is what it was - so there is one arrangement surface and one caller. What remains
+ * is remounting: swapping shells (a window resized past the desktop breakpoint) and
+ * changing tier (a phone rotated into landscape lands in the tablet tier) both tear the
+ * timeline down and build it again, and arriving back at bar 1 is a poor answer to having
+ * turned the phone sideways.
+ *
+ * Stored in **beats, not pixels**, and both halves of that still hold. Beats survive a zoom
+ * change, where pixels would drift. And the chrome before beat 0 is not a constant: the
+ * header column scrolls inside the scroller on a phone but is `position: sticky` elsewhere
+ * (`stickyHeaders`), so a pixel offset saved before a rotation points at a different bar
+ * after it - which is exactly the remount this exists to survive.
  *
  * The value may be **negative**, meaning the timeline is scrolled far enough left to show
  * its header column. Flooring it at 0 was a bug: it made "showing the headers" and
- * "showing bar 1" the same stored value, so returning to the tab always landed on bar 1
- * with the headers scrolled out of sight.
+ * "showing bar 1" the same stored value, so a remount always landed on bar 1 with the
+ * headers scrolled out of sight.
  *
  * Deliberately **session-only, not persisted** - where you are looking is transient view
  * state, and restoring a stale offset on load would be disorienting rather than helpful.
- * There is no subscribe seam either: only one arrangement surface is mounted at a time,
- * so nothing needs to react, and a version that notified ended up fighting the user's own
- * scrolling (see useSharedGridScroll).
+ * There is no subscribe seam either: one surface reads it, so nothing needs to react, and a
+ * version that notified ended up fighting the user's own scrolling (see useSharedGridScroll).
  *
  * **Null until something scrolls**, which is not the same as 0. Beat 0 is the *right* edge
  * of the header column, so opening there scrolls the lane headers - the track names, the

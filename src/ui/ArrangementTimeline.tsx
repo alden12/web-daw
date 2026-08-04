@@ -348,9 +348,9 @@ export function ArrangementTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, [pxPerBeat, setPxPerBeat, headerW]);
 
-  // Share the time-axis offset with the lane strip, which shows this same grid from
-  // another tab on touch. A sticky header column does not consume scroll, so beat 0 is
-  // at the content's left edge; once it scrolls away with the lanes it leads by headerW.
+  // Keep the time-axis offset across remounts (a shell swap, or a phone rotated into the
+  // tablet tier). A sticky header column does not consume scroll, so beat 0 is at the
+  // content's left edge; once it scrolls away with the lanes it leads by headerW.
   useSharedGridScroll(scrollRef, pxPerBeat, stickyHeaders ? 0 : headerW);
 
   // Drive the playhead off the audio clock (0 when stopped).
