@@ -7414,6 +7414,56 @@ projects:
             id: 019fb8cf-68a4-77fe-bd07-f56d4050b659
             at: 2026-07-31T15:33:48.324Z
             actor: claude
+          - body: >-
+              Observed on the MOBILE-5 build, 2026-08-04: **on first load the
+              platform scroll indicators appear on every overflowing scroller
+              and never fade** - the roll horizontally and vertically, the track
+              lanes horizontally. They behave normally (fade on their own) from
+              the first manual scroll onwards.
+
+
+              **Not our doing, and worth recording so it is not re-diagnosed
+              from scratch.** Measured during boot at phone size:
+
+
+              - each scroller reaches its final size exactly once, at ~159ms,
+              and never resizes again - so we are not re-triggering the flash;
+
+              - exactly one programmatic scroll happens in the whole load (the
+              roll centring itself at ~183ms);
+
+              - the main thread is then blocked for **123ms from ~248ms** - a
+              single long task, on a laptop.
+
+
+              Every overflowing scroller flashes its indicator when created or
+              resized; that is the platform advertising scrollability, and it
+              explains all three axes lighting up when only one was scrolled.
+              The fade is scheduled ~500ms later on the main thread, and the
+              long task lands inside that window. On a phone that block is
+              several times longer, which fits it looking stuck on device and
+              fine on desktop. The block is boot work - worklet compilation,
+              project load, engine start.
+
+
+              **Deliberately not fixed.** The options were: suppress indicators
+              on coarse pointers (`scrollbar-width: none` + `::-webkit-scrollbar
+              { display: none }`), which throws away the indicator the touch
+              scrollbar rule was written to keep (see `src/index.css`, `@media
+              (pointer: fine)`); cut boot main-thread work, which is worth doing
+              on its own merits but is a project rather than a fix and would
+              only make the fade *more likely* to land; or drop the roll's
+              centring scroll, which removes one trigger of three and loses a
+              feature. One flash per load that clears on first touch is the
+              cheaper outcome.
+
+
+              If boot cost is ever attacked for its own sake, expect this to
+              improve as a side effect. It is cosmetic, not a functional defect.
+            audience: user
+            id: 019fcef0-99d2-7443-ac7c-58de74c4b1e4
+            at: 2026-08-04T22:41:42.355Z
+            actor: claude
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"
