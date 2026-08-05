@@ -21,6 +21,12 @@
  *
  * Only one (top-level) menu is open at a time, and within a popover only one row's submenu:
  * hovering a sibling closes the last, so flyouts cannot pile up.
+ *
+ * A row is a leaf action, a radio selection, a submenu parent, a separator, a **group
+ * heading**, or a **number field** - all of them `MenuItem` data, so a caller composes a menu
+ * rather than rendering one. The last two exist for the touch shell's ⋮, which is several
+ * surfaces' toolbars in one list (headings say which), and which has no toolbar to put a
+ * tempo field on (so the field comes here).
  */
 import {
   useEffect,
@@ -40,6 +46,22 @@ const POPOVER_ATTR = "data-menu-popover";
 /** How long a flyout survives the pointer leaving its row, so the gap to it is crossable. */
 const HOVER_GRACE_MS = 140;
 
+/**
+ * A number a list of presets cannot honestly cover. Tempo is 20-300 and beats-per-bar is
+ * 1-32; a submenu of either is a scroll rather than a control, and picking "the ones worth
+ * an entry" makes the menu quietly less capable than the field on desktop.
+ */
+export interface MenuNumber {
+  value: number;
+  min: number;
+  max: number;
+  /** What the nudge buttons move by, and the field's own step. Defaults to 1. */
+  step?: number;
+  /** A short suffix after the field (BPM). */
+  unit?: string;
+  onChange: (value: number) => void;
+}
+
 export interface MenuItem {
   label?: string;
   onClick?: () => void;
@@ -51,6 +73,14 @@ export interface MenuItem {
   submenu?: MenuItem[];
   /** A horizontal divider between groups of items (no label/action). */
   separator?: boolean;
+  /**
+   * A non-interactive group title. Menus that gather several sources into one list (the touch
+   * shell's ⋮) need to say where a row came from - two surfaces both offering "Snap to grid"
+   * is otherwise a coin toss.
+   */
+  heading?: string;
+  /** A number field with nudge buttons, in place of a submenu of preset values. */
+  number?: MenuNumber;
 }
 
 // App-wide: only one (top-level) menu open at a time.
@@ -82,6 +112,7 @@ function Popover({
   anchorRef,
   strategy,
   side,
+  onDetached,
   onPointerEnter,
   onPointerLeave,
   children,
@@ -89,6 +120,8 @@ function Popover({
   anchorRef: RefObject<HTMLElement | null>;
   strategy: "below" | "beside";
   side: "left" | "right";
+  /** The anchor has left the viewport, so there is nothing left to hang off. */
+  onDetached: () => void;
   /** Hover handlers, so a flyout survives the pointer crossing the gap from its row. */
   onPointerEnter?: (event: ReactPointerEvent) => void;
   onPointerLeave?: (event: ReactPointerEvent) => void;
@@ -96,26 +129,59 @@ function Popover({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<Placed | null>(null);
+  // Read by a listener that outlives the render it was set up in, so the callback is held in
+  // a ref rather than in the effect's dependencies - re-subscribing on every render would
+  // tear the listeners down and rebuild them mid-scroll.
+  const onDetachedRef = useRef(onDetached);
+  useEffect(() => {
+    onDetachedRef.current = onDetached;
+  });
 
   /**
-   * Measured once per opening, before paint, so it never flashes at the unplaced position.
-   * One pass is enough because `scrollWidth`/`scrollHeight` are the *content's* size, which
-   * the caps this pass applies do not change - measuring the laid-out box instead would
-   * feed the cap back into the measurement and oscillate.
+   * Measured before paint, so it never flashes at the unplaced position. One pass is enough
+   * because `scrollWidth`/`scrollHeight` are the *content's* size, which the caps this pass
+   * applies do not change - measuring the laid-out box instead would feed the cap back into
+   * the measurement and oscillate.
+   *
+   * **It re-places rather than the menu closing, which is what it used to do on any scroll or
+   * resize.** Closing was a cheap stand-in for "a fixed popover drifts from its anchor", and it
+   * misfired on the two cases that matter on a phone: a virtual keyboard is a resize, so
+   * tapping a number field shut the menu the field is in; and a reflow makes scroll containers
+   * emit scroll events, so *any* relayout could close a menu nobody had touched. Following the
+   * anchor is the honest version of the same intent - and it means a flyout tracks its row when
+   * a long list is scrolled, instead of being left behind. The popover only gives up when the
+   * anchor has genuinely gone, which is the case closing was there for.
    */
   useLayoutEffect(() => {
-    const popover = ref.current;
-    const anchor = anchorRef.current;
-    if (!popover || !anchor) return;
-    const next = placeMenu(
-      anchor.getBoundingClientRect(),
-      { width: popover.scrollWidth, height: popover.scrollHeight },
-      { width: window.innerWidth, height: window.innerHeight },
-      { strategy, side },
-    );
-    setPlaced((current) =>
-      current && (Object.keys(next) as (keyof Placed)[]).every((key) => current[key] === next[key]) ? current : next,
-    );
+    const place = () => {
+      const popover = ref.current;
+      const anchor = anchorRef.current;
+      if (!popover || !anchor) return;
+      const box = anchor.getBoundingClientRect();
+      if (box.bottom < 0 || box.right < 0 || box.top > window.innerHeight || box.left > window.innerWidth)
+        return onDetachedRef.current();
+      const next = placeMenu(
+        box,
+        { width: popover.scrollWidth, height: popover.scrollHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+        { strategy, side },
+      );
+      setPlaced((current) =>
+        current && (Object.keys(next) as (keyof Placed)[]).every((key) => current[key] === next[key]) ? current : next,
+      );
+    };
+    place();
+    // Capture, so a scroll in any container between the anchor and the document is seen -
+    // scroll does not bubble. `visualViewport` covers iOS, where a keyboard moves that and
+    // leaves `innerHeight` alone.
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("resize", place);
+    };
   }, [anchorRef, strategy, side]);
 
   return createPortal(
@@ -147,6 +213,94 @@ function Popover({
   );
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+/**
+ * A number field as a menu row. Typing is the point (tempo is 20-300), and the − / + buttons
+ * are there because on touch a nudge otherwise costs a keyboard.
+ *
+ * The draft is held as text rather than a number so a half-typed "1" on the way to "140" does
+ * not snap the project to the minimum under your finger; it commits whatever parses, and the
+ * store clamps. An external change (undo, the agent, the other field) resyncs it, adjusted
+ * during render rather than in an effect so it lands before paint.
+ */
+function NumberRow({
+  label,
+  number,
+  disabled,
+  reserveCheck,
+}: {
+  label?: string;
+  number: MenuNumber;
+  disabled?: boolean;
+  reserveCheck: boolean;
+}) {
+  const { value, min, max, step = 1, unit, onChange } = number;
+  const [draft, setDraft] = useState(String(value));
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    setDraft(String(value));
+  }
+
+  const commit = (text: string) => {
+    setDraft(text);
+    const parsed = Number(text);
+    if (text.trim() !== "" && Number.isFinite(parsed)) onChange(clamp(parsed, min, max));
+  };
+  const nudge = (delta: number) => onChange(clamp(value + delta * step, min, max));
+  const nudgeClass =
+    "shrink-0 flex items-center justify-center w-7 h-7 rounded-md border border-line bg-ground text-[15px] leading-none text-muted cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
+
+  return (
+    <div role="group" aria-label={label} className="flex items-center gap-2 px-3 py-1 text-[12.5px] text-ink">
+      {reserveCheck && <span aria-hidden="true" className="w-3 shrink-0" />}
+      <span className="flex-1 whitespace-nowrap">{label}</span>
+      <button
+        type="button"
+        aria-label={`${label} down`}
+        disabled={disabled || value <= min}
+        onClick={() => nudge(-1)}
+        className={nudgeClass}
+      >
+        −
+      </button>
+      <input
+        type="number"
+        inputMode="numeric"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={draft}
+        disabled={disabled}
+        onChange={(event) => commit(event.target.value)}
+        // Leaving the field with nothing usable in it puts the live value back, so the row
+        // never sits showing a number the project does not have.
+        onBlur={() => setDraft(String(value))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        // `[text-align:center]`, not `text-center`: the theme defines a `center` colour, so
+        // `text-center` is *also* a text-colour utility - and it sorts after `text-bright`,
+        // which left the field's digits at #22262f on a #101216 ground. Near-invisible, and
+        // nothing about the class list says so.
+        className="w-14 shrink-0 font-mono text-[12.5px] [text-align:center] px-1 py-1 rounded-md border border-line bg-ground text-bright"
+      />
+      <button
+        type="button"
+        aria-label={`${label} up`}
+        disabled={disabled || value >= max}
+        onClick={() => nudge(1)}
+        className={nudgeClass}
+      >
+        +
+      </button>
+      {unit && <span className="shrink-0 font-mono text-[10px] text-muted">{unit}</span>}
+    </div>
+  );
+}
+
 /** One row in a popover: a leaf action, a radio selection, or a submenu parent. */
 function Row({
   item,
@@ -174,11 +328,29 @@ function Row({
   useEffect(() => () => clearTimeout(grace.current), []);
 
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
+  if (item.heading)
+    return (
+      // A rule above rather than a separator item, so a group is one thing in the list and
+      // cannot be left with a stray divider when it publishes nothing.
+      <div
+        role="presentation"
+        className="mt-1.5 pt-1.5 px-3 pb-0.5 border-t border-line font-mono text-[10px] uppercase tracking-wider text-muted first:mt-0 first:pt-0 first:border-t-0"
+      >
+        {item.heading}
+      </div>
+    );
+  if (item.number)
+    return <NumberRow label={item.label} number={item.number} disabled={item.disabled} reserveCheck={reserveCheck} />;
   // Show the check column for radio items; reserve an empty one on the menu's other
   // rows when any sibling is checkable, so plain/submenu rows still line up.
+  // Hidden from assistive tech: `aria-checked` on the row already says it, and left visible
+  // the glyph joins the accessible name ("✓ Velocity lane"), which is a worse label and a
+  // moving target for anything matching on it.
   const check =
     item.checked !== undefined || reserveCheck ? (
-      <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span>
+      <span aria-hidden="true" className="w-3 shrink-0 text-you">
+        {item.checked ? "✓" : ""}
+      </span>
     ) : null;
 
   if (item.submenu) {
@@ -217,13 +389,18 @@ function Row({
         >
           {check}
           <span className="flex-1">{item.label}</span>
-          <span className="text-muted text-[10px]">{side === "left" ? "◂" : "▸"}</span>
+          {/* Decoration: `aria-haspopup` above is what says there is more behind this row. */}
+          <span aria-hidden="true" className="text-muted text-[10px]">
+            {side === "left" ? "◂" : "▸"}
+          </span>
         </button>
         {open && (
           <Popover
             anchorRef={rowRef}
             strategy="beside"
             side={side}
+            // The row scrolled out of the list it lives in: this level goes, the rest stays.
+            onDetached={onClose}
             onPointerEnter={(event) => {
               if (isHover(event)) hold();
             }}
@@ -273,7 +450,11 @@ function MenuList({ items, side, onDismiss }: { items: MenuItem[]; side: "left" 
     <>
       {items.map((item, index) => (
         <Row
-          key={item.label ?? index}
+          // Position first: a menu gathering several surfaces' controls has honest duplicates
+          // ("Snap to grid" belongs to both the arrangement and the roll), so the label alone
+          // is not an identity. The label still rides along, so a row whose label changes
+          // ("Quantize 3 selected") remounts rather than keeping a stale field's draft.
+          key={`${index}:${item.label ?? item.heading ?? ""}`}
           item={item}
           side={side}
           open={openRow === index}
@@ -299,8 +480,8 @@ export function Menu({
   /**
    * The rows, or a getter for them. Pass a **getter** when the items are derived from
    * state this component does not re-render for - notably the touch shell's ⋮, which
-   * folds in the active surface's controls (`surfaceControls.ts`) and is not re-rendered
-   * when that surface's own state changes. An array captured by the caller's last render
+   * folds in every mounted surface's controls (`surfaceControls.ts`) and is not re-rendered
+   * when one of those surfaces' own state changes. An array captured by the caller's last render
    * would show a stale `checked` tick or a stale `disabled`; a getter is read while the
    * menu is open, so it always reflects now.
    */
@@ -330,22 +511,13 @@ export function Menu({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
     };
-    // A fixed popover would drift on scroll/resize, so it closes - but a scroll *inside* the
-    // menu is the menu being used (a list too long for the viewport scrolls), not the page
-    // moving under it, and closing on that would make a long list unreachable.
-    const onReflow = (event: Event) => {
-      if (event.type === "scroll" && insideMenu(event.target)) return;
-      close();
-    };
+    // Scroll and resize are not handled here: each popover follows its anchor instead, and
+    // says so (`onDetached`) when the anchor has left the viewport - see the note in Popover.
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onReflow, true);
-    window.addEventListener("resize", onReflow);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onReflow, true);
-      window.removeEventListener("resize", onReflow);
       if (closeActiveMenu === close) closeActiveMenu = null;
     };
   }, [open]);
@@ -371,7 +543,7 @@ export function Menu({
         {trigger}
       </button>
       {open && (
-        <Popover anchorRef={triggerRef} strategy="below" side={align}>
+        <Popover anchorRef={triggerRef} strategy="below" side={align} onDetached={() => setOpen(false)}>
           {() => <MenuList items={rows} side={submenuSide} onDismiss={() => setOpen(false)} />}
         </Popover>
       )}
