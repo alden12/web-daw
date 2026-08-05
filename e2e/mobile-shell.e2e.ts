@@ -552,6 +552,23 @@ test.describe("phone", () => {
     await expect(panel).toHaveAttribute("inert", "");
   });
 
+  test("picking from the library closes it, so you can see what it just did", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    const panel = page.getByRole("dialog", { name: "Library" });
+    const sheetSubtitle = sheet(page).getByText("subtractive", { exact: true });
+    await expect(sheetSubtitle).toBeVisible();
+
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await panel.getByRole("button", { name: "FM", exact: true }).tap();
+
+    // The sheet it changed is behind the library on a phone, so the library gets out of the
+    // way: without this the instrument swaps under a full-screen panel and nothing happens.
+    await expect(panel).toHaveAttribute("inert", "");
+    await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
+  });
+
   test("the pads sit under the roll, in the key they say they are in", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
@@ -822,6 +839,14 @@ test.describe("tablet", () => {
 
     const library = page.getByRole("complementary", { name: "Library" });
     await expect(library).toBeVisible();
+
+    // Picking does *not* close it here, unlike the phone's sheet: docked, it is beside the
+    // track it changes rather than over it, so there is nothing to get out of the way of and
+    // picking several things in a row keeps working.
+    await library.getByRole("button", { name: "FM", exact: true }).tap();
+    await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
+    await expect(library).toBeVisible();
+
     await page.getByRole("button", { name: "Library", exact: true }).tap();
     await expect(library).toHaveCount(0);
   });

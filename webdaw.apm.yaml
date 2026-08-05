@@ -8049,7 +8049,7 @@ projects:
       - ref: MOBILE-9
         area: MOBILE
         title: Adding from the library should get out of the way on a phone
-        status: to-do
+        status: review
         sort_path: "000009"
         priority: 0
         deps:
@@ -8081,9 +8081,40 @@ projects:
           because there the library is the destination rather than the source.
           So the rule is about where the user's attention is going, not about
           the library as such.
+
+
+          ## Built 2026-08-05
+
+
+          One rule, as the ticket asked. `LibraryPanel` already had a
+          `pickResult` wrapper for search results (act, then clear the query);
+          it turned out that "acting on a library row and then getting out of
+          the way" is the same idea, so it generalised into `picked` and every
+          row now goes through it - instruments, patches applied or added as a
+          track, MIDI devices, effects, samples, and selecting a track from the
+          results. Clearing the query stays part of it and is a no-op outside
+          the results view, since a query is what puts you there.
+
+
+          The panel takes an optional `onPick`, and `MobileShell` passes it only
+          when the library is *not* docked - the distinction the ticket pointed
+          at, spent in one line where the panel is framed rather than threaded
+          through as a device flag.
+
+
+          **Library management is deliberately not a pick.** Deleting a patch
+          and removing a sample stay put: they change the library, not the
+          track, so there is nothing behind the panel to go and look at. Same
+          reasoning as `onRevealSamples` in reverse.
+
+
+          Covered both ways in `mobile-shell.e2e.ts`: on a phone, picking FM
+          closes the sheet and the editor behind it reads `fm`; on a tablet the
+          same pick changes the track and leaves the docked column exactly where
+          it was.
         id: 019fb948-6bc4-73dc-b70a-8c29daf6002f
         created_at: 2026-07-31T17:45:58.980Z
-        updated_at: 2026-07-31T17:45:58.980Z
+        updated_at: 2026-08-05T16:24:36.031Z
       - ref: MOBILE-10
         area: MOBILE
         title: Swipe the library and agent sheets closed

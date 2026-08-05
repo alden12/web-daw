@@ -153,6 +153,7 @@ const UndoIcon = ({ flip = false }: { flip?: boolean }) => (
  */
 function LibraryContent({
   onClose,
+  onPick,
   libView,
   onSelectView,
   search,
@@ -177,7 +178,11 @@ function LibraryContent({
   | "onOpenShare"
   | "onOpenSettings"
   | "onOpenAccount"
-> & { onClose: () => void }) {
+> & {
+  onClose: () => void;
+  /** Set only where this is a sheet: see `LibraryPanel`'s `onPick`. */
+  onPick?: () => void;
+}) {
   return (
     <>
       <div className="shrink-0 flex items-center gap-2 h-11 px-3 border-b border-line">
@@ -219,6 +224,7 @@ function LibraryContent({
         search={search}
         onSearch={onSearch}
         onOpenShare={onOpenShare}
+        onPick={onPick}
       />
       <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-t border-line">
         <span className="w-10 shrink-0 empty:hidden">
@@ -511,6 +517,11 @@ export function MobileShell({
   const library = (
     <LibraryContent
       onClose={() => setLibraryOpen(false)}
+      // A sheet closes when you take something out of it, because on a phone it is covering
+      // the track it just changed - swap the instrument behind it and nothing appears to
+      // happen. A docked column is beside that track rather than over it, so it stays, and
+      // picking several things in a row keeps working.
+      onPick={docked ? undefined : () => setLibraryOpen(false)}
       libView={libView}
       onSelectView={onSelectView}
       search={search}
