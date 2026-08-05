@@ -110,25 +110,46 @@ test.describe("placement", () => {
     await page.goto("/");
     await dismissStart(page);
 
-    // Meter -> Beats per bar -> 7 is the deepest menu in the app, and the one that broke:
-    // a flyout given `overflow-y: auto` clips the flyout *it* opens, so the third level
+    // Meter -> Beat unit -> 8 is a deepest-in-the-app chain, and the shape that broke: a
+    // flyout given `overflow-y: auto` clips the flyout *it* opens, so the third level
     // answered a tap with a scrollbar and nothing else.
     await page.getByRole("button", { name: "More controls" }).tap();
     await page.getByRole("menuitem", { name: /^Meter/ }).tap();
-    await page.getByRole("menuitem", { name: "Beats per bar" }).tap();
+    await page.getByRole("menuitem", { name: "Beat unit" }).tap();
     // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
     // opened by a tap has to survive the finger that opened it leaving.
-    await liftFinger(page, "Beats per bar");
+    await liftFinger(page, "Beat unit");
     await page.waitForTimeout(300);
 
     const levels = await popoverBoxes(page);
     expect(levels, "three levels open at once").toHaveLength(3);
     levels.forEach((level) => expect(level.inside, "every level inside the viewport").toBe(true));
 
-    await page.getByRole("menuitemradio", { name: "7", exact: true }).tap();
+    await page.getByRole("menuitemradio", { name: "8", exact: true }).tap();
     await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
     await page.getByRole("button", { name: "More controls" }).tap();
-    await expect(page.getByRole("menuitem", { name: /^Meter/ })).toContainText("7/4");
+    await expect(page.getByRole("menuitem", { name: /^Meter/ })).toContainText("4/8");
+  });
+
+  /**
+   * A resize used to close the menu, which is fine for a rotated phone and wrong for the one
+   * resize that matters here: a virtual keyboard. Tapping the tempo field would have shut the
+   * menu the field is in, before a digit could be typed. Each popover re-places instead.
+   */
+  test("a resize re-places the menu rather than closing it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await page.getByRole("button", { name: "More controls" }).tap();
+    await page.getByRole("spinbutton", { name: "Tempo" }).tap();
+    // What the keyboard does to the viewport, without needing a keyboard.
+    await page.setViewportSize({ width: 390, height: 500 });
+
+    await expect(popovers(page)).toHaveCount(1);
+    const [menu] = await popoverBoxes(page);
+    expect(menu.inside, "and it is inside the viewport it was left with").toBe(true);
+    await page.getByRole("spinbutton", { name: "Tempo" }).fill("96");
+    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("96");
   });
 
   test("a menu too tall for the viewport scrolls instead of running off it", async ({ page }) => {

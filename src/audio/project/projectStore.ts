@@ -40,6 +40,7 @@ import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import {
   DEFAULT_TIME_SIGNATURE,
+  TEMPO_BPM_RANGE,
   TIME_SIGNATURE_NUMERATOR_RANGE,
   TIME_SIGNATURE_DENOMINATORS,
   beatsPerBar,
@@ -61,8 +62,7 @@ import type {
   TimeSignature,
 } from "./types";
 
-const MIN_BPM = 20;
-const MAX_BPM = 300;
+const { min: MIN_BPM, max: MAX_BPM } = TEMPO_BPM_RANGE;
 // Time-signature bounds are shared with the zod schema (the one source), so the store's coercion
 // and the schema's validation can't drift. The guard narrows a number to the denominator union.
 const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>

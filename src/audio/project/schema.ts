@@ -167,6 +167,11 @@ const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDe
 /** Time-signature bounds, shared by the schema (which validates/rejects at boundaries) and the
  *  ProjectStore (which coerces/clamps trusted values) so the limits live in exactly one place. */
 export const TIME_SIGNATURE_NUMERATOR_RANGE = { min: 1, max: 32 } as const;
+/** Tempo bounds, in the same one place and for the same reason: the ProjectStore clamps to them and
+ *  the UI's number fields advertise them. Deliberately *not* on the document schema's `tempoBpm` -
+ *  a stored value outside the range is healed on load (`ProjectStore.load` clamps), and turning that
+ *  into a validation failure would lose the project rather than fix the number. */
+export const TEMPO_BPM_RANGE = { min: 20, max: 300 } as const;
 export const TIME_SIGNATURE_DENOMINATORS = [1, 2, 4, 8, 16, 32] as const;
 
 export const timeSignatureSchema = z.object({

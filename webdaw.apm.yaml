@@ -8130,7 +8130,7 @@ projects:
       - ref: MOBILE-11
         area: MOBILE
         title: Project settings are unreachable while the sheet is up
-        status: to-do
+        status: review
         sort_path: "000011"
         priority: 0
         deps:
@@ -8145,7 +8145,7 @@ projects:
           The shell's ⋮ shows the *active surface's* controls above the
           project's, and the arrangement only owns it while the sheet is parked
           (MOBILE-5). Count-in, Groove and Groove amount live in
-          `ArrangementTimeline`'s `compactControls`, so they leave with it - and
+          `ArrangementTimeline`'s compact controls, so they leave with it - and
           the sheet now opens at Half, so the default state of the app is the
           one where they are gone.
 
@@ -8157,29 +8157,42 @@ projects:
           at. Tempo, meter and the metronome are already in `MobileShell`'s
           `projectItems` for precisely that reason, and count-in sitting a
           surface away from the record button it governs is the sharpest version
-          of the problem - the pads made recording a phone-first thing to do,
-          and the setting that makes a take usable is two gestures and a mental
-          model away.
+          of the problem.
 
 
-          The fix is to move them into the shell's project group and out of the
-          timeline's compact controls, leaving the timeline's own list to snap,
-          zoom and add-track - things that really are about that surface.
-          Desktop keeps them in the timeline toolbar either way, so this is a
-          `compact` split rather than a move.
+          ## Fixed 2026-08-05, both halves
 
 
-          Worth checking while there: whether anything else in `compactControls`
-          is project-level and quietly hiding behind the same rule.
+          **The reachability half went further than this ticket proposed.**
+          Rather than moving these three rows so they survive the swap, the swap
+          itself is gone: every mounted surface publishes to the shell's ⋮ under
+          its own key and the menu shows all of them at once, under headings.
+          `isActiveSurface` - a prop threaded down through `TrackEditor` and
+          `InstrumentEditor` to the roll, existing only to arbitrate a single
+          registry slot - is deleted. Following the front-most surface was a
+          focus idea imported to a screen that has no focus: at Half you are
+          looking at the timeline and the roll together, so it was hiding
+          controls for a panel in plain view.
+
+
+          **The misfiling half is fixed as asked**, and grouping is what forced
+          it: under a heading that says "Arrangement", count-in and groove are
+          visibly in the wrong place. They now build in
+          `src/ui/projectSettings.ts` and are asked for by both menus that want
+          them - the timeline's own kebab on desktop (still one kebab, not two)
+          and the shell's project group on touch.
+
+
+          Nothing else in the timeline's compact list turned out to be
+          project-level; what remains is snap, zoom and add-track, which really
+          are about that surface.
 
 
           Also seen and **already fixed** in the pads branch, recorded here so
           it is not re-diagnosed: submenus opened level with their own row and
-          ran off the bottom of a phone, so most of a twelve-row list (the keys,
-          the tempos) was under the fold. `Menu` now measures the flyout on open
-          and slides it up to fit, scrolling if it is taller than the viewport,
-          and no longer closes itself on a scroll that started inside the
-          popover.
+          ran off the bottom of a phone, so most of a twelve-row list was under
+          the fold. Every level is now portaled and placed against the viewport
+          (`menuPlacement.ts`).
         id: 019fcf46-101e-7729-afa9-57e4258701ed
         created_at: 2026-08-05T00:15:03.198Z
-        updated_at: 2026-08-05T00:15:03.198Z
+        updated_at: 2026-08-05T15:04:11.678Z

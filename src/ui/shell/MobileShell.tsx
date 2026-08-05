@@ -16,10 +16,11 @@
  * the arrangement away, and the Full detent now *is* that strip), and the question of
  * where selection navigates to - it does not, because the arrangement never leaves.
  *
- * Because the arrangement and the editor are now mounted at the same time, exactly one of
- * them owns the shell's ⋮ at a time: `isActiveSurface` follows the detent, so the
- * arrangement keeps its snap and zoom while the sheet is parked and hands them over once
- * it is up.
+ * Because the arrangement and the editor are mounted at the same time, **both** publish to
+ * the shell's ⋮ and it shows both, under headings. It used to hand ownership to whichever
+ * was in front, which is a focus idea from a screen that has focus: at Half you are looking
+ * at the timeline and the roll together, so following the front-most surface meant hiding
+ * controls for a panel in plain view (`surfaceControls.ts` has the longer version).
  *
  * Library and agent are reached from the same ☰ / ✦ buttons at either end of the top bar,
  * but framed by device: a phone gets a sheet over the app, a tablet **docks** them as
@@ -56,7 +57,12 @@ import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean } from "../usePersistent";
 import { useElementHeight } from "../useElementHeight";
-import { TIME_SIGNATURE_DENOMINATORS, TIME_SIGNATURE_NUMERATOR_RANGE } from "../../audio/project/schema";
+import { useProjectSettingItems } from "../projectSettings";
+import {
+  TEMPO_BPM_RANGE,
+  TIME_SIGNATURE_DENOMINATORS,
+  TIME_SIGNATURE_NUMERATOR_RANGE,
+} from "../../audio/project/schema";
 import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
@@ -76,22 +82,6 @@ interface SurfaceItem {
   surface: EditorSurface;
   label: string;
 }
-
-/**
- * The meters worth a menu entry. The schema allows 1..32 beats per bar, but a submenu of
- * 32 is not a control - typing an arbitrary numerator stays a desktop and MCP affordance,
- * and the range is still the schema's, so this list can only ever be a subset of it.
- */
-const COMMON_NUMERATORS = [2, 3, 4, 5, 6, 7, 9, 12].filter(
-  (numerator) => numerator >= TIME_SIGNATURE_NUMERATOR_RANGE.min && numerator <= TIME_SIGNATURE_NUMERATOR_RANGE.max,
-);
-
-/**
- * Tempos worth a menu entry, for the same reason as the meters: a number field is a
- * desktop control, and a submenu cannot offer 20-300. Covers the usual ground in steps
- * you would actually reach for; the field on desktop and MCP still take any value.
- */
-const TEMPO_STEPS = [70, 80, 90, 100, 110, 120, 128, 140, 150, 160, 174, 180];
 
 const SURFACE_ITEMS: SurfaceItem[] = [
   { surface: "edit", label: "Edit" },
@@ -361,8 +351,8 @@ export function MobileShell({
   const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
   const { canUndo, canRedo } = useEditLog(editLog);
 
-  // The active surface's own controls, published by whichever workspace is mounted.
-  const surfaceControls = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, () => null);
+  // Every mounted workspace's own controls, in menu order (`surfaceControls.ts`).
+  const surfaceGroups = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, readSurfaceControls);
 
   // Phone portrait has no room for a pinned header column in the arrangement; a tablet,
   // and a phone in landscape at ~844px, does.
@@ -389,9 +379,6 @@ export function MobileShell({
   const workspaceRef = useRef<HTMLDivElement>(null);
   const workspaceHeight = useElementHeight(workspaceRef);
   const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT);
-  // The arrangement hands the ⋮ over once the sheet is up: both are mounted now, so
-  // "compact" alone would have them both publishing and the later mount silently winning.
-  const sheetIsUp = Boolean(selectedTrack) && detent !== "peek";
 
   // Surface -> the panel it hosts, as an object map so adding one is an entry here plus
   // one in SURFACE_ITEMS, and a missing case is a type error.
@@ -405,7 +392,6 @@ export function MobileShell({
           dispatch={dispatch}
           projectStore={projectStore}
           compact
-          isActiveSurface={sheetIsUp}
         />
         {/* The pads go under the roll, not beside it and not in the surface switch: you
             play a phrase and watch it land above without changing what you are looking at.
@@ -454,11 +440,11 @@ export function MobileShell({
     ),
   });
 
-  // ⋮ - the active surface's own controls, then the project's. Two groups, so the menu's
-  // contents stay predictable rather than becoming a junk drawer.
+  // ⋮ - every mounted surface's controls, then the project's, each under a heading.
   //
   // The meter and the metronome are here because the compact transport drops them, which
   // also makes this their only writer (see TransportBar's `compact`).
+  const projectSettingItems = useProjectSettingItems(project, dispatch);
   const meter = project.timeSignature;
   const setMeter = (patch: Partial<typeof meter>) =>
     dispatch({
@@ -467,13 +453,18 @@ export function MobileShell({
       denominator: patch.denominator ?? meter.denominator,
     });
   const projectItems: MenuItem[] = [
+    // Fields, not lists of presets: tempo is 20-300 and beats-per-bar is 1-32, and the
+    // curated subsets these used to be made the phone quietly less capable than the desktop
+    // fields they stood in for - 174 was in the list, 173 was unreachable.
     {
       label: "Tempo",
-      submenu: TEMPO_STEPS.map((bpm) => ({
-        label: `${bpm} BPM`,
-        checked: project.tempoBpm === bpm,
-        onClick: () => dispatch({ type: "setTempo", bpm }),
-      })),
+      number: {
+        value: project.tempoBpm,
+        min: TEMPO_BPM_RANGE.min,
+        max: TEMPO_BPM_RANGE.max,
+        unit: "BPM",
+        onChange: (bpm) => dispatch({ type: "setTempo", bpm }),
+      },
     },
     {
       label: "Metronome",
@@ -488,15 +479,15 @@ export function MobileShell({
       submenu: [
         {
           label: "Beats per bar",
-          // Common meters, not all 32 - the range is the schema's, and typing an
-          // arbitrary numerator stays a desktop/MCP affordance.
-          submenu: COMMON_NUMERATORS.map((numerator) => ({
-            label: String(numerator),
-            checked: meter.numerator === numerator,
-            onClick: () => setMeter({ numerator }),
-          })),
+          number: {
+            value: meter.numerator,
+            min: TIME_SIGNATURE_NUMERATOR_RANGE.min,
+            max: TIME_SIGNATURE_NUMERATOR_RANGE.max,
+            onChange: (numerator) => setMeter({ numerator }),
+          },
         },
         {
+          // Still a list: the denominators are an enum (powers of two), not a range.
           label: "Beat unit",
           submenu: TIME_SIGNATURE_DENOMINATORS.map((denominator) => ({
             label: String(denominator),
@@ -506,16 +497,30 @@ export function MobileShell({
         },
       ],
     },
+    // Count-in and groove, which the timeline's toolbar menu used to carry on touch as well -
+    // so they went missing the moment the editor came up, and read as arrangement settings
+    // when they never were (MOBILE-11). Count-in belongs next to the record button most of all.
+    ...projectSettingItems,
   ];
   /**
-   * A getter, not an array: the shell is not re-rendered when the active surface's own
-   * state changes (the registry only notifies on mount/unmount, by design), so an array
-   * built here would hold whatever was true at the shell's last unrelated render - a
-   * "Velocity lane" tick still on after the lane was hidden, or a stale `disabled`.
-   * `Menu` calls this while it is open, so the rows always reflect now.
+   * A getter, not an array: the shell is not re-rendered when a surface's own state changes
+   * (the registry only notifies on mount/unmount, by design), so an array built here would
+   * hold whatever was true at the shell's last unrelated render - a "Velocity lane" tick
+   * still on after the lane was hidden, or a stale `disabled`. `Menu` calls this while it is
+   * open, so the rows always reflect now.
+   *
+   * **Everything at once, whatever is in front.** Both the arrangement and the editor are
+   * mounted the whole time here and at Half you are looking at both, so a menu that swapped
+   * its contents to follow the front-most surface was hiding controls for a panel in plain
+   * view - and, at any detent, hiding count-in and groove behind parking the sheet (MOBILE-11).
+   * The headings are what makes one long list navigable, and they carry the answer to the
+   * question the swap was trying to answer: which panel a row acts on.
    */
-  const overflowItems = (): MenuItem[] =>
-    surfaceControls ? [...surfaceControls(), { separator: true }, ...projectItems] : projectItems;
+  const overflowItems = (): MenuItem[] => [
+    ...surfaceGroups.flatMap((group) => [{ heading: group.title }, ...group.items()]),
+    { heading: "Project" },
+    ...projectItems,
+  ];
 
   // Built once, framed twice: a sheet on a phone, a docked column on a tablet.
   const library = (
@@ -641,7 +646,6 @@ export function MobileShell({
               showTransport={false}
               stickyHeaders={!isPhone}
               compact
-              isActiveSurface={!sheetIsUp}
               // At Full the arrangement is a sliver, so make it the lane being edited.
               pinSelectedTrack={detent === "full"}
             />

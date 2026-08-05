@@ -52,7 +52,6 @@ export function InstrumentEditor({
   dispatch,
   projectStore,
   compact = false,
-  isActiveSurface = true,
 }: {
   track: InstrumentTrack;
   samples: SampleAsset[];
@@ -62,8 +61,6 @@ export function InstrumentEditor({
   projectStore: ProjectStore;
   /** Touch layout: the roll hands its toolbar to the shell's ⋮ (MOBILE-1). */
   compact?: boolean;
-  /** Whether this surface owns the shell's ⋮ - see ArrangementTimeline (MOBILE-5). */
-  isActiveSurface?: boolean;
 }) {
   const isDrumkit = track.instrumentType === "drumkit";
   const [mode, setMode] = usePersistentString<DrumEditor>(`web-daw:drum-editor:${track.id}`, "keys", DRUM_EDITORS);
@@ -119,7 +116,6 @@ export function InstrumentEditor({
             dispatch={dispatch}
             projectStore={projectStore}
             compact={compact}
-            isActiveSurface={isActiveSurface}
           />
         )}
       </div>
