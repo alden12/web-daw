@@ -10,6 +10,7 @@
 import type { ProjectStore, Track } from "../../audio/project/projectStore";
 import type { Scheduler } from "../../audio/sequencer/scheduler";
 import type { Recorder } from "../../audio/recording/recorder";
+import type { LiveNotes } from "../../audio/live/liveNotes";
 import type { EditLog } from "../../audio/commands/editLog";
 import type { VersionStore } from "../../audio/commands/history";
 import type { Dispatch } from "../../audio/commands/types";
@@ -24,6 +25,12 @@ export interface ShellProps {
   editLog: EditLog;
   versionStore: VersionStore;
   dispatch: Dispatch;
+  /**
+   * Live note input, routed to the selected track's instrument *and* the recorder. The
+   * computer keyboard and hardware MIDI reach it from `AppShell`; the touch shell's pads
+   * (MOBILE-6) need it too, and they are the only way to play a note on a phone.
+   */
+  liveNotes: LiveNotes;
   /** The track the workbench edits; `undefined` shows the workbench's empty state. */
   selectedTrack: Track | undefined;
   isPlaying: boolean;

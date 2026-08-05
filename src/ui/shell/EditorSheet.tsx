@@ -19,6 +19,14 @@ import type { ReactNode } from "react";
 import { DETENT_ORDER, stepDetent, type Detent, type DetentSet } from "./detents";
 import { useSheetDrag } from "./useSheetDrag";
 
+/**
+ * The grabber and title row, as a number. It is a constant rather than a measurement because
+ * the thing that needs it - the pads, sizing themselves to the room left over - must not be
+ * told how tall a sheet mid-throw is: it is held at full height and translated, so measuring
+ * would grow a pad row during the gesture and take it back on settle.
+ */
+export const SHEET_HEADER_HEIGHT = 65;
+
 export function EditorSheet({
   detent,
   detents,

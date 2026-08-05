@@ -50,6 +50,26 @@ function Row({
   reserveCheck: boolean;
 }) {
   const [openSub, setOpenSub] = useState(false);
+  const subRef = useRef<HTMLDivElement>(null);
+  /**
+   * How far to slide the flyout up so it stays on screen. A submenu opens level with its own
+   * row, which is fine on a desktop and runs clean off the bottom of a phone as soon as the
+   * list is long - the twelve keys, the twelve tempos. Measured on open (before any shift is
+   * applied), slid up by the overshoot, and never past the top of the viewport; if it is
+   * taller than the viewport itself it scrolls instead.
+   */
+  const [subShift, setSubShift] = useState(0);
+  useLayoutEffect(() => {
+    const flyout = subRef.current;
+    if (!openSub || !flyout) {
+      setSubShift(0);
+      return;
+    }
+    const rect = flyout.getBoundingClientRect();
+    const overshoot = rect.bottom - (window.innerHeight - VIEWPORT_MARGIN);
+    setSubShift(overshoot > 0 ? -Math.min(overshoot, rect.top - VIEWPORT_MARGIN) : 0);
+  }, [openSub]);
+
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
   // Show the check column for radio items; reserve an empty one on the menu's other
   // rows when any sibling is checkable, so plain/submenu rows still line up.
@@ -81,10 +101,12 @@ function Row({
         </button>
         {openSub && (
           <div
+            ref={subRef}
             role="menu"
-            className={`absolute top-0 ${
+            style={{ top: subShift }}
+            className={`absolute ${
               side === "left" ? "right-full" : "left-full"
-            } min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg z-50`}
+            } min-w-44 max-h-[70vh] overflow-y-auto py-1 rounded-lg border border-line bg-card shadow-lg z-50`}
           >
             {item.submenu.map((sub, i) => (
               <Row
@@ -194,7 +216,13 @@ export function Menu({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeMenu();
     };
-    const onReflow = () => closeMenu(); // a fixed popover would drift on scroll/resize
+    // A fixed popover would drift on scroll/resize, so it closes - but a scroll *inside* it
+    // is the menu being used (a submenu taller than the viewport scrolls), not the page
+    // moving under it, and closing on that would make a long list unreachable.
+    const onReflow = (event: Event) => {
+      if (event.type === "scroll" && popRef.current?.contains(event.target as Node)) return;
+      closeMenu();
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onReflow, true);

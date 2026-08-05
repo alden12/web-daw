@@ -162,7 +162,11 @@ export function PianoRoll({
   // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
   // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
   // Toggled from the roll's settings menu, so it is reachable in both shells.
-  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", true);
+  //
+  // **Closed by default on touch**, where the roll is sharing a sheet with the pads and 56px
+  // is a whole row of them. Velocity is not lost by hiding it: it renders as note fill
+  // strength, and editing it per note belongs in the note's own menu on touch (MOBILE-7).
+  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", !compact);
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
