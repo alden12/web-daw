@@ -610,28 +610,42 @@ test.describe("phone", () => {
     await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("the octave range grows in whole rows, and stops where the sheet does", async ({ page }) => {
+  test("the octave range grows in whole rows, and the roll grows with the sheet too", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await setDetent(page, "full");
+    await setDetent(page, "half");
 
     const grow = page.getByRole("button", { name: /More octaves/ });
     const rows = () => pads(page).locator("[data-pad-row]").count();
+    const rollHeight = async () => (await page.getByTestId("roll-scroll").boundingBox())!.height;
     expect(await rows()).toBe(1);
-    for (let press = 0; press < 8 && !(await grow.isDisabled()); press++) await grow.tap();
 
-    // It stops at four rows, and - the part only a browser can tell you - what it stopped at
-    // still fits inside the sheet rather than under its bottom edge.
-    expect(await rows()).toBe(4);
-    expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+    /** Ask for octaves until the sheet stops giving them, and report what it settled on. */
+    const fill = async () => {
+      for (let press = 0; press < 10 && !(await grow.isDisabled()); press++) await grow.tap();
+      // The part only a browser can tell you: what it stopped at still fits inside the
+      // sheet rather than under its bottom edge.
+      expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+      return { rows: await rows(), roll: await rollHeight() };
+    };
 
-    // Parking the sheet takes the room away, so the rows go with it; the count is a request,
-    // not a promise, and raising the sheet again honours it.
-    await setDetent(page, "half");
-    expect(await rows()).toBeLessThan(4);
-    expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+    const half = await fill();
     await setDetent(page, "full");
-    expect(await rows()).toBe(4);
+    const full = await fill();
+
+    // Both surfaces grow, which is the point: the pads take a *share* of the editor, so
+    // raising the sheet buys rows and notes rather than spending it all on pads. A flat
+    // reserve for the roll left it the same sliver at every detent.
+    expect(full.rows).toBeGreaterThan(half.rows);
+    expect(full.roll).toBeGreaterThan(half.roll + 50);
+    expect(half.roll, "the roll is readable even at Half, with the pads filled").toBeGreaterThan(120);
+
+    // The count is a request, not a promise: dropping back gives the rows away and raising
+    // the sheet again honours what was asked for, without asking again.
+    await setDetent(page, "half");
+    expect(await rows()).toBe(half.rows);
+    await setDetent(page, "full");
+    expect(await rows()).toBe(full.rows);
   });
 
   test("a long submenu stays on screen instead of running off the bottom", async ({ page }) => {

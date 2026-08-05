@@ -10,7 +10,8 @@
  * General MIDI map, not a key), everything else gets the scale pads.
  *
  * How many rows depends on the room the editor has at the committed detent, not on the
- * device: a phone in landscape holds one, a tablet in portrait holds four (`fitPads`).
+ * device, and on a share of that room rather than all of it - so the roll above keeps its
+ * own height, and raising the sheet grows both (`fitPads`).
  */
 import { useEffect } from "react";
 import type { InstrumentTrack } from "../../audio/project/projectStore";

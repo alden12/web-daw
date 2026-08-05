@@ -7763,18 +7763,43 @@ projects:
           detent fraction rather than measured on the sheet, because a sheet
           mid-throw is held at full height and translated, and measuring it
           would add a row during the gesture and take it back on settle (the
-          trap the roll's re-centring fell into). The limit is four rows, which
-          is four octaves on a phone and eight on a tablet, and it falls to one
-          or none where the room does. The stored count is kept as *asked for*,
-          so throwing the sheet up gives back the rows that did not fit at Half.
+          trap the roll's re-centring fell into). The stored count is kept as
+          *asked for*, so throwing the sheet up gives back the rows that did not
+          fit at Half.
+
+
+          **The pads take a share of the editor, not all but a sliver of it**
+          (corrected 2026-08-05, on the report that expanding the sheet bought
+          no more rows). The first version kept a flat 40px for the roll and
+          capped the pads at four rows, and the two constants failed in opposite
+          directions: below the cap the pads absorbed *every* pixel a taller
+          sheet added, so Half and Full left the roll the same unreadable
+          sliver; above it, extra height bought nothing at all. Both are gone,
+          for one number. `PADS_SHARE`: the pads may take 65% of the editor and
+          the roll keeps the rest, so raising the sheet grows both, and dropping
+          back to Half gives rows away before it gives away notes. On a 390x844
+          phone that is 1 row / 150px of roll at Half against 3 / 217 at Full,
+          where it was 2 / 60 and 4 / 127. Nothing arbitrary is left to pick:
+          the room says how many rows there is *space* for and `OCTAVE_RANGE`
+          says how many there are *notes* for.
+
+
+          Worth knowing, since it is why this arrived as "it limits the rows on
+          my actual phone but not in Chrome's mobile mode": an emulated viewport
+          is often taller than the device's real one (no address bar, no home
+          indicator), which put Half over the four-row cap and made both detents
+          look identical.
 
 
           Where nothing fits at all - landscape at Half - the section says
           "Raise the sheet to play" rather than showing a clipped half-row. At
           Full, landscape gets a row by folding the key and octave controls into
           the section's header: it is short *and* wide, so the header has the
-          width. That fold is a last resort and is never reached anywhere a row
-          fits with the controls stacked.
+          width; and if that is still not enough, it gives up the roll's share
+          for a single row. The concessions are an ordered list and the first
+          arrangement that fits a row wins, so the controls' own row always goes
+          before the roll's share does - a label costs less than the thing you
+          are playing along to.
 
 
           **A kit gets its own pads.** A drum kit has no key, so the scale
@@ -7815,7 +7840,7 @@ projects:
           rack will likely want one too. *(Done: `ui/shell/EditorSection.tsx`.)*
         id: 019fb8bf-839d-75ab-bdf2-caf8358426c2
         created_at: 2026-07-31T15:16:26.653Z
-        updated_at: 2026-08-05T00:16:22.589Z
+        updated_at: 2026-08-05T15:30:01.849Z
       - ref: MOBILE-7
         area: MOBILE
         title: "Touch editing: select, then handles and a kebab"
