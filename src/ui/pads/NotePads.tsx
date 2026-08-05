@@ -1,17 +1,21 @@
 /**
- * The pads section under the roll (MOBILE-6): the way you play, and therefore record,
- * anything on a phone.
+ * The pads section at the foot of the editor sheet (MOBILE-6): the way you play, and
+ * therefore record, anything on a phone.
  *
  * **Pads, not keys**, and **not a separate surface** - you play a phrase and watch it land
  * in the roll above without changing what you are looking at, which is why this is a
  * section rather than a fourth thing in the Edit / Clips / Rack switch.
  *
+ * They sit under *whichever* surface is showing, for the same reason: playing while you turn
+ * a filter is as much the point as playing while you edit notes, and having to leave the rack
+ * to hear what you changed is the thing the section exists to avoid.
+ *
  * Which pads depends on what you are playing: a kit gets its own pads (its notes are a
  * General MIDI map, not a key), everything else gets the scale pads.
  *
- * How many rows depends on the room the editor has at the committed detent, not on the
- * device, and on a share of that room rather than all of it - so the roll above keeps its
- * own height, and raising the sheet grows both (`fitPads`).
+ * How many rows depends on the room the sheet has at the committed detent, not on the device,
+ * and on a share of that room rather than all of it - so the surface above keeps its own
+ * height, and raising the sheet grows both (`fitPads`).
  */
 import { useEffect } from "react";
 import type { InstrumentTrack } from "../../audio/project/projectStore";

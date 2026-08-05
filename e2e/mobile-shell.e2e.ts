@@ -592,6 +592,48 @@ test.describe("phone", () => {
     await expect(page.getByTestId("lane").getByText("Take 1")).toBeVisible();
   });
 
+  test("sliding sideways runs the notes under your finger, without latching them", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    const from = (await pad(page, "C3").boundingBox())!;
+    const to = (await pad(page, "E3").boundingBox())!;
+    const lane = from.y + from.height / 2;
+    await page.mouse.move(from.x + from.width / 2, lane);
+    await page.mouse.down();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "true");
+
+    // Along the row, so the axis lock reads it as a slide rather than as the sustain drag.
+    await page.mouse.move(to.x + to.width / 2, lane, { steps: 8 });
+    await expect(pad(page, "E3"), "the note follows the finger").toHaveAttribute("aria-pressed", "true");
+    await expect(pad(page, "C3"), "and the one it left goes quiet").toHaveAttribute("aria-pressed", "false");
+
+    // A slide never latches: it committed to the other axis on its first 8px, so letting go
+    // leaves nothing sounding however far down the row it wandered.
+    await page.mouse.up();
+    await expect(pad(page, "E3")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the pads stay under whichever surface is showing, so you can play while you tweak", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    for (const name of ["Clips", "Rack"]) {
+      await segment(page, name).tap();
+      await expect(pads(page).locator("[data-pad-row]")).toHaveCount(1);
+      expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+    }
+
+    // And they still play from there, which is the point: hearing what a device does to a
+    // note without leaving the device to play one.
+    const box = (await pad(page, "C3").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.up();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "false");
+  });
+
   test("dragging down off a pad latches it, and the next note lets it go", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

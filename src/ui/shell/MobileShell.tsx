@@ -393,21 +393,6 @@ export function MobileShell({
           projectStore={projectStore}
           compact
         />
-        {/* The pads go under the roll, not beside it and not in the surface switch: you
-            play a phrase and watch it land above without changing what you are looking at.
-            The roll is the flexible box, so opening the pads takes exactly their height
-            from it and nothing else moves (MOBILE-6). */}
-        {track.kind === "instrument" && (
-          <NotePads
-            track={track}
-            samples={project.samples}
-            notes={liveNotes}
-            // A tablet has the width for two octaves in a row; a phone does not, and below
-            // ~44px per pad the layout is wrong rather than merely tight.
-            octavesPerRow={shape.tier === "tablet" ? 2 : 1}
-            room={editorRoom}
-          />
-        )}
       </div>
     ),
     clips: (
@@ -691,6 +676,22 @@ export function MobileShell({
               }
             >
               {surfacesFor(selectedTrack)[surface]}
+              {/* The pads sit under whichever surface is showing, not inside one and not in
+                  the switch beside them: they are how you play, and you want to play while
+                  you tweak a device as much as while you edit notes. The surface above is
+                  the flexible box, so opening the pads takes exactly their height from it
+                  and nothing else moves (MOBILE-6). */}
+              {selectedTrack.kind === "instrument" && (
+                <NotePads
+                  track={selectedTrack}
+                  samples={project.samples}
+                  notes={liveNotes}
+                  // A tablet has the width for two octaves in a row; a phone does not, and
+                  // below ~44px per pad the layout is wrong rather than merely tight.
+                  octavesPerRow={shape.tier === "tablet" ? 2 : 1}
+                  room={editorRoom}
+                />
+              )}
             </EditorSheet>
           )}
         </div>

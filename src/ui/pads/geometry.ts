@@ -5,7 +5,7 @@
  * leaves the sheet under 200px and can only really hold one row; a tablet in portrait can
  * hold four. Picking a number for "the mobile limit" would be wrong at both ends, so the
  * limit is computed from the room the editor actually has at the committed detent - and
- * from a *share* of it, so the roll the pads sit under grows with the sheet too
+ * from a *share* of it, so the surface the pads sit under grows with the sheet too
  * (`PADS_SHARE`).
  *
  * Pure, so the fitting is unit-testable without a browser: the numbers below are the pad
@@ -26,14 +26,15 @@ export const SECTION_HEADER = 36;
 export const PADS_PADDING = 8;
 
 /**
- * What the editor above cannot give up: `InstrumentEditor`'s padding and its clip-name row.
- * The roll itself can go to nothing, but this is there whether it does or not.
+ * What the surface above cannot give up, taken from the editor because it is the surface the
+ * pads crowd hardest: `InstrumentEditor`'s padding and its clip-name row. The roll itself can
+ * go to nothing, but this is there whether it does or not.
  */
 export const EDITOR_CHROME = 52;
 
 /**
- * How the pads and the roll divide the editor between them: the pads may take this share of
- * it, and the roll keeps the rest.
+ * How the pads and the surface above them divide the sheet: the pads may take this share of
+ * it, and whatever they are under keeps the rest.
  *
  * **A share rather than a fixed reserve, and that is the whole of it.** Keeping a flat 40px
  * for the roll meant the pads absorbed everything a taller sheet gave you: throwing it from
