@@ -7680,8 +7680,8 @@ projects:
         updated_at: 2026-08-03T19:46:58.146Z
       - ref: MOBILE-6
         area: MOBILE
-        title: Clips and pads as sections under the roll
-        status: to-do
+        title: Pads and clips as sections under the roll
+        status: review
         sort_path: "000006"
         priority: 0
         deps:
@@ -7746,11 +7746,76 @@ projects:
           release is explicit) is prototyped and is one flag away.
 
 
+          ## Built 2026-08-05: the pads
+
+
+          The pads shipped; the clip rail as a section did not, so Clips is
+          still a segment in the sheet's switch. Everything above holds, and
+          three things were decided in the building of it:
+
+
+          **The octave count is a function of the room, not of the device.**
+          "One octave on a phone, two on a tablet" is right about *width* and
+          says nothing about height, and height is what actually runs out: a
+          landscape phone has ~130px of editor at Half, a tablet in portrait has
+          ~800px at Full. So `fitPads` computes the row limit from the editor's
+          height at the *committed* detent - derived from the workspace and the
+          detent fraction rather than measured on the sheet, because a sheet
+          mid-throw is held at full height and translated, and measuring it
+          would add a row during the gesture and take it back on settle (the
+          trap the roll's re-centring fell into). The limit is four rows, which
+          is four octaves on a phone and eight on a tablet, and it falls to one
+          or none where the room does. The stored count is kept as *asked for*,
+          so throwing the sheet up gives back the rows that did not fit at Half.
+
+
+          Where nothing fits at all - landscape at Half - the section says
+          "Raise the sheet to play" rather than showing a clipped half-row. At
+          Full, landscape gets a row by folding the key and octave controls into
+          the section's header: it is short *and* wide, so the header has the
+          width. That fold is a last resort and is never reached anywhere a row
+          fits with the controls stacked.
+
+
+          **A kit gets its own pads.** A drum kit has no key, so the scale
+          layout would be a lie told in note names - intervals of a tonic over a
+          General MIDI map where 36 is a kick. Kit tracks get a grid of their
+          loaded pads instead, labelled with the sample, reusing `usePads`. This
+          is what makes drums recordable on a phone, which is the most likely
+          thing anyone wants to do on one.
+
+
+          **The velocity lane now starts folded on touch.** 56px of lane is a
+          whole row of pads, and velocity already renders as note fill strength;
+          the roll's settings menu still turns it back on. Editing velocity per
+          note belongs in the note's own menu (MOBILE-7).
+
+
+          Notes go out through `LiveNotes` - the seam the computer keyboard and
+          hardware MIDI already use - so recording came for free: arm, record,
+          play the pads, and the take lands as a clip. That is the point of the
+          whole ticket, and it is covered end to end in `mobile-shell.e2e.ts`.
+
+
+          Fixed on the way past, because the pads' key menu is the worst case
+          for it: `Menu` submenus opened level with their own row and ran off
+          the bottom of a phone, so most of a twelve-row list was under the
+          fold. They now measure on open, slide up to fit, scroll if taller than
+          the viewport, and no longer close on a scroll that started inside the
+          popover.
+
+
+          Left for a follow-up: the clip rail as the second section,
+          `EditorSection` gaining a second consumer (the device rack is the
+          likely third), and MOBILE-11, which the pads exposed - count-in is a
+          surface away from the record button it governs.
+
+
           Note the drawer component is worth extracting properly - the device
-          rack will likely want one too.
+          rack will likely want one too. *(Done: `ui/shell/EditorSection.tsx`.)*
         id: 019fb8bf-839d-75ab-bdf2-caf8358426c2
         created_at: 2026-07-31T15:16:26.653Z
-        updated_at: 2026-07-31T15:16:26.653Z
+        updated_at: 2026-08-05T00:16:22.589Z
       - ref: MOBILE-7
         area: MOBILE
         title: "Touch editing: select, then handles and a kebab"
@@ -8062,3 +8127,59 @@ projects:
         id: 019fcf0a-d942-71ef-8a6b-fd508694a8b7
         created_at: 2026-08-04T23:10:22.531Z
         updated_at: 2026-08-04T23:10:22.531Z
+      - ref: MOBILE-11
+        area: MOBILE
+        title: Project settings are unreachable while the sheet is up
+        status: to-do
+        sort_path: "000011"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          Reported 2026-08-05, testing the pads on a phone: **count-in and
+          groove are missing from the shell's ⋮** unless you first park the
+          sheet.
+
+
+          The cause is `isActiveSurface` doing exactly what it was built to do.
+          The shell's ⋮ shows the *active surface's* controls above the
+          project's, and the arrangement only owns it while the sheet is parked
+          (MOBILE-5). Count-in, Groove and Groove amount live in
+          `ArrangementTimeline`'s `compactControls`, so they leave with it - and
+          the sheet now opens at Half, so the default state of the app is the
+          one where they are gone.
+
+
+          **They are misfiled, not mis-shown.** Count-in and groove are
+          properties of the *project*, not of the arrangement surface: they read
+          and write project state, they change what recording and playback do
+          everywhere, and nothing about them is about the lane you are looking
+          at. Tempo, meter and the metronome are already in `MobileShell`'s
+          `projectItems` for precisely that reason, and count-in sitting a
+          surface away from the record button it governs is the sharpest version
+          of the problem - the pads made recording a phone-first thing to do,
+          and the setting that makes a take usable is two gestures and a mental
+          model away.
+
+
+          The fix is to move them into the shell's project group and out of the
+          timeline's compact controls, leaving the timeline's own list to snap,
+          zoom and add-track - things that really are about that surface.
+          Desktop keeps them in the timeline toolbar either way, so this is a
+          `compact` split rather than a move.
+
+
+          Worth checking while there: whether anything else in `compactControls`
+          is project-level and quietly hiding behind the same rule.
+
+
+          Also seen and **already fixed** in the pads branch, recorded here so
+          it is not re-diagnosed: submenus opened level with their own row and
+          ran off the bottom of a phone, so most of a twelve-row list (the keys,
+          the tempos) was under the fold. `Menu` now measures the flyout on open
+          and slides it up to fit, scrolling if it is taller than the viewport,
+          and no longer closes itself on a scroll that started inside the
+          popover.
+        id: 019fcf46-101e-7729-afa9-57e4258701ed
+        created_at: 2026-08-05T00:15:03.198Z
+        updated_at: 2026-08-05T00:15:03.198Z

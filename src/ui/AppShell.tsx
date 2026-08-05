@@ -358,6 +358,7 @@ export function AppShell() {
     editLog,
     versionStore,
     dispatch,
+    liveNotes,
     selectedTrack,
     isPlaying,
     started,

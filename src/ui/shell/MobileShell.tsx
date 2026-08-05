@@ -29,10 +29,15 @@
  * The top bar keeps only what you reach for mid-idea - record, play, undo, redo - and
  * everything else is behind ⋮, above the project's tempo, meter and metronome.
  *
- * Deliberately not here yet: pinch-zoom and long-press menus (MOBILE-2), clips and pads as
- * sections under the roll (MOBILE-6), and the select-then-handles editing model (MOBILE-7).
+ * Under the roll sit collapsible sections (MOBILE-6). The pads are the first, and they are
+ * what makes a phone able to *play* rather than only arrange - and so what makes it able to
+ * record, since they go out through the same `LiveNotes` seam a MIDI keyboard does.
+ *
+ * Deliberately not here yet: pinch-zoom and long-press menus (MOBILE-2), the clip rail as
+ * the second section (it is still the Clips segment above), and the select-then-handles
+ * editing model (MOBILE-7).
  */
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LibraryPanel } from "../LibraryPanel";
 import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
@@ -45,14 +50,16 @@ import { RAIL_ITEMS } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
 import { TrackRecordButton } from "../workbench/TrackRecordButton";
+import { NotePads } from "../pads/NotePads";
 import { useProject } from "../../audio/project/useProject";
 import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean } from "../usePersistent";
+import { useElementHeight } from "../useElementHeight";
 import { TIME_SIGNATURE_DENOMINATORS, TIME_SIGNATURE_NUMERATOR_RANGE } from "../../audio/project/schema";
 import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
 import { detentsFor, type Detent } from "./detents";
-import { EditorSheet } from "./EditorSheet";
+import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
 import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
@@ -263,6 +270,7 @@ export function MobileShell({
   editLog,
   versionStore,
   dispatch,
+  liveNotes,
   selectedTrack,
   isPlaying,
   started,
@@ -371,6 +379,16 @@ export function MobileShell({
   const docked = shape.tier === "tablet" && !shape.short;
 
   const detents = detentsFor(shape);
+  /**
+   * How much editor there is at the committed detent, for the pads to size themselves
+   * against (MOBILE-6). **Derived from the workspace, not measured on the sheet**: the
+   * workspace is a stable box, where a sheet mid-throw is held at full height and
+   * translated, so measuring that would add a pad row during the gesture and take it back
+   * on settle - the same trap the roll's re-centring fell into.
+   */
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceHeight = useElementHeight(workspaceRef);
+  const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT);
   // The arrangement hands the ⋮ over once the sheet is up: both are mounted now, so
   // "compact" alone would have them both publishing and the later mount silently winning.
   const sheetIsUp = Boolean(selectedTrack) && detent !== "peek";
@@ -379,15 +397,32 @@ export function MobileShell({
   // one in SURFACE_ITEMS, and a missing case is a type error.
   const surfacesFor = (track: Track): Record<EditorSurface, ReactNode> => ({
     edit: (
-      <TrackEditor
-        track={track}
-        scheduler={scheduler}
-        recorder={recorder}
-        dispatch={dispatch}
-        projectStore={projectStore}
-        compact
-        isActiveSurface={sheetIsUp}
-      />
+      <div className="flex-1 min-h-0 flex flex-col">
+        <TrackEditor
+          track={track}
+          scheduler={scheduler}
+          recorder={recorder}
+          dispatch={dispatch}
+          projectStore={projectStore}
+          compact
+          isActiveSurface={sheetIsUp}
+        />
+        {/* The pads go under the roll, not beside it and not in the surface switch: you
+            play a phrase and watch it land above without changing what you are looking at.
+            The roll is the flexible box, so opening the pads takes exactly their height
+            from it and nothing else moves (MOBILE-6). */}
+        {track.kind === "instrument" && (
+          <NotePads
+            track={track}
+            samples={project.samples}
+            notes={liveNotes}
+            // A tablet has the width for two octaves in a row; a phone does not, and below
+            // ~44px per pad the layout is wrong rather than merely tight.
+            octavesPerRow={shape.tier === "tablet" ? 2 : 1}
+            room={editorRoom}
+          />
+        )}
+      </div>
     ),
     clips: (
       <div className="flex-1 min-h-0 flex flex-col">
@@ -583,7 +618,7 @@ export function MobileShell({
         {/* `relative` because the sheet is absolutely positioned against this column,
             not the shell: on a tablet it must not run under a docked library or agent,
             which own their full height. On a phone the column is the whole width anyway. */}
-        <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <div ref={workspaceRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <div
             className="min-h-0 flex flex-col"
             // The band above the sheet, so the timeline's own horizontal scroller stays on
