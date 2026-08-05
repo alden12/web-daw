@@ -172,6 +172,7 @@ export function LibraryPanel({
   search,
   onSearch,
   onOpenShare,
+  onPick,
 }: {
   projectStore: ProjectStore;
   editLog: EditLog;
@@ -181,6 +182,8 @@ export function LibraryPanel({
   search: string;
   onSearch: (query: string) => void;
   onOpenShare: (projectId: string, projectName: string) => void;
+  /** Something was taken from the library. Set where the panel is covering what it changes. */
+  onPick?: () => void;
 }) {
   const project = useProject(projectStore);
   const [patches, setPatches] = useState<Patch[]>(() => listPatches());
@@ -219,11 +222,22 @@ export function LibraryPanel({
       })),
     });
 
-  // Acting on a search result clears the query, which returns to the view that was
-  // open before searching (or stays on Search if it was opened directly - see AppShell).
-  const pickResult = (act: () => void) => {
+  /**
+   * Picking something out of the library: do it, then get out of the way.
+   *
+   * Clearing the query returns from the search results to the view that was open before
+   * searching (or stays on Search if it was opened directly - see AppShell), and is a no-op
+   * anywhere else, since a query is what puts you in the results view in the first place.
+   *
+   * `onPick` is the phone's half: the library covers the whole screen there, so swapping an
+   * instrument or adding a device changes something you cannot see, and the sheet has to
+   * close for anything to have visibly happened. Library *management* - deleting a patch,
+   * removing a sample - is not a pick and stays put.
+   */
+  const picked = (act: () => void) => {
     act();
     onSearch("");
+    onPick?.();
   };
 
   const addInstrument = (type: string) => dispatch({ type: "createTrack", instrumentType: type, id: newTrackId() });
@@ -342,7 +356,7 @@ export function LibraryPanel({
                 <button
                   key={track.id}
                   type="button"
-                  onClick={() => pickResult(() => projectStore.selectTrack(track.id))}
+                  onClick={() => picked(() => projectStore.selectTrack(track.id))}
                   title={`Select "${track.name}"`}
                   className="flex items-center gap-2.5 w-full text-left px-3.5 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-you/10"
                 >
@@ -366,7 +380,7 @@ export function LibraryPanel({
             <>
               <SectionLabel>Instruments</SectionLabel>
               {instruments.map((def) => (
-                <Leaf key={def.type} label={def.label} onClick={() => pickResult(() => applyInstrument(def.type))} />
+                <Leaf key={def.type} label={def.label} onClick={() => picked(() => applyInstrument(def.type))} />
               ))}
             </>
           )}
@@ -379,7 +393,7 @@ export function LibraryPanel({
                   label={def.label}
                   fx
                   tag="MIDI"
-                  onClick={() => pickResult(() => addMidiDevice(def.type))}
+                  onClick={() => picked(() => addMidiDevice(def.type))}
                 />
               ))}
               {effects.map((def) => (
@@ -388,7 +402,7 @@ export function LibraryPanel({
                   label={def.label}
                   fx
                   tag="Audio"
-                  onClick={() => pickResult(() => addEffect(def.type))}
+                  onClick={() => picked(() => addEffect(def.type))}
                 />
               ))}
             </>
@@ -400,8 +414,8 @@ export function LibraryPanel({
                 <PatchLeaf
                   key={patch.id}
                   patch={patch}
-                  onApply={() => pickResult(() => applyPatchHere(patch))}
-                  onNew={() => pickResult(() => addFromPatch(patch))}
+                  onApply={() => picked(() => applyPatchHere(patch))}
+                  onNew={() => picked(() => addFromPatch(patch))}
                   onDelete={patch.builtin ? undefined : () => removePatch(patch.id)}
                 />
               ))}
@@ -414,7 +428,7 @@ export function LibraryPanel({
                 <SampleLeaf
                   key={sample.id}
                   name={sample.name}
-                  onAdd={() => pickResult(() => addSamplerTrack(sample.id))}
+                  onAdd={() => picked(() => addSamplerTrack(sample.id))}
                   onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
                 />
               ))}
@@ -455,7 +469,7 @@ export function LibraryPanel({
                 )}
                 <button
                   type="button"
-                  onClick={() => applyInstrument(def.type)}
+                  onClick={() => picked(() => applyInstrument(def.type))}
                   title={`Set the selected track to ${def.label}`}
                   className="flex items-center gap-2.5 flex-1 min-w-0 text-left pr-2 py-1.5 text-[12.5px] text-ink cursor-pointer"
                 >
@@ -465,7 +479,7 @@ export function LibraryPanel({
                     <span className="ml-auto shrink-0 font-mono text-[9px] text-faint">{defPatches.length}</span>
                   )}
                 </button>
-                <AddButton label={`Add a ${def.label} track`} onClick={() => addInstrument(def.type)} />
+                <AddButton label={`Add a ${def.label} track`} onClick={() => picked(() => addInstrument(def.type))} />
               </div>
               {expanded &&
                 defPatches.map((patch) => (
@@ -473,8 +487,8 @@ export function LibraryPanel({
                     key={patch.id}
                     patch={patch}
                     indent
-                    onApply={() => applyPatchHere(patch)}
-                    onNew={() => addFromPatch(patch)}
+                    onApply={() => picked(() => applyPatchHere(patch))}
+                    onNew={() => picked(() => addFromPatch(patch))}
                     onDelete={patch.builtin ? undefined : () => removePatch(patch.id)}
                   />
                 ))}
@@ -489,10 +503,10 @@ export function LibraryPanel({
             "insert something on the selected track" and go in the same workbench strip. The
             right-side tag says which kind each is. */}
         {midiDeviceInfos().map((def) => (
-          <Leaf key={def.type} label={def.label} fx tag="MIDI" onClick={() => addMidiDevice(def.type)} />
+          <Leaf key={def.type} label={def.label} fx tag="MIDI" onClick={() => picked(() => addMidiDevice(def.type))} />
         ))}
         {effectInfos().map((def) => (
-          <Leaf key={def.type} label={def.label} fx tag="Audio" onClick={() => addEffect(def.type)} />
+          <Leaf key={def.type} label={def.label} fx tag="Audio" onClick={() => picked(() => addEffect(def.type))} />
         ))}
       </div>
     ),
@@ -506,8 +520,8 @@ export function LibraryPanel({
               <PatchLeaf
                 key={patch.id}
                 patch={patch}
-                onApply={() => applyPatchHere(patch)}
-                onNew={() => addFromPatch(patch)}
+                onApply={() => picked(() => applyPatchHere(patch))}
+                onNew={() => picked(() => addFromPatch(patch))}
               />
             ))}
           </div>
@@ -520,8 +534,8 @@ export function LibraryPanel({
             <PatchLeaf
               key={patch.id}
               patch={patch}
-              onApply={() => applyPatchHere(patch)}
-              onNew={() => addFromPatch(patch)}
+              onApply={() => picked(() => applyPatchHere(patch))}
+              onNew={() => picked(() => addFromPatch(patch))}
               onDelete={() => removePatch(patch.id)}
             />
           ))
@@ -558,7 +572,7 @@ export function LibraryPanel({
             <SampleLeaf
               key={sample.id}
               name={sample.name}
-              onAdd={() => addSamplerTrack(sample.id)}
+              onAdd={() => picked(() => addSamplerTrack(sample.id))}
               onRemove={() => dispatch({ type: "removeSample", id: sample.id })}
             />
           ))
