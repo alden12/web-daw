@@ -7802,6 +7802,39 @@ projects:
           are playing along to.
 
 
+          **Slide between pads, decided by an axis lock** (2026-08-05). The
+          bullet above asked for slide-to-glissando and the first version
+          deliberately refused it: every pad captured its pointer, so a finger
+          that wandered kept sounding the note it started on. The reason it is
+          not free is that the two gestures collide *by geometry* - the pad
+          below a pad is another pad, so "dragged down 34px to latch" and "slid
+          onto the neighbour" are the same event stream. The first 8px of travel
+          therefore picks the axis and holds it for the rest of that press, the
+          way a scroller does. A slide is horizontal only, which is the shape of
+          a glissando anyway, and the sustain drag is four times the lock
+          distance so it has room to declare itself.
+
+
+          Capture is also why the slide has to hit-test for itself
+          (`elementFromPoint`): the events keep arriving at the pad the finger
+          started on, so the target says where the gesture *began*, never where
+          the finger is. Crossing releases the note it left unless another
+          finger is also on it - a two-handed glissando crosses, and the
+          crossing must not silence the note the other hand is holding - and a
+          finger over no pad holds its note rather than cutting out, so sliding
+          through the gap above an accidental is a slide and not a lift.
+
+
+          **The pads sit under every surface, not inside Edit** (2026-08-05).
+          They were a child of the roll's surface, so switching to Rack or Clips
+          took away the way to play. Playing while you turn a filter is as much
+          the point as playing while you edit notes, and having to leave the
+          rack to hear what you just changed is exactly what a section rather
+          than a fourth tab was for. They render at the foot of the sheet now,
+          under whichever surface is showing; `PADS_SHARE` divides the sheet
+          with that surface rather than specifically with the roll.
+
+
           **A kit gets its own pads.** A drum kit has no key, so the scale
           layout would be a lie told in note names - intervals of a tonic over a
           General MIDI map where 36 is a kick. Kit tracks get a grid of their
@@ -7833,14 +7866,17 @@ projects:
           Left for a follow-up: the clip rail as the second section,
           `EditorSection` gaining a second consumer (the device rack is the
           likely third), and MOBILE-11, which the pads exposed - count-in is a
-          surface away from the record button it governs.
+          surface away from the record button it governs. What the pads should
+          learn next is its own set of tickets: MOBILE-12 (chords mode),
+          MOBILE-13 (light up with what the track is playing), MOBILE-14
+          (velocity you can play), MOBILE-15 (drag up to bend).
 
 
           Note the drawer component is worth extracting properly - the device
           rack will likely want one too. *(Done: `ui/shell/EditorSection.tsx`.)*
         id: 019fb8bf-839d-75ab-bdf2-caf8358426c2
         created_at: 2026-07-31T15:16:26.653Z
-        updated_at: 2026-08-05T15:30:01.849Z
+        updated_at: 2026-08-05T16:11:39.340Z
       - ref: MOBILE-7
         area: MOBILE
         title: "Touch editing: select, then handles and a kebab"
@@ -8221,3 +8257,213 @@ projects:
         id: 019fcf46-101e-7729-afa9-57e4258701ed
         created_at: 2026-08-05T00:15:03.198Z
         updated_at: 2026-08-05T15:04:11.678Z
+      - ref: MOBILE-12
+        area: MOBILE
+        title: "Chords mode: the pads play the key, not just the notes"
+        status: to-do
+        sort_path: "000012"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          A toggle on the scale pads that turns each in-scale pad from a note
+          into its **diatonic chord**, so a phone can lay down a progression
+          with seven pads instead of asking for three fingers on 52px targets.
+          In C major: I ii iii IV V vi vii°, labelled by degree exactly as the
+          note pads are labelled by interval.
+
+
+          This is the layout's own idea taken one step further, not a new
+          surface. The pads are already "a scale, drawn from its interval
+          pattern"; a chord is the same pattern read three notes at a time, so
+          `scales.ts` gains a `triadAt(tonic, scale, degree)` and the geometry
+          does not move at all.
+
+
+          **The accidental band above becomes the variations**, which is what it
+          is already shaped for: the notes you reach *for*. Per degree, the
+          slots above it offer 7th / 9th / sus4 / sus2 rather than chromatic
+          notes. That keeps the "everything is one flick away" feel - you play
+          the triad on the beat and reach up for the colour - and it keeps the
+          two modes visually the same instrument.
+
+
+          Open questions worth prototyping rather than deciding on paper:
+
+
+          - **Voicing.** Root position throughout makes a progression leap
+          around and sound like a keyboard demo. Voice-leading each chord to the
+          nearest inversion of the previous one is what makes it sound played,
+          and it is a small pure function over the previous chord - but it means
+          the pad's *sound* depends on what came before, which is a surprise the
+          labels cannot show. Try both.
+
+          - **Whether the variations are momentary or sticky.** Holding the 7th
+          while pressing the degree is the guitarist's answer; tapping it to arm
+          the next chord is the phone's. The second is easier to play
+          one-handed, which is the whole reason for the mode.
+
+          - Chords land in a clip as their notes, so nothing about recording or
+          the note model changes. Whether the clip should *remember* that a
+          chord was played (for later re-voicing) is a real question, and the
+          answer is probably no until there is a project key (see the note in
+          `padSettings.ts`).
+
+
+          Most musical value of the pad follow-ups and the most self-contained:
+          pure maths plus labels, no engine change, no new seam.
+        id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
+        created_at: 2026-08-05T16:10:13.045Z
+        updated_at: 2026-08-05T16:10:13.045Z
+      - ref: MOBILE-13
+        area: MOBILE
+        title: The pads light up with what the track is actually playing
+        status: to-do
+        sort_path: "000013"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          Right now a pad lights only when a finger is on it: `usePadTouch` owns
+          the sounding set, so it knows about *your* notes and nothing else. A
+          clip playing back, an arpeggiator running, the octavator doubling a
+          note - none of it shows. Make the pads a display of the track as well
+          as an input to it, and the section becomes something you can play
+          *along with*, and learn a part from.
+
+
+          **Tap the end of the chain, not the start.** The seam is `NoteTarget`
+          (`midi/device/GraphMidiDevice.ts`): the engine hands out the head of
+          the track's MIDI device chain, and a monitor placed at the *end* of it
+          sees what the instrument actually receives - the arpeggiator's notes
+          rather than the one that triggered them, the octavator's doubling
+          rather than the single note played. That is the version worth showing;
+          tapping the head would just be an echo of the finger already lighting
+          the pad.
+
+
+          - The pads then take two sources for "sounding" - the local presses
+          and the observed stream - and it is a union, not a replacement. Keep
+          them distinguishable in the rendering (a finger's note is a press, the
+          track's is an indication).
+
+          - **Rate.** A 16th-note arp at 140bpm is ~9 events/sec and a chord
+          multiplies it. Accumulate into a ref and publish on a rAF, the same
+          discipline `useSheetDrag` uses; a `setState` per note-on would
+          re-render the sheet at the arp's rate.
+
+          - Notes outside the shown octaves have nowhere to light. Say so
+          quietly (an edge marker on the row) rather than silently dropping them
+          - "why is nothing lighting" is otherwise a bug report.
+
+          - Kit pads get it for free and it may matter more there: a drum
+          pattern playing back across the pads is legible in a way a piano roll
+          of a kit is not.
+
+
+          Useful beyond mobile: the same monitor is what a desktop keyboard
+          display or a MIDI-activity indicator would want, so put it in
+          `audio/`, not in `ui/pads/`.
+        id: 019fd2b0-c5e5-7639-ac7d-216a77f8a4b4
+        created_at: 2026-08-05T16:10:28.197Z
+        updated_at: 2026-08-05T16:10:28.197Z
+      - ref: MOBILE-14
+        area: MOBILE
+        title: Velocity you can play, not just edit
+        status: to-do
+        sort_path: "000014"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          `PAD_VELOCITY` is one honest constant (0.85) because a touchscreen has
+          no force to read - `PointerEvent.pressure` is 0 or a flat 0.5 on every
+          device tried. That makes everything played on a phone perfectly even,
+          which is fine for laying down a part and wrong for playing one.
+
+
+          **A velocity control a second finger can hold**, beside the pads, read
+          at note-on. The pads are already multi-touch, so a thumb on the
+          control while the fingers play needs no new gesture machinery - it
+          needs the value to live in a ref that `noteOn` reads, not in state, so
+          moving it never re-renders the pads mid-phrase.
+
+
+          - It sets the velocity of the *next* note, not the sounding ones.
+          Changing a note's velocity after note-on is aftertouch, which is a
+          different feature and a different message; do not quietly conflate
+          them.
+
+          - **A vertical strip down the side of the pads** is the shape that
+          lets a thumb ride it, and it costs width rather than the height the
+          pads are always short of. A slider in the controls row is cheaper but
+          is a reach away from where the playing hand is.
+
+          - Worth trying before building the strip: **velocity from where on the
+          pad you press**, MPC-style. It is free in interaction terms, but the
+          pads are 52px tall and the vertical axis already carries the sustain
+          drag and (per MOBILE-14) the bend, so the axis is crowded. Probably
+          the reason the strip wins.
+
+          - Whichever wins, the recorded take gets real velocities and the
+          roll's velocity lane finally has something to show that was not typed
+          in.
+
+
+          Small in code, and the smallest of the pad follow-ups; the design
+          question (where a thumb can actually reach while playing) is the whole
+          of it.
+        id: 019fd2b0-f5fc-7774-9b45-e266f372e3c7
+        created_at: 2026-08-05T16:10:40.508Z
+        updated_at: 2026-08-05T16:10:40.508Z
+      - ref: MOBILE-15
+        area: MOBILE
+        title: Drag up to bend, like pushing a string
+        status: to-do
+        sort_path: "000015"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          The pads' vertical axis already means something downward (drag down
+          past 34px and the note latches) and nothing upward, and the axis lock
+          added with slide gives a clean place to put it: **down latches, up
+          bends**, the same finger, decided by direction. Pushing a note up like
+          a string is the one expressive gesture a touchscreen is genuinely
+          *good* at, and the pads currently have none.
+
+
+          **The blocker is that instruments cannot bend.** `Instrument` is
+          `noteOn` / `noteOff` / `playNote` / `allNotesOff`, and there is no
+          pitch on a sounding voice to move. The shape of the fix is small and
+          general:
+
+
+          - `Instrument.pitchBend(semitones, when?)`, implemented once in
+          `BaseInstrument` by ramping every live voice's sources' `detune`.
+          Oscillators and `AudioBufferSourceNode` both have `detune`, so the
+          synths and the sampler are all covered by the base and no instrument
+          needs its own version.
+
+          - Per-track and monophonic-in-spirit (bend moves everything sounding
+          on that track), as MIDI channel bend is. Per-voice bend is MPE and is
+          a much larger design.
+
+          - Range is a setting with a sane default of 2 semitones, because that
+          is what a guitar bend and every synth's default agree on.
+
+
+          **It is live-only expression to start with, and that has to be said
+          out loud**: the note model has no bend, so a bent note records as its
+          unbent self. Making it record means a per-note or per-clip automation
+          lane, which is a real feature (and overlaps whatever automation lands
+          generally) rather than a follow-on to this. Ship the feel first; do
+          not let the recording question hold the gesture hostage, and do not
+          pretend the take captured it.
+
+
+          Largest of the pad follow-ups, and the only one that reaches into the
+          audio engine.
+        id: 019fd2b1-2f06-77d4-9f51-26a706a0a533
+        created_at: 2026-08-05T16:10:55.110Z
+        updated_at: 2026-08-05T16:10:55.110Z
