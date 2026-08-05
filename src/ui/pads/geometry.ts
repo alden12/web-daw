@@ -4,7 +4,9 @@
  * **The octave count is a function of the space, not a constant.** A phone in landscape
  * leaves the sheet under 200px and can only really hold one row; a tablet in portrait can
  * hold four. Picking a number for "the mobile limit" would be wrong at both ends, so the
- * limit is computed from the room the editor actually has at the committed detent.
+ * limit is computed from the room the editor actually has at the committed detent - and
+ * from a *share* of it, so the roll the pads sit under grows with the sheet too
+ * (`PADS_SHARE`).
  *
  * Pure, so the fitting is unit-testable without a browser: the numbers below are the pad
  * layout's own, and `fitPads` is the only place they are turned into a decision.
@@ -30,20 +32,30 @@ export const PADS_PADDING = 8;
 export const EDITOR_CHROME = 52;
 
 /**
- * A few rows of notes kept for the roll before the pads may claim the rest. Only a reserve
- * for the *limit* - what is actually on show is the stored octave count, which starts at one
- * - so it decides when `+` stops, not how much room the pads take by default.
+ * How the pads and the roll divide the editor between them: the pads may take this share of
+ * it, and the roll keeps the rest.
+ *
+ * **A share rather than a fixed reserve, and that is the whole of it.** Keeping a flat 40px
+ * for the roll meant the pads absorbed everything a taller sheet gave you: throwing it from
+ * Half to Full grew the pads and left the roll the same unreadable sliver, so the sheet's
+ * range bought pads and nothing else. Dividing the room makes both grow together, and
+ * dropping back to Half gives rows back before it gives back notes. You raise the sheet to
+ * see more of what you are editing; more pads is what comes with it.
+ *
+ * It bounds the *limit*, not the default - what is on show is the stored octave count, which
+ * starts at one - so it decides where `+` stops.
  */
-export const ROLL_RESERVE = 40;
-
-/** The most rows worth showing: four, which is four octaves on a phone and eight on a tablet. */
-export const MAX_PAD_ROWS = 4;
+export const PADS_SHARE = 0.65;
 
 export interface PadFit {
   /**
    * Rows of pads that fit. **Zero is a real answer** - a landscape phone at Half has under
    * 140px of editor, which is not one row plus the controls to drive it however the numbers
    * are shuffled. The section then says so, rather than showing half a pad.
+   *
+   * There is no constant ceiling: the room says how many rows there is space for and the
+   * pitch range (`OCTAVE_RANGE`, applied in `padSettings`) says how many there are notes
+   * for, and between them nothing arbitrary is left to pick.
    */
   rows: number;
   /**
@@ -54,26 +66,41 @@ export interface PadFit {
   inlineControls: boolean;
 }
 
+/**
+ * What the fitting will give up, in the order it is willing to give it up, to fit a row at
+ * all. The first arrangement that fits one wins.
+ *
+ * The controls' own row goes first: folded into the section header they cost a little width,
+ * where the roll's share costs the thing you are playing along to. Handing that share over
+ * is the last resort, and it buys a single row - it is there so a landscape phone can be
+ * played at all, not so any short editor fills itself with pads.
+ */
+const ARRANGEMENTS: readonly { inlineControls: boolean; padsShare: number; limit: number }[] = [
+  { inlineControls: false, padsShare: PADS_SHARE, limit: Infinity },
+  { inlineControls: true, padsShare: PADS_SHARE, limit: Infinity },
+  { inlineControls: true, padsShare: 1, limit: 1 },
+];
+
 /** How tall one row of pads is, accidentals included when they are on. */
 export const padRowHeight = (accidentals: boolean) => PAD_HEIGHT + (accidentals ? ACCIDENTAL_HEIGHT : 0) + ROW_GAP;
 
 /**
  * What fits in `room` pixels of editor - the sheet's content box at the committed detent.
  *
- * Two passes, in preference order: controls in a row of their own with the roll's reserve
- * intact, then controls folded into the header with the reserve given up. The second pass is
- * how landscape gets a playable row at all, and it is only ever reached where the first
- * cannot fit a single one.
+ * `EDITOR_CHROME` comes off the top because it belongs to neither surface; what is left is
+ * what the pads and the roll divide, and every arrangement divides the same number.
  */
 export function fitPads(room: number, accidentals: boolean): PadFit {
   const rowHeight = padRowHeight(accidentals);
-  const rowsWithin = (chrome: number, reserve: number) =>
-    Math.floor((room - EDITOR_CHROME - reserve - chrome) / rowHeight);
-
-  const stacked = rowsWithin(SECTION_HEADER + CONTROLS_HEIGHT + PADS_PADDING, ROLL_RESERVE);
-  if (stacked >= 1) return { rows: Math.min(stacked, MAX_PAD_ROWS), inlineControls: false };
-  return {
-    rows: Math.max(0, Math.min(rowsWithin(SECTION_HEADER + PADS_PADDING, 0), MAX_PAD_ROWS)),
-    inlineControls: true,
-  };
+  const editor = Math.max(0, room - EDITOR_CHROME);
+  const fits = ARRANGEMENTS.map(({ inlineControls, padsShare, limit }) => {
+    const chrome = SECTION_HEADER + PADS_PADDING + (inlineControls ? 0 : CONTROLS_HEIGHT);
+    return {
+      rows: Math.max(0, Math.min(limit, Math.floor((editor * padsShare - chrome) / rowHeight))),
+      inlineControls,
+    };
+  });
+  // Nothing fits anywhere: the last arrangement is the one that gave up the most, so its
+  // zero is the honest answer and its `inlineControls` the one the empty section renders.
+  return fits.find((fit) => fit.rows >= 1) ?? fits[fits.length - 1];
 }

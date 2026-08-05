@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACCIDENTAL_HEIGHT,
   EDITOR_CHROME,
-  MAX_PAD_ROWS,
+  PADS_SHARE,
   PAD_HEIGHT,
   ROW_GAP,
   fitPads,
@@ -16,10 +16,19 @@ import {
  */
 const ROOM = {
   phoneHalf: 372,
-  phoneFull: 666,
+  phoneFull: 619,
   landscapeHalf: 133,
   landscapeFull: 251,
+  tabletHalf: 295,
+  tabletFull: 568,
   tabletPortraitFull: 815,
+};
+
+/** What the roll is left with, which is the number the fitting is really about. */
+const rollHeight = (room: number, accidentals: boolean) => {
+  const fit = fitPads(room, accidentals);
+  const chrome = 36 + 8 + (fit.inlineControls ? 0 : 38);
+  return room - EDITOR_CHROME - chrome - fit.rows * padRowHeight(accidentals);
 };
 
 describe("padRowHeight", () => {
@@ -55,9 +64,28 @@ describe("fitPads", () => {
     });
   });
 
-  it("caps at four rows however much room there is", () => {
-    expect(fitPads(5000, true).rows).toBe(MAX_PAD_ROWS);
-    expect(fitPads(ROOM.tabletPortraitFull, true).rows).toBe(MAX_PAD_ROWS);
+  it("gives the roll more room as the sheet grows, not just the pads", () => {
+    // The bug this replaced: a flat 40px reserve meant every pixel a taller sheet added went
+    // to the pads, so Half and Full left the roll the same sliver and raising it showed no
+    // more notes. Both surfaces have to grow, on both shapes.
+    [
+      [ROOM.phoneHalf, ROOM.phoneFull],
+      [ROOM.tabletHalf, ROOM.tabletFull],
+    ].forEach(([half, full]) => {
+      expect(fitPads(full, true).rows).toBeGreaterThan(fitPads(half, true).rows);
+      expect(rollHeight(full, true)).toBeGreaterThan(rollHeight(half, true) + 60);
+    });
+  });
+
+  it("never lets the pads take more than their share", () => {
+    // Except in the last resort, which is a single row on a landscape phone - there the roll
+    // is given up deliberately, and the disclosure hands it back.
+    [ROOM.phoneHalf, ROOM.phoneFull, ROOM.tabletHalf, ROOM.tabletFull, ROOM.tabletPortraitFull, 5000].forEach(
+      (room) => {
+        const editor = room - EDITOR_CHROME;
+        expect(rollHeight(room, true)).toBeGreaterThanOrEqual(editor * (1 - PADS_SHARE) - 1);
+      },
+    );
   });
 
   it("fits more rows with the accidentals off, in the same room", () => {

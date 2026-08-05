@@ -16,9 +16,14 @@
 import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "../usePersistent";
 import { PITCH_CLASSES, SCALE_NAMES, pitchAt, type ScaleName } from "../../audio/theory/scales";
 import { pitchName } from "../noteNames";
-import { MAX_PAD_ROWS } from "./geometry";
 
-/** The lowest and highest octave the range may sit in, in the roll's numbering (C4 = 60). */
+/**
+ * The lowest and highest octave the range may sit in, in the roll's numbering (C4 = 60).
+ *
+ * Its span is also the pads' hard ceiling: `fitPads` says how many rows there is *room* for,
+ * and this says how many there are *notes* for. Between the two there is no arbitrary "most
+ * rows worth showing" left to pick.
+ */
 export const OCTAVE_RANGE = { min: 0, max: 8 };
 
 export interface PadSettings {
@@ -51,16 +56,16 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     OCTAVE_RANGE.min,
     OCTAVE_RANGE.max,
   );
-  const [storedOctaves, setOctaves] = usePersistentNumber("web-daw:pads-octaves", 1, 1, MAX_PAD_ROWS * 2);
+  const [storedOctaves, setOctaves] = usePersistentNumber("web-daw:pads-octaves", 1, 1, OCTAVE_RANGE.max);
   // On by default: the pads still show the whole chromatic octave, they just show it as a
   // shape. Switching them off gives a row you cannot play a wrong note in, which may yet
   // prove the better default on a phone - that is a question for real use, not for now.
   const [accidentals, setAccidentals] = usePersistentBoolean("web-daw:pads-accidentals", true);
 
-  // What the room allows, which is the real ceiling - see `geometry.ts`. The stored value is
-  // kept as asked for, so throwing the sheet up gives back the rows that did not fit at Half
-  // rather than making you ask for them again.
-  const maxOctaves = maxRows * octavesPerRow;
+  // Both ceilings, in one place: what the room allows (`geometry.ts`) and what the pitch
+  // range holds. The stored value is kept as asked for, so throwing the sheet up gives back
+  // the rows that did not fit at Half rather than making you ask for them again.
+  const maxOctaves = Math.min(maxRows * octavesPerRow, OCTAVE_RANGE.max);
   // Rounded down to whole rows, because `octavesPerRow` changes underneath the stored value
   // when a phone is rotated into the tablet tier: three octaves is one and a half rows there,
   // and half a row is the lopsided thing this control exists to avoid.
@@ -75,7 +80,7 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
 
   const canMove = (direction: -1 | 1) => (direction < 0 ? lowOctave > OCTAVE_RANGE.min : lowOctave < highestLow);
   const canSize = (direction: -1 | 1) =>
-    direction < 0 ? octaves > octavesPerRow : octaves + octavesPerRow <= Math.min(maxOctaves, OCTAVE_RANGE.max);
+    direction < 0 ? octaves > octavesPerRow : octaves + octavesPerRow <= maxOctaves;
 
   return {
     tonic,
