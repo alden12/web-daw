@@ -463,10 +463,19 @@ function readCurrentId(): string {
   return stored || "default";
 }
 
+const currentListeners = new Set<() => void>();
+
 /** Point the app-wide repository at project `id` (rebuilds it over that bundle). */
 export function setCurrentProject(id: string): void {
   if (typeof localStorage !== "undefined") localStorage.setItem(CURRENT_PROJECT_KEY, id);
   current = { id, repo: new ProjectRepository(getProjectStorage().bundle(id), id) };
+  for (const listener of currentListeners) listener();
+}
+
+/** Subscribe to project switches. Returns an unsubscribe fn. */
+export function subscribeCurrentProject(listener: () => void): () => void {
+  currentListeners.add(listener);
+  return () => currentListeners.delete(listener);
 }
 
 /** The id of the project the app is currently working on. */

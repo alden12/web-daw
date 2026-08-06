@@ -57,7 +57,16 @@ async function seedNewProject(deps: ProjectDeps, name: string): Promise<string> 
  * Boot: adopt the current project. If none exist yet, seed one (the already-seeded
  * live store) as the first project; otherwise open the persisted current (or newest).
  */
-export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = getProjectStorage()): Promise<void> {
+export async function initProjects(
+  deps: ProjectDeps,
+  storage: ProjectStorage = getProjectStorage(),
+  /**
+   * The project a link asked for. It wins over the persisted current, but **only if it is
+   * really there**: opening a link to a project you cannot see (signed out, or never shared
+   * with you) must fall back to your own, not seed a local project under someone else's id.
+   */
+  preferId?: string,
+): Promise<void> {
   const ids = (await storage.listProjects()).map((project) => project.id);
   if (ids.length === 0) {
     // Seed the first project under a *stable* id (the persisted current, or "default"),
@@ -68,8 +77,8 @@ export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = 
     await getRepository().setName("Untitled");
     await flush(deps); // persist the live (seeded) project as project one
   } else {
-    const persisted = currentProjectId();
-    setCurrentProject(ids.includes(persisted) ? persisted : ids[0]);
+    const wanted = preferId && ids.includes(preferId) ? preferId : currentProjectId();
+    setCurrentProject(ids.includes(wanted) ? wanted : ids[0]);
     await loadCurrentInto(deps);
   }
   await refreshProjects(storage);

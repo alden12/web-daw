@@ -6345,6 +6345,69 @@ projects:
         id: 019fb3dc-761a-76ab-8e81-017f725ed09d
         created_at: 2026-07-30T16:29:57.658Z
         updated_at: 2026-07-30T16:29:57.658Z
+      - ref: HOST-17
+        area: HOST
+        title: A project has a link
+        status: review
+        sort_path: "000017"
+        priority: 0
+        deps:
+          - HOST-2
+        body: >-
+          Sharing grants access by email (HOST-2), and then there is nothing to
+          send: the URL never mentioned the project, so the only way to tell
+          someone which one you meant was to describe it. Noticed while trying
+          to share one, 2026-08-06.
+
+
+          **Deliberately the smallest thing that works, and knowingly ahead of
+          the design.** How routing and sharing should really work is not
+          decided - link-based access, invite links, a project index, addressing
+          a version or a clip - so this does not build a router or take a
+          position on any of it. The URL is a *reflection* of which project is
+          open, written with `replaceState` and read once at boot. `/p/` is
+          claimed as the prefix so a real route can own the rest of the space
+          later.
+
+
+          - **The id is the identity, the name is decoration**, separated by `~`
+          (a slug can never contain one, so parsing stays unambiguous whatever
+          an id looks like - they are not all the same shape, the first project
+          on a fresh install is `default`). A link survives a rename, and two
+          projects may share a name.
+
+          - **A link's project only wins if it is really there.** Opening a link
+          to a project you cannot see falls back to your own; it must not seed a
+          local project under someone else's id, which is what a naive "adopt
+          the id from the URL" would do on a fresh install.
+
+          - `replaceState`, not `pushState`: opening a project is not navigation
+          here, and a history entry you can go "back" from without the app
+          switching projects would be a lie.
+
+          - Sign-in now returns to the current URL rather than the origin. A
+          project link that has to be signed in for is the main case for a
+          project link, and returning to the origin dropped the project on the
+          way through the provider.
+
+
+          Not here, and each wants the design this deferred: a copy-link
+          affordance (the address bar is the link for now), link-based *access*
+          (a link still only works for someone the project is shared with), and
+          anything else worth addressing.
+
+
+          ## When this is designed properly
+
+
+          The questions it should answer: whether a link grants access or only
+          names a project; whether project ids should be unguessable if they
+          ever do grant access (`p-` + 8 hex is not); what else deserves a URL
+          (a version, a mix, a clip) and therefore what the route shape is; and
+          whether the back button should mean anything.
+        id: 019fd716-70c0-737c-863e-d13aa5ceb908
+        created_at: 2026-08-06T12:39:59.936Z
+        updated_at: 2026-08-06T12:39:59.936Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
