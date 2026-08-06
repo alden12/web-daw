@@ -76,10 +76,17 @@ export function subscribeAuth(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Begin an OAuth sign-in (redirects to the provider, then back to this origin). No-op if auth is off. */
+/**
+ * Begin an OAuth sign-in (redirects to the provider, then back to where we are). No-op if auth
+ * is off.
+ *
+ * Back to the **current URL**, not to the origin: a project link that has to be signed in for is
+ * the whole point of a project link, and returning to the origin would drop the project on the
+ * way through the provider.
+ */
 export async function signInWithProvider(provider: "google" | "github"): Promise<void> {
   if (!supabase) return;
-  await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
+  await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.href } });
 }
 
 /** Sign out (clears the persisted session). No-op if auth is off. */
