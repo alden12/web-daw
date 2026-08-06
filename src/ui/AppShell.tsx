@@ -29,10 +29,10 @@ import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleSt
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
 import { ConflictDialog } from "./ConflictDialog";
-import { getAccessToken } from "../auth/session";
+import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
-import { projectIdFromLocation, syncProjectUrl } from "./projectUrl";
+import { projectIdFromLocation, projectIdFromPath, syncProjectUrl } from "./projectUrl";
 import { EditLog } from "../audio/commands/editLog";
 import { type LibraryView } from "./ActivityRail";
 import { DesktopShell } from "./shell/DesktopShell";
@@ -182,8 +182,12 @@ export function AppShell() {
    *
    * Read **once**, before anything can rewrite it - the sync below runs as soon as the project
    * loads, so a link read any later would be reading what we had just written over it.
+   *
+   * Falling back to the path we left from when signing in: an OAuth round trip returns to the
+   * origin (see `signInWithProvider`), so on that boot the link is in the tab's memory rather
+   * than in the address bar. The sync below then puts it back on screen.
    */
-  const linkedProjectId = useRef(projectIdFromLocation());
+  const linkedProjectId = useRef(projectIdFromLocation() ?? projectIdFromPath(takeAuthReturnPath() ?? ""));
   const openProjectId = useSyncExternalStore(subscribeCurrentProject, currentProjectId);
   useEffect(() => {
     // Not before the library has opened something: until then the id is a placeholder, and

@@ -46,6 +46,33 @@ test("the URL names the open project, and opening that URL opens it again", asyn
   await expect(page).toHaveURL(link);
 });
 
+test("a sign-in round trip comes back to the project it left", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await page.getByRole("button", { name: "Project", exact: true }).click();
+
+  page.once("dialog", (dialog) => void dialog.accept("Deep House Jam"));
+  await projectMenu(page).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  await expect(page).toHaveURL(/\/p\/deep-house-jam~/);
+  const path = new URL(page.url()).pathname;
+
+  // Switch away, so opening the remembered path has to do real work.
+  await projectMenu(page).click();
+  await page.getByRole("menuitem", { name: "New project" }).click();
+  await expect(page).toHaveURL(/\/p\/untitled~/);
+
+  // An OAuth return lands on the bare origin with the path in the tab's memory - `redirectTo`
+  // is the origin, because Supabase silently falls back to its configured Site URL for any
+  // path it has not been told to allow. This is that return, without the provider.
+  await page.addInitScript((remembered) => sessionStorage.setItem("web-daw:auth-return", remembered), path);
+  await page.goto("/");
+  await dismissStart(page);
+
+  await expect(page.getByText("Deep House Jam")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${path.replace("~", "\\~")}$`));
+});
+
 test("a link to a project that is not there falls back rather than inventing one", async ({ page }) => {
   // Someone else's project, or one never shared with us. It must not seed a local project
   // under that id - the address bar is rewritten to what actually opened, which is our own.
