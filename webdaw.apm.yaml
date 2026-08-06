@@ -6385,10 +6385,19 @@ projects:
           here, and a history entry you can go "back" from without the app
           switching projects would be a lie.
 
-          - Sign-in now returns to the current URL rather than the origin. A
-          project link that has to be signed in for is the main case for a
-          project link, and returning to the origin dropped the project on the
-          way through the provider.
+
+          **Signing in returns to the origin, and the path is remembered
+          separately** - `sessionStorage`, consumed on the next boot. The
+          obvious version (`redirectTo: window.location.href`) is wrong, and
+          wrong *quietly*: Supabase matches `redirectTo` against its allow-list
+          and falls back to the project's configured **Site URL** when it does
+          not match, so a signed-out localhost tab opening a project link was
+          sent to the deployed site. Found by testing it, 2026-08-06. The same
+          trap was waiting in production - `/p/<project>` would have matched no
+          allow-list entry there either and dropped the project on the way
+          through the provider - so the fix is not "add `/**` to the allow-list"
+          but to stop asking the provider to carry a path at all. The origin is
+          allow-listed by definition: it is how signing in works today.
 
 
           Not here, and each wants the design this deferred: a copy-link
@@ -6407,7 +6416,7 @@ projects:
           whether the back button should mean anything.
         id: 019fd716-70c0-737c-863e-d13aa5ceb908
         created_at: 2026-08-06T12:39:59.936Z
-        updated_at: 2026-08-06T12:39:59.936Z
+        updated_at: 2026-08-06T12:53:40.587Z
       - ref: INST-1
         area: INST
         title: Built-in instruments

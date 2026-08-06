@@ -76,17 +76,38 @@ export function subscribeAuth(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** Where we were when we left for the provider, so the round trip can put us back (HOST-17). */
+const RETURN_PATH_KEY = "web-daw:auth-return";
+
 /**
- * Begin an OAuth sign-in (redirects to the provider, then back to where we are). No-op if auth
+ * The path this tab was on before it left to sign in, consumed on read.
+ *
+ * `sessionStorage`, so it is this tab's and does not outlive the visit, and **the path only** -
+ * carrying the query back would re-inject the provider's own `?code=` on the next boot.
+ */
+export function takeAuthReturnPath(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const path = sessionStorage.getItem(RETURN_PATH_KEY);
+  sessionStorage.removeItem(RETURN_PATH_KEY);
+  return path;
+}
+
+/**
+ * Begin an OAuth sign-in (redirects to the provider, then back to this origin). No-op if auth
  * is off.
  *
- * Back to the **current URL**, not to the origin: a project link that has to be signed in for is
- * the whole point of a project link, and returning to the origin would drop the project on the
- * way through the provider.
+ * **Back to the origin, with the path remembered separately** rather than passed as `redirectTo`.
+ * Supabase matches `redirectTo` against its allow-list and silently falls back to the project's
+ * configured Site URL when it does not match - so asking to return to `/p/<project>` sent a
+ * localhost tab to the deployed site, and would have dropped the project even in production
+ * unless the allow-list carried a `/**` entry for every origin. Remembering the path here needs
+ * no dashboard configuration at all, and the origin is already allow-listed by definition: it is
+ * how signing in works today.
  */
 export async function signInWithProvider(provider: "google" | "github"): Promise<void> {
   if (!supabase) return;
-  await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.href } });
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RETURN_PATH_KEY, window.location.pathname);
+  await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
 }
 
 /** Sign out (clears the persisted session). No-op if auth is off. */
