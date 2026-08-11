@@ -281,11 +281,7 @@ function NumberRow({
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
-        // `[text-align:center]`, not `text-center`: the theme defines a `center` colour, so
-        // `text-center` is *also* a text-colour utility - and it sorts after `text-bright`,
-        // which left the field's digits at #22262f on a #101216 ground. Near-invisible, and
-        // nothing about the class list says so.
-        className="w-14 shrink-0 font-mono text-[12.5px] [text-align:center] px-1 py-1 rounded-md border border-line bg-ground text-bright"
+        className="w-14 shrink-0 font-mono text-[12.5px] text-center px-1 py-1 rounded-md border border-line bg-ground text-bright"
       />
       <button
         type="button"

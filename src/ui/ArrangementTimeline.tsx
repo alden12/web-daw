@@ -548,7 +548,7 @@ export function ArrangementTimeline({
                         dispatch={dispatch}
                       />
                     </div>
-                    <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
+                    <div className={`${ROW} border-b border-line bg-stage/40`} style={{ width: laneWidth }} />
                   </div>
                 ) : (
                   <TrackRow
