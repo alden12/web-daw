@@ -207,7 +207,7 @@ export function AppShell() {
     let disposeCheckpoints = () => {};
     // Best-effort: keep the offline cache + write-queue from being evicted under storage pressure.
     void requestPersistentStorage();
-    void initProjects({ projectStore, editLog, versionStore }, undefined, linkedProjectId.current ?? undefined)
+    void initProjects({ projectStore, editLog, versionStore }, { preferId: linkedProjectId.current })
       .then(() => {
         if (!active) return;
         // With a remote backend, edits ride the live WS channel and the authority persists them (the
