@@ -8890,3 +8890,59 @@ projects:
         id: 019fd2b1-2f06-77d4-9f51-26a706a0a533
         created_at: 2026-08-05T16:10:55.110Z
         updated_at: 2026-08-05T16:10:55.110Z
+      - ref: MOBILE-16
+        area: MOBILE
+        title: Pinned headers are a question about room, not about tier
+        status: review
+        sort_path: "000016"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Reported on a tablet 2026-08-11: the arrangement's track headers stay
+          pinned there and should scroll away with the lanes as they do on a
+          phone, because a tablet does not give the arrangement the whole screen
+          the way a desktop does.
+
+
+          The cause was `stickyHeaders={!isPhone}` in `MobileShell` - a decision
+          about **room** made from **device**. It was right about a phone and
+          wrong about a tablet, which opens with the library docked beside the
+          workspace: 1024px less a 288px column leaves the timeline ~736px, and
+          a 220px pinned header column there is not a header beside an
+          arrangement, it is a header with a sliver next to it. Docking the
+          agent as well leaves 400px, which is narrower than a phone in
+          landscape - the shape the flag was confident it had room for.
+
+
+          **The same lesson as the pads' `fitPads`**, one screen over: tier by
+          what is on screen, not by what the screen is. `pinHeaders(viewportW,
+          headerW)` in `arrangement/shared.ts` pins only while the lane keeps
+          `MIN_PINNED_LANE_W` (560px), read from the timeline's own measured
+          width - so docking a panel changes the answer and undocking changes it
+          back, and dragging the header column wider is also a way to lose the
+          pin.
+
+
+          - The prop is **gone**, not re-tiered. There was one caller passing it
+          and a default of `true` everywhere else; deriving it means the desktop
+          gets the same rule and satisfies it by having the width, so nothing
+          has to be told what it is.
+
+          - **Pixels, not beats.** A threshold in bars would make the headers
+          pin and unpin as you zoom.
+
+          - **Unmeasured counts as wide.** `viewportW` starts at 0 before the
+          ResizeObserver reports, and starting scrolled would show the headers
+          sliding into place on every mount.
+
+
+          Covered by `test/pinHeaders.test.ts` for the shapes (desktop, tablet
+          docked and bare, phone both ways, the column dragged to its maximum,
+          the threshold itself) and `e2e/header-pinning.e2e.ts` for the part
+          that needs a browser: that the width it reads is the *timeline's*, so
+          docking a panel beside the arrangement flips it and undocking flips it
+          back.
+        id: 019ff2fd-7927-7031-8a88-128677a25e40
+        created_at: 2026-08-11T22:42:05.735Z
+        updated_at: 2026-08-11T22:42:05.735Z
