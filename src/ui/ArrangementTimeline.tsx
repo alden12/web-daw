@@ -48,6 +48,7 @@ import {
   DEFAULT_HEADER_W,
   HEADER_MIN,
   HEADER_MAX,
+  pinHeaders,
   RULER_H,
   TRAIL_BEATS,
   ZOOM,
@@ -85,7 +86,6 @@ export function ArrangementTimeline({
   started,
   showTransport = true,
   pinSelectedTrack = false,
-  stickyHeaders = true,
   compact = false,
 }: {
   projectStore: ProjectStore;
@@ -99,13 +99,6 @@ export function ArrangementTimeline({
    * which pins one transport above every view, so this would be a second copy.
    */
   showTransport?: boolean;
-  /**
-   * Whether track/group headers stay pinned to the left edge as the lanes scroll.
-   * False on touch: a pinned header column costs the same absolute pixels on a 390px
-   * phone as on a desktop, where it would leave almost no lane. Letting it scroll away
-   * trades "always know which track" for "actually see the arrangement".
-   */
-  stickyHeaders?: boolean;
   /**
    * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
    * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
@@ -186,6 +179,10 @@ export function ArrangementTimeline({
     ...project.tracks.flatMap((track) => track.placements.map((placement) => placement.startBeat + placement.length)),
     0,
   );
+  // Pinned or scrolling with the lanes, decided by the room this timeline actually has
+  // rather than by which shell is hosting it - see `pinHeaders`. Measured in pixels rather
+  // than beats on purpose: a zoom change must not make the headers pin and unpin.
+  const stickyHeaders = pinHeaders(viewportW, headerW);
   const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
   const viewBeats = Math.max(arrangedEnd + TRAIL_BEATS, Math.ceil(minViewBeats));
   const laneWidth = beatToX(viewBeats, pxPerBeat);

@@ -360,9 +360,6 @@ export function MobileShell({
   // Every mounted workspace's own controls, in menu order (`surfaceControls.ts`).
   const surfaceGroups = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, readSurfaceControls);
 
-  // Phone portrait has no room for a pinned header column in the arrangement; a tablet,
-  // and a phone in landscape at ~844px, does.
-  const isPhone = shape.tier === "phone";
   /**
    * On a tablet the library and agent **dock** beside the workspace instead of sliding
    * over it: there is width for a column, and covering the thing you are editing to pick
@@ -640,7 +637,6 @@ export function MobileShell({
               // One transport is pinned above the workspace, so the timeline must not render
               // a second copy, and its own options move into the shell's ⋮.
               showTransport={false}
-              stickyHeaders={!isPhone}
               compact
               // At Full the arrangement is a sliver, so make it the lane being edited.
               pinSelectedTrack={detent === "full"}
