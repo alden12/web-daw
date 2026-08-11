@@ -3388,101 +3388,209 @@ projects:
         updated_at: 2026-07-31T10:36:25.275Z
       - ref: ARCH-4
         area: ARCH
-        title: Enforce the layering rules with dependency-cruiser
+        title: An architecture diagram generated from the code, and enforced by it
         status: to-do
         sort_path: "000004"
         priority: 0
         body: >-
-          The architectural rules in `CLAUDE.md` are prose, enforced by
-          discipline and by whatever `tsc` happens to catch. Make the
-          load-bearing ones machine-checkable with **dependency-cruiser**, and
-          get an architecture graph out of the same config.
+          **The want:** a human-readable architecture diagram of the whole
+          application, built up organically, used to review changes (where did
+          this slice land, what does it reach) and to see the shape of the app
+          at a glance.
 
 
-          ## Why this one, and not eslint
+          **The fear, and it is the right fear:** a hand-drawn diagram diverges
+          from reality, silently, and a diagram nobody trusts is worse than
+          none. That is what makes the exercise feel infeasible.
 
 
-          Three motivations, and dependency-cruiser is the right tool for two of
-          them:
+          ## The resolution: hand-write the intent, generate the check
 
 
-          - **Cycle detection.** Nothing in the current gate set (`build`,
-          `test`, `test:e2e`, `tsc`, `eslint`) looks for import cycles -
-          TypeScript compiles them happily, and they surface later as an
-          undefined constant at module init. This has already bitten us once:
-          `src/ui/arrangement/shared.ts` exists specifically so the timeline
-          shell and its row/lane parts can agree on geometry "without a circular
-          import". That was solved by hand; nothing stops the next one.
-
-          - **Layering as data, not prose.** A `.dependency-cruiser.js` with
-          `from`/`to` patterns and a `comment` per rule is the same move as the
-          param-schema keystone: the set of rules becomes data, easy to extend
-          and hard to leave unhandled.
-
-          - **The graph.** `--output-type archi` (folder-level) for the
-          at-a-glance view, and `--affected <base-ref>` to see the blast radius
-          of a slice, which suits the stacked-PR workflow.
+          These are not a choice between each other. Write the architecture *as
+          data* - named modules mapped to folder globs, plus the edges allowed
+          between them - and have **dependency-cruiser** verify that description
+          against the real import graph in CI. The diagram is rendered from the
+          same file the gate enforces, so it cannot quietly drift: if the code
+          diverges from the picture, CI goes red *before* the picture becomes a
+          lie.
 
 
-          The alternative considered was `eslint-plugin-boundaries` /
-          `import/no-restricted-paths`, which would do the layering half inside
-          the lint gate we already run with no new dependency. It loses on the
-          other two: `import/no-cycle` is slow, and there is no visualization.
+          Two mechanisms carry this:
 
 
-          ## Rules to start with
+          - `reporterOptions.archi.collapsePattern` defines the named modules -
+          the grouping the high-level graph renders. This is the human-readable
+          layer, hand-authored.
+
+          - An **`allowed` ruleset** (violations reported as `not-in-allowed`)
+          inverts the usual forbid-list into an allow-list: *these* are the
+          edges of the architecture, and anything else is a violation. That is
+          what makes the diagram authoritative rather than illustrative. Confirm
+          the exact semantics in the spike.
 
 
-          Deliberately small. Ratcheting rules, not aspirational ones - all of
-          these hold today (verified by grep), so adopting them needs no
-          cleanup:
+          Anti-drift for the rendered artifact itself: commit the mermaid output
+          and add a `graph:check` script that regenerates and diffs, failing if
+          the committed diagram is stale. Exactly the pattern `format:check`
+          already uses in this repo.
 
 
-          - `no-circular` (error)
+          ## What generation cannot see, and must stay hand-authored
 
-          - `no-orphans` (warn)
 
-          - `src/audio` must not import `src/ui` - currently zero violations
+          A static import graph shows imports. The most architecturally
+          interesting edges in this app are **not** imports:
 
-          - `server/**` must not reach `src/audio/**/registry.ts` or
-          `src/audio/engine/**` - this is the "keep the Node MCP server
-          DOM-free" rule. It is *partly* enforced today by
+
+          - **Browser to Node MCP server** over a WebSocket
+          (`src/audio/mcp/bridge.ts` <-> `server/mcpServer.ts`,
+          `DEFAULT_WS_PORT`). Only the shared protocol types create an import
+          edge; the actual data flow is invisible.
+
+          - **Client to sync service** over a WebSocket (`src/audio/sync` <->
+          `server/api/wsServer.ts` via `src/contract/ws`).
+
+          - **The AudioWorklet boundary.** `src/audio/worklets/index.ts` loads
+          modules via `audioWorklet.addModule(url)` into a separate thread. No
+          import edge, and it is a hard architectural line - the worklets cannot
+          see the main thread at all.
+
+
+          So the diagram is two layers: a generated-and-verified layer for
+          import edges, and a small hand-authored overlay (perhaps six edges)
+          for runtime ones, visually marked as such. That overlay is small
+          enough to stay accurate by inspection.
+
+
+          ## The blocker: the folders have to mean something
+
+
+          A generated graph cannot invent structure that is not in the tree. At
+          folder granularity it is the directory layout with edges drawn on. The
+          asymmetry today:
+
+
+          - **`src/audio`: 23 named subdirectories** (`params/`, `graph/`,
+          `commands/`, `sequencer/`, `sync/`, `theory/`, ...). A folder-level
+          graph of this is legible *today*.
+
+          - **`src/ui`: 48 files flat at the top level** (9,140 lines) plus 5
+          subdirs that arrived later (`arrangement/`, `pads/`, `shell/`,
+          `timeline/`, `workbench/`). Renders as one giant node with an edge to
+          everything; a file-level view is a 48-node hairball.
+
+
+          The names already cluster cleanly, so restructuring is mechanical
+          rather than a redesign: `editors/` (PianoRoll, StepGrid, DrumRoll,
+          Waveform), `devices/` (InstrumentPanel, EffectChain, MidiDeviceChain,
+          DrumkitPanel, SamplePicker, paramSections), `library/`, `agent/`,
+          `history/` (VersionTimeline, ActivityView/Rail, the author-colour
+          trio), `account/` (AccountPanel, SharePanel, AuthGate, ConflictDialog,
+          currentUser), `settings/`, and `controls/` for the genuine primitives
+          (Knob, Menu, InlineRename, ResizeHandle, menuPlacement). Existing
+          `shell/`/`arrangement/`/`pads/`/`workbench/` absorb the rest.
+
+
+          TypeScript makes the moves safe, but it is a large diff that conflicts
+          with every branch in flight - land it when the PR stack is shallow,
+          folder by folder rather than big-bang.
+
+
+          ## The three rules that keep it true
+
+
+          1. **`no-circular`** (error). Load-bearing for *legibility*, not only
+          correctness: once two folders import each other the graph loses
+          direction and becomes a blob. Adoptable today with no cleanup -
+          verified zero violations of the layering rules below, and the one
+          cycle we know of was already solved by hand
+          (`src/ui/arrangement/shared.ts` exists so the timeline shell and its
+          rows can share geometry without one).
+
+          2. **Sibling folders are private.** If siblings deep-import each
+          other's files, the folder graph *lies* about coupling.
+          dependency-cruiser can enforce index-only access between siblings with
+          a regex capture-group reference. Easiest rule to skip, and the one
+          that most determines whether the diagram is honest.
+
+          3. **File size.** dependency-cruiser cannot see line counts; that is
+          eslint's `max-lines` / `max-lines-per-function`, set to warn with
+          current offenders grandfathered so it ratchets rather than demanding a
+          rewrite of `server/mcpServer.ts` (1,887 lines) or `projectStore.ts`
+          (1,494, see ARCH-1) on day one.
+
+
+          Plus the layering rules, all of which hold today (verified by grep, so
+          adopting them is a ratchet, not a cleanup): `src/audio` ✗-> `src/ui`;
+          `src/contract` ✗-> `src/ui`; `server/**` ✗->
+          `src/audio/**/registry.ts` and `src/audio/engine/**` (the "keep the
+          Node MCP server DOM-free" rule - partly enforced today by
           `tsconfig.server.json` omitting the DOM lib, but that fails with a
           confusing error deep in a transitive import rather than naming the
-          boundary that was crossed. `server/mcpServer.ts` legitimately reaches
-          ~15 modules under `src/audio` (the catalogs, `params/validate`,
-          `sequencer/quantize`, `graph/zod`, `mcp/protocol`), so the rule has to
-          name what is *not* allowed rather than allow-list the whole surface.
-
-          - `src/contract` must not import `src/ui`
-
-          - `not-to-dev-dep`
+          boundary crossed). Note `server/mcpServer.ts` legitimately reaches ~15
+          modules under `src/audio`, so the rule must name what is forbidden
+          rather than allow-list the whole surface.
 
 
-          ## Config nuance worth knowing up front
+          ## Honest scope on the review payoff
 
 
-          With `tsPreCompilationDeps` on, **type-only imports are counted as
-          dependencies**. Several are harmless and cross boundaries deliberately
+          A dependency graph answers "what depends on what", not "what does this
+          change mean". For a slice like the mobile sheet or the pads, the
+          reviewer's question is about behaviour and the file list already gives
+          the blast radius. Where it pays is cross-cutting change: anything
+          touching `projectStore.ts`, `AudioEngine.ts`, `src/contract`, or the
+          catalogs. Expect it to speed up a minority of reviews a lot rather
+          than all of them a little. `--affected <base-ref>` is the per-slice
+          view.
+
+
+          ## Alternative considered
+
+
+          `eslint-plugin-boundaries` / `import/no-restricted-paths` would do the
+          layering inside the lint gate we already run, with no new dependency.
+          It loses on the other two motivations: `import/no-cycle` is slow, and
+          there is no visualization - which is the actual goal here.
+
+
+          ## Sequencing
+
+
+          1. **Spike first, cheaply.** Install dependency-cruiser, generate the
+          folder-level graph of `src/audio` *only* (already structured), plus
+          one `--affected` run against a real slice. If that does not visibly
+          help a review, the `src/ui` restructure is not worth buying, and the
+          cost was an hour.
+
+          2. If it does: `no-circular` on immediately (free), `max-lines` as a
+          warn, layering rules in.
+
+          3. Then the `src/ui` restructure in slices, adding the sibling-privacy
+          rule per folder as each lands, so the rules follow the structure
+          rather than blocking on it.
+
+          4. Then the `allowed` edge list plus the runtime overlay, once the
+          module names are stable enough to be worth naming.
+
+
+          Out of scope: the catalog-iteration convention ("UI and MCP must
+          iterate the catalogs, never hardcode") is about content, not
+          dependencies. This tool cannot check it.
+
+
+          ## Config nuance
+
+
+          With `tsPreCompilationDeps` on, **type-only imports count as
+          dependencies**. Several cross boundaries deliberately and harmlessly
           (`server/mcpServer.ts` imports `type NoteEvent` from
-          `src/audio/sequencer/types`). Exempt type-only imports from the
-          layering rules or the output is noise.
-
-
-          ## Scope
-
-
-          Its own small PR: add the dev dependency and config, run it against
-          the current tree *first* to confirm none of the proposed rules are
-          already violated, add a `yarn graph` script (mermaid output, so it
-          renders without a local graphviz), and wire `depcruise` into CI next
-          to `lint`. Do not try to encode every convention - the
-          catalog-iteration rule ("UI and MCP must iterate the catalogs, never
-          hardcode") is about content, not dependencies, and this tool cannot
-          check it.
+          `src/audio/sequencer/types`). Exempt them from the layering rules or
+          the output is noise.
         id: 019ff322-be75-749d-a826-3360d8f39c77
         created_at: 2026-08-11T23:22:48.309Z
-        updated_at: 2026-08-11T23:22:48.309Z
+        updated_at: 2026-08-11T23:30:50.118Z
       - ref: COLLAB-1
         area: COLLAB
         title: Real identity on the log
