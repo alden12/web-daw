@@ -54,10 +54,30 @@ async function seedNewProject(deps: ProjectDeps, name: string): Promise<string> 
 }
 
 /**
- * Boot: adopt the current project. If none exist yet, seed one (the already-seeded
- * live store) as the first project; otherwise open the persisted current (or newest).
+ * Boot's options. The other operations here take `storage` as a trailing parameter; boot is the
+ * only one with a second thing to say, so it names both rather than growing a positional gap.
  */
-export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = getProjectStorage()): Promise<void> {
+type InitProjectsOptions = {
+  /** Injectable for tests; defaults to the app-wide storage. */
+  storage?: ProjectStorage;
+  /**
+   * The project a link asked for (`null` when the URL named none). It wins over the persisted
+   * current, but **only if it is really there**: opening a link to a project you cannot see
+   * (signed out, or never shared with you) must fall back to your own, not seed a local
+   * project under someone else's id.
+   */
+  preferId?: string | null;
+};
+
+/**
+ * Boot: adopt the current project. If none exist yet, seed one (the already-seeded
+ * live store) as the first project; otherwise open the project a link asked for, the
+ * persisted current, or the newest.
+ */
+export async function initProjects(
+  deps: ProjectDeps,
+  { storage = getProjectStorage(), preferId }: InitProjectsOptions = {},
+): Promise<void> {
   const ids = (await storage.listProjects()).map((project) => project.id);
   if (ids.length === 0) {
     // Seed the first project under a *stable* id (the persisted current, or "default"),
@@ -68,8 +88,11 @@ export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = 
     await getRepository().setName("Untitled");
     await flush(deps); // persist the live (seeded) project as project one
   } else {
-    const persisted = currentProjectId();
-    setCurrentProject(ids.includes(persisted) ? persisted : ids[0]);
+    // Open the first candidate that is really there: the project a link asked for, else the
+    // persisted current, else the newest. Both of the first two can name something gone (see
+    // `preferId`, and a stale `localStorage` pointing at a deleted project), so both are checked.
+    const ifPresent = (id: string | null | undefined): string | null => (id && ids.includes(id) ? id : null);
+    setCurrentProject(ifPresent(preferId) ?? ifPresent(currentProjectId()) ?? ids[0]);
     await loadCurrentInto(deps);
   }
   await refreshProjects(storage);

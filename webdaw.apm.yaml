@@ -3386,6 +3386,103 @@ projects:
         id: 019fb7bf-253b-735e-bcb3-2cf3eeaddc1c
         created_at: 2026-07-31T10:36:25.275Z
         updated_at: 2026-07-31T10:36:25.275Z
+      - ref: ARCH-4
+        area: ARCH
+        title: Enforce the layering rules with dependency-cruiser
+        status: to-do
+        sort_path: "000004"
+        priority: 0
+        body: >-
+          The architectural rules in `CLAUDE.md` are prose, enforced by
+          discipline and by whatever `tsc` happens to catch. Make the
+          load-bearing ones machine-checkable with **dependency-cruiser**, and
+          get an architecture graph out of the same config.
+
+
+          ## Why this one, and not eslint
+
+
+          Three motivations, and dependency-cruiser is the right tool for two of
+          them:
+
+
+          - **Cycle detection.** Nothing in the current gate set (`build`,
+          `test`, `test:e2e`, `tsc`, `eslint`) looks for import cycles -
+          TypeScript compiles them happily, and they surface later as an
+          undefined constant at module init. This has already bitten us once:
+          `src/ui/arrangement/shared.ts` exists specifically so the timeline
+          shell and its row/lane parts can agree on geometry "without a circular
+          import". That was solved by hand; nothing stops the next one.
+
+          - **Layering as data, not prose.** A `.dependency-cruiser.js` with
+          `from`/`to` patterns and a `comment` per rule is the same move as the
+          param-schema keystone: the set of rules becomes data, easy to extend
+          and hard to leave unhandled.
+
+          - **The graph.** `--output-type archi` (folder-level) for the
+          at-a-glance view, and `--affected <base-ref>` to see the blast radius
+          of a slice, which suits the stacked-PR workflow.
+
+
+          The alternative considered was `eslint-plugin-boundaries` /
+          `import/no-restricted-paths`, which would do the layering half inside
+          the lint gate we already run with no new dependency. It loses on the
+          other two: `import/no-cycle` is slow, and there is no visualization.
+
+
+          ## Rules to start with
+
+
+          Deliberately small. Ratcheting rules, not aspirational ones - all of
+          these hold today (verified by grep), so adopting them needs no
+          cleanup:
+
+
+          - `no-circular` (error)
+
+          - `no-orphans` (warn)
+
+          - `src/audio` must not import `src/ui` - currently zero violations
+
+          - `server/**` must not reach `src/audio/**/registry.ts` or
+          `src/audio/engine/**` - this is the "keep the Node MCP server
+          DOM-free" rule. It is *partly* enforced today by
+          `tsconfig.server.json` omitting the DOM lib, but that fails with a
+          confusing error deep in a transitive import rather than naming the
+          boundary that was crossed. `server/mcpServer.ts` legitimately reaches
+          ~15 modules under `src/audio` (the catalogs, `params/validate`,
+          `sequencer/quantize`, `graph/zod`, `mcp/protocol`), so the rule has to
+          name what is *not* allowed rather than allow-list the whole surface.
+
+          - `src/contract` must not import `src/ui`
+
+          - `not-to-dev-dep`
+
+
+          ## Config nuance worth knowing up front
+
+
+          With `tsPreCompilationDeps` on, **type-only imports are counted as
+          dependencies**. Several are harmless and cross boundaries deliberately
+          (`server/mcpServer.ts` imports `type NoteEvent` from
+          `src/audio/sequencer/types`). Exempt type-only imports from the
+          layering rules or the output is noise.
+
+
+          ## Scope
+
+
+          Its own small PR: add the dev dependency and config, run it against
+          the current tree *first* to confirm none of the proposed rules are
+          already violated, add a `yarn graph` script (mermaid output, so it
+          renders without a local graphviz), and wire `depcruise` into CI next
+          to `lint`. Do not try to encode every convention - the
+          catalog-iteration rule ("UI and MCP must iterate the catalogs, never
+          hardcode") is about content, not dependencies, and this tool cannot
+          check it.
+        id: 019ff322-be75-749d-a826-3360d8f39c77
+        created_at: 2026-08-11T23:22:48.309Z
+        updated_at: 2026-08-11T23:22:48.309Z
       - ref: COLLAB-1
         area: COLLAB
         title: Real identity on the log
@@ -6345,6 +6442,78 @@ projects:
         id: 019fb3dc-761a-76ab-8e81-017f725ed09d
         created_at: 2026-07-30T16:29:57.658Z
         updated_at: 2026-07-30T16:29:57.658Z
+      - ref: HOST-17
+        area: HOST
+        title: A project has a link
+        status: review
+        sort_path: "000017"
+        priority: 0
+        deps:
+          - HOST-2
+        body: >-
+          Sharing grants access by email (HOST-2), and then there is nothing to
+          send: the URL never mentioned the project, so the only way to tell
+          someone which one you meant was to describe it. Noticed while trying
+          to share one, 2026-08-06.
+
+
+          **Deliberately the smallest thing that works, and knowingly ahead of
+          the design.** How routing and sharing should really work is not
+          decided - link-based access, invite links, a project index, addressing
+          a version or a clip - so this does not build a router or take a
+          position on any of it. The URL is a *reflection* of which project is
+          open, written with `replaceState` and read once at boot. `/p/` is
+          claimed as the prefix so a real route can own the rest of the space
+          later.
+
+
+          - **The id is the identity, the name is decoration**, separated by `~`
+          (a slug can never contain one, so parsing stays unambiguous whatever
+          an id looks like - they are not all the same shape, the first project
+          on a fresh install is `default`). A link survives a rename, and two
+          projects may share a name.
+
+          - **A link's project only wins if it is really there.** Opening a link
+          to a project you cannot see falls back to your own; it must not seed a
+          local project under someone else's id, which is what a naive "adopt
+          the id from the URL" would do on a fresh install.
+
+          - `replaceState`, not `pushState`: opening a project is not navigation
+          here, and a history entry you can go "back" from without the app
+          switching projects would be a lie.
+
+
+          **Signing in returns to the origin, and the path is remembered
+          separately** - `sessionStorage`, consumed on the next boot. The
+          obvious version (`redirectTo: window.location.href`) is wrong, and
+          wrong *quietly*: Supabase matches `redirectTo` against its allow-list
+          and falls back to the project's configured **Site URL** when it does
+          not match, so a signed-out localhost tab opening a project link was
+          sent to the deployed site. Found by testing it, 2026-08-06. The same
+          trap was waiting in production - `/p/<project>` would have matched no
+          allow-list entry there either and dropped the project on the way
+          through the provider - so the fix is not "add `/**` to the allow-list"
+          but to stop asking the provider to carry a path at all. The origin is
+          allow-listed by definition: it is how signing in works today.
+
+
+          Not here, and each wants the design this deferred: a copy-link
+          affordance (the address bar is the link for now), link-based *access*
+          (a link still only works for someone the project is shared with), and
+          anything else worth addressing.
+
+
+          ## When this is designed properly
+
+
+          The questions it should answer: whether a link grants access or only
+          names a project; whether project ids should be unguessable if they
+          ever do grant access (`p-` + 8 hex is not); what else deserves a URL
+          (a version, a mix, a clip) and therefore what the route shape is; and
+          whether the back button should mean anything.
+        id: 019fd716-70c0-737c-863e-d13aa5ceb908
+        created_at: 2026-08-06T12:39:59.936Z
+        updated_at: 2026-08-06T12:53:40.587Z
       - ref: INST-1
         area: INST
         title: Built-in instruments

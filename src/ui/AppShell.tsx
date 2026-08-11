@@ -19,7 +19,7 @@ import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operations";
 import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
-import { currentProjectId, setCurrentProject } from "../audio/projectRepository";
+import { currentProjectId, setCurrentProject, subscribeCurrentProject } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
 import type { ConflictInfo } from "../audio/sync/conflict";
@@ -29,9 +29,10 @@ import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleSt
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
 import { ConflictDialog } from "./ConflictDialog";
-import { getAccessToken } from "../auth/session";
+import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
+import { projectIdFromLocation, projectIdFromPath, syncProjectUrl } from "./projectUrl";
 import { EditLog } from "../audio/commands/editLog";
 import { type LibraryView } from "./ActivityRail";
 import { DesktopShell } from "./shell/DesktopShell";
@@ -175,6 +176,25 @@ export function AppShell() {
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
 
+  /**
+   * A project has a link (`projectUrl.ts`): the URL names whichever project is open, and a URL
+   * that names one opens it.
+   *
+   * Read **once**, before anything can rewrite it - the sync below runs as soon as the project
+   * loads, so a link read any later would be reading what we had just written over it.
+   *
+   * Falling back to the path we left from when signing in: an OAuth round trip returns to the
+   * origin (see `signInWithProvider`), so on that boot the link is in the tab's memory rather
+   * than in the address bar. The sync below then puts it back on screen.
+   */
+  const linkedProjectId = useRef(projectIdFromLocation() ?? projectIdFromPath(takeAuthReturnPath() ?? ""));
+  const openProjectId = useSyncExternalStore(subscribeCurrentProject, currentProjectId);
+  useEffect(() => {
+    // Not before the library has opened something: until then the id is a placeholder, and
+    // pointing the address bar at it would clobber the link we were asked to open.
+    if (projectLoaded) syncProjectUrl(openProjectId, project.name);
+  }, [projectLoaded, openProjectId, project.name]);
+
   const versionStore = useMemo(() => new VersionStore(projectStore, editLog), [projectStore, editLog]);
 
   // Open the current project from the multi-project library (enumerates bundles,
@@ -187,7 +207,7 @@ export function AppShell() {
     let disposeCheckpoints = () => {};
     // Best-effort: keep the offline cache + write-queue from being evicted under storage pressure.
     void requestPersistentStorage();
-    void initProjects({ projectStore, editLog, versionStore })
+    void initProjects({ projectStore, editLog, versionStore }, { preferId: linkedProjectId.current })
       .then(() => {
         if (!active) return;
         // With a remote backend, edits ride the live WS channel and the authority persists them (the
