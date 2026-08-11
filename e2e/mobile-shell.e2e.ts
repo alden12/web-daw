@@ -34,6 +34,25 @@ const segment = (page: Page, name: string) => sheet(page).getByRole("tab", { nam
 const grabber = (page: Page) => page.getByRole("slider", { name: "Editor height" });
 const trackHeader = (page: Page) => page.locator("[data-track-id]").first().locator("> div").first();
 const detentOf = (page: Page) => sheet(page).getAttribute("data-detent");
+const pads = (page: Page) => page.locator('[data-section="pads"]');
+const pad = (page: Page, name: string) => pads(page).getByRole("button", { name, exact: true });
+
+/** How far the pads hang below the sheet's own bottom edge. Anything over 0 is a clipped pad. */
+const padsOverflow = (page: Page) =>
+  page.evaluate(() => {
+    const section = document.querySelector('[data-section="pads"]')!.getBoundingClientRect();
+    const sheetBox = document.querySelector('[data-testid="editor-sheet"]')!.getBoundingClientRect();
+    return Math.round(section.bottom - sheetBox.bottom);
+  });
+
+/** Press a pad and hold it, so the note has a length to record. */
+async function holdPad(page: Page, name: string, ms: number) {
+  const box = (await pad(page, name).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(ms);
+  await page.mouse.up();
+}
 
 /**
  * Step the sheet to a detent from the keyboard. Deterministic where a synthetic flick is
@@ -373,20 +392,85 @@ test.describe("phone", () => {
     await expect(undo).toBeDisabled();
     await expect(redo).toBeDisabled();
 
-    // Tempo gave up its slot for them; it lives in the menu now.
+    // Tempo gave up its slot for them; it lives in the menu now, as a field rather than a
+    // list of presets - a range of 20-300 cannot honestly be a submenu, and the curated
+    // subset it used to be made the phone less capable than the desktop field it stood in for.
     await expect(page.getByRole("spinbutton", { name: /tempo/i })).toHaveCount(0);
     await openOverflow(page);
-    await expect(page.getByRole("menuitem", { name: "Tempo" })).toBeVisible();
+    const tempo = page.getByRole("spinbutton", { name: "Tempo" });
+    await expect(tempo).toBeVisible();
+
+    // A value no preset list would have offered.
+    await tempo.fill("173");
+    await expect(undo).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await openOverflow(page);
+    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("173");
+
+    // ...and the nudge buttons, so changing it by one costs no keyboard.
+    await page.getByRole("button", { name: "Tempo up" }).click();
+    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("174");
     await page.keyboard.press("Escape");
 
-    await openOverflow(page);
-    await page.getByRole("menuitem", { name: "Tempo" }).click();
-    await page.getByRole("menuitemradio", { name: "140 BPM" }).click();
-    await expect(undo).toBeEnabled();
-
     await undo.tap();
-    await expect(undo).toBeDisabled();
     await expect(redo).toBeEnabled();
+  });
+
+  /**
+   * The menu is one list of every mounted surface's controls, not the front-most one's. At
+   * Half you are looking at the timeline and the roll at once, so a menu that followed focus
+   * was hiding controls for a panel in plain view - and hiding count-in and groove behind
+   * parking the sheet at any detent at all (MOBILE-11).
+   */
+  test("the overflow menu holds every surface's controls at once, under headings", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await segment(page, "Edit").tap();
+    await setDetent(page, "half");
+
+    await openOverflow(page);
+    const menu = page.getByRole("menu").first();
+    await expect(menu.getByText("Arrangement", { exact: true })).toBeVisible();
+    await expect(menu.getByText("Notes", { exact: true })).toBeVisible();
+    await expect(menu.getByText("Project", { exact: true })).toBeVisible();
+
+    // The arrangement's, the roll's and the project's, all reachable without changing detent.
+    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Count-in" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: /Metronome/i })).toBeVisible();
+
+    // Both surfaces offer a "Snap to grid", which is exactly why the headings are there.
+    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toHaveCount(2);
+
+    // And a row sits under the heading it belongs to: count-in and groove are project
+    // settings, so they are in the project's group and not the arrangement's (MOBILE-11).
+    const order = await menu.evaluate((popover) =>
+      [...popover.children].map((row) => row.textContent?.replace(/[✓◂▸]/g, "").trim()),
+    );
+    // The headings are uppercased in CSS, so the text is still title case here.
+    const groupOf = (row: string) =>
+      order
+        .slice(0, order.indexOf(row))
+        .filter((entry) => ["Arrangement", "Notes", "Project"].includes(entry ?? ""))
+        .pop();
+    expect(groupOf("Add group")).toBe("Arrangement");
+    expect(groupOf("Velocity lane")).toBe("Notes");
+    expect(groupOf("Count-in")).toBe("Project");
+    expect(groupOf("Groove")).toBe("Project");
+  });
+
+  test("beats per bar is a field too, so the whole 1-32 range is reachable", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await openOverflow(page);
+    await page.getByRole("menuitem", { name: /Meter/ }).click();
+    const beats = page.getByRole("spinbutton", { name: "Beats per bar" });
+    await expect(beats).toBeVisible();
+    // 11/4 was not on the old preset list, and is inside the schema's range.
+    await beats.fill("11");
+    await expect(page.getByRole("menuitem", { name: "Meter · 11/4" })).toBeVisible();
   });
 
   test("the roll has no toolbar of its own - its controls are in the shell's menu", async ({ page }) => {
@@ -398,34 +482,39 @@ test.describe("phone", () => {
     // The toolbar row is hidden, so its label is not shown...
     await expect(page.getByText("Piano roll", { exact: true })).toBeHidden();
 
-    // ...and the controls turn up in the one overflow menu, above the project's.
+    // ...and the controls turn up in the one overflow menu, above the project's. Zoom folds
+    // into a submenu there: it is a fallback for the pinch gesture, and three surfaces share
+    // this list, so a row it does not spend is a row another surface can have.
     await openOverflow(page);
-    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /Zoom in/i })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i }).first()).toBeVisible();
     await expect(page.getByRole("menuitemradio", { name: /Metronome/i })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Zoom", exact: true }).last().click();
+    await expect(page.getByRole("menuitem", { name: "Taller rows" })).toBeVisible();
   });
 
   /**
-   * Un-tabbing meant the arrangement and the editor are mounted *at the same time*, so both
-   * would publish to the shell's ⋮ and whichever mounted later would silently win. The
-   * detent decides instead: parked, the arrangement keeps its own controls.
+   * A group is present because its surface is *mounted*, not because it is in front - which
+   * is the whole simplification. Switching to the rack really does unmount the roll, so its
+   * group goes: those rows act on a panel that is not there.
    */
-  test("the overflow menu follows whichever surface is in front", async ({ page }) => {
+  test("a surface's group comes and goes with the surface, not with the detent", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    // Parked: the timeline's own options, even though the editor is mounted behind the sheet.
+    // Parked, with the editor behind the sheet: both groups, because both are mounted.
     await setDetent(page, "peek");
     await openOverflow(page);
     await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // Raised: the roll's instead.
+    // The rack replaces the roll, so the Notes group leaves with it - the arrangement's stays.
     await setDetent(page, "half");
-    await segment(page, "Edit").tap();
+    await segment(page, "Rack").tap();
     await openOverflow(page);
-    await expect(page.getByRole("menuitem", { name: /Quantize/i }).first()).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("menu").first().getByText("Notes", { exact: true })).toHaveCount(0);
   });
 
   test("the overflow menu reflects the surface's state, not the shell's last render", async ({ page }) => {
@@ -434,15 +523,16 @@ test.describe("phone", () => {
     await segment(page, "Edit").tap();
     const velocity = () => page.getByRole("menuitemradio", { name: /Velocity lane/i });
 
+    // Off to start with on touch, where the lane costs a row of pads.
     await openOverflow(page);
-    await expect(velocity()).toHaveAttribute("aria-checked", "true");
+    await expect(velocity()).toHaveAttribute("aria-checked", "false");
     await velocity().click();
 
     // The surface's controls are published as a getter and the shell is *not* re-rendered
     // when the surface's own state changes, so an items array captured at the shell's last
-    // render would still tick this row. `Menu` reads the getter while open instead.
+    // render would still show this row unticked. `Menu` reads the getter while open instead.
     await openOverflow(page);
-    await expect(velocity()).toHaveAttribute("aria-checked", "false");
+    await expect(velocity()).toHaveAttribute("aria-checked", "true");
   });
 
   test("the library opens as a sheet from the left and closes again", async ({ page }) => {
@@ -460,6 +550,175 @@ test.describe("phone", () => {
     await page.keyboard.press("Escape");
     // Still mounted (so reopening is instant) but inert and out of reach.
     await expect(panel).toHaveAttribute("inert", "");
+  });
+
+  test("picking from the library closes it, so you can see what it just did", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    const panel = page.getByRole("dialog", { name: "Library" });
+    const sheetSubtitle = sheet(page).getByText("subtractive", { exact: true });
+    await expect(sheetSubtitle).toBeVisible();
+
+    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await panel.getByRole("button", { name: "FM", exact: true }).tap();
+
+    // The sheet it changed is behind the library on a phone, so the library gets out of the
+    // way: without this the instrument swaps under a full-screen panel and nothing happens.
+    await expect(panel).toHaveAttribute("inert", "");
+    await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
+  });
+
+  test("the pads sit under the roll, in the key they say they are in", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // In C major the in-scale pads are the white keys, closing on the octave above - the
+    // closing tonic is what gives the leading tone a gap to sit in.
+    const names = await pads(page)
+      .locator("[data-pitch]")
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    expect(names).toEqual(["C#3", "D#3", "F#3", "G#3", "A#3", "C3", "D3", "E3", "F3", "G3", "A3", "B3", "C4"]);
+    // Under the roll, not beside it: you play a phrase and watch it land without moving.
+    const roll = (await page.getByTestId("roll-scroll").boundingBox())!;
+    expect((await pads(page).boundingBox())!.y).toBeGreaterThan(roll.y);
+  });
+
+  test("playing the pads records a take - the phone can capture, not just arrange", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // Count-in is a project setting and sits with them, reachable with the sheet up over the
+    // arrangement whose toolbar menu used to be its only home on touch (MOBILE-11).
+    await openOverflow(page);
+    await page.getByRole("menuitem", { name: "Count-in" }).click();
+    await page.getByRole("menuitemradio", { name: "No count-in" }).click();
+
+    const record = page.getByRole("button", { name: "Record", exact: true });
+    await record.tap();
+    await expect(record).toHaveAttribute("aria-pressed", "true");
+
+    // Held with the mouse rather than tapped: a tap has no duration, and a note's duration
+    // is the thing being captured.
+    await holdPad(page, "C3", 140);
+    await holdPad(page, "E3", 140);
+    await expect(page.getByTestId("ghost-note")).toHaveCount(2);
+
+    await record.tap();
+    await expect(record).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("lane").getByText("Take 1")).toBeVisible();
+  });
+
+  test("sliding sideways runs the notes under your finger, without latching them", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    const from = (await pad(page, "C3").boundingBox())!;
+    const to = (await pad(page, "E3").boundingBox())!;
+    const lane = from.y + from.height / 2;
+    await page.mouse.move(from.x + from.width / 2, lane);
+    await page.mouse.down();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "true");
+
+    // Along the row, so the axis lock reads it as a slide rather than as the sustain drag.
+    await page.mouse.move(to.x + to.width / 2, lane, { steps: 8 });
+    await expect(pad(page, "E3"), "the note follows the finger").toHaveAttribute("aria-pressed", "true");
+    await expect(pad(page, "C3"), "and the one it left goes quiet").toHaveAttribute("aria-pressed", "false");
+
+    // A slide never latches: it committed to the other axis on its first 8px, so letting go
+    // leaves nothing sounding however far down the row it wandered.
+    await page.mouse.up();
+    await expect(pad(page, "E3")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the pads stay under whichever surface is showing, so you can play while you tweak", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    for (const name of ["Clips", "Rack"]) {
+      await segment(page, name).tap();
+      await expect(pads(page).locator("[data-pad-row]")).toHaveCount(1);
+      expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+    }
+
+    // And they still play from there, which is the point: hearing what a device does to a
+    // note without leaving the device to play one.
+    const box = (await pad(page, "C3").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.up();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("dragging down off a pad latches it, and the next note lets it go", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    const box = (await pad(page, "C3").boundingBox())!;
+    // From the pad's top edge, so a 50px drag is still on screen at the bottom of the sheet.
+    await page.mouse.move(box.x + box.width / 2, box.y + 4);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + 54, { steps: 4 });
+    await page.mouse.up();
+    await expect(pad(page, "C3"), "still sounding with nothing holding it").toHaveAttribute("aria-pressed", "true");
+
+    // Playing a new note releases the held ones - the simple rule, shipped knowing you can
+    // then only hold *instead of* playing.
+    await pad(page, "E3").tap();
+    await expect(pad(page, "C3")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("the octave range grows in whole rows, and the roll grows with the sheet too", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "half");
+
+    const grow = page.getByRole("button", { name: /More octaves/ });
+    const rows = () => pads(page).locator("[data-pad-row]").count();
+    const rollHeight = async () => (await page.getByTestId("roll-scroll").boundingBox())!.height;
+    expect(await rows()).toBe(1);
+
+    /** Ask for octaves until the sheet stops giving them, and report what it settled on. */
+    const fill = async () => {
+      for (let press = 0; press < 10 && !(await grow.isDisabled()); press++) await grow.tap();
+      // The part only a browser can tell you: what it stopped at still fits inside the
+      // sheet rather than under its bottom edge.
+      expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+      return { rows: await rows(), roll: await rollHeight() };
+    };
+
+    const half = await fill();
+    await setDetent(page, "full");
+    const full = await fill();
+
+    // Both surfaces grow, which is the point: the pads take a *share* of the editor, so
+    // raising the sheet buys rows and notes rather than spending it all on pads. A flat
+    // reserve for the roll left it the same sliver at every detent.
+    expect(full.rows).toBeGreaterThan(half.rows);
+    expect(full.roll).toBeGreaterThan(half.roll + 50);
+    expect(half.roll, "the roll is readable even at Half, with the pads filled").toBeGreaterThan(120);
+
+    // The count is a request, not a promise: dropping back gives the rows away and raising
+    // the sheet again honours what was asked for, without asking again.
+    await setDetent(page, "half");
+    expect(await rows()).toBe(half.rows);
+    await setDetent(page, "full");
+    expect(await rows()).toBe(full.rows);
+  });
+
+  test("a long submenu stays on screen instead of running off the bottom", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // The pads' key menu sits at the bottom of the sheet and its Key list is twelve rows,
+    // which opened level with its own row would put most of them under the fold.
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Key" }).click();
+    const submenu = page.getByRole("menu").last(); // the flyout, nested inside the popover
+    const box = (await submenu.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(PHONE.height);
   });
 
   test("the agent opens as a sheet from the right and stays mounted when closed", async ({ page }) => {
@@ -502,23 +761,44 @@ test.describe("phone, landscape", () => {
     await setDetent(page, "full");
     await segment(page, "Edit").tap();
 
+    // The pads do share it, and at ~390px tall they take most of what the roll had. That is
+    // what their disclosure is for: collapsing them hands the height straight back.
+    await pads(page).getByRole("button", { expanded: true }).tap();
     const roll = (await page.getByTestId("roll-scroll").boundingBox())!;
     expect(roll.height, "the roll has the sheet to itself").toBeGreaterThan(120);
     expect(roll.width, "and the full width").toBeGreaterThan(700);
   });
 
-  test("the velocity lane can be collapsed to give the notes the height", async ({ page }) => {
+  test("the velocity lane starts folded away on touch, and the menu brings it back", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await setDetent(page, "full");
     await segment(page, "Edit").tap();
 
+    // 56px of lane is a whole row of pads, and velocity still reads as note fill strength -
+    // so on touch the lane is off until it is asked for.
     const lane = page.getByTitle("Velocity - drag a bar");
-    await expect(lane).toBeVisible();
-    // At ~390px tall the lane plus the ruler is most of what there is, so it folds away.
+    await expect(lane).toBeHidden();
     await openOverflow(page);
     await page.getByRole("menuitemradio", { name: /Velocity lane/i }).click();
-    await expect(lane).toBeHidden();
+    await expect(lane).toBeVisible();
+  });
+
+  test("says there is no room to play rather than showing half a pad", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // ~133px of editor at Half is not one row of pads plus the controls to drive it, however
+    // the numbers are shuffled. Full is, once the controls fold into the section's header.
+    await setDetent(page, "half");
+    await expect(pads(page)).toContainText("Raise the sheet to play");
+    await expect(pads(page).locator("[data-pitch]")).toHaveCount(0);
+
+    await setDetent(page, "full");
+    await expect(pads(page).locator("[data-pad-row]")).toHaveCount(1);
+    expect(await padsOverflow(page)).toBeLessThanOrEqual(0);
+    // Landscape is short but wide, so the header has the width to take the controls.
+    await expect(pads(page).getByRole("button", { name: "Key and scale" })).toBeVisible();
   });
 });
 
@@ -559,6 +839,14 @@ test.describe("tablet", () => {
 
     const library = page.getByRole("complementary", { name: "Library" });
     await expect(library).toBeVisible();
+
+    // Picking does *not* close it here, unlike the phone's sheet: docked, it is beside the
+    // track it changes rather than over it, so there is nothing to get out of the way of and
+    // picking several things in a row keeps working.
+    await library.getByRole("button", { name: "FM", exact: true }).tap();
+    await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
+    await expect(library).toBeVisible();
+
     await page.getByRole("button", { name: "Library", exact: true }).tap();
     await expect(library).toHaveCount(0);
   });

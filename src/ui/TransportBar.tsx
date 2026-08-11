@@ -10,6 +10,7 @@ import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { Dispatch } from "../audio/commands/types";
 import { useProject } from "../audio/project/useProject";
+import { TEMPO_BPM_RANGE, TIME_SIGNATURE_NUMERATOR_RANGE } from "../audio/project/schema";
 import { useRecorder } from "./useRecorder";
 import { usePersistentBoolean } from "./usePersistent";
 
@@ -101,8 +102,8 @@ export function TransportBar({
         <span className="max-sm:hidden">Tempo</span>
         <input
           type="number"
-          min={20}
-          max={300}
+          min={TEMPO_BPM_RANGE.min}
+          max={TEMPO_BPM_RANGE.max}
           value={project.tempoBpm}
           aria-label="Tempo (BPM)"
           onChange={(e) => dispatch({ type: "setTempo", bpm: Number(e.target.value) })}
@@ -118,8 +119,8 @@ export function TransportBar({
         <span className="max-sm:hidden">Meter</span>
         <input
           type="number"
-          min={1}
-          max={32}
+          min={TIME_SIGNATURE_NUMERATOR_RANGE.min}
+          max={TIME_SIGNATURE_NUMERATOR_RANGE.max}
           aria-label="Beats per bar (numerator)"
           value={project.timeSignature.numerator}
           onChange={(e) =>

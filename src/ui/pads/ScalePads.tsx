@@ -1,0 +1,189 @@
+/**
+ * The scale pads (MOBILE-6): a keyboard that generalises the piano instead of imitating it.
+ *
+ * An on-screen piano on a 390px phone gives ~27px keys, which is unplayable. In-scale notes
+ * take a full-width row here and everything else sits above them, in the gaps the scale's
+ * own interval pattern leaves - which in C major is exactly where the black keys are, and in
+ * any other key or mode is the same shape with different labels. The layout maths is pure
+ * and lives in `audio/theory/scales.ts`; this file is the pixels and the pointer handling.
+ *
+ * **The octave range is one control, not two:** a pair of buttons moves it and a pair sizes
+ * it, sharing the label between them, and each pair disables at its limit. Both pairs work
+ * in whole rows, so a tablet's two-octave rows come and go in pairs and no row is ever left
+ * half the width of the one above it.
+ */
+import { Menu, type MenuItem } from "../Menu";
+import { pitchName } from "../noteNames";
+import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
+import { ACCIDENTAL_HEIGHT, PAD_HEIGHT } from "./geometry";
+import type { PadSettings } from "./padSettings";
+import { PadButton } from "./PadButton";
+import type { PadTouch } from "./usePadTouch";
+
+/** A square step button for the octave range: finger-sized, and disabled at its limit. */
+function StepButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="shrink-0 flex items-center justify-center w-8 h-8 rounded-md border border-line bg-card text-[15px] leading-none text-muted cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * The key and the octave range. A row of its own where there is height for one, and folded
+ * into the section's header where there is not - which is landscape, and landscape has the
+ * width to take them.
+ */
+export function ScalePadControls({
+  settings,
+  octavesPerRow,
+  inline,
+}: {
+  settings: PadSettings;
+  octavesPerRow: number;
+  inline: boolean;
+}) {
+  const { scale, tonic, accidentals } = settings;
+  const pairs = octavesPerRow > 1;
+
+  const keyItems: MenuItem[] = [
+    {
+      label: "Key",
+      submenu: PITCH_CLASSES.map((name, pitchClass) => ({
+        label: name,
+        checked: tonic === pitchClass,
+        onClick: () => settings.setTonic(pitchClass),
+      })),
+    },
+    {
+      label: "Scale",
+      submenu: SCALE_NAMES.map((name) => ({
+        label: name,
+        checked: scale === name,
+        onClick: () => settings.setScale(name),
+      })),
+    },
+    { separator: true },
+    { label: "Accidentals", checked: accidentals, onClick: () => settings.setAccidentals(!accidentals) },
+  ];
+
+  return (
+    <div className={`shrink-0 flex items-center gap-1 ${inline ? "flex-1 min-w-0" : "px-2 pb-1.5"}`}>
+      <Menu
+        items={keyItems}
+        label="Key and scale"
+        align="left"
+        triggerClassName="shrink-0 flex items-center gap-1 h-8 px-2 rounded-md border border-line bg-card font-mono text-[11px] text-muted cursor-pointer"
+        trigger={
+          <>
+            {settings.keyLabel}
+            <span className="text-[9px]">▾</span>
+          </>
+        }
+      />
+      <div className="ml-auto shrink-0 flex items-center gap-1">
+        <StepButton label="Lower octave" onClick={() => settings.moveRange(-1)} disabled={!settings.canMove(-1)}>
+          ◂
+        </StepButton>
+        <span className="w-16 text-center font-mono text-[10px] text-muted tabular-nums">{settings.rangeLabel}</span>
+        <StepButton label="Higher octave" onClick={() => settings.moveRange(1)} disabled={!settings.canMove(1)}>
+          ▸
+        </StepButton>
+        <StepButton
+          label={pairs ? "Fewer octaves (a row of two)" : "Fewer octaves"}
+          onClick={() => settings.sizeRange(-1)}
+          disabled={!settings.canSize(-1)}
+        >
+          −
+        </StepButton>
+        <StepButton
+          label={pairs ? "More octaves (a row of two)" : "More octaves"}
+          onClick={() => settings.sizeRange(1)}
+          disabled={!settings.canSize(1)}
+        >
+          +
+        </StepButton>
+      </div>
+    </div>
+  );
+}
+
+export function ScalePads({
+  settings,
+  touch,
+  octavesPerRow,
+}: {
+  settings: PadSettings;
+  touch: PadTouch;
+  /**
+   * A tablet fits two octaves per row; below ~44px per pad the layout is wrong rather than
+   * merely tight, so a phone gets one and stacks them instead. Decided by the shell, which
+   * is the thing that knows what it is running on.
+   */
+  octavesPerRow: number;
+}) {
+  const { tonic, scale, lowOctave, octaves, accidentals } = settings;
+  const rows = padRows({ tonic, scale, lowOctave, octaves, octavesPerRow, accidentals });
+
+  return (
+    // High row on top, as the roll puts high pitches at the top.
+    <div className="shrink-0 flex flex-col-reverse gap-1 px-2 pb-2">
+      {rows.map((row) => (
+        <div key={row.pitches[0].pitch} data-pad-row={row.pitches[0].pitch} className="flex flex-col">
+          {accidentals && (
+            <div className="relative shrink-0" style={{ height: ACCIDENTAL_HEIGHT }}>
+              {row.accidentals.map((pad) => (
+                <PadButton
+                  key={pad.pitch}
+                  pitch={pad.pitch}
+                  name={pitchName(pad.pitch)}
+                  label={pad.interval}
+                  tone="accidental"
+                  touch={touch}
+                  className="absolute top-0 h-full rounded-md border -translate-x-1/2"
+                  // Positions come from the layout in pad-width units, so the row below is
+                  // gapless: a seam here has to be a seam there.
+                  style={{
+                    left: `${(pad.center / row.pitches.length) * 100}%`,
+                    width: `${(accidentalWidth / row.pitches.length) * 100}%`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          <div className="shrink-0 flex rounded-lg border border-line overflow-hidden" style={{ height: PAD_HEIGHT }}>
+            {row.pitches.map((pad, index) => (
+              <PadButton
+                key={pad.pitch}
+                pitch={pad.pitch}
+                name={pitchName(pad.pitch)}
+                label={pad.interval}
+                sublabel={pitchName(pad.pitch)}
+                tone={pad.interval === "1" ? "tonic" : "in-scale"}
+                touch={touch}
+                className={`flex-1 min-w-0 ${index > 0 ? "border-l border-line" : ""}`}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

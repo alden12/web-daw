@@ -121,7 +121,6 @@ export function PianoRoll({
   projectStore,
   rows = CHROMATIC_ROWS,
   compact = false,
-  isActiveSurface = true,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
@@ -141,8 +140,6 @@ export function PianoRoll({
    * buttons in a row, and every surface having its own toolbar would stack three of them.
    */
   compact?: boolean;
-  /** Whether this surface owns the shell's ⋮ - see ArrangementTimeline (MOBILE-5). */
-  isActiveSurface?: boolean;
 }) {
   const clip = useClip(clipStore);
   const presence = useAuthorPresence();
@@ -162,7 +159,11 @@ export function PianoRoll({
   // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
   // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
   // Toggled from the roll's settings menu, so it is reachable in both shells.
-  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", true);
+  //
+  // **Closed by default on touch**, where the roll is sharing a sheet with the pads and 56px
+  // is a whole row of them. Velocity is not lost by hiding it: it renders as note fill
+  // strength, and editing it per note belongs in the note's own menu on touch (MOBILE-7).
+  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", !compact);
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
@@ -561,15 +562,17 @@ export function PianoRoll({
   };
 
   /**
-   * Snap, quantize and the velocity lane, as data. One list, two homes: the toolbar's
-   * kebab on desktop, and the shell's single ⋮ on touch.
+   * Snap, quantize and the velocity lane, as data - built as clusters so the same controls
+   * can be laid out two ways: flat in the toolbar's kebab on desktop, and folded into named
+   * submenus in the shell's single ⋮ on touch, where this list is one of three sharing a
+   * menu and every row it does not spend is a row another surface can have.
    *
    * They live in a menu rather than on the toolbar because the toolbar could not hold
    * them: with the agent panel open the row overflowed below ~1150px and pushed the zoom
    * cluster clean out of view, so the controls that got hidden were the ones you reach
    * for most. The toolbar now keeps only the label, this menu and zoom.
    */
-  const rollControls: MenuItem[] = [
+  const gridItems: MenuItem[] = [
     { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
     {
       label: "Grid",
@@ -579,7 +582,8 @@ export function PianoRoll({
         onClick: () => setSnapDiv(division.beats),
       })),
     },
-    { separator: true },
+  ];
+  const quantizeItems: MenuItem[] = [
     {
       label: selection.size ? `Quantize ${selection.size} selected` : "Quantize all notes",
       disabled: !targets.length,
@@ -595,23 +599,37 @@ export function PianoRoll({
     },
     { label: "Quantize note ends", checked: quantEnds, onClick: () => setQuantEnds(!quantEnds) },
     { label: "Auto-quantize recordings", checked: quantOnRecord, onClick: () => setQuantOnRecord(!quantOnRecord) },
+  ];
+  const velocityItem: MenuItem = { label: "Velocity lane", checked: velOpen, onClick: () => setVelOpen(!velOpen) };
+
+  const rollControls: MenuItem[] = [
+    ...gridItems,
     { separator: true },
-    { label: "Velocity lane", checked: velOpen, onClick: () => setVelOpen(!velOpen) },
+    ...quantizeItems,
+    { separator: true },
+    velocityItem,
   ];
 
   // Touch gets the zoom buttons as menu entries too, since the toolbar is gone there.
   // Each closes the menu, so they are a fallback rather than the gesture: pinch-zoom is
   // the real answer and belongs to MOBILE-2.
   usePublishSurfaceControls(
+    "notes",
     [
-      ...rollControls,
-      { separator: true },
-      { label: "Zoom in", onClick: () => setPxPerBeat(Math.round(pxPerBeat * 1.25)) },
-      { label: "Zoom out", onClick: () => setPxPerBeat(Math.round(pxPerBeat / 1.25)) },
-      { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
-      { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
+      ...gridItems,
+      { label: "Quantize", submenu: quantizeItems },
+      velocityItem,
+      {
+        label: "Zoom",
+        submenu: [
+          { label: "Zoom in", onClick: () => setPxPerBeat(Math.round(pxPerBeat * 1.25)) },
+          { label: "Zoom out", onClick: () => setPxPerBeat(Math.round(pxPerBeat / 1.25)) },
+          { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
+          { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
+        ],
+      },
     ],
-    compact && isActiveSurface,
+    compact,
   );
 
   const zoomBtn =

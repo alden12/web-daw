@@ -2953,6 +2953,229 @@ projects:
             id: 019fb782-dfea-733c-8879-dc89ef9ccdae
             at: 2026-07-31T09:30:35.370Z
             actor: claude
+      - ref: AGENT-24
+        area: AGENT
+        title: The loop costs too much per turn
+        status: to-do
+        sort_path: "000024"
+        priority: 0
+        deps:
+          - AGENT-10
+        body: >-
+          One musical phrase through the in-app agent on Sonnet cost roughly **a
+          dollar**, and hit the step limit before finishing. Measured
+          2026-08-10. That is too expensive to iterate on the thinking loop
+          with, and it is the same dollar a user with their own key would pay -
+          so this is a product problem, not only a development one.
+
+
+          Three things compound in `agent/loop.ts`, and they multiply rather
+          than add:
+
+
+          - **No prompt caching.** The Anthropic entry in `providers.ts` points
+          at `api.anthropic.com/v1` and speaks the OpenAI-compatible dialect,
+          which does not carry `cache_control`. Every step therefore pays full
+          input price for a prefix that is almost entirely identical to the last
+          one. Native Anthropic caching bills a repeated prefix at a fraction of
+          that. Confirm what the compat layer supports before assuming it has to
+          mean a native provider path - if it does, the provider seam is the
+          place for it, not the loop.
+
+          - **The whole conversation is re-sent every step.** Each round appends
+          the assistant turn plus every tool result and re-posts the lot, so
+          early tokens are paid for once per remaining step. Cost grows with the
+          square of the step count, not linearly.
+
+          - **Tool results are never trimmed.** `list_samples` returns the whole
+          builtin catalogue and `list_parameters` a full parameter dump per
+          track, and they sit in the context for the rest of the run whether or
+          not anything still refers to them.
+
+
+          Also: `maxSteps` defaults to **8** and `useAgentChat` never passes
+          one. That budget was set when the loop was driven by cheaper, chattier
+          models; a model that plans in bigger strides runs out of steps
+          mid-phrase and says so. It should at least be configurable, and
+          probably scaled to what the model is.
+
+
+          ## Worth deciding while measuring
+
+
+          Whether the fix is to cache the prefix, to stop resending it, or both
+          - they overlap, and caching a prefix that should not have been resent
+          is the wrong order to do them in. Measure first: the run result
+          already carries `usage`, so the cheapest instrument is to log input
+          tokens per step for one real phrase and look at the shape of the curve
+          before changing anything.
+
+
+          ## On testing this cheaply, and why it is not a plan
+
+
+          A local shim (an OpenAI-compatible endpoint backed by the Claude Agent
+          SDK, added as one more entry in `PROVIDERS`) would let development
+          runs draw on a Claude subscription instead of an API key. Checked
+          2026-08-10, and two things bound it:
+
+
+          - **Only for our own use, never shipped.** Anthropic's Claude Code
+          legal terms permit OAuth/subscription auth for "ordinary, individual
+          usage" but do not permit third-party developers "to offer Claude.ai
+          login or to route requests through Free, Pro, or Max plan credentials
+          on behalf of their users". A local dev provider is fine; the same
+          thing in the deployed app is explicitly not.
+
+          - **It is not free headroom, and it is unstable.** A separate monthly
+          Agent SDK credit ($20 Pro to $200 Max 20x) was announced for
+          2026-06-15 and **paused on the day**; today Agent SDK / `claude -p`
+          usage draws from the same subscription usage limits as interactive
+          Claude Code, so it competes with our own coding sessions rather than
+          adding to them. Anthropic paused it because heavy agent use on
+          subscriptions is a large subsidy, and has said it will revisit - so
+          this is a way to make development cheaper today, not a foundation to
+          build on.
+
+
+          Which is the argument for doing this ticket regardless of which key
+          pays: the efficiency is the durable fix.
+
+
+          Blocked on nothing, but deliberately queued behind the current review
+          (2026-08-10).
+        id: 019fed31-44e2-765d-8f71-9e264084d282
+        created_at: 2026-08-10T19:40:56.930Z
+        updated_at: 2026-08-10T19:48:00.556Z
+      - ref: AGENT-25
+        area: AGENT
+        title: A local provider backed by the Agent SDK, so the loop can be developed
+        status: to-do
+        sort_path: "000025"
+        priority: 0
+        deps:
+          - AGENT-24
+        body: >-
+          Refining the thinking loop needs a lot of runs, and every run
+          currently costs API tokens paid for separately from the Claude
+          subscription the development already runs on. That cost is the thing
+          suppressing the testing - the loop is under-developed because trying
+          things is expensive, which is the wrong reason for a design to stay
+          where it is.
+
+
+          **Local only, deliberately.** At the desk this needs no settings UI at
+          all: the shim is on a known port, so the provider entry carries a
+          fixed `baseUrl` and there is nothing to type. Reaching it from
+          elsewhere (a phone, while out) needs a configurable endpoint and a
+          tunnel, and that is AGENT-26 - split off because localhost already
+          buys the whole point of this ticket, which is being able to try
+          things.
+
+
+          **The seam already exists.** `PROVIDERS` in `agent/providers.ts` is
+          plain data over an OpenAI-compatible `baseUrl`, and `provider.ts` is
+          generic across it; `AgentSettings.tsx` iterates `PROVIDER_IDS`, so a
+          new entry appears in the picker for free. The work is a small Node
+          server that accepts `/chat/completions` with tool specs, drives the
+          Claude Agent SDK, and translates the reply back. Nothing else in the
+          app changes.
+
+
+          **Single-turn, with the SDK's own tools off.** The Agent SDK runs its
+          own agent loop; if it is left to do so we would be testing *its* loop
+          rather than ours, which is the one thing this ticket exists to
+          develop. The shim asks for one completion at a time and hands our tool
+          specs through, so `runAgent` stays the thing under test.
+
+
+          ## Constraints, not preferences
+
+
+          - **It must not ship.** Anthropic permits subscription auth for
+          "ordinary, individual usage" but does not permit third-party
+          developers "to offer Claude.ai login or to route requests through
+          Free, Pro, or Max plan credentials on behalf of their users" (Claude
+          Code legal terms, checked 2026-08-10). A localhost entry is inert in a
+          deployed build, but gate it out of production anyway rather than
+          relying on that: an entry offering a Claude-subscription-backed
+          provider should not be in the bundle a user downloads, whether or not
+          it would resolve.
+
+          - **It is not free headroom.** Agent SDK usage currently draws from
+          the same subscription limits as interactive Claude Code (the separate
+          monthly credit was announced for 2026-06-15 and paused on the day).
+          Testing competes with our own coding sessions, and Anthropic has said
+          it will revisit. Build this to make development cheap now, and do not
+          let the loop's design come to depend on it.
+
+
+          ## What it does not replace
+
+
+          Token accounting through the shim will not represent what a BYOK user
+          pays, so AGENT-24's measurements have to be taken against a real API
+          key. This makes iteration cheap; it does not make the efficiency work
+          optional, which is why it sits after it.
+        id: 019fed3b-ffa0-71e8-be8f-9192edeb8cd4
+        created_at: 2026-08-10T19:52:40.096Z
+        updated_at: 2026-08-10T20:04:52.972Z
+      - ref: AGENT-26
+        area: AGENT
+        title: Point the agent at any OpenAI-compatible endpoint
+        status: to-do
+        sort_path: "000026"
+        priority: 0
+        deps:
+          - AGENT-25
+        body: >-
+          A base-URL field in the agent settings, so the provider can be an
+          endpoint the user names rather than only one of the three we ship. **A
+          real feature, not a development backdoor** - it is how someone points
+          the agent at Ollama or any local/self-hosted model, and it is the
+          honest way to ship what AGENT-25 builds for the desk.
+
+
+          Small, because the shape is already there: `AgentConfig` holds `keys`
+          and `models` as `Partial<Record<ProviderId, string>>`, so this is a
+          third map of the same kind (`baseUrls`), plus one more `PROVIDERS`
+          entry with a blank `baseUrl` meaning "the user supplies it".
+          `AgentSettings.tsx` iterates `PROVIDER_IDS`, so the picker needs no
+          change; the only new control is the URL field.
+
+
+          - **The key stays optional**, since a self-hosted endpoint may want
+          none - but keep it *supported*: a shared secret typed there and
+          checked by the endpoint is a second lock, useful where the first one
+          is a network boundary.
+
+          - **The model becomes free text** with no suggestions, which the field
+          already allows (`models` is described as a few well-known ids for the
+          picker, not a constraint).
+
+
+          ## What it unlocks, and the line it must not cross
+
+
+          The motivating case is testing prompts away from the desk: the
+          AGENT-25 shim on an always-on machine, reached from a phone. Two
+          requirements fall out of the browser calling providers directly - the
+          endpoint must terminate **TLS** (an HTTPS app will not call `http://`)
+          and must send **CORS** headers for the app's origin.
+
+
+          It must be reached over a **private tunnel** (Tailscale, or an
+          access-controlled equivalent), not published. The credentials stay on
+          one machine, and "my own requests from my own devices" stays
+          unambiguous in a way that a subscription-backed endpoint on a public
+          host does not - the permitted case is ordinary individual usage, and
+          the prohibited one is routing requests through plan credentials on
+          behalf of users. This ticket ships the *field*; what a developer
+          points it at is theirs, and nothing about a Claude subscription is
+          offered to anyone by the app.
+        id: 019fed47-6f4a-719a-9e0a-18b0db4e1f86
+        created_at: 2026-08-10T20:05:09.579Z
+        updated_at: 2026-08-10T20:05:09.579Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -7680,8 +7903,8 @@ projects:
         updated_at: 2026-08-03T19:46:58.146Z
       - ref: MOBILE-6
         area: MOBILE
-        title: Clips and pads as sections under the roll
-        status: to-do
+        title: Pads and clips as sections under the roll
+        status: review
         sort_path: "000006"
         priority: 0
         deps:
@@ -7746,11 +7969,137 @@ projects:
           release is explicit) is prototyped and is one flag away.
 
 
+          ## Built 2026-08-05: the pads
+
+
+          The pads shipped; the clip rail as a section did not, so Clips is
+          still a segment in the sheet's switch. Everything above holds, and
+          three things were decided in the building of it:
+
+
+          **The octave count is a function of the room, not of the device.**
+          "One octave on a phone, two on a tablet" is right about *width* and
+          says nothing about height, and height is what actually runs out: a
+          landscape phone has ~130px of editor at Half, a tablet in portrait has
+          ~800px at Full. So `fitPads` computes the row limit from the editor's
+          height at the *committed* detent - derived from the workspace and the
+          detent fraction rather than measured on the sheet, because a sheet
+          mid-throw is held at full height and translated, and measuring it
+          would add a row during the gesture and take it back on settle (the
+          trap the roll's re-centring fell into). The stored count is kept as
+          *asked for*, so throwing the sheet up gives back the rows that did not
+          fit at Half.
+
+
+          **The pads take a share of the editor, not all but a sliver of it**
+          (corrected 2026-08-05, on the report that expanding the sheet bought
+          no more rows). The first version kept a flat 40px for the roll and
+          capped the pads at four rows, and the two constants failed in opposite
+          directions: below the cap the pads absorbed *every* pixel a taller
+          sheet added, so Half and Full left the roll the same unreadable
+          sliver; above it, extra height bought nothing at all. Both are gone,
+          for one number. `PADS_SHARE`: the pads may take 65% of the editor and
+          the roll keeps the rest, so raising the sheet grows both, and dropping
+          back to Half gives rows away before it gives away notes. On a 390x844
+          phone that is 1 row / 150px of roll at Half against 3 / 217 at Full,
+          where it was 2 / 60 and 4 / 127. Nothing arbitrary is left to pick:
+          the room says how many rows there is *space* for and `OCTAVE_RANGE`
+          says how many there are *notes* for.
+
+
+          Worth knowing, since it is why this arrived as "it limits the rows on
+          my actual phone but not in Chrome's mobile mode": an emulated viewport
+          is often taller than the device's real one (no address bar, no home
+          indicator), which put Half over the four-row cap and made both detents
+          look identical.
+
+
+          Where nothing fits at all - landscape at Half - the section says
+          "Raise the sheet to play" rather than showing a clipped half-row. At
+          Full, landscape gets a row by folding the key and octave controls into
+          the section's header: it is short *and* wide, so the header has the
+          width; and if that is still not enough, it gives up the roll's share
+          for a single row. The concessions are an ordered list and the first
+          arrangement that fits a row wins, so the controls' own row always goes
+          before the roll's share does - a label costs less than the thing you
+          are playing along to.
+
+
+          **Slide between pads, decided by an axis lock** (2026-08-05). The
+          bullet above asked for slide-to-glissando and the first version
+          deliberately refused it: every pad captured its pointer, so a finger
+          that wandered kept sounding the note it started on. The reason it is
+          not free is that the two gestures collide *by geometry* - the pad
+          below a pad is another pad, so "dragged down 34px to latch" and "slid
+          onto the neighbour" are the same event stream. The first 8px of travel
+          therefore picks the axis and holds it for the rest of that press, the
+          way a scroller does. A slide is horizontal only, which is the shape of
+          a glissando anyway, and the sustain drag is four times the lock
+          distance so it has room to declare itself.
+
+
+          Capture is also why the slide has to hit-test for itself
+          (`elementFromPoint`): the events keep arriving at the pad the finger
+          started on, so the target says where the gesture *began*, never where
+          the finger is. Crossing releases the note it left unless another
+          finger is also on it - a two-handed glissando crosses, and the
+          crossing must not silence the note the other hand is holding - and a
+          finger over no pad holds its note rather than cutting out, so sliding
+          through the gap above an accidental is a slide and not a lift.
+
+
+          **The pads sit under every surface, not inside Edit** (2026-08-05).
+          They were a child of the roll's surface, so switching to Rack or Clips
+          took away the way to play. Playing while you turn a filter is as much
+          the point as playing while you edit notes, and having to leave the
+          rack to hear what you just changed is exactly what a section rather
+          than a fourth tab was for. They render at the foot of the sheet now,
+          under whichever surface is showing; `PADS_SHARE` divides the sheet
+          with that surface rather than specifically with the roll.
+
+
+          **A kit gets its own pads.** A drum kit has no key, so the scale
+          layout would be a lie told in note names - intervals of a tonic over a
+          General MIDI map where 36 is a kick. Kit tracks get a grid of their
+          loaded pads instead, labelled with the sample, reusing `usePads`. This
+          is what makes drums recordable on a phone, which is the most likely
+          thing anyone wants to do on one.
+
+
+          **The velocity lane now starts folded on touch.** 56px of lane is a
+          whole row of pads, and velocity already renders as note fill strength;
+          the roll's settings menu still turns it back on. Editing velocity per
+          note belongs in the note's own menu (MOBILE-7).
+
+
+          Notes go out through `LiveNotes` - the seam the computer keyboard and
+          hardware MIDI already use - so recording came for free: arm, record,
+          play the pads, and the take lands as a clip. That is the point of the
+          whole ticket, and it is covered end to end in `mobile-shell.e2e.ts`.
+
+
+          Fixed on the way past, because the pads' key menu is the worst case
+          for it: `Menu` submenus opened level with their own row and ran off
+          the bottom of a phone, so most of a twelve-row list was under the
+          fold. They now measure on open, slide up to fit, scroll if taller than
+          the viewport, and no longer close on a scroll that started inside the
+          popover.
+
+
+          Left for a follow-up: the clip rail as the second section,
+          `EditorSection` gaining a second consumer (the device rack is the
+          likely third), and MOBILE-11, which the pads exposed - count-in is a
+          surface away from the record button it governs. What the pads should
+          learn next is its own set of tickets: MOBILE-12 (chords mode),
+          MOBILE-13 (light up with what the track is playing), MOBILE-14
+          (velocity you can play), MOBILE-15 (drag up to bend).
+
+
           Note the drawer component is worth extracting properly - the device
-          rack will likely want one too.
+          rack will likely want one too. *(Done: `ui/shell/EditorSection.tsx`.)*
         id: 019fb8bf-839d-75ab-bdf2-caf8358426c2
         created_at: 2026-07-31T15:16:26.653Z
-        updated_at: 2026-07-31T15:16:26.653Z
+        updated_at: 2026-08-05T16:11:39.340Z
       - ref: MOBILE-7
         area: MOBILE
         title: "Touch editing: select, then handles and a kebab"
@@ -7923,7 +8272,7 @@ projects:
       - ref: MOBILE-9
         area: MOBILE
         title: Adding from the library should get out of the way on a phone
-        status: to-do
+        status: review
         sort_path: "000009"
         priority: 0
         deps:
@@ -7955,9 +8304,40 @@ projects:
           because there the library is the destination rather than the source.
           So the rule is about where the user's attention is going, not about
           the library as such.
+
+
+          ## Built 2026-08-05
+
+
+          One rule, as the ticket asked. `LibraryPanel` already had a
+          `pickResult` wrapper for search results (act, then clear the query);
+          it turned out that "acting on a library row and then getting out of
+          the way" is the same idea, so it generalised into `picked` and every
+          row now goes through it - instruments, patches applied or added as a
+          track, MIDI devices, effects, samples, and selecting a track from the
+          results. Clearing the query stays part of it and is a no-op outside
+          the results view, since a query is what puts you there.
+
+
+          The panel takes an optional `onPick`, and `MobileShell` passes it only
+          when the library is *not* docked - the distinction the ticket pointed
+          at, spent in one line where the panel is framed rather than threaded
+          through as a device flag.
+
+
+          **Library management is deliberately not a pick.** Deleting a patch
+          and removing a sample stay put: they change the library, not the
+          track, so there is nothing behind the panel to go and look at. Same
+          reasoning as `onRevealSamples` in reverse.
+
+
+          Covered both ways in `mobile-shell.e2e.ts`: on a phone, picking FM
+          closes the sheet and the editor behind it reads `fm`; on a tablet the
+          same pick changes the track and leaves the docked column exactly where
+          it was.
         id: 019fb948-6bc4-73dc-b70a-8c29daf6002f
         created_at: 2026-07-31T17:45:58.980Z
-        updated_at: 2026-07-31T17:45:58.980Z
+        updated_at: 2026-08-05T16:24:36.031Z
       - ref: MOBILE-10
         area: MOBILE
         title: Swipe the library and agent sheets closed
@@ -8062,3 +8442,282 @@ projects:
         id: 019fcf0a-d942-71ef-8a6b-fd508694a8b7
         created_at: 2026-08-04T23:10:22.531Z
         updated_at: 2026-08-04T23:10:22.531Z
+      - ref: MOBILE-11
+        area: MOBILE
+        title: Project settings are unreachable while the sheet is up
+        status: review
+        sort_path: "000011"
+        priority: 0
+        deps:
+          - MOBILE-5
+        body: >-
+          Reported 2026-08-05, testing the pads on a phone: **count-in and
+          groove are missing from the shell's ⋮** unless you first park the
+          sheet.
+
+
+          The cause is `isActiveSurface` doing exactly what it was built to do.
+          The shell's ⋮ shows the *active surface's* controls above the
+          project's, and the arrangement only owns it while the sheet is parked
+          (MOBILE-5). Count-in, Groove and Groove amount live in
+          `ArrangementTimeline`'s compact controls, so they leave with it - and
+          the sheet now opens at Half, so the default state of the app is the
+          one where they are gone.
+
+
+          **They are misfiled, not mis-shown.** Count-in and groove are
+          properties of the *project*, not of the arrangement surface: they read
+          and write project state, they change what recording and playback do
+          everywhere, and nothing about them is about the lane you are looking
+          at. Tempo, meter and the metronome are already in `MobileShell`'s
+          `projectItems` for precisely that reason, and count-in sitting a
+          surface away from the record button it governs is the sharpest version
+          of the problem.
+
+
+          ## Fixed 2026-08-05, both halves
+
+
+          **The reachability half went further than this ticket proposed.**
+          Rather than moving these three rows so they survive the swap, the swap
+          itself is gone: every mounted surface publishes to the shell's ⋮ under
+          its own key and the menu shows all of them at once, under headings.
+          `isActiveSurface` - a prop threaded down through `TrackEditor` and
+          `InstrumentEditor` to the roll, existing only to arbitrate a single
+          registry slot - is deleted. Following the front-most surface was a
+          focus idea imported to a screen that has no focus: at Half you are
+          looking at the timeline and the roll together, so it was hiding
+          controls for a panel in plain view.
+
+
+          **The misfiling half is fixed as asked**, and grouping is what forced
+          it: under a heading that says "Arrangement", count-in and groove are
+          visibly in the wrong place. They now build in
+          `src/ui/projectSettings.ts` and are asked for by both menus that want
+          them - the timeline's own kebab on desktop (still one kebab, not two)
+          and the shell's project group on touch.
+
+
+          Nothing else in the timeline's compact list turned out to be
+          project-level; what remains is snap, zoom and add-track, which really
+          are about that surface.
+
+
+          Also seen and **already fixed** in the pads branch, recorded here so
+          it is not re-diagnosed: submenus opened level with their own row and
+          ran off the bottom of a phone, so most of a twelve-row list was under
+          the fold. Every level is now portaled and placed against the viewport
+          (`menuPlacement.ts`).
+        id: 019fcf46-101e-7729-afa9-57e4258701ed
+        created_at: 2026-08-05T00:15:03.198Z
+        updated_at: 2026-08-05T15:04:11.678Z
+      - ref: MOBILE-12
+        area: MOBILE
+        title: "Chords mode: the pads play the key, not just the notes"
+        status: to-do
+        sort_path: "000012"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          A toggle on the scale pads that turns each in-scale pad from a note
+          into its **diatonic chord**, so a phone can lay down a progression
+          with seven pads instead of asking for three fingers on 52px targets.
+          In C major: I ii iii IV V vi vii°, labelled by degree exactly as the
+          note pads are labelled by interval.
+
+
+          This is the layout's own idea taken one step further, not a new
+          surface. The pads are already "a scale, drawn from its interval
+          pattern"; a chord is the same pattern read three notes at a time, so
+          `scales.ts` gains a `triadAt(tonic, scale, degree)` and the geometry
+          does not move at all.
+
+
+          **The accidental band above becomes the variations**, which is what it
+          is already shaped for: the notes you reach *for*. Per degree, the
+          slots above it offer 7th / 9th / sus4 / sus2 rather than chromatic
+          notes. That keeps the "everything is one flick away" feel - you play
+          the triad on the beat and reach up for the colour - and it keeps the
+          two modes visually the same instrument.
+
+
+          Open questions worth prototyping rather than deciding on paper:
+
+
+          - **Voicing.** Root position throughout makes a progression leap
+          around and sound like a keyboard demo. Voice-leading each chord to the
+          nearest inversion of the previous one is what makes it sound played,
+          and it is a small pure function over the previous chord - but it means
+          the pad's *sound* depends on what came before, which is a surprise the
+          labels cannot show. Try both.
+
+          - **Whether the variations are momentary or sticky.** Holding the 7th
+          while pressing the degree is the guitarist's answer; tapping it to arm
+          the next chord is the phone's. The second is easier to play
+          one-handed, which is the whole reason for the mode.
+
+          - Chords land in a clip as their notes, so nothing about recording or
+          the note model changes. Whether the clip should *remember* that a
+          chord was played (for later re-voicing) is a real question, and the
+          answer is probably no until there is a project key (see the note in
+          `padSettings.ts`).
+
+
+          Most musical value of the pad follow-ups and the most self-contained:
+          pure maths plus labels, no engine change, no new seam.
+        id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
+        created_at: 2026-08-05T16:10:13.045Z
+        updated_at: 2026-08-05T16:10:13.045Z
+      - ref: MOBILE-13
+        area: MOBILE
+        title: The pads light up with what the track is actually playing
+        status: to-do
+        sort_path: "000013"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          Right now a pad lights only when a finger is on it: `usePadTouch` owns
+          the sounding set, so it knows about *your* notes and nothing else. A
+          clip playing back, an arpeggiator running, the octavator doubling a
+          note - none of it shows. Make the pads a display of the track as well
+          as an input to it, and the section becomes something you can play
+          *along with*, and learn a part from.
+
+
+          **Tap the end of the chain, not the start.** The seam is `NoteTarget`
+          (`midi/device/GraphMidiDevice.ts`): the engine hands out the head of
+          the track's MIDI device chain, and a monitor placed at the *end* of it
+          sees what the instrument actually receives - the arpeggiator's notes
+          rather than the one that triggered them, the octavator's doubling
+          rather than the single note played. That is the version worth showing;
+          tapping the head would just be an echo of the finger already lighting
+          the pad.
+
+
+          - The pads then take two sources for "sounding" - the local presses
+          and the observed stream - and it is a union, not a replacement. Keep
+          them distinguishable in the rendering (a finger's note is a press, the
+          track's is an indication).
+
+          - **Rate.** A 16th-note arp at 140bpm is ~9 events/sec and a chord
+          multiplies it. Accumulate into a ref and publish on a rAF, the same
+          discipline `useSheetDrag` uses; a `setState` per note-on would
+          re-render the sheet at the arp's rate.
+
+          - Notes outside the shown octaves have nowhere to light. Say so
+          quietly (an edge marker on the row) rather than silently dropping them
+          - "why is nothing lighting" is otherwise a bug report.
+
+          - Kit pads get it for free and it may matter more there: a drum
+          pattern playing back across the pads is legible in a way a piano roll
+          of a kit is not.
+
+
+          Useful beyond mobile: the same monitor is what a desktop keyboard
+          display or a MIDI-activity indicator would want, so put it in
+          `audio/`, not in `ui/pads/`.
+        id: 019fd2b0-c5e5-7639-ac7d-216a77f8a4b4
+        created_at: 2026-08-05T16:10:28.197Z
+        updated_at: 2026-08-05T16:10:28.197Z
+      - ref: MOBILE-14
+        area: MOBILE
+        title: Velocity you can play, not just edit
+        status: to-do
+        sort_path: "000014"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          `PAD_VELOCITY` is one honest constant (0.85) because a touchscreen has
+          no force to read - `PointerEvent.pressure` is 0 or a flat 0.5 on every
+          device tried. That makes everything played on a phone perfectly even,
+          which is fine for laying down a part and wrong for playing one.
+
+
+          **A velocity control a second finger can hold**, beside the pads, read
+          at note-on. The pads are already multi-touch, so a thumb on the
+          control while the fingers play needs no new gesture machinery - it
+          needs the value to live in a ref that `noteOn` reads, not in state, so
+          moving it never re-renders the pads mid-phrase.
+
+
+          - It sets the velocity of the *next* note, not the sounding ones.
+          Changing a note's velocity after note-on is aftertouch, which is a
+          different feature and a different message; do not quietly conflate
+          them.
+
+          - **A vertical strip down the side of the pads** is the shape that
+          lets a thumb ride it, and it costs width rather than the height the
+          pads are always short of. A slider in the controls row is cheaper but
+          is a reach away from where the playing hand is.
+
+          - Worth trying before building the strip: **velocity from where on the
+          pad you press**, MPC-style. It is free in interaction terms, but the
+          pads are 52px tall and the vertical axis already carries the sustain
+          drag and (per MOBILE-14) the bend, so the axis is crowded. Probably
+          the reason the strip wins.
+
+          - Whichever wins, the recorded take gets real velocities and the
+          roll's velocity lane finally has something to show that was not typed
+          in.
+
+
+          Small in code, and the smallest of the pad follow-ups; the design
+          question (where a thumb can actually reach while playing) is the whole
+          of it.
+        id: 019fd2b0-f5fc-7774-9b45-e266f372e3c7
+        created_at: 2026-08-05T16:10:40.508Z
+        updated_at: 2026-08-05T16:10:40.508Z
+      - ref: MOBILE-15
+        area: MOBILE
+        title: Drag up to bend, like pushing a string
+        status: to-do
+        sort_path: "000015"
+        priority: 0
+        deps:
+          - MOBILE-6
+        body: >-
+          The pads' vertical axis already means something downward (drag down
+          past 34px and the note latches) and nothing upward, and the axis lock
+          added with slide gives a clean place to put it: **down latches, up
+          bends**, the same finger, decided by direction. Pushing a note up like
+          a string is the one expressive gesture a touchscreen is genuinely
+          *good* at, and the pads currently have none.
+
+
+          **The blocker is that instruments cannot bend.** `Instrument` is
+          `noteOn` / `noteOff` / `playNote` / `allNotesOff`, and there is no
+          pitch on a sounding voice to move. The shape of the fix is small and
+          general:
+
+
+          - `Instrument.pitchBend(semitones, when?)`, implemented once in
+          `BaseInstrument` by ramping every live voice's sources' `detune`.
+          Oscillators and `AudioBufferSourceNode` both have `detune`, so the
+          synths and the sampler are all covered by the base and no instrument
+          needs its own version.
+
+          - Per-track and monophonic-in-spirit (bend moves everything sounding
+          on that track), as MIDI channel bend is. Per-voice bend is MPE and is
+          a much larger design.
+
+          - Range is a setting with a sane default of 2 semitones, because that
+          is what a guitar bend and every synth's default agree on.
+
+
+          **It is live-only expression to start with, and that has to be said
+          out loud**: the note model has no bend, so a bent note records as its
+          unbent self. Making it record means a per-note or per-clip automation
+          lane, which is a real feature (and overlaps whatever automation lands
+          generally) rather than a follow-on to this. Ship the feel first; do
+          not let the recording question hold the gesture hostage, and do not
+          pretend the take captured it.
+
+
+          Largest of the pad follow-ups, and the only one that reaches into the
+          audio engine.
+        id: 019fd2b1-2f06-77d4-9f51-26a706a0a533
+        created_at: 2026-08-05T16:10:55.110Z
+        updated_at: 2026-08-05T16:10:55.110Z

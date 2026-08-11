@@ -65,3 +65,109 @@ test("a row menu near the bottom edge flips above and stays inside the viewport"
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(view.width + 0.5);
 });
+
+/**
+ * Placement. The geometry itself is pure and unit-tested in `test/menuPlacement.test.ts`
+ * across every position in a phone viewport; what needs a browser is that the component
+ * asks the right questions - that each level is portaled and measured, so none of them is
+ * clipped by, or scrolled inside, the one that opened it.
+ */
+const popovers = (page: Page) => page.locator("[data-menu-popover]");
+
+/** Every open popover, boxed, with whether it is inside the viewport and whether it scrolls. */
+const popoverBoxes = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll("[data-menu-popover]")].map((popover) => {
+      const box = popover.getBoundingClientRect();
+      return {
+        inside: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+        scrolls: popover.scrollHeight > popover.clientHeight + 1,
+        rows: popover.querySelectorAll('[role^="menuitem"]').length,
+      };
+    }),
+  );
+
+/**
+ * What a real device does when the finger lifts: the touch pointer is destroyed, so the
+ * browser fires pointerout/pointerleave up the tap target's ancestors. Playwright's `tap`
+ * does not, which is exactly why the bug this covers reached a phone - hover handlers that
+ * did not filter touch closed the submenu 140ms after it was tapped open.
+ */
+async function liftFinger(page: Page, name: string) {
+  await page.evaluate((rowName) => {
+    const row = [...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes(rowName));
+    if (!row) throw new Error(`no menu row matching ${rowName}`);
+    row.dispatchEvent(new PointerEvent("pointerout", { pointerType: "touch", bubbles: true }));
+    row.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+    row.closest("[data-menu-popover]")?.dispatchEvent(new PointerEvent("pointerleave", { pointerType: "touch" }));
+  }, name);
+}
+
+test.describe("placement", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("a third level opens, on screen, and its choice lands", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    // Meter -> Beat unit -> 8 is a deepest-in-the-app chain, and the shape that broke: a
+    // flyout given `overflow-y: auto` clips the flyout *it* opens, so the third level
+    // answered a tap with a scrollbar and nothing else.
+    await page.getByRole("button", { name: "More controls" }).tap();
+    await page.getByRole("menuitem", { name: /^Meter/ }).tap();
+    await page.getByRole("menuitem", { name: "Beat unit" }).tap();
+    // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
+    // opened by a tap has to survive the finger that opened it leaving.
+    await liftFinger(page, "Beat unit");
+    await page.waitForTimeout(300);
+
+    const levels = await popoverBoxes(page);
+    expect(levels, "three levels open at once").toHaveLength(3);
+    levels.forEach((level) => expect(level.inside, "every level inside the viewport").toBe(true));
+
+    await page.getByRole("menuitemradio", { name: "8", exact: true }).tap();
+    await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
+    await page.getByRole("button", { name: "More controls" }).tap();
+    await expect(page.getByRole("menuitem", { name: /^Meter/ })).toContainText("4/8");
+  });
+
+  /**
+   * A resize used to close the menu, which is fine for a rotated phone and wrong for the one
+   * resize that matters here: a virtual keyboard. Tapping the tempo field would have shut the
+   * menu the field is in, before a digit could be typed. Each popover re-places instead.
+   */
+  test("a resize re-places the menu rather than closing it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await page.getByRole("button", { name: "More controls" }).tap();
+    await page.getByRole("spinbutton", { name: "Tempo" }).tap();
+    // What the keyboard does to the viewport, without needing a keyboard.
+    await page.setViewportSize({ width: 390, height: 500 });
+
+    await expect(popovers(page)).toHaveCount(1);
+    const [menu] = await popoverBoxes(page);
+    expect(menu.inside, "and it is inside the viewport it was left with").toBe(true);
+    await page.getByRole("spinbutton", { name: "Tempo" }).fill("96");
+    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("96");
+  });
+
+  test("a menu too tall for the viewport scrolls instead of running off it", async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.goto("/");
+    await dismissStart(page);
+
+    await page.getByRole("button", { name: "More controls" }).tap();
+    const [overflow] = await popoverBoxes(page);
+    expect(overflow.rows, "more rows than a 390px-tall viewport can show").toBeGreaterThan(10);
+    expect(overflow.inside).toBe(true);
+    expect(overflow.scrolls).toBe(true);
+
+    // Scrolling *inside* the menu is the menu being used, not the page moving under it -
+    // and the popover closes on any other scroll, so the two have to be told apart.
+    await popovers(page)
+      .first()
+      .evaluate((popover) => popover.scrollBy(0, 120));
+    await expect(popovers(page)).toHaveCount(1);
+  });
+});

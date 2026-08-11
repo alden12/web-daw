@@ -148,7 +148,7 @@ export function CenterWorkbench({
 
   if (!selectedTrack) {
     return (
-      <div className="[grid-area:center] bg-center flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+      <div className="[grid-area:center] bg-stage flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <div className="flex items-center h-11 border-b border-line shrink-0">{indicators}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
@@ -165,7 +165,7 @@ export function CenterWorkbench({
         : selectedTrack.instrumentType;
 
   return (
-    <div className="[grid-area:center] bg-center flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+    <div className="[grid-area:center] bg-stage flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
       {/* The selected track is a single editor tab (reserving space for future
           multi-window tabs); it carries the track name + kind chip. The agent-expand
           control sits at the far right of the tab bar. */}

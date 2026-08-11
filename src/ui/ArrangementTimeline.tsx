@@ -28,7 +28,7 @@ import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu, type MenuItem } from "./Menu";
-import { GROOVES } from "../audio/grooves/catalog";
+import { useCountInBars, useProjectSettingItems } from "./projectSettings";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { clamp } from "../util";
@@ -84,7 +84,6 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
-  isActiveSurface = true,
   pinSelectedTrack = false,
   stickyHeaders = true,
   compact = false,
@@ -112,14 +111,6 @@ export function ArrangementTimeline({
    * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
    */
   compact?: boolean;
-  /**
-   * Whether this surface currently owns the shell's ⋮ (MOBILE-5). Since the editor sheet
-   * replaced the tabs, the arrangement and the editor are mounted *at the same time*, so
-   * "compact" alone is no longer enough to decide who publishes - both would, and the
-   * later mount would silently win. The shell hands this to whichever surface is in front:
-   * the arrangement while the sheet is parked, the editor once it is up.
-   */
-  isActiveSurface?: boolean;
   /**
    * Pin the selected track's row to the top rather than merely scrolling it into view
    * (MOBILE-5). At the editor sheet's Full detent only a sliver of arrangement shows, and
@@ -158,10 +149,10 @@ export function ArrangementTimeline({
   const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
   const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
-  // Recording settings live in the toolbar's settings menu (right). The count-in is
-  // a persisted preference pushed to the recorder; the device list/selection are
-  // recorder state. (The Record button itself stays in the transport.)
-  const [countInBars, setCountInBars] = usePersistentNumber("web-daw:count-in-bars", 1, 0, 2);
+  // The count-in is a persisted preference pushed to the recorder from here, because this
+  // component is mounted in both shells; the rows that *set* it are project settings and are
+  // built alongside groove in `projectSettings.ts`. (The Record button stays in the transport.)
+  const [countInBars] = useCountInBars();
   useEffect(() => {
     recorder.setCountInBars(countInBars);
   }, [recorder, countInBars]);
@@ -390,10 +381,13 @@ export function ArrangementTimeline({
   const createMidiTrack = (groupId: string) =>
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
+  const projectSettingItems = useProjectSettingItems(project, dispatch);
 
-  // The toolbar's options, as data - so the same list can be a kebab on desktop or fold
-  // into the shell's single ⋮ on touch (MOBILE-1).
-  const optionItems: MenuItem[] = [
+  /**
+   * What this surface adds to a project - the only things in the toolbar's menu that are
+   * really about the arrangement.
+   */
+  const trackItems: MenuItem[] = [
     {
       label: "Add group",
       onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
@@ -402,51 +396,21 @@ export function ArrangementTimeline({
     // (or a fresh group). Nested as submenus so the menu stays short.
     { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
     { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
-    { separator: true },
-    // Recording settings live here too (one toolbar menu, not a second kebab).
-    {
-      label: "Count-in",
-      submenu: [
-        {
-          label: "No count-in",
-          checked: countInBars === 0,
-          onClick: () => setCountInBars(0),
-        },
-        {
-          label: "1 bar",
-          checked: countInBars === 1,
-          onClick: () => setCountInBars(1),
-        },
-        {
-          label: "2 bars",
-          checked: countInBars === 2,
-          onClick: () => setCountInBars(2),
-        },
-      ],
-    },
-    { separator: true },
-    // Groove: project-wide swing/feel applied at playback (non-destructive).
-    {
-      label: "Groove",
-      submenu: GROOVES.map((groove) => ({
-        label: groove.name,
-        checked: project.grooveId === groove.id,
-        onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
-      })),
-    },
-    {
-      label: "Groove amount",
-      submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
-        label: `${Math.round(value * 100)}%`,
-        checked: project.grooveAmount === value,
-        onClick: () => dispatch({ type: "setGroove", amount: value }),
-      })),
-    },
   ];
+  /**
+   * The desktop toolbar's kebab keeps count-in and groove: there is no other menu on this
+   * screen, and one kebab beats two. On touch they go to the shell's *project* group instead
+   * of being published with the rows above - they are project settings, and a menu that
+   * groups by surface would be filing them under a heading that is not true (MOBILE-11).
+   */
+  const optionItems: MenuItem[] = [...trackItems, { separator: true }, ...projectSettingItems];
 
   // On touch the toolbar row goes away and its contents move to the shell's ⋮: the
-  // options above, plus the snap and zoom controls that sit on the toolbar's right.
+  // options above, plus the snap and zoom controls that sit on the toolbar's right. Zoom
+  // folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2), and
+  // this list shares one menu with the roll's and the project's.
   usePublishSurfaceControls(
+    "arrangement",
     [
       { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
       {
@@ -457,12 +421,17 @@ export function ArrangementTimeline({
           onClick: () => setSnapDiv(option.value),
         })),
       },
-      { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
-      { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
+      {
+        label: "Zoom",
+        submenu: [
+          { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
+          { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
+        ],
+      },
       { separator: true },
-      ...optionItems,
+      ...trackItems,
     ],
-    compact && isActiveSurface,
+    compact,
   );
 
   // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
@@ -579,7 +548,7 @@ export function ArrangementTimeline({
                         dispatch={dispatch}
                       />
                     </div>
-                    <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
+                    <div className={`${ROW} border-b border-line bg-stage/40`} style={{ width: laneWidth }} />
                   </div>
                 ) : (
                   <TrackRow

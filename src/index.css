@@ -2,12 +2,18 @@
 
 /* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
    center workbench reads brightest. Voices: you = teal, agent (built-in AI) =
-   violet, claude (the MCP / Claude Code driver) = coral. */
+   violet, claude (the MCP / Claude Code driver) = coral.
+
+   Name tokens after their ROLE, never after a position or an alignment. Tailwind
+   generates a utility per token, so a token named for a position collides with the
+   utility of the same name: `--color-center` made `text-center` a text *colour* as
+   well as an alignment, both rules matched, and colour sorts later - so a centred
+   label silently came out #22262f. Nothing in the class list said why. */
 @theme {
   --color-ground: #101216;
   --color-rail: #14171c;
   --color-panel: #1a1d24;
-  --color-center: #22262f;
+  --color-stage: #22262f;
   --color-card: #2b313c;
   --color-line: #363d49;
   --color-line-soft: #282e38;
