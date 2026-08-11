@@ -185,10 +185,15 @@ quietly *less capable* than the desktop fields they stood in for: 174 was on the
 unreachable. The field keeps a text draft alongside the value, so typing "1" on the way to "140"
 does not snap the project to the minimum and back.
 
-One line is worth stopping on: the input says `[text-align:center]` rather than `text-center`,
-because the theme defines a `center` colour - so `text-center` is *also* a text-colour utility, it
-sorts after `text-bright`, and the digits came out near-invisible on the field's own background.
-Nothing in the class list says so, which is why it says so in a comment.
+This field also turned up a theming bug worth knowing about, since it could have bitten anywhere.
+Its digits came out at `#22262f` on a `#101216` ground - near-invisible - because the theme defined
+a `--color-center` token, which makes `text-center` a text *colour* as well as an alignment. Both
+rules matched, colour utilities sort later, and nothing in the class list said so.
+
+The token is now `--color-stage` (`src/index.css`), named for its role rather than its position -
+which is the rule now written above the `@theme` block, because a token named after a position or
+an alignment collides with the utility of the same name. `center` was the only one of sixteen that
+did.
 
 ## 9. The library gets out of the way of what it just did
 
