@@ -2953,6 +2953,229 @@ projects:
             id: 019fb782-dfea-733c-8879-dc89ef9ccdae
             at: 2026-07-31T09:30:35.370Z
             actor: claude
+      - ref: AGENT-24
+        area: AGENT
+        title: The loop costs too much per turn
+        status: to-do
+        sort_path: "000024"
+        priority: 0
+        deps:
+          - AGENT-10
+        body: >-
+          One musical phrase through the in-app agent on Sonnet cost roughly **a
+          dollar**, and hit the step limit before finishing. Measured
+          2026-08-10. That is too expensive to iterate on the thinking loop
+          with, and it is the same dollar a user with their own key would pay -
+          so this is a product problem, not only a development one.
+
+
+          Three things compound in `agent/loop.ts`, and they multiply rather
+          than add:
+
+
+          - **No prompt caching.** The Anthropic entry in `providers.ts` points
+          at `api.anthropic.com/v1` and speaks the OpenAI-compatible dialect,
+          which does not carry `cache_control`. Every step therefore pays full
+          input price for a prefix that is almost entirely identical to the last
+          one. Native Anthropic caching bills a repeated prefix at a fraction of
+          that. Confirm what the compat layer supports before assuming it has to
+          mean a native provider path - if it does, the provider seam is the
+          place for it, not the loop.
+
+          - **The whole conversation is re-sent every step.** Each round appends
+          the assistant turn plus every tool result and re-posts the lot, so
+          early tokens are paid for once per remaining step. Cost grows with the
+          square of the step count, not linearly.
+
+          - **Tool results are never trimmed.** `list_samples` returns the whole
+          builtin catalogue and `list_parameters` a full parameter dump per
+          track, and they sit in the context for the rest of the run whether or
+          not anything still refers to them.
+
+
+          Also: `maxSteps` defaults to **8** and `useAgentChat` never passes
+          one. That budget was set when the loop was driven by cheaper, chattier
+          models; a model that plans in bigger strides runs out of steps
+          mid-phrase and says so. It should at least be configurable, and
+          probably scaled to what the model is.
+
+
+          ## Worth deciding while measuring
+
+
+          Whether the fix is to cache the prefix, to stop resending it, or both
+          - they overlap, and caching a prefix that should not have been resent
+          is the wrong order to do them in. Measure first: the run result
+          already carries `usage`, so the cheapest instrument is to log input
+          tokens per step for one real phrase and look at the shape of the curve
+          before changing anything.
+
+
+          ## On testing this cheaply, and why it is not a plan
+
+
+          A local shim (an OpenAI-compatible endpoint backed by the Claude Agent
+          SDK, added as one more entry in `PROVIDERS`) would let development
+          runs draw on a Claude subscription instead of an API key. Checked
+          2026-08-10, and two things bound it:
+
+
+          - **Only for our own use, never shipped.** Anthropic's Claude Code
+          legal terms permit OAuth/subscription auth for "ordinary, individual
+          usage" but do not permit third-party developers "to offer Claude.ai
+          login or to route requests through Free, Pro, or Max plan credentials
+          on behalf of their users". A local dev provider is fine; the same
+          thing in the deployed app is explicitly not.
+
+          - **It is not free headroom, and it is unstable.** A separate monthly
+          Agent SDK credit ($20 Pro to $200 Max 20x) was announced for
+          2026-06-15 and **paused on the day**; today Agent SDK / `claude -p`
+          usage draws from the same subscription usage limits as interactive
+          Claude Code, so it competes with our own coding sessions rather than
+          adding to them. Anthropic paused it because heavy agent use on
+          subscriptions is a large subsidy, and has said it will revisit - so
+          this is a way to make development cheaper today, not a foundation to
+          build on.
+
+
+          Which is the argument for doing this ticket regardless of which key
+          pays: the efficiency is the durable fix.
+
+
+          Blocked on nothing, but deliberately queued behind the current review
+          (2026-08-10).
+        id: 019fed31-44e2-765d-8f71-9e264084d282
+        created_at: 2026-08-10T19:40:56.930Z
+        updated_at: 2026-08-10T19:48:00.556Z
+      - ref: AGENT-25
+        area: AGENT
+        title: A local provider backed by the Agent SDK, so the loop can be developed
+        status: to-do
+        sort_path: "000025"
+        priority: 0
+        deps:
+          - AGENT-24
+        body: >-
+          Refining the thinking loop needs a lot of runs, and every run
+          currently costs API tokens paid for separately from the Claude
+          subscription the development already runs on. That cost is the thing
+          suppressing the testing - the loop is under-developed because trying
+          things is expensive, which is the wrong reason for a design to stay
+          where it is.
+
+
+          **Local only, deliberately.** At the desk this needs no settings UI at
+          all: the shim is on a known port, so the provider entry carries a
+          fixed `baseUrl` and there is nothing to type. Reaching it from
+          elsewhere (a phone, while out) needs a configurable endpoint and a
+          tunnel, and that is AGENT-26 - split off because localhost already
+          buys the whole point of this ticket, which is being able to try
+          things.
+
+
+          **The seam already exists.** `PROVIDERS` in `agent/providers.ts` is
+          plain data over an OpenAI-compatible `baseUrl`, and `provider.ts` is
+          generic across it; `AgentSettings.tsx` iterates `PROVIDER_IDS`, so a
+          new entry appears in the picker for free. The work is a small Node
+          server that accepts `/chat/completions` with tool specs, drives the
+          Claude Agent SDK, and translates the reply back. Nothing else in the
+          app changes.
+
+
+          **Single-turn, with the SDK's own tools off.** The Agent SDK runs its
+          own agent loop; if it is left to do so we would be testing *its* loop
+          rather than ours, which is the one thing this ticket exists to
+          develop. The shim asks for one completion at a time and hands our tool
+          specs through, so `runAgent` stays the thing under test.
+
+
+          ## Constraints, not preferences
+
+
+          - **It must not ship.** Anthropic permits subscription auth for
+          "ordinary, individual usage" but does not permit third-party
+          developers "to offer Claude.ai login or to route requests through
+          Free, Pro, or Max plan credentials on behalf of their users" (Claude
+          Code legal terms, checked 2026-08-10). A localhost entry is inert in a
+          deployed build, but gate it out of production anyway rather than
+          relying on that: an entry offering a Claude-subscription-backed
+          provider should not be in the bundle a user downloads, whether or not
+          it would resolve.
+
+          - **It is not free headroom.** Agent SDK usage currently draws from
+          the same subscription limits as interactive Claude Code (the separate
+          monthly credit was announced for 2026-06-15 and paused on the day).
+          Testing competes with our own coding sessions, and Anthropic has said
+          it will revisit. Build this to make development cheap now, and do not
+          let the loop's design come to depend on it.
+
+
+          ## What it does not replace
+
+
+          Token accounting through the shim will not represent what a BYOK user
+          pays, so AGENT-24's measurements have to be taken against a real API
+          key. This makes iteration cheap; it does not make the efficiency work
+          optional, which is why it sits after it.
+        id: 019fed3b-ffa0-71e8-be8f-9192edeb8cd4
+        created_at: 2026-08-10T19:52:40.096Z
+        updated_at: 2026-08-10T20:04:52.972Z
+      - ref: AGENT-26
+        area: AGENT
+        title: Point the agent at any OpenAI-compatible endpoint
+        status: to-do
+        sort_path: "000026"
+        priority: 0
+        deps:
+          - AGENT-25
+        body: >-
+          A base-URL field in the agent settings, so the provider can be an
+          endpoint the user names rather than only one of the three we ship. **A
+          real feature, not a development backdoor** - it is how someone points
+          the agent at Ollama or any local/self-hosted model, and it is the
+          honest way to ship what AGENT-25 builds for the desk.
+
+
+          Small, because the shape is already there: `AgentConfig` holds `keys`
+          and `models` as `Partial<Record<ProviderId, string>>`, so this is a
+          third map of the same kind (`baseUrls`), plus one more `PROVIDERS`
+          entry with a blank `baseUrl` meaning "the user supplies it".
+          `AgentSettings.tsx` iterates `PROVIDER_IDS`, so the picker needs no
+          change; the only new control is the URL field.
+
+
+          - **The key stays optional**, since a self-hosted endpoint may want
+          none - but keep it *supported*: a shared secret typed there and
+          checked by the endpoint is a second lock, useful where the first one
+          is a network boundary.
+
+          - **The model becomes free text** with no suggestions, which the field
+          already allows (`models` is described as a few well-known ids for the
+          picker, not a constraint).
+
+
+          ## What it unlocks, and the line it must not cross
+
+
+          The motivating case is testing prompts away from the desk: the
+          AGENT-25 shim on an always-on machine, reached from a phone. Two
+          requirements fall out of the browser calling providers directly - the
+          endpoint must terminate **TLS** (an HTTPS app will not call `http://`)
+          and must send **CORS** headers for the app's origin.
+
+
+          It must be reached over a **private tunnel** (Tailscale, or an
+          access-controlled equivalent), not published. The credentials stay on
+          one machine, and "my own requests from my own devices" stays
+          unambiguous in a way that a subscription-backed endpoint on a public
+          host does not - the permitted case is ordinary individual usage, and
+          the prohibited one is routing requests through plan credentials on
+          behalf of users. This ticket ships the *field*; what a developer
+          points it at is theirs, and nothing about a Claude subscription is
+          offered to anyone by the app.
+        id: 019fed47-6f4a-719a-9e0a-18b0db4e1f86
+        created_at: 2026-08-10T20:05:09.579Z
+        updated_at: 2026-08-10T20:05:09.579Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
