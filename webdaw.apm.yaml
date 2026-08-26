@@ -6840,6 +6840,29 @@ projects:
         id: 019fae08-0604-778c-9969-16ce3b4f438e
         created_at: 2026-07-29T13:19:49.252Z
         updated_at: 2026-07-29T13:19:49.252Z
+        notes:
+          - body: "2026-08-12: agreed the follow-on ordering off this ticket, after
+              reviewing what actually shipped. The format, interpreter,
+              validation, persistence, undo and live registration all work, and
+              six built-ins are already defs, so the ceiling is now the
+              five-kind vocabulary rather than the format. Order: **INST-12**
+              (envelope + per-note gate, the only open design question) ->
+              **INST-13** (the native-node tier: noise, buffer, constant, pan,
+              convolver, compressor, split/merge) -> **INST-14** (the same
+              authoring tools in the in-app agent panel, which today only exist
+              on the Node MCP server) -> **INST-15** (worklet-backed leaf
+              primitives, proven with our own `src/audio/dsp/` modules) ->
+              **INST-6** (Faust as a factory for more leaves). Faust
+              deliberately last: everything blocking us today is a native Web
+              Audio node needing no compiler, and INST-15 is the seam Faust
+              would plug into, so building it first turns INST-6 into \"more
+              leaves, cheaper\" rather than a whole new subsystem. INST-6 now
+              depends on INST-15, and INST-9's synthesized drum voices on
+              INST-13."
+            audience: user
+            id: 019ff33c-dc60-74af-99d6-547182db1801
+            at: 2026-08-11T23:51:19.904Z
+            actor: claude
       - ref: INST-5
         area: INST
         title: Extension SDK for third-party devices
@@ -6970,6 +6993,7 @@ projects:
         sort_path: "000006"
         priority: 0
         deps:
+          - INST-15
           - INST-5
         body: >-
           *Deps: INST-5.*
@@ -7068,7 +7092,7 @@ projects:
           the hosted platform and user libraries exist.
         id: 019fae08-d78c-7382-be06-aace3907a535
         created_at: 2026-07-29T13:20:42.892Z
-        updated_at: 2026-07-29T16:00:45.888Z
+        updated_at: 2026-08-11T23:51:12.073Z
       - ref: INST-7
         area: INST
         title: Audio pitch and time
@@ -7178,6 +7202,7 @@ projects:
         priority: 0
         deps:
           - INST-1
+          - INST-13
           - INST-3
         body: >-
           Two complementary paths, not either/or. The Sampler + the `drumkit`
@@ -7219,7 +7244,7 @@ projects:
           **extraction** (analyze a clip's deviations into a template).
         id: 019fae09-4e84-7231-8f24-338bced8717c
         created_at: 2026-07-29T13:21:13.348Z
-        updated_at: 2026-07-29T16:00:48.223Z
+        updated_at: 2026-08-11T23:51:12.732Z
       - ref: INST-10
         area: INST
         title: In-app IDE and user-authored components
@@ -7329,6 +7354,248 @@ projects:
             id: 019fb3c7-cd84-7393-8e2c-c0e0aaa7d43f
             at: 2026-07-30T16:07:23.780Z
             actor: claude
+      - ref: INST-12
+        area: INST
+        title: Envelopes and per-note gates in the declarative format
+        status: to-do
+        sort_path: "000012"
+        priority: 0
+        deps:
+          - INST-4
+        body: >-
+          **The gap.** A declarative voice graph has exactly one envelope, and
+          it is not in the graph. `amp` is a reserved endpoint owned by
+          `BaseInstrument`, which applies velocity and the amp ADSR;
+          `GraphInstrument.createVoice` builds the voice with `reserved: { amp
+          }` and connects it to the output. There is no way to declare a second
+          envelope, so a filter sweep per note - the single most characteristic
+          gesture in subtractive synthesis - is not expressible.
+          `src/audio/instruments/graph/subtractive.ts` has a static cutoff for
+          exactly this reason.
+
+
+          **Why this is a design decision and not just another primitive.**
+          Every current node kind is stateless with respect to notes: it is
+          built per voice, given its field values at `startTime`, and then left
+          alone. An envelope needs a *gate* - a note-on time (already available
+          as the voice's `when`) and a note-off time, which the format has no
+          concept of. Settling it means deciding:
+
+
+          - How a node kind receives the gate. The natural shape is an `env`
+          kind that the interpreter special-cases with the voice's on/off times,
+          the way `osc` frequency already special-cases `noteFreq` in
+          `build.ts`.
+
+          - What it outputs. A `ConstantSourceNode` ramped through the ADSR
+          makes it an ordinary modulation source, so it wires to
+          `filter.frequency` exactly like the Mellotron's LFO wires to
+          `osc1.detune` today - no new connection syntax.
+
+          - Whether the amp ADSR then becomes an ordinary `env` node feeding a
+          reserved `out`, collapsing the special case, or stays in
+          `BaseInstrument` because the class-based instruments still need it.
+
+          - Release. A voice is torn down on the base's schedule, so a
+          modulation release longer than the amp release needs the base to ask
+          the graph how long to stay alive.
+
+
+          **Why it goes first.** It is the largest increase in what an agent can
+          produce per unit of work: filter envelopes, pitch envelopes (the
+          kick-drum drop in INST-9), and index envelopes for FM all become one
+          node and one wire. It is also the only item in the next tier with a
+          real open question, so it is worth settling before the mechanical
+          additions of INST-13 are layered on top of it.
+        id: 019ff33c-1864-7429-b406-ac6dcb4704de
+        created_at: 2026-08-11T23:50:29.732Z
+        updated_at: 2026-08-11T23:50:29.732Z
+      - ref: INST-13
+        area: INST
+        title: Grow the native-node vocabulary
+        status: to-do
+        sort_path: "000013"
+        priority: 0
+        deps:
+          - INST-4
+        body: >-
+          **The gap.** `VOCABULARY` in `src/audio/graph/vocabulary.ts` has five
+          kinds: `osc`, `gain`, `biquad`, `delay`, `shaper`. That was enough for
+          the three instruments and three effects already expressed as defs, and
+          it stops immediately after. No noise source, so no percussion. No
+          buffer source, so `sampler` and `drumkit` cannot become defs. No
+          panner or channel split/merge, so a graph device is mono into the
+          track. No convolver, so no reverb. No compressor. No constant source,
+          which is the standard trick for offsets and for turning bipolar
+          modulation unipolar.
+
+
+          This is the real ceiling on INST-4, not the format - the interpreter,
+          validation, persistence and live registration all work.
+
+
+          **What to add.** All native Web Audio, so each is one `VOCABULARY`
+          entry plus one `NODE_IMPLS` entry following the existing pattern:
+
+
+          - `noise` - looped `AudioBufferSourceNode` over a generated buffer.
+          White, with pink worth the extra few lines.
+
+          - `buffer` - `AudioBufferSourceNode` over the sample store.
+          `playbackRate` and `detune` are AudioParams, so pitched sample
+          playback is modulatable.
+
+          - `constant` - `ConstantSourceNode`; `offset` is an AudioParam.
+
+          - `pan` - `StereoPannerNode`.
+
+          - `convolver` - `ConvolverNode`.
+
+          - `compressor` - `DynamicsCompressorNode`; five AudioParams, all
+          modulatable.
+
+          - `split` / `merge` - `ChannelSplitterNode` / `ChannelMergerNode`.
+
+          - More `SHAPER_CURVES` families. `classic` is currently the only one,
+          lifted verbatim from the original Distortion effect.
+
+
+          **Two that are not free.**
+
+
+          1. The convolver needs impulse responses: generate them synthetically,
+          or source openly-licensed ones under the same redistribution
+          constraint INST-9 sets out for drum samples (CC0 preferred, then
+          CC-BY; "free to use in your music" is not sufficient for a distributed
+          app).
+
+          2. Splitter and merger need a channel index on a connection endpoint,
+          which `Connection` (`[from, to]`) cannot express. Either defer them,
+          or extend the endpoint grammar alongside the existing `nodeId.param`
+          form. This is the only format change in the list.
+
+
+          **Payoff.** Percussion and sampled instruments become authorable;
+          `sampler` and `drumkit` become convertible from classes to defs;
+          stereo placement stops being class-only. Directly unblocks the
+          synthesized half of INST-9, where an 808 kick is `osc` plus a pitch
+          envelope and a snare is `noise` into `biquad` - which is this ticket
+          plus INST-12 and nothing else.
+        id: 019ff33c-4236-732b-9ef7-705c9a002373
+        created_at: 2026-08-11T23:50:40.438Z
+        updated_at: 2026-08-11T23:50:40.438Z
+      - ref: INST-14
+        area: INST
+        title: Author declarative devices from the in-app agent panel
+        status: to-do
+        sort_path: "000014"
+        priority: 0
+        deps:
+          - AGENT-2
+          - INST-4
+        body: >-
+          **The gap.** The Node MCP server has `describe_device_format`,
+          `create_instrument`, `create_effect` and `list_custom_devices`
+          (`server/mcpServer.ts`). The in-app agent's toolset
+          (`src/audio/agent/tools/`) has around fifty tools covering tracks,
+          clips, notes, effects, patches, grooves and parameters, and none of
+          them creates a device. So "ask the agent to build me an instrument"
+          works from Claude Desktop or Claude Code over the WebSocket bridge,
+          and does not work in the app's own agent panel - which is the surface
+          most users will ever see.
+
+
+          **Why it is small.** Everything underneath is already shared and
+          DOM-free. `parseInstrumentDef` / `parseEffectDef`
+          (`src/audio/graph/zod.ts`) validate the def, `validateGraph` checks
+          the wiring against the schema, and `projectStore.addCustomInstrument`
+          routes through `applyEdit`, so the result is undoable, attributed,
+          described in history and persisted like any other authored edit. The
+          in-app agent dispatches straight against the store instead of
+          forwarding over the bridge, so the handler is shorter than the MCP
+          one, not longer.
+
+
+          The work is a `tools/devices.ts` module plus a decision about how the
+          model learns the format: MCP pays for a separate
+          `describe_device_format` round trip, but in-app it may be better
+          folded into the tool description or the system prompt, given
+          AGENT-24's finding that the loop is already expensive per turn.
+
+
+          **Watch for.** This is precisely the drift AGENT-6 exists to remove.
+          Adding a fourth pair of hand-written tool declarations strengthens the
+          case for the shared tool catalog rather than weakening it; if AGENT-6
+          is close when this comes up, do it there instead of duplicating.
+
+
+          **Sequencing.** Best after INST-12 and INST-13. The tool is only as
+          good as the vocabulary behind it, and an agent that can author devices
+          from five primitives will produce disappointing instruments with total
+          confidence.
+        id: 019ff33c-6093-739b-b3fb-e983b1fa95ad
+        created_at: 2026-08-11T23:50:48.211Z
+        updated_at: 2026-08-11T23:50:48.211Z
+      - ref: INST-15
+        area: INST
+        title: Worklet-backed leaf primitives in the vocabulary
+        status: to-do
+        sort_path: "000015"
+        priority: 0
+        deps:
+          - INST-4
+        body: >-
+          **The idea.** A node kind whose `create` returns an `AudioWorkletNode`
+          and whose `audioParam` exposes entries from its `parameters` map. That
+          one seam is what lets custom DSP appear as an ordinary leaf in a
+          declarative graph, indistinguishable from a `biquad` to everything
+          upstream: it binds params identically, is a valid `.param` modulation
+          target, validates through the same `validateGraph`, and persists as
+          pure data.
+
+
+          **Prove it with our own DSP first.** `src/audio/dsp/` already holds
+          pure, parameterized modules (`ladder`, `bitcrush`, `wavetable`,
+          `oscillators`) with worklets over some of them, and none of it is
+          reachable from a graph. A Moog ladder filter and a bitcrusher as graph
+          leaves are immediate expressive payoff, and more importantly they
+          force the contract questions to be answered against DSP we control:
+
+
+          - How a leaf declares which of its `AudioParamDescriptor`s are
+          modulatable, and how that reaches the DOM-free `VOCABULARY` the Node
+          server reads.
+
+          - How construction-time options (a table, a mode) differ from
+          modulatable params.
+
+          - How the module URL is registered and `addModule`'d before a voice
+          needs it. `src/audio/worklets/index.ts` loads a fixed list at startup
+          today; a leaf referenced only by a custom def is not on that list.
+
+          - What a graph does when a leaf is unavailable, which becomes a real
+          case once defs travel between installs.
+
+
+          **Why it comes before Faust.** INST-6 already frames Faust as the
+          primitive factory rather than the user-facing format, and every
+          Faust-authored primitive arrives through this seam. Building the seam
+          separately means Faust becomes "author more leaves cheaply" against
+          something already load-bearing, instead of a compiler, a WASM loading
+          path, a trusted shell and a param-metadata bridge all landing together
+          with nothing yet exercising them. It is also the cheapest way to
+          discover the leaf contract is wrong, while the only client is code we
+          can freely change.
+
+
+          **Trust boundary.** These leaves are first-party worklets, authored by
+          us via PR. INST-4 tier 4 and INST-6 are both explicit that untrusted
+          worklets never run on the hosted platform, so this opens no sharing
+          path. It builds the socket that INST-6's sandboxed WASM guests later
+          plug into.
+        id: 019ff33c-8335-7093-bc59-fb75c9788b8d
+        created_at: 2026-08-11T23:50:57.077Z
+        updated_at: 2026-08-11T23:50:57.077Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
@@ -8890,3 +9157,59 @@ projects:
         id: 019fd2b1-2f06-77d4-9f51-26a706a0a533
         created_at: 2026-08-05T16:10:55.110Z
         updated_at: 2026-08-05T16:10:55.110Z
+      - ref: MOBILE-16
+        area: MOBILE
+        title: Pinned headers are a question about room, not about tier
+        status: review
+        sort_path: "000016"
+        priority: 0
+        deps:
+          - MOBILE-1
+        body: >-
+          Reported on a tablet 2026-08-11: the arrangement's track headers stay
+          pinned there and should scroll away with the lanes as they do on a
+          phone, because a tablet does not give the arrangement the whole screen
+          the way a desktop does.
+
+
+          The cause was `stickyHeaders={!isPhone}` in `MobileShell` - a decision
+          about **room** made from **device**. It was right about a phone and
+          wrong about a tablet, which opens with the library docked beside the
+          workspace: 1024px less a 288px column leaves the timeline ~736px, and
+          a 220px pinned header column there is not a header beside an
+          arrangement, it is a header with a sliver next to it. Docking the
+          agent as well leaves 400px, which is narrower than a phone in
+          landscape - the shape the flag was confident it had room for.
+
+
+          **The same lesson as the pads' `fitPads`**, one screen over: tier by
+          what is on screen, not by what the screen is. `pinHeaders(viewportW,
+          headerW)` in `arrangement/shared.ts` pins only while the lane keeps
+          `MIN_PINNED_LANE_W` (560px), read from the timeline's own measured
+          width - so docking a panel changes the answer and undocking changes it
+          back, and dragging the header column wider is also a way to lose the
+          pin.
+
+
+          - The prop is **gone**, not re-tiered. There was one caller passing it
+          and a default of `true` everywhere else; deriving it means the desktop
+          gets the same rule and satisfies it by having the width, so nothing
+          has to be told what it is.
+
+          - **Pixels, not beats.** A threshold in bars would make the headers
+          pin and unpin as you zoom.
+
+          - **Unmeasured counts as wide.** `viewportW` starts at 0 before the
+          ResizeObserver reports, and starting scrolled would show the headers
+          sliding into place on every mount.
+
+
+          Covered by `test/pinHeaders.test.ts` for the shapes (desktop, tablet
+          docked and bare, phone both ways, the column dragged to its maximum,
+          the threshold itself) and `e2e/header-pinning.e2e.ts` for the part
+          that needs a browser: that the width it reads is the *timeline's*, so
+          docking a panel beside the arrangement flips it and undocking flips it
+          back.
+        id: 019ff2fd-7927-7031-8a88-128677a25e40
+        created_at: 2026-08-11T22:42:05.735Z
+        updated_at: 2026-08-11T22:42:05.735Z

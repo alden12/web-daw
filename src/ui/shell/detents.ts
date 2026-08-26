@@ -39,9 +39,9 @@ export const PROJECTION_MS = 130;
  * rather than a guess, so the detent stays and the numbers are tuned to give it the best
  * chance.
  */
-const PHONE: DetentSet = { peek: 0.14, half: 0.55, full: 0.86 };
+const PHONE: DetentSet = { peek: 0.14, half: 0.55, full: 0.82 };
 const SHORT: DetentSet = { peek: 0.2, half: 0.58, full: 0.92 };
-const TABLET: DetentSet = { peek: 0.12, half: 0.5, full: 0.88 };
+const TABLET: DetentSet = { peek: 0.12, half: 0.5, full: 0.8 };
 
 export function detentsFor(shape: DeviceShape): DetentSet {
   if (shape.short) return SHORT;
