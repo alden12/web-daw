@@ -29,7 +29,10 @@ const SIZE: Record<ButtonSize, string> = {
 const RESTING: Record<ButtonVariant, string> = {
   quiet: "bg-control text-ink hover:bg-control-hover",
   solid: "", // the tone supplies it
-  ghost: "text-muted hover:text-ink",
+  // No chrome at rest, but it still takes the grey under the pointer. Without that there is
+  // nothing to say where the target starts and ends, which on a header row (where a ghost
+  // button sits on the same colour as everything around it) leaves it looking like text.
+  ghost: "text-muted hover:text-ink hover:bg-control",
 };
 
 export function Button({

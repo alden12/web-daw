@@ -47,7 +47,9 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      className={`inline-flex rounded-full border border-line overflow-hidden bg-control ${className}`}
+      // Softly rounded rather than a pill: a group of options reads as one boxed set, and
+      // fully round ends make the two outer segments a different shape from any inner one.
+      className={`inline-flex rounded-md border border-line overflow-hidden bg-control ${className}`}
     >
       {options.map((option) => {
         const selected = option.value === value;

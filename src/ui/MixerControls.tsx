@@ -107,7 +107,7 @@ export function MuteSolo({
   const btn = "font-mono text-[10px] leading-none w-5 h-6 cursor-pointer transition-colors";
   const resting = "text-muted hover:text-ink hover:bg-control";
   return (
-    <div className="flex shrink-0 rounded-full border border-line overflow-hidden">
+    <div className="flex shrink-0 rounded-md border border-line overflow-hidden">
       <button
         type="button"
         title={muted ? "Unmute" : "Mute"}
