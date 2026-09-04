@@ -5,17 +5,19 @@
  */
 import { useSyncExternalStore } from "react";
 import { readAuthState, signOut, subscribeAuth } from "../auth/session";
-import { colorForAuthor, writeAuthorColors, SWATCHES } from "./authorColors";
+import { writeAuthorColors, SWATCHES } from "./authorColors";
+import { authorHex } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 import { initials } from "./initials";
 
 export function AccountPanel({ onClose }: { onClose: () => void }) {
   const state = useSyncExternalStore(subscribeAuth, readAuthState, readAuthState);
-  const { config, self } = useAuthorPresence();
+  const presence = useAuthorPresence();
+  const { config, self } = presence;
   if (state.status !== "signed-in") return null;
 
   const { name, email } = state.user;
-  const color = colorForAuthor(self, config, self);
+  const color = authorHex(self, presence);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ground/85 backdrop-blur-sm p-4"

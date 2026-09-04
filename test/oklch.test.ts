@@ -14,7 +14,18 @@ import { SWATCHES } from "../src/ui/authorColors";
 const LIGHT_GROUND = "#ffffff";
 const DARK_GROUND = "#0a0c0e";
 /** The value `authorStyle.ts` re-lights to on a white ground. */
-const LIGHT_LIGHTNESS = 0.55;
+const LIGHT_LIGHTNESS = 0.5;
+
+/** `fg` at `alpha` composited over `bg`, so a tinted background can be measured. */
+function over(fg: string, alpha: number, bg: string): string {
+  const front = parseInt(fg.slice(1), 16);
+  const back = parseInt(bg.slice(1), 16);
+  const mix = (shift: number) =>
+    Math.round((((front >> shift) & 255) * alpha + ((back >> shift) & 255) * (1 - alpha)) | 0)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${mix(16)}${mix(8)}${mix(0)}`;
+}
 
 const channel = (value: number): number => {
   const unit = value / 255;
@@ -64,6 +75,18 @@ describe("the author palette on each ground", () => {
     for (const swatch of SWATCHES) {
       const relit = withLightness(swatch.hex, LIGHT_LIGHTNESS);
       expect(contrast(relit, LIGHT_GROUND), `${swatch.name} re-lit on white`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("clears it on a 15% tint of itself too, which is the binding case", () => {
+    // The tinted-accent button (`text-you bg-you/15`: Play, + Clip, Rec) is the tightest
+    // combination in the app, because the tint barely darkens the ground while the label is
+    // the same hue. Plain text on white passed at L=0.55 while this was still at 3.77:1, so
+    // it is the constraint that actually sets the lightness. Lighthouse found it; keep it found.
+    for (const swatch of SWATCHES) {
+      const relit = withLightness(swatch.hex, LIGHT_LIGHTNESS);
+      const onOwnTint = contrast(relit, over(relit, 0.15, LIGHT_GROUND));
+      expect(onOwnTint, `${swatch.name} on a 15% tint of itself`).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

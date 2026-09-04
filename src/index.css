@@ -115,8 +115,13 @@
     --color-line-soft: #edeff3;
     --color-ink: #1a1d22;
     --color-strong: #0b0d11;
-    --color-muted: #667080;
-    --color-faint: #98a0ac;
+    /* Darker than the dark theme's greys are light, because these carry 9-10px uppercase
+       labels (MIDI/AUDIO tags, section names, ruler numbers, roll note names) and small text
+       needs 4.5:1. Measured against `card` (#e8ebef), the darkest surface they sit on: muted
+       6.0:1, faint 4.9:1. The hierarchy compresses as a result; size and weight carry the
+       rest of it. */
+    --color-muted: #4f5866;
+    --color-faint: #5d6675;
     /* No `--color-you` / `-agent` / `-claude` here, and it would be dead if there were.
        They are user-configurable, so `useSyncAuthorColorVars` writes them as inline styles
        on <html>, which outrank any stylesheet. They are also resolved a second way, in JS
@@ -143,8 +148,8 @@
   --color-line-soft: #edeff3;
   --color-ink: #1a1d22;
   --color-strong: #0b0d11;
-  --color-muted: #667080;
-  --color-faint: #98a0ac;
+  --color-muted: #4f5866;
+  --color-faint: #5d6675;
   --color-good: #15a34a;
   --color-warn: #b07908;
   --color-recess: rgba(20, 24, 32, 0.06);
