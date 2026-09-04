@@ -16,6 +16,12 @@
  * space, which landscape cannot spare, and it means the actions are ordinary `MenuItem`s rather
  * than a bespoke toolbar. It is clamped into view (see `visibleRange.ts`) so a long note or a
  * scrolled one does not take its own actions off screen.
+ *
+ * **Only the handles are for both pointers.** The kebab and the move grip are touch's answers
+ * to things a mouse already has - a keyboard, a velocity lane, and a drag-edge you can hit - so
+ * on a fine pointer they would be furniture floating over the neighbouring notes and paying for
+ * nothing. Both are gated by a media query rather than a prop, so there is no "touch mode" to
+ * be in or out of: the roll renders the same tree and CSS decides what a pointer earns.
  */
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type PointerEvent, type RefObject } from "react";
 import type { NoteEvent } from "../../audio/sequencer/types";
@@ -61,6 +67,15 @@ const MOVE_GRIP_LINE = "w-4 h-0.5 rounded-full bg-muted pointer-events-none";
 const MOVE_GRIP_HEIGHT = 28;
 /** Between the note's edge and the grip, so the grip does not touch what it is dragging. */
 const MOVE_GRIP_GAP = 8;
+
+/**
+ * The kebab is **touch only**, like the move grip and for the same reason: it exists because
+ * touch has nowhere else to put these actions. Desktop has the keyboard for delete and for
+ * copy/paste, the velocity lane for velocity, and a right-hand drag-edge for resizing, so a
+ * button floating over the grid beside every selected note would be permanent furniture paying
+ * for nothing - and it would sit on top of the neighbouring notes while it did.
+ */
+const KEBAB_WRAPPER = "absolute z-6 hidden [@media(pointer:coarse)]:block -translate-y-1/2";
 
 /** Legible over the grid it floats on, unlike the bare icon buttons in the toolbars. */
 const KEBAB_CLASS = iconButtonClass({ size: "md", className: "bg-card border border-line shadow-sm" });
@@ -175,7 +190,7 @@ export function NoteHandles({
         <span className={MOVE_GRIP_LINE} />
         <span className={MOVE_GRIP_LINE} />
       </div>
-      <div ref={kebabRef} data-testid="note-actions" className="absolute z-6 -translate-y-1/2" style={{ top: centreY }}>
+      <div ref={kebabRef} data-testid="note-actions" className={KEBAB_WRAPPER} style={{ top: centreY }}>
         <Menu items={menuItems} label="Note actions" align="left" triggerClassName={KEBAB_CLASS} />
       </div>
     </>

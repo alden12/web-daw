@@ -171,3 +171,25 @@ test("the velocity lane collapses from the roll settings menu", async ({ page })
   await dismissStart(page);
   await expect(page.getByTitle("Velocity - drag a bar")).toBeHidden();
 });
+
+/**
+ * MOBILE-7's touch affordances stay off a mouse. The kebab and the move grip are answers to
+ * things a mouse already has - a keyboard for delete, a velocity lane, a drag-edge you can hit -
+ * so on a fine pointer they would be furniture floating over the neighbouring notes, paying for
+ * nothing. The end handles do carry over: a visible grab target is worth having either way.
+ */
+test("a selected note grows handles but no touch furniture on a mouse", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+
+  const point = await gridPoint(page, 120, 40);
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId("note")).toHaveCount(1);
+
+  // Mounted either way, so `toBeHidden` is the honest check rather than a count of zero: the
+  // gate is CSS, and asserting on absence would pass just as well if the gate were deleted and
+  // the component simply failed to render.
+  await expect(page.getByTestId("note-handle-end")).toBeVisible();
+  await expect(page.getByTestId("note-actions"), "no kebab over the grid on a mouse").toBeHidden();
+  await expect(page.getByTestId("note-move"), "and no move grip either").toBeHidden();
+});
