@@ -478,6 +478,32 @@ export function subscribeCurrentProject(listener: () => void): () => void {
   return () => currentListeners.delete(listener);
 }
 
+/**
+ * The project whose *contents* are in the live store, which is not the same thing as the
+ * current id.
+ *
+ * `setCurrentProject` repoints the repository synchronously, but the store keeps the previous
+ * project until a load finishes several `await`s later (two OPFS writes, for a new project).
+ * In that window the current id and anything read off the live store belong to different
+ * projects, so pairing them produces a URL, or a header, naming one project with another's
+ * name. Reported from CI, where the gap is wide enough to see.
+ *
+ * Read this rather than a "switching" flag: a flag has to be cleared, and a path that
+ * repoints without loading would leave it stuck. A last-loaded id just stays stale, which
+ * degrades to "do not update yet" rather than "never update again".
+ */
+let loadedId: string | null = null;
+
+export function markProjectLoaded(id: string): void {
+  loadedId = id;
+  for (const listener of currentListeners) listener();
+}
+
+/** The id of the project the live store actually holds, or null before the first load. */
+export function loadedProjectId(): string | null {
+  return loadedId;
+}
+
 /** The id of the project the app is currently working on. */
 export function currentProjectId(): string {
   return current?.id ?? readCurrentId();

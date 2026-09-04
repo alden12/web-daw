@@ -46,6 +46,51 @@ test("the URL names the open project, and opening that URL opens it again", asyn
   await expect(page).toHaveURL(link);
 });
 
+/**
+ * The URL must never name a project with another project's name.
+ *
+ * `setCurrentProject` repoints the repository synchronously, but the live store keeps the
+ * previous project until a load finishes a couple of OPFS writes later. Pairing the new id
+ * with the store's still-old name wrote `/p/deep-house-jam~<new id>` in that window.
+ *
+ * The test above only catches it when the window happens to outlast an assertion timeout,
+ * which is why it passed locally for months and failed on CI. Throttling the CPU turns the
+ * race into a certainty, so this is the one that actually guards it.
+ */
+test("switching projects never puts one project's name on another's link", async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+
+  await page.goto("/");
+  await dismissStart(page);
+  await page.getByRole("button", { name: "Project", exact: true }).click();
+  await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 30000 });
+
+  page.once("dialog", (dialog) => void dialog.accept("Deep House Jam"));
+  await projectMenu(page).click();
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  await expect(page).toHaveURL(/\/p\/deep-house-jam~/, { timeout: 30000 });
+  const renamedId = page.url().split("~")[1];
+
+  // Sample densely across the switch rather than checking the settled value: the bug is a
+  // transient, and a transient that reaches the address bar is one a user can copy.
+  const seen = new Set<string>();
+  const sampler = setInterval(() => {
+    try {
+      seen.add(new URL(page.url()).pathname);
+    } catch {
+      // between navigations; nothing to sample
+    }
+  }, 15);
+  await projectMenu(page).click();
+  await page.getByRole("menuitem", { name: "New project" }).click();
+  await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 30000 });
+  clearInterval(sampler);
+
+  const mismatched = [...seen].filter((path) => path.startsWith("/p/deep-house-jam~") && !path.endsWith(renamedId));
+  expect(mismatched, "a URL naming the new project with the old project's name").toEqual([]);
+});
+
 test("a sign-in round trip comes back to the project it left", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);

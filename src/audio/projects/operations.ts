@@ -12,7 +12,13 @@ import { ProjectStore } from "../project/projectStore";
 import type { EditLog } from "../commands/editLog";
 import type { VersionStore } from "../commands/history";
 import type { ProjectData } from "../project/types";
-import { getRepository, setCurrentProject, currentProjectId, ProjectRepository } from "../projectRepository";
+import {
+  getRepository,
+  setCurrentProject,
+  currentProjectId,
+  markProjectLoaded,
+  ProjectRepository,
+} from "../projectRepository";
 import { getProjectStorage, type ProjectStorage } from "../bundleStore";
 import { newProjectId, refreshProjects } from "./library";
 
@@ -39,6 +45,9 @@ async function loadCurrentInto(deps: ProjectDeps): Promise<void> {
     deps.editLog.restoreCheckpoints(await repo.readUndo());
   }
   await deps.versionStore.reload();
+  // The store now holds this project, so anything pairing the current id with what it reads
+  // off the store (the URL, the header) can trust the two agree again.
+  markProjectLoaded(currentProjectId());
 }
 
 /** Point at a fresh project id, seed a default project into it, and load it. */
@@ -87,6 +96,9 @@ export async function initProjects(
     setCurrentProject(currentProjectId());
     await getRepository().setName("Untitled");
     await flush(deps); // persist the live (seeded) project as project one
+    // This branch never loads: the live store was already seeded, so it *is* this project.
+    // Marking it anyway is what lets the URL sync at all on a fresh install.
+    markProjectLoaded(currentProjectId());
   } else {
     // Open the first candidate that is really there: the project a link asked for, else the
     // persisted current, else the newest. Both of the first two can name something gone (see
