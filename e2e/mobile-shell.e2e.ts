@@ -512,9 +512,9 @@ test.describe("phone", () => {
   });
 
   /**
-   * The actions themselves. Velocity is an inline row rather than a submenu, because submenus
-   * open on hover and touch has none; it also renders as note fill strength, which is what
-   * earns the right to drop the velocity lane on a phone.
+   * The actions themselves. Velocity is an inline fader rather than a submenu, because submenus
+   * open on hover and touch has none; it renders as note fill strength, which is what earns the
+   * right to drop the velocity lane on a phone.
    */
   test("the note's kebab sets velocity, duplicates and deletes", async ({ page }) => {
     await openRoll(page);
@@ -522,23 +522,28 @@ test.describe("phone", () => {
     const notes = page.getByTestId("note");
     const before = await notes.count();
     const kebab = page.getByRole("button", { name: "Note actions" });
+    // Fill strength is 0.45 + 0.55 * velocity, so a velocity reads back off the note.
+    const velocity = async () =>
+      (Number(await notes.last().evaluate((element) => getComputedStyle(element).opacity)) - 0.45) / 0.55;
 
     await kebab.tap();
     await page.getByRole("menuitem", { name: "Duplicate" }).tap();
     await expect(notes).toHaveCount(before + 1);
 
     await kebab.tap();
-    await page.getByRole("radio", { name: "40", exact: true }).tap();
-    // Fill strength is 0.45 + 0.55 * velocity, so 40% reads as 0.67 rather than as "dimmer".
-    await expect
-      .poll(async () => Number(await notes.last().evaluate((element) => getComputedStyle(element).opacity)), {
-        message: "the note took the velocity it was given",
-      })
-      .toBeCloseTo(0.67, 2);
+    const fader = page.getByRole("slider", { name: "Velocity" });
+    const track = (await fader.boundingBox())!;
+    await fader.tap({ position: { x: track.width * 0.3, y: track.height / 2 } });
+    await expect.poll(velocity, { message: "the note took the velocity the track was tapped at" }).toBeCloseTo(0.3, 1);
 
-    // Still open, which is the point of an inline row rather than a submenu of one: you set a
-    // velocity, hear it, and reach for the next without finding the note and its kebab again.
-    // Every other row dismisses, so Delete is reachable from here without reopening anything.
+    // The point of a fader over a row of presets: a value between the presets is reachable, and
+    // two taps a tenth apart have to land a tenth apart rather than on the same option.
+    await fader.tap({ position: { x: track.width * 0.4, y: track.height / 2 } });
+    await expect.poll(velocity, { message: "and a value a preset row could not have offered" }).toBeCloseTo(0.4, 1);
+
+    // Still open, which is the point of an inline row: you set a velocity, hear it, and adjust
+    // without finding the note and its kebab again. Every other row dismisses, so Delete is
+    // reachable from here without reopening anything.
     await expect(page.getByRole("menu")).toBeVisible();
     await page.getByRole("menuitem", { name: "Delete" }).tap();
     await expect(notes).toHaveCount(before);

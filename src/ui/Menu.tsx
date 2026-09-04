@@ -39,7 +39,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { placeMenu, type Placed } from "./menuPlacement";
-import { Segmented, type SegmentedOption } from "./controls/Segmented";
+import { Fader } from "./controls/Fader";
 
 /** Marks every popover in the tree, so "did this click land inside the menu?" is one query. */
 const POPOVER_ATTR = "data-menu-popover";
@@ -64,20 +64,24 @@ export interface MenuNumber {
 }
 
 /**
- * A few options picked in place, rather than behind a submenu.
+ * A continuous value set in place, rather than behind a submenu.
  *
  * Submenus open on hover, which touch does not have, and a nested flyout near a screen edge is
  * a cramped thing to aim at with a thumb. Velocity is what forced it (MOBILE-7): on touch it is
- * set from the note's own menu, and opening a second popover to reach four values would be the
- * slowest part of editing a note.
+ * set from the note's own menu, and opening a second popover to reach it would be the slowest
+ * part of editing a note.
  *
- * Values are strings because that is what a radio group's options are; a caller holding numbers
- * converts at the boundary.
+ * A fader rather than a row of preset values, because velocity is a continuous quantity and a
+ * handful of buttons quietly makes it a much coarser one - "somewhere between 60 and 80" is a
+ * thing you want to be able to say.
  */
-export interface MenuChoices {
-  options: readonly SegmentedOption<string>[];
-  value: string;
-  onChange: (value: string) => void;
+export interface MenuFader {
+  /** Where along the track, 0..1. Callers with units of their own convert at this boundary. */
+  position: number;
+  onPosition: (position: number) => void;
+  /** The value in the caller's units, shown beside the track. */
+  display?: string;
+  aria: { now: number; min: number; max: number };
 }
 
 export interface MenuItem {
@@ -99,8 +103,8 @@ export interface MenuItem {
   heading?: string;
   /** A number field with nudge buttons, in place of a submenu of preset values. */
   number?: MenuNumber;
-  /** A row of options picked inline, in place of a submenu of them. */
-  choices?: MenuChoices;
+  /** A fader set inline, in place of a submenu of preset values. */
+  fader?: MenuFader;
 }
 
 // App-wide: only one (top-level) menu open at a time.
@@ -318,22 +322,28 @@ function NumberRow({
 }
 
 /**
- * A `MenuChoices` as a row.
+ * A `MenuFader` as a row.
  *
- * Picking does **not** dismiss the menu, unlike every other actionable row here. That is the
- * point of showing the options at once: you set a velocity, hear it, and reach for the next one
- * without having to find the note and its kebab again.
+ * Setting it does **not** dismiss the menu, unlike every other actionable row here. That is the
+ * point of having it in place: you move it, hear it, and move it again without having to find
+ * the thing it belongs to all over again.
+ *
+ * The track carries a minimum width, which is what widens the popover to hold it - a fader
+ * squeezed into a 160px menu would be more gesture than control.
  */
-function ChoicesRow({ label, choices, reserveCheck }: { label?: string; choices: MenuChoices; reserveCheck: boolean }) {
+function FaderRow({ label, fader, reserveCheck }: { label?: string; fader: MenuFader; reserveCheck: boolean }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-1 text-[12.5px] text-ink">
+    <div className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-ink">
       {reserveCheck && <span aria-hidden="true" className="w-3 shrink-0" />}
-      <span className="flex-1 whitespace-nowrap">{label}</span>
-      <Segmented
-        options={choices.options}
-        value={choices.value}
-        onChange={choices.onChange}
-        label={label ?? "Options"}
+      <span className="shrink-0 whitespace-nowrap">{label}</span>
+      <Fader
+        label={label ?? "Value"}
+        position={fader.position}
+        onPosition={fader.onPosition}
+        display={fader.display}
+        aria={fader.aria}
+        fillStyle={{ background: "var(--color-you)" }}
+        className="min-w-32"
       />
     </div>
   );
@@ -379,7 +389,7 @@ function Row({
     );
   if (item.number)
     return <NumberRow label={item.label} number={item.number} disabled={item.disabled} reserveCheck={reserveCheck} />;
-  if (item.choices) return <ChoicesRow label={item.label} choices={item.choices} reserveCheck={reserveCheck} />;
+  if (item.fader) return <FaderRow label={item.label} fader={item.fader} reserveCheck={reserveCheck} />;
   // Show the check column for radio items; reserve an empty one on the menu's other
   // rows when any sibling is checkable, so plain/submenu rows still line up.
   // Hidden from assistive tech: `aria-checked` on the row already says it, and left visible
