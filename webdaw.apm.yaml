@@ -5815,6 +5815,83 @@ projects:
             id: 01a06ebb-3707-715b-9aad-2d04481ff122
             at: 2026-09-04T23:22:38.215Z
             actor: claude
+      - ref: DAW-33
+        area: DAW
+        title: Hiding a touch app stops the transport
+        status: review
+        sort_path: "000033"
+        body: >
+          Reported from an installed PWA (2026-09-05): minimising while playing
+          makes it "go really slow while minimized, but then when you open it
+          again it plays super fast and stays that way".
+
+
+          ## The half that is understood, and shipped
+
+
+          A backgrounded page has its timers throttled to a fraction of their
+          rate, and the scheduler *is* a timer. It wakes, finds the window it
+          should have covered has already gone past, and skips it (DAW-32, which
+          is working as designed here). So a minimised phone plays a sparse,
+          arrhythmic version of the project to nobody at all.
+
+
+          There is nothing worth preserving in that, so **hiding a touch app
+          stops the transport**. A take in flight is finalised rather than
+          dropped, the same as pressing stop.
+
+
+          Touch only. A desktop tab that is *playing audio* is largely exempt
+          from timer throttling, so backgrounding one and carrying on listening
+          works properly and is a thing people do deliberately.
+
+
+          Note this is also what DAW-32 traded for: before that fix,
+          backgrounding produced a burst on return instead of sparseness during.
+          Both are the same underlying fact - a scheduler that cannot be woken
+          cannot schedule - and stopping is the only response that is honest
+          about it.
+
+
+          ## The half that is NOT explained
+
+
+          "Plays super fast **and stays that way**" is a persistent state
+          change, and nothing found so far accounts for it:
+
+
+          - The playhead cannot drift on its own. `useAnimationFrame` re-reads
+          `getPositionBeats()` every frame and accumulates nothing, so a
+          fast-looking playhead means the clock maths is genuinely returning
+          fast-advancing values.
+
+          - `reanchor()` is an identity transform when the tempo has not changed
+          (`anchorBeat += elapsed * lastBps; anchorTime = now`), so repeated
+          calls cannot corrupt the anchor - and it stays self-consistent even if
+          `engine.currentTime` returns 0 transiently, because the same shift
+          lands in both terms.
+
+          - `lastBps` only ever comes from `project.tempo`, which is not
+          changing.
+
+          - A second interval is not possible on one `Scheduler` (`play()`
+          returns early when `timer !== null`), and `AppShell` holds one in
+          `useState` and disposes it on unmount.
+
+
+          What is left, and what to look at if it survives: **something
+          scheduling each note more than once**, which would sound dense (like
+          "fast") and would persist. Worth instrumenting `playNote` with a count
+          per beat on a device rather than reasoning further from here.
+
+
+          Stopping on hide should mask it in practice, because there is no
+          longer a stalled transport to return to. That is a reason to keep this
+          ticket open rather than to close it: the trigger is gone, the cause is
+          not.
+        id: 01a06ecd-b049-7317-8dac-f7377ec56b04
+        created_at: 2026-09-04T23:42:48.905Z
+        updated_at: 2026-09-04T23:42:48.905Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority

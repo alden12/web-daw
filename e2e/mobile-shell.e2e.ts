@@ -1421,3 +1421,30 @@ test.describe("desktop", () => {
     await expect(desktopRail(page)).toHaveCount(0);
   });
 });
+
+test.describe("phone (backgrounding)", () => {
+  test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
+
+  /**
+   * DAW-33. A backgrounded page has its timers throttled, and the scheduler is a timer: it wakes,
+   * finds the window it should have covered already gone past, and skips it (DAW-32). So a
+   * minimised phone plays a sparse, arrhythmic version of the project to nobody. There is nothing
+   * worth preserving in that, so hiding the app stops the transport.
+   */
+  test("minimising the app stops the transport", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("button", { name: /Stop/ })).toBeVisible();
+
+    // The event a phone fires on going to the home screen or switching apps. Dispatched rather
+    // than driven through the browser, since Playwright cannot actually background a page.
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    await expect(page.getByRole("button", { name: /Play/ }), "the transport stopped").toBeVisible();
+  });
+});

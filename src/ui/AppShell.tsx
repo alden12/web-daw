@@ -33,6 +33,8 @@ import { bundleLocalMirror } from "../audio/sync/localMirror";
 import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleStore";
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
+import { UpdateNotice } from "./UpdateNotice";
+import { applyUpdate, useUpdateWaiting } from "../pwa/serviceWorkerUpdate";
 import { ConflictDialog } from "./ConflictDialog";
 import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
@@ -326,6 +328,32 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editLog]);
 
+  const updateWaiting = useUpdateWaiting();
+
+  /**
+   * **Stop the transport when a touch device hides the app** (DAW-33).
+   *
+   * A backgrounded page has its timers throttled to a fraction of their rate, and the scheduler
+   * is a timer: it wakes, finds the window it should have covered has already gone past, and
+   * skips it (DAW-32). So a minimised phone plays a sparse, arrhythmic version of the project to
+   * nobody, and comes back in a state nobody asked for. There is nothing to preserve there.
+   *
+   * Touch only. A desktop tab that is playing audio is largely exempt from timer throttling, so
+   * backgrounding one and carrying on listening works properly and is a thing people do.
+   *
+   * A take in flight is finalised rather than dropped, the same as pressing stop or space.
+   */
+  useEffect(() => {
+    if (deviceShape.tier === "desktop") return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden" || !scheduler.isPlaying) return;
+      if (recorder.isActive) void recorder.stop();
+      else scheduler.stop();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [deviceShape.tier, scheduler, recorder]);
+
   // Space anywhere toggles play/stop, unless typing in a field (scheduler.play
   // is a no-op until audio is started).
   useEffect(() => {
@@ -419,6 +447,7 @@ export function AppShell() {
       {/* `dvh`, not `vh`: mobile browsers count their collapsing address bar in `vh`, so
           a `100vh` shell puts the bottom tabs under the chrome until the user scrolls. */}
       <div className="flex flex-col h-dvh overflow-hidden bg-ground text-ink">
+        {updateWaiting && <UpdateNotice onReload={applyUpdate} />}
         {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
         {deviceShape.tier === "desktop" ? (
           <DesktopShell {...shellProps} />
