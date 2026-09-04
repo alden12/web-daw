@@ -8830,11 +8830,11 @@ projects:
       - ref: MOBILE-7
         area: MOBILE
         title: "Touch editing: select, then handles and a kebab"
-        status: to-do
+        status: in-progress
         sort_path: "000007"
         deps:
           - MOBILE-5
-        body: >-
+        body: >
           One editing model for notes in the piano roll and clips in the
           timeline. **This answers the "explicit tool model (draw / select /
           erase)" question MOBILE-2 raises** - differently, and that ticket has
@@ -8919,9 +8919,73 @@ projects:
           Applies to the desktop surfaces too wherever it costs nothing -
           MOBILE-2's standing point is that touch-reachable equivalents are
           cheap to build in and expensive to retrofit.
+
+
+          ## Selecting more than one
+
+
+          **Settled 2026-09-04: a selection mode, entered by long-pressing a
+          note, on the Google Photos pattern.** Long-press one note and *every*
+          note grows a selection outline; taps then toggle membership rather
+          than replacing the selection.
+
+
+          Long-press is free to use - it is conventionally the context-menu
+          trigger, but the actions live on a kebab attached to the object here,
+          so nothing else wants it.
+
+
+          **Why a mode, given MOBILE-2 rejected a tool model.** That rejection
+          was of a persistent palette deciding what a tap means everywhere,
+          chosen with no reference to what is on screen. This is the opposite:
+          it is transient, it is entered from the object it acts on, and - the
+          part that makes it work - **it announces itself**. Outlining every
+          note is not decoration, it is the mode indicator, and it is why this
+          needs no separate banner or toolbar to say what state you are in. A
+          mode you cannot see is the thing that was rejected.
+
+
+          Two alternatives were considered and dropped:
+
+
+          - **Long-press as a shift key** (no mode, long-press adds one note).
+          Nothing to enter or exit, but building a selection of eight notes
+          costs eight long-presses at ~500ms each.
+
+          - **Long-press then sweep** to gather everything the finger passes.
+          Fast, and it would have been the marquee this ticket removes from the
+          default empty-space drag - but a rubber band on touch is awkward
+          whichever gesture opens it, because the finger covers what it is
+          selecting.
+
+
+          **Exiting** wants deciding when built: deselecting the last note is
+          the natural implicit exit, and there should be an explicit one too. In
+          the mode, a tap on empty grid must *not* create a note - creation is
+          the thing the mode is not for.
+
+
+          **Group handles are not just bigger handles.** A selection gets a
+          bounding box with its own move and resize handles, but *resize* means
+          two different things at that scale and only one of them is what a
+          single note's resize means:
+
+
+          - **Trim** - every note's length changes by the same amount, which is
+          the single-note behaviour applied n times.
+
+          - **Scale** - the whole span stretches, so note starts move apart and
+          lengths grow proportionally. This is the musically interesting one
+          (stretch a phrase to double time) and it is a genuinely different
+          operation.
+
+
+          Both are wanted eventually; picking one for the corner handle and
+          putting the other in the kebab is the likely answer, but which way
+          round is not obvious and should be tried rather than argued.
         id: 019fb8bf-be5a-756f-9c63-7d0ac202be7f
         created_at: 2026-07-31T15:16:41.690Z
-        updated_at: 2026-07-31T15:33:36.974Z
+        updated_at: 2026-09-04T19:37:57.297Z
         comments:
           - body: "**Settled 2026-07-31, same day it was raised** (the note previously
               flagged it as blocking). In the roll, a tap on empty space means
@@ -8941,7 +9005,7 @@ projects:
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
-        status: to-do
+        status: review
         sort_path: "000008"
         deps:
           - MOBILE-1
@@ -8993,7 +9057,7 @@ projects:
           roughly what the notch costs on the horizontal.
         id: 019fb8bf-e9cf-7295-984e-c64745fd5f32
         created_at: 2026-07-31T15:16:52.815Z
-        updated_at: 2026-07-31T15:16:52.815Z
+        updated_at: 2026-09-04T17:26:47.406Z
         comments:
           - body: >-
               Symptom description is half stale as of DAW-29.3 (PR #114): the

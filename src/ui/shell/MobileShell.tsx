@@ -77,6 +77,7 @@ import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
+import { atLeast, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
 import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
 import type { DeviceShape } from "./useDeviceShape";
@@ -620,7 +621,16 @@ export function MobileShell({
       data-device-tier={shape.tier}
       data-viewport-short={shape.short || undefined}
     >
-      <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-line bg-rail">
+      {/* The insets are padding, not margin, so `bg-rail` still runs up behind the status bar
+          and the notch reads as part of the app rather than as a letterbox. */}
+      <div
+        className="shrink-0 flex items-center gap-2 py-1.5 border-b border-line bg-rail"
+        style={{
+          paddingTop: atLeast("0.375rem", SAFE_TOP),
+          paddingLeft: atLeast("0.5rem", SAFE_LEFT),
+          paddingRight: atLeast("0.5rem", SAFE_RIGHT),
+        }}
+      >
         <BarButton label="Library" onClick={() => setLibraryOpen(!libraryOpen)} active={libraryOpen}>
           <svg
             viewBox="0 0 16 16"
@@ -682,7 +692,14 @@ export function MobileShell({
         {/* `relative` because the sheet is absolutely positioned against this column,
             not the shell: on a tablet it must not run under a docked library or agent,
             which own their full height. On a phone the column is the whole width anyway. */}
-        <div ref={workspaceRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+        <div
+          ref={workspaceRef}
+          className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+          // For the arrangement, which is an ordinary flex child. The editor sheet is
+          // absolutely positioned against this box and so is *not* inset by this padding -
+          // it carries its own. See `safeArea.ts`.
+          style={{ paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
+        >
           <div
             className="min-h-0 flex flex-col"
             // The band above the sheet, so the timeline's own horizontal scroller stays on
