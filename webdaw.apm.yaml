@@ -8921,47 +8921,48 @@ projects:
           cheap to build in and expensive to retrofit.
 
 
-          ## Selecting more than one (raised 2026-09-04)
+          ## Selecting more than one
 
 
-          The single-selection model above needs a way to reach a group, or
-          every multi-note edit on a phone is one note at a time. Proposed:
-          **long-press a note to begin multi-selecting**, then handles that act
-          on the whole set.
+          **Settled 2026-09-04: a selection mode, entered by long-pressing a
+          note, on the Google Photos pattern.** Long-press one note and *every*
+          note grows a selection outline; taps then toggle membership rather
+          than replacing the selection.
 
 
-          Long-press is free to use. It is conventionally the context-menu
+          Long-press is free to use - it is conventionally the context-menu
           trigger, but the actions live on a kebab attached to the object here,
           so nothing else wants it.
 
 
-          **The open question is whether it is a mode at all**, and it is worth
-          settling before building, because MOBILE-2 rejected an explicit tool
-          model on the grounds that selection alone should decide what a gesture
-          means. A multi-select mode reintroduces a lighter version of that.
-          Three readings, in increasing weight:
+          **Why a mode, given MOBILE-2 rejected a tool model.** That rejection
+          was of a persistent palette deciding what a tap means everywhere,
+          chosen with no reference to what is on screen. This is the opposite:
+          it is transient, it is entered from the object it acts on, and - the
+          part that makes it work - **it announces itself**. Outlining every
+          note is not decoration, it is the mode indicator, and it is why this
+          needs no separate banner or toolbar to say what state you are in. A
+          mode you cannot see is the thing that was rejected.
 
 
-          1. **Long-press is the shift key.** No mode: a tap replaces the
-          selection, a long-press adds to it. Nothing to enter, nothing to exit,
-          nothing to display, and it is the same mental model as the desktop's
-          shift-click. Slow to build a large selection, at ~500ms a note.
-
-          2. **Long-press, then sweep.** Long-press a note and keep dragging to
-          gather everything the finger passes - the iOS Photos gesture. Fast,
-          and it is the *marquee we just took away*: the rubber band was not
-          wrong, it was wrong as the default meaning of an empty-space drag,
-          where it fought panning and pinching. Behind a deliberate gesture that
-          conflict disappears.
-
-          3. **A real mode**, entered by long-press and exited explicitly, in
-          which taps toggle membership. The most discoverable and the most
-          conventional, and the only one that needs an exit affordance and a
-          visible state.
+          Two alternatives were considered and dropped:
 
 
-          (1) and (2) compose, and together they may be the whole answer without
-          a mode: long-press to add, long-press-and-sweep to add many.
+          - **Long-press as a shift key** (no mode, long-press adds one note).
+          Nothing to enter or exit, but building a selection of eight notes
+          costs eight long-presses at ~500ms each.
+
+          - **Long-press then sweep** to gather everything the finger passes.
+          Fast, and it would have been the marquee this ticket removes from the
+          default empty-space drag - but a rubber band on touch is awkward
+          whichever gesture opens it, because the finger covers what it is
+          selecting.
+
+
+          **Exiting** wants deciding when built: deselecting the last note is
+          the natural implicit exit, and there should be an explicit one too. In
+          the mode, a tap on empty grid must *not* create a note - creation is
+          the thing the mode is not for.
 
 
           **Group handles are not just bigger handles.** A selection gets a
@@ -8984,7 +8985,7 @@ projects:
           round is not obvious and should be tried rather than argued.
         id: 019fb8bf-be5a-756f-9c63-7d0ac202be7f
         created_at: 2026-07-31T15:16:41.690Z
-        updated_at: 2026-09-04T16:57:01.923Z
+        updated_at: 2026-09-04T17:05:19.125Z
         comments:
           - body: "**Settled 2026-07-31, same day it was raised** (the note previously
               flagged it as blocking). In the roll, a tap on empty space means
