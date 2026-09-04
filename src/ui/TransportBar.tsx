@@ -63,6 +63,10 @@ export function TransportBar({
         tone="claude"
         toneAtRest
         size={compact ? "lg" : "md"}
+        // Only while compact, where a bar button sits immediately to the left and the dot's
+        // own 12px of leading padding reads as a gap on top of the row's. On desktop record
+        // leads the row against the container's padding, which already looks right.
+        className={compact ? "-ml-1" : ""}
         disabled={!started}
         active={recording}
         title={

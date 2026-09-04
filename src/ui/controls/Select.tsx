@@ -41,7 +41,10 @@ export function Select({
   /** Which colour the focus ring speaks in, for a surface that is not the default. */
   tone?: Tone;
   children?: ReactNode;
-} & SelectHTMLAttributes<HTMLSelectElement>) {
+  // `size` has to be omitted, not just shadowed: a `<select>` already has one (the number of
+  // rows to show as a list box), so intersecting the two collapses it to `never` and every
+  // call site fails to typecheck. Nothing here wants the native meaning.
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "size">) {
   return (
     <select
       className={`bg-ground border border-line text-ink cursor-pointer transition-colors hover:border-line-soft ${
