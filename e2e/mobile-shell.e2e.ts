@@ -95,6 +95,47 @@ async function openOverflow(page: Page) {
   }).toPass({ timeout: 10_000 });
 }
 
+/** The roll, at the detent that gives it room, ready to be tapped at. */
+async function openRoll(page: Page) {
+  await page.goto("/");
+  await dismissStart(page);
+  await setDetent(page, "full");
+  await segment(page, "Edit").tap();
+  await expect(page.getByTestId("roll-scroll")).toBeVisible();
+}
+
+/**
+ * Tap empty grid to make a note (MOBILE-7). A tap creates *and* selects, so the handles that
+ * appear bracket the new note - which is a more direct grip on its geometry than picking it out
+ * from among its neighbours, since each handle sits exactly on one of its ends.
+ */
+async function addNote(page: Page, { fromBottom }: { fromBottom?: number } = {}) {
+  const before = await page.getByTestId("note").count();
+  const view = (await page.getByTestId("roll-scroll").boundingBox())!;
+  const y = fromBottom === undefined ? view.y + view.height / 2 : view.y + view.height - fromBottom;
+  await page.touchscreen.tap(view.x + 120, y);
+  await expect(page.getByTestId("note")).toHaveCount(before + 1);
+  await expect(page.getByTestId("note-handle-end")).toBeVisible();
+}
+
+const handleCentre = async (page: Page, edge: "start" | "end") => {
+  const box = (await page.getByTestId(`note-handle-${edge}`).boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+/** Drag one finger, in steps, so the move handler sees the travel rather than a teleport. */
+async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  const cdp = await page.context().newCDPSession(page);
+  const at = (fraction: number) => [
+    { x: from.x + (to.x - from.x) * fraction, y: from.y + (to.y - from.y) * fraction, id: 1 },
+  ];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(0) });
+  for (const fraction of [0.25, 0.5, 0.75, 1]) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(fraction) });
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+}
+
 test.describe("phone", () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
@@ -341,6 +382,172 @@ test.describe("phone", () => {
       .poll(scrollLeft, { message: "dragging two fingers left moved the view right" })
       .toBeGreaterThan(before.scroll);
     expect(await notes(), "a pinch is not a note").toBe(before.notes);
+  });
+
+  /**
+   * MOBILE-7. Touch has no hover, no modifiers and a 44px finger, so the roll's 6px drag-edge
+   * does not transfer - and widening it in place is not the fix, because at a 12px row height
+   * every note would become its neighbour's grab target. Selection is the substitute: only the
+   * selected note grows handles, so there are only ever two of them and they can be as big as a
+   * finger needs.
+   */
+  test("a selected note grows handles a finger can actually hit", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+
+    for (const edge of ["start", "end"] as const) {
+      const box = (await page.getByTestId(`note-handle-${edge}`).boundingBox())!;
+      expect(box.width, `the ${edge} handle is a finger wide`).toBeGreaterThanOrEqual(44);
+      expect(box.height, `the ${edge} handle is a finger tall`).toBeGreaterThanOrEqual(44);
+    }
+    // The hit area is not the paint, but the paint still has to read as a grip: drawn at the
+    // note's own 12px height the bar disappears into the note, same colour and same box. It
+    // stands proud at both ends instead, while staying well inside the box that catches the
+    // finger - a bar the size of the hit area would swallow three rows of the grid.
+    const hit = (await page.getByTestId("note-handle-end").boundingBox())!;
+    const bar = (await page.getByTestId("note-handle-end").locator("div").boundingBox())!;
+    expect(bar.height, "the bar stands proud of the note").toBeGreaterThan(16);
+    expect(bar.height, "but it is the grip, not the hit area").toBeLessThan(hit.height);
+  });
+
+  /**
+   * A fingertip parked on a 12px note covers the note, and pitch is exactly the axis where you
+   * need to see where you have got to. The grip sits clear of the note and drags it from there.
+   */
+  test("the move grip drags the note from clear of it", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+
+    const before = await handleCentre(page, "end");
+    const grip = (await page.getByTestId("note-move").boundingBox())!;
+    expect(grip.y, "the grip is below the note, not on it").toBeGreaterThanOrEqual(before.y + 6);
+
+    // 32px right is two snap cells at the default zoom, 24px up is two 12px rows: both axes,
+    // and both landing on a specific place rather than merely somewhere else.
+    const from = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+    await touchDrag(page, from, { x: from.x + 32, y: from.y - 24 });
+
+    await expect
+      .poll(async () => Math.round((await handleCentre(page, "end")).x), { message: "the note moved in time" })
+      .toBe(Math.round(before.x) + 32);
+    expect(Math.round((await handleCentre(page, "end")).y), "and in pitch").toBe(Math.round(before.y) - 24);
+  });
+
+  /**
+   * The grip goes above the note when there is no room below it. A grip you have to scroll to
+   * reach is worse than one on the other side, and the bottom row of the view is exactly where
+   * you end up when you scroll to something.
+   */
+  test("the move grip flips above the note at the bottom of the view", async ({ page }) => {
+    await openRoll(page);
+    // Made 24px off the bottom edge, which is less room below it than the grip needs.
+    await addNote(page, { fromBottom: 24 });
+
+    const note = await handleCentre(page, "end");
+    const grip = (await page.getByTestId("note-move").boundingBox())!;
+    expect(grip.y + grip.height, "the grip went above the note rather than off the bottom").toBeLessThanOrEqual(note.y);
+  });
+
+  /**
+   * Each handle moves its own end and leaves the other alone. The start handle is the one the
+   * implicit drag-edge never offered: there was no room to put a second invisible 6px strip at
+   * the other end of a note that can be 16px wide.
+   */
+  test("a handle resizes from its own end, and leaves the other where it was", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+
+    const before = { start: await handleCentre(page, "start"), end: await handleCentre(page, "end") };
+    const width = () =>
+      Promise.all([handleCentre(page, "start"), handleCentre(page, "end")]).then(([start, end]) =>
+        Math.round(end.x - start.x),
+      );
+    const startX = async () => Math.round((await handleCentre(page, "start")).x);
+    const endX = async () => Math.round((await handleCentre(page, "end")).x);
+    const original = await width();
+
+    // 32px at the default zoom is exactly two snap cells (64px to the beat, snapping to 1/4),
+    // so the note has to land on a specific width rather than merely somewhere wider.
+    await touchDrag(page, before.end, { x: before.end.x + 32, y: before.end.y });
+    await expect.poll(width, { message: "dragging the end handle right made the note longer" }).toBe(original + 32);
+    expect(await startX(), "the start stayed put").toBe(Math.round(before.start.x));
+
+    // The other end: the start moves and the end holds, which is what taking hold of that end
+    // of anything means. Getting this backwards would slide the whole note instead.
+    const held = await endX();
+    const grabStart = await handleCentre(page, "start");
+    await touchDrag(page, grabStart, { x: grabStart.x + 16, y: grabStart.y });
+    await expect
+      .poll(startX, { message: "dragging the start handle right moved the start" })
+      .toBe(Math.round(before.start.x) + 16);
+    expect(await endX(), "the end stayed put").toBe(held);
+    expect(await width(), "so the note is shorter by exactly what the start moved").toBe(original + 32 - 16);
+  });
+
+  /**
+   * The actions hang off the note, not off a bar pinned to the screen - which costs no
+   * permanent space, and landscape has none to give. The price is that a note scrolled out of
+   * view would take its own actions with it, so the kebab is clamped into the visible slice of
+   * the roll. An affordance you have to scroll to find is one you stop reaching for.
+   */
+  test("the note's actions stay on screen when the note does not", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+
+    const scroller = page.getByTestId("roll-scroll");
+    const view = (await scroller.boundingBox())!;
+    await scroller.evaluate((element) => {
+      element.scrollLeft = 5000; // past the end; the browser clamps it to as far right as it goes
+    });
+
+    await expect
+      .poll(async () => Math.round((await page.getByTestId("note-actions").boundingBox())!.x), {
+        message: "the kebab did not follow the note off the left edge",
+      })
+      .toBeGreaterThanOrEqual(Math.round(view.x));
+    const box = (await page.getByTestId("note-actions").boundingBox())!;
+    expect(Math.round(box.x + box.width), "and its far edge is inside the roll too").toBeLessThanOrEqual(
+      Math.round(view.x + view.width),
+    );
+  });
+
+  /**
+   * The actions themselves. Velocity is an inline fader rather than a submenu, because submenus
+   * open on hover and touch has none; it renders as note fill strength, which is what earns the
+   * right to drop the velocity lane on a phone.
+   */
+  test("the note's kebab sets velocity, duplicates and deletes", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+    const notes = page.getByTestId("note");
+    const before = await notes.count();
+    const kebab = page.getByRole("button", { name: "Note actions" });
+    // Fill strength is 0.45 + 0.55 * velocity, so a velocity reads back off the note.
+    const velocity = async () =>
+      (Number(await notes.last().evaluate((element) => getComputedStyle(element).opacity)) - 0.45) / 0.55;
+
+    await kebab.tap();
+    await page.getByRole("menuitem", { name: "Duplicate" }).tap();
+    await expect(notes).toHaveCount(before + 1);
+
+    await kebab.tap();
+    const fader = page.getByRole("slider", { name: "Velocity" });
+    const track = (await fader.boundingBox())!;
+    await fader.tap({ position: { x: track.width * 0.3, y: track.height / 2 } });
+    await expect.poll(velocity, { message: "the note took the velocity the track was tapped at" }).toBeCloseTo(0.3, 1);
+
+    // The point of a fader over a row of presets: a value between the presets is reachable, and
+    // two taps a tenth apart have to land a tenth apart rather than on the same option.
+    await fader.tap({ position: { x: track.width * 0.4, y: track.height / 2 } });
+    await expect.poll(velocity, { message: "and a value a preset row could not have offered" }).toBeCloseTo(0.4, 1);
+
+    // Still open, which is the point of an inline row: you set a velocity, hear it, and adjust
+    // without finding the note and its kebab again. Every other row dismisses, so Delete is
+    // reachable from here without reopening anything.
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.getByRole("menuitem", { name: "Delete" }).tap();
+    await expect(notes).toHaveCount(before);
+    await expect(page.getByTestId("note-actions"), "and the handles go with it").toHaveCount(0);
   });
 
   /**
