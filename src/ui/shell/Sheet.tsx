@@ -12,6 +12,7 @@
  * agent's chat machinery does not start up on a shell that never asks for it.
  */
 import { useEffect, useState, type ReactNode } from "react";
+import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
 
 export function Sheet({
   open,
@@ -71,7 +72,15 @@ export function Sheet({
         } border-line ${widthClass ?? "w-[88%] max-w-108"} transition-transform duration-200 motion-reduce:transition-none ${
           open ? "translate-x-0" : `${hidden} pointer-events-none`
         }`}
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        // Its own insets, not the shell's: this is absolutely positioned, so padding on an
+        // ancestor would resolve against the padding box and leave it exactly where it was.
+        // Only the outer side matters horizontally - the inner edge faces the app.
+        style={{
+          paddingTop: SAFE_TOP,
+          paddingBottom: SAFE_BOTTOM,
+          paddingLeft: side === "left" ? SAFE_LEFT : undefined,
+          paddingRight: side === "right" ? SAFE_RIGHT : undefined,
+        }}
       >
         {children}
       </div>

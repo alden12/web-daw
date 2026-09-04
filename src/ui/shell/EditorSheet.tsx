@@ -18,6 +18,7 @@
 import type { ReactNode } from "react";
 import { DETENT_ORDER, stepDetent, type Detent, type DetentSet } from "./detents";
 import { useSheetDrag } from "./useSheetDrag";
+import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
 
 /**
  * The grabber and title row, as a number. It is a constant rather than a measurement because
@@ -59,7 +60,7 @@ export function EditorSheet({
       // The insets go here rather than as padding on the workspace: an absolutely
       // positioned box resolves against its containing block's *padding box*, so padding
       // out there would be silently ignored by this element (MOBILE-8).
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{ paddingBottom: SAFE_BOTTOM, paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
     >
       {/*
        * The whole header drags, not just the grabber - it is the easiest thing on screen

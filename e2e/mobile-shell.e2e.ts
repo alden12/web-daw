@@ -343,6 +343,46 @@ test.describe("phone", () => {
     expect(await notes(), "a pinch is not a note").toBe(before.notes);
   });
 
+  /**
+   * MOBILE-8. A **structural** guard, and deliberately so: `env(safe-area-inset-*)` resolves
+   * to 0 in every browser without a notch, so no assertion about a computed pixel value can
+   * tell a correct implementation from a missing one here. What it can prove is that each box
+   * still declares the edges it owns - which is the thing that gets deleted by accident, and
+   * which nothing else in the suite would notice.
+   *
+   * The split is the point. Both sheets are absolutely positioned, so padding on an ancestor
+   * resolves against its *padding box* and leaves them exactly where they were: they have to
+   * carry their own. The real check is a notched device in landscape, both ways up, because
+   * the notch swaps sides with the rotation direction.
+   */
+  test("every edge of the shell is padded back from the display's insets", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Library" }).tap();
+
+    const declares = (locator: ReturnType<Page["locator"]>, property: string) =>
+      locator.evaluate(
+        (element, name) => (element as HTMLElement).style.getPropertyValue(name),
+        property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
+      );
+
+    // The top bar: the edges a notch and the corner radii actually eat.
+    const topBar = page.locator("[data-device-tier] > div").first();
+    expect(await declares(topBar, "paddingTop")).toContain("safe-area-inset-top");
+    expect(await declares(topBar, "paddingLeft")).toContain("safe-area-inset-left");
+    expect(await declares(topBar, "paddingRight")).toContain("safe-area-inset-right");
+
+    // The editor sheet, which is abspos against the workspace and so gets nothing from it.
+    const editor = sheet(page);
+    expect(await declares(editor, "paddingBottom")).toContain("safe-area-inset-bottom");
+    expect(await declares(editor, "paddingLeft")).toContain("safe-area-inset-left");
+
+    // The library sheet, which is abspos against the shell for the same reason.
+    const library = page.getByRole("dialog", { name: "Library" });
+    expect(await declares(library, "paddingTop")).toContain("safe-area-inset-top");
+    expect(await declares(library, "paddingBottom")).toContain("safe-area-inset-bottom");
+  });
+
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
