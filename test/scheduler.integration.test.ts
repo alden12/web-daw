@@ -60,4 +60,61 @@ describe("Scheduler integration (mocked clock)", () => {
     expect(b36!.when).toBeCloseTo(1, 1);
     expect(a62!.when).toBeCloseTo(2, 1);
   });
+
+  /**
+   * DAW-32. A tick that does not run for a while leaves `scheduledUntilBeats` behind while the
+   * audio clock carries on, so the next tick's window used to span the whole stall - and every
+   * overdue note in it was scheduled at a time already past, which Web Audio plays immediately.
+   * A phone reported it as "jumping through time, like it's catching up".
+   *
+   * Mobile is only where it shows: timers are throttled hard there, an installed PWA backgrounds
+   * when you switch apps, and a phone stalls the main thread over things a laptop shrugs off.
+   */
+  it("skips a stalled window rather than firing all of it at once", () => {
+    let clock = 0;
+    const calls: { midi: number; when: number }[] = [];
+    const engine = {
+      get started() {
+        return true;
+      },
+      get currentTime() {
+        return clock;
+      },
+      getNoteTarget: () => ({
+        playNote: (midi: number, _dur: number, _vel: number, when: number) => calls.push({ midi, when }),
+        allNotesOff: () => {},
+      }),
+      scheduleAudioClip: () => {},
+      stopAllAudio: () => {},
+    };
+
+    const project = new ProjectStore(false);
+    project.setTempo(120); // 2 beats per second
+    project.setLength(16);
+    const track = project.addTrack("subtractive", { name: "A" });
+    // One note per beat across the stall, so "was the gap replayed" has an unambiguous answer.
+    [1, 2, 3, 4, 5, 6].forEach((beat) => project.getClipStore(track.id)!.addNote({ pitch: 60 + beat, start: beat }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const scheduler = new Scheduler(engine as any, project);
+    scheduler.play();
+
+    // Three seconds pass with the timer never firing: the app was in the background, or the
+    // main thread was busy. The audio clock does not stop for either.
+    clock += 3;
+    vi.advanceTimersByTime(25);
+    scheduler.stop();
+
+    // Beats 1 to 5 came due during the stall and are simply gone. The defect scheduled them at
+    // a time already past, which Web Audio plays at once: backed out, this assertion reports all
+    // six notes at `when` 3, which is the burst as a phone hears it.
+    //
+    // Beat 6 is 3s in and inside the lookahead from t=3, so playback picks straight back up
+    // rather than going silent until the loop comes round.
+    expect(
+      calls.map((call) => call.midi),
+      `scheduled: ${JSON.stringify(calls)}`,
+    ).toEqual([66]);
+    expect(calls[0].when, "and at its own time, not bunched onto the present").toBeCloseTo(3, 2);
+  });
 });

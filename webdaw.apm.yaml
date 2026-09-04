@@ -5686,6 +5686,135 @@ projects:
         id: 01a06e62-8d2f-71ee-a949-33b2be7a9c30
         created_at: 2026-09-04T21:45:47.567Z
         updated_at: 2026-09-04T21:49:40.287Z
+      - ref: DAW-32
+        area: DAW
+        title: A stalled scheduler replays the gap instead of skipping it
+        status: review
+        sort_path: "000032"
+        body: >
+          Reported from an installed PWA on a phone (2026-09-05): playback
+          "occasionally skips and seems to jump through time really fast, like
+          it's catching up". It is doing exactly that.
+
+
+          ## The mechanism
+
+
+          `Scheduler.tick` runs on a `setInterval` every `LOOKAHEAD_MS` (25) and
+          schedules everything due within `SCHEDULE_AHEAD_SEC` (0.1). Two lines
+          together turn a stalled timer into a burst:
+
+
+          ```ts
+
+          const fromBeats = this.scheduledUntilBeats;      // no floor at "now"
+
+          ...
+
+          const when = Math.max(now, this.anchorTime + (atBeat -
+          this.anchorBeat) / bps + ...);
+
+          ```
+
+
+          `scheduledUntilBeats` is wherever scheduling last reached. Nothing
+          pulls it forward, so if `tick` stops running the audio clock carries
+          on without it. On the next tick, `horizonBeats` has advanced by the
+          whole stall and the range `[scheduledUntilBeats, horizonBeats)` covers
+          every note that came due while it was away. Then `Math.max(now, ...)`
+          clamps each of those overdue times to the present, so they all fire
+          **at the same instant**.
+
+
+          A two-second stall at 120bpm is four beats of material in one hit.
+          That is the "catching up" sound.
+
+
+          Note the transport itself is not confused: `getPositionBeats()`
+          derives from the audio clock, so the playhead is in the right place
+          throughout. Only scheduling is behind, which is why the burst is
+          followed by correct playback rather than by drift.
+
+
+          ## Why a phone found it and a desktop did not
+
+
+          Nothing here is mobile-specific, but three things make mobile the
+          place it shows:
+
+
+          - Mobile browsers throttle `setInterval` hard, and an installed PWA
+          backgrounds like any tab when you switch apps or the screen locks.
+
+          - A phone CPU stalls the main thread more readily (GC, layout, a heavy
+          re-render).
+
+          - Desktop tabs *playing audio* are largely exempt from timer
+          throttling, which is why 100ms of slack has been enough there for the
+          whole life of the project.
+
+
+          ## The fix
+
+
+          Floor the scheduling window at the present, so a gap is skipped rather
+          than replayed:
+
+
+          ```ts
+
+          const nowBeats = this.anchorBeat + (now - this.anchorTime) * bps;
+
+          const fromBeats = Math.max(this.scheduledUntilBeats, nowBeats);
+
+          ```
+
+
+          Dropping the missed notes is the right behaviour, not a compromise: a
+          transport keeps time. The position is already correct, so skipping the
+          gap lands playback exactly where the clock says it should be.
+
+
+          Worth doing at the same time:
+
+
+          - **Reconsider `Math.max(now, ...)`.** With the floor in place, a
+          `when` in the past should be rare enough to be a bug worth noticing
+          rather than something to silently round forward.
+
+          - **A larger `SCHEDULE_AHEAD_SEC` on touch.** 25/100ms is the classic
+          "Tale of Two Clocks" pairing and is tight for a phone; more lookahead
+          costs a little scheduling latency and buys a lot of tolerance for a
+          stalled tick. It reduces how often the gap happens at all, where the
+          floor only makes the gap harmless.
+
+          - A regression test can drive this without a browser: the scheduler
+          takes an injected clock, so a test can advance `currentTime` by a
+          second without calling `tick` and assert that the notes in that window
+          are *not* scheduled, rather than scheduled at `now`.
+        id: 01a06eb1-bd05-715a-ab14-14d729d17524
+        created_at: 2026-09-04T23:12:17.158Z
+        updated_at: 2026-09-04T23:22:30.854Z
+        comments:
+          - body: >-
+              **One suggestion in this ticket was wrong**: dropping
+              `Math.max(now, ...)` on the note's `when`. It is not a catch-up
+              band-aid. A groove slot with `pct < 0.5` gives a negative
+              `offsetBeats` (`(pct - 0.5) * grid * 2`), so a note at the very
+              start of the scheduling window can legitimately resolve a few
+              milliseconds behind the clock. The clamp is kept, with a comment
+              saying which of the two jobs it is actually doing.
+
+
+              Also added beyond the plan: a 20ms grace on the floor. Without it
+              a stall one millisecond over the lookahead drops notes outright,
+              and a marginal overrun is the most likely kind - so the common
+              case would be the one that loses a note. 20ms is inaudible as
+              lateness and much better than a hole.
+            audience: user
+            id: 01a06ebb-3707-715b-9aad-2d04481ff122
+            at: 2026-09-04T23:22:38.215Z
+            actor: claude
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
