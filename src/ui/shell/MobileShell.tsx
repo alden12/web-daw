@@ -54,6 +54,8 @@ import { TransportBar } from "../TransportBar";
 import { AccountAvatar } from "../AccountAvatar";
 import { SettingsIcon } from "../ActivityRail";
 import { Menu, type MenuItem } from "../Menu";
+import { IconButton } from "../controls/IconButton";
+import { Segmented } from "../controls/Segmented";
 import { RAIL_ITEMS } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
@@ -96,7 +98,14 @@ const SURFACE_ITEMS: SurfaceItem[] = [
   { surface: "devices", label: "Rack" },
 ];
 
-/** A square icon button sized for a finger, not a cursor. */
+/**
+ * A top-bar icon button, sized for a finger rather than a cursor.
+ *
+ * Thin wrapper over `IconButton` so touch inherits the house rule (bare at rest, accent pill
+ * when active) and the `lg` touch size in one place, rather than the bar keeping its own
+ * palette. It exists only for the size default and `shrink-0` - a top bar that lets its
+ * controls compress is a top bar that clips at 390px.
+ */
 function BarButton({
   label,
   onClick,
@@ -112,24 +121,18 @@ function BarButton({
   tint?: "agent";
   children: ReactNode;
 }) {
-  const colour = active
-    ? tint === "agent"
-      ? "text-agent border-agent/55 bg-agent/15"
-      : "text-you border-you/55 bg-you/15"
-    : tint === "agent"
-      ? "text-agent/80 border-line bg-card"
-      : "text-muted border-line bg-card";
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <IconButton
+      label={label}
+      tone={tint === "agent" ? "agent" : "you"}
+      size="lg"
+      active={active}
       disabled={disabled}
-      aria-label={label}
-      title={label}
-      className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${colour}`}
+      onClick={onClick}
+      className="shrink-0"
     >
       {children}
-    </button>
+    </IconButton>
   );
 }
 
@@ -206,14 +209,9 @@ function LibraryContent({
     <>
       <div className="shrink-0 flex items-center gap-2 h-11 px-3 border-b border-line">
         <span className="text-[13px] font-semibold text-strong">Library</span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close library"
-          className="ml-auto flex items-center justify-center w-8 h-8 rounded-md text-muted text-lg leading-none cursor-pointer"
-        >
+        <IconButton label="Close library" size="lg" onClick={onClose} className="ml-auto text-lg leading-none">
           ✕
-        </button>
+        </IconButton>
       </div>
       {/* The desktop rail, laid on its side. It used to be a scrolling strip of labelled
           pills, which is a lot of width spent on words you learn once - and it still did not
@@ -298,15 +296,9 @@ function LibraryContent({
         <span className="w-10 shrink-0 empty:hidden">
           <AccountAvatar onClick={onOpenAccount} />
         </span>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-          title="Settings"
-          className="ml-auto flex items-center justify-center w-10 h-10 rounded-md text-muted cursor-pointer"
-        >
+        <IconButton label="Settings" size="lg" onClick={onOpenSettings} className="ml-auto">
           <SettingsIcon className="w-5 h-5" />
-        </button>
+        </IconButton>
       </div>
     </>
   );
@@ -664,7 +656,7 @@ export function MobileShell({
           items={overflowItems}
           label="More controls"
           align="right"
-          triggerClassName="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border border-line bg-card text-muted cursor-pointer"
+          triggerClassName="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border border-transparent text-muted hover:text-ink hover:bg-control cursor-pointer transition-colors"
           // A drawn glyph, not the default "⋮" character: a text kebab renders heavier
           // than the 20px stroked icons in the buttons either side of it, so at the same
           // box size it still read as the odd one out.
@@ -726,33 +718,20 @@ export function MobileShell({
               title={selectedTrack.name}
               subtitle={selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType}
               controls={
-                <div
-                  role="tablist"
-                  aria-label="Editor surface"
-                  className="ml-auto shrink-0 flex gap-0.5 p-0.5 rounded-lg border border-line bg-ground"
-                >
-                  {SURFACE_ITEMS.map((item) => {
-                    const selected = item.surface === surface;
-                    return (
-                      <button
-                        key={item.surface}
-                        type="button"
-                        role="tab"
-                        aria-selected={selected}
-                        onClick={() => {
-                          setSurface(item.surface);
-                          // Asking for a surface while parked means you want to see it.
-                          if (detent === "peek") setDetent("half");
-                        }}
-                        className={`px-2.5 h-8 rounded-md font-mono text-[11px] uppercase tracking-wide cursor-pointer ${
-                          selected ? "bg-you/20 text-you" : "text-muted"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                // Three short options, exactly one chosen: a segmented control, and now an
+                // actual radiogroup rather than a `tablist` of buttons that each carried
+                // their own corners - so it announces as one choice and takes arrow keys.
+                <Segmented
+                  label="Editor surface"
+                  options={SURFACE_ITEMS.map((item) => ({ value: item.surface, label: item.label }))}
+                  value={surface}
+                  onChange={(next) => {
+                    setSurface(next);
+                    // Asking for a surface while parked means you want to see it.
+                    if (detent === "peek") setDetent("half");
+                  }}
+                  className="ml-auto shrink-0 font-mono uppercase tracking-wide"
+                />
               }
             >
               {surfacesFor(selectedTrack)[surface]}
