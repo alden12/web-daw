@@ -9005,7 +9005,7 @@ projects:
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
-        status: to-do
+        status: review
         sort_path: "000008"
         deps:
           - MOBILE-1
@@ -9057,7 +9057,7 @@ projects:
           roughly what the notch costs on the horizontal.
         id: 019fb8bf-e9cf-7295-984e-c64745fd5f32
         created_at: 2026-07-31T15:16:52.815Z
-        updated_at: 2026-07-31T15:16:52.815Z
+        updated_at: 2026-09-04T17:26:47.406Z
         comments:
           - body: >-
               Symptom description is half stale as of DAW-29.3 (PR #114): the
