@@ -39,6 +39,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { placeMenu, type Placed } from "./menuPlacement";
+import { Segmented, type SegmentedOption } from "./controls/Segmented";
 
 /** Marks every popover in the tree, so "did this click land inside the menu?" is one query. */
 const POPOVER_ATTR = "data-menu-popover";
@@ -62,6 +63,23 @@ export interface MenuNumber {
   onChange: (value: number) => void;
 }
 
+/**
+ * A few options picked in place, rather than behind a submenu.
+ *
+ * Submenus open on hover, which touch does not have, and a nested flyout near a screen edge is
+ * a cramped thing to aim at with a thumb. Velocity is what forced it (MOBILE-7): on touch it is
+ * set from the note's own menu, and opening a second popover to reach four values would be the
+ * slowest part of editing a note.
+ *
+ * Values are strings because that is what a radio group's options are; a caller holding numbers
+ * converts at the boundary.
+ */
+export interface MenuChoices {
+  options: readonly SegmentedOption<string>[];
+  value: string;
+  onChange: (value: string) => void;
+}
+
 export interface MenuItem {
   label?: string;
   onClick?: () => void;
@@ -81,6 +99,8 @@ export interface MenuItem {
   heading?: string;
   /** A number field with nudge buttons, in place of a submenu of preset values. */
   number?: MenuNumber;
+  /** A row of options picked inline, in place of a submenu of them. */
+  choices?: MenuChoices;
 }
 
 // App-wide: only one (top-level) menu open at a time.
@@ -297,6 +317,28 @@ function NumberRow({
   );
 }
 
+/**
+ * A `MenuChoices` as a row.
+ *
+ * Picking does **not** dismiss the menu, unlike every other actionable row here. That is the
+ * point of showing the options at once: you set a velocity, hear it, and reach for the next one
+ * without having to find the note and its kebab again.
+ */
+function ChoicesRow({ label, choices, reserveCheck }: { label?: string; choices: MenuChoices; reserveCheck: boolean }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1 text-[12.5px] text-ink">
+      {reserveCheck && <span aria-hidden="true" className="w-3 shrink-0" />}
+      <span className="flex-1 whitespace-nowrap">{label}</span>
+      <Segmented
+        options={choices.options}
+        value={choices.value}
+        onChange={choices.onChange}
+        label={label ?? "Options"}
+      />
+    </div>
+  );
+}
+
 /** One row in a popover: a leaf action, a radio selection, or a submenu parent. */
 function Row({
   item,
@@ -337,6 +379,7 @@ function Row({
     );
   if (item.number)
     return <NumberRow label={item.label} number={item.number} disabled={item.disabled} reserveCheck={reserveCheck} />;
+  if (item.choices) return <ChoicesRow label={item.label} choices={item.choices} reserveCheck={reserveCheck} />;
   // Show the check column for radio items; reserve an empty one on the menu's other
   // rows when any sibling is checkable, so plain/submenu rows still line up.
   // Hidden from assistive tech: `aria-checked` on the row already says it, and left visible

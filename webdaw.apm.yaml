@@ -9002,6 +9002,22 @@ projects:
             id: 019fb8c0-66da-76ff-8744-626e64529fe1
             at: 2026-07-31T15:17:24.826Z
             actor: claude
+          - body: "**The `touch-action: none` implementation note is superseded**
+              (2026-09-04). It predicted the roll must own its gestures and
+              scroll itself, because a vertical note drag would race the
+              browser's pan. It does not: notes already carry `touch-none` from
+              MOBILE-1, so a drag beginning on a note never starts a pan, and
+              the race never happens. Taking the whole surface would cost the
+              native scroll momentum MOBILE-2 deliberately kept (see
+              `usePinchZoom`'s note on leaving one finger alone). So the roll
+              keeps `pan-x pan-y` and only the notes and their handles opt out.
+              The asymmetry the note describes (roll scrolls in the axis it
+              creates in) still holds, it is just the browser doing the
+              scrolling."
+            audience: user
+            id: 01a06e08-f8ee-7772-b3ca-d4b93b3ce2a9
+            at: 2026-09-04T20:07:56.910Z
+            actor: claude
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
