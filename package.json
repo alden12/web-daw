@@ -31,8 +31,7 @@
     "db:studio": "drizzle-kit studio",
     "check:server": "tsc -p tsconfig.server.json",
     "check:pwa": "tsx scripts/checkPwaOffline.ts",
-    "preview": "vite preview",
-    "preview:mobile": "vite build --mode test && vite preview --host"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
