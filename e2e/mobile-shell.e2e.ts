@@ -524,9 +524,6 @@ test.describe("phone", () => {
     const kebab = page.getByRole("button", { name: "Note actions" });
 
     await kebab.tap();
-    // Stopped, so the playhead is parked at beat 0 and the note is nowhere near it. Splitting
-    // there would leave a zero-length note beside a copy of the original, so the row says so.
-    await expect(page.getByRole("menuitem", { name: "Split at playhead" })).toBeDisabled();
     await page.getByRole("menuitem", { name: "Duplicate" }).tap();
     await expect(notes).toHaveCount(before + 1);
 

@@ -51,7 +51,6 @@ import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequenc
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
 import { NoteHandles } from "./roll/NoteHandles";
-import { splitNoteAt } from "./roll/noteEdits";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
@@ -657,18 +656,10 @@ export function PianoRoll({
   // that is the next slice of this ticket.
   const selectedNote = selection.size === 1 ? (clip.notes.find((note) => selection.has(note.id)) ?? null) : null;
 
-  /**
-   * Split at **the playhead, not at a tap point**: no precision is being asked for, because the
-   * playhead is already positioned and already on screen. `splitNoteAt` returning null is both
-   * the guard and what greys the row out.
-   */
-  const splitNote = (note: NoteEvent) => {
-    const tailId = newNoteId();
-    const parts = splitNoteAt(note, scheduler.getPositionBeats(), tailId);
-    if (!parts) return;
-    dispatch({ type: "addNotes", trackId, clipId, notes: parts });
-    setSelection(new Set([tailId]));
-  };
+  // Split belongs here too, at the playhead rather than at a tap point - but there is no
+  // playhead to split at. `getPositionBeats()` is 0 whenever the transport is stopped and
+  // `play()` always anchors to 0, so the position is never inside a note and the row could only
+  // ever be disabled. It comes back with DAW-31, which gives the transport a position.
 
   /** A copy directly after the original, which is the only placement that needs no aiming. */
   const duplicateNote = (note: NoteEvent) => {
@@ -682,12 +673,7 @@ export function PianoRoll({
     setSelection(new Set([id]));
   };
 
-  /**
-   * A getter rather than an array, so the rows are resolved while the menu is open: "Split at
-   * playhead" has to grey out as the playhead leaves the note, and the roll does not re-render
-   * for the transport.
-   */
-  const noteMenuItems = (note: NoteEvent) => (): MenuItem[] => [
+  const noteMenuItems = (note: NoteEvent): MenuItem[] => [
     {
       label: "Velocity",
       choices: {
@@ -698,11 +684,6 @@ export function PianoRoll({
       },
     },
     { separator: true },
-    {
-      label: "Split at playhead",
-      disabled: splitNoteAt(note, scheduler.getPositionBeats(), "") === null,
-      onClick: () => splitNote(note),
-    },
     { label: "Duplicate", onClick: () => duplicateNote(note) },
     {
       label: "Delete",
