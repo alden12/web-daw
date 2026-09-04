@@ -33,18 +33,26 @@
  * top inset is 0 whatever device you are on. That leaves this nearly impossible to *look* at
  * during development, which is how it came to be half-implemented in the first place.
  *
- * So each value reads a variable first and falls back to the real inset, and `simulateInsets`
- * sets those variables. Nothing sets them in normal use, so the fallback is what ships; they
- * exist so the layout can be seen reacting on a laptop.
+ * So each value reads a variable first and falls back to the real inset. Nothing sets those
+ * variables in normal use, so the fallback is what ships.
  *
- *     import { simulateInsets } from "./ui/shell/safeArea";
- *     simulateInsets({ top: 59, bottom: 34, left: 0, right: 0 });  // iPhone, portrait
- *     simulateInsets({ top: 0, bottom: 21, left: 59, right: 59 }); // ...and landscape
- *     simulateInsets(null);                                        // back to the real ones
+ * **Driven by the URL**, because the device you want to look at this on is a phone and a phone
+ * has no console worth using: `chrome://inspect` needs a cable and a laptop, and Safari needs
+ * the Web Inspector turned on. A query string needs a typed URL.
  *
- * What this cannot tell you is whether iOS reports the insets you assumed, so a device still
- * has the last word - but it turns "did the layout move at all" into something you can answer
- * in a second, which is the question that was going unanswered.
+ *     ?insets=notch              // a notched phone held upright
+ *     ?insets=notch-landscape    // ...turned sideways, which is where the notch costs most
+ *     ?insets=59,34,12,21        // top,bottom,left,right in px
+ *     ?insets=off                // back to the real device
+ *
+ * The choice sticks until it is turned off, so following a link or reloading does not silently
+ * drop you back to a device with no notch and make the padding look broken.
+ *
+ * `simulateInsets` is the same thing from a console, and is on `window` in dev and test.
+ *
+ * What none of this can tell you is whether iOS reports the insets you assumed, so a device
+ * still has the last word - but it turns "did the layout move at all" into something you can
+ * answer in a second, which is the question that was going unanswered.
  */
 
 /** Reads an override first, so the layout can be exercised where there is no real inset. */
@@ -56,11 +64,62 @@ export const SAFE_LEFT = inset("left");
 export const SAFE_RIGHT = inset("right");
 
 /** Pretend the display has these insets, in px. `null` hands it back to the real device. */
-export function simulateInsets(insets: { top: number; bottom: number; left: number; right: number } | null): void {
+export function simulateInsets(insets: Insets | null): void {
   const root = document.documentElement;
   for (const edge of ["top", "bottom", "left", "right"] as const) {
     if (insets) root.style.setProperty(`--sim-safe-${edge}`, `${insets[edge]}px`);
     else root.style.removeProperty(`--sim-safe-${edge}`);
+  }
+}
+
+export interface Insets {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * The shapes worth having a name for. Numbers are an iPhone 14 Pro, which is the harshest
+ * common case: the tallest status bar and, sideways, a notch on one edge and a home indicator
+ * on the other.
+ */
+const PRESETS: Record<string, Insets> = {
+  notch: { top: 59, bottom: 34, left: 0, right: 0 },
+  "notch-landscape": { top: 0, bottom: 21, left: 59, right: 59 },
+};
+
+const STORAGE_KEY = "web-daw:sim-insets";
+
+/** `notch`, `notch-landscape`, `off`, or `top,bottom,left,right` in px. */
+function parseInsets(value: string): Insets | null {
+  if (value in PRESETS) return PRESETS[value];
+  const numbers = value.split(",").map(Number);
+  if (numbers.length !== 4 || numbers.some((number) => !Number.isFinite(number))) return null;
+  const [top, bottom, left, right] = numbers;
+  return { top, bottom, left, right };
+}
+
+/**
+ * Read `?insets=` and apply it, remembering the choice. Called from `main.tsx` in dev and test
+ * only, so nothing here reaches a production build.
+ *
+ * Stored rather than read fresh each time, because the query string is gone the moment the app
+ * rewrites the URL to the open project - so without this, simulating a notch would last until
+ * the first navigation and then quietly stop, which looks exactly like the padding failing.
+ */
+export function applySimulatedInsets(): void {
+  const requested = new URLSearchParams(window.location.search).get("insets");
+  try {
+    if (requested === "off") localStorage.removeItem(STORAGE_KEY);
+    else if (requested) {
+      const insets = parseInsets(requested);
+      if (insets) localStorage.setItem(STORAGE_KEY, JSON.stringify(insets));
+    }
+    const stored = localStorage.getItem(STORAGE_KEY);
+    simulateInsets(stored ? (JSON.parse(stored) as Insets) : null);
+  } catch {
+    // Private mode, or a malformed stored value. The real insets are the right fallback.
   }
 }
 
