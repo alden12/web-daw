@@ -8,12 +8,18 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { PadTouch } from "./usePadTouch";
 
+/**
+ * Fill, not outline. Every pad wears the same grey and they are separated by the gaps between
+ * them rather than by borders, which is what makes a bank read as a row of keys instead of a
+ * grid with lines ruled through it. What differs per tone is the *label* colour, so the pads
+ * stay one object and the tonic still says where home is.
+ */
 const TONE_CLASS = {
-  /** The tonic reads as home without shouting: the same pad, tinted. */
-  tonic: "bg-card text-you border-you/30",
-  "in-scale": "bg-card text-ink border-line",
+  /** The tonic reads as home without shouting: the same pad, its label tinted. */
+  tonic: "bg-control text-you",
+  "in-scale": "bg-control text-ink",
   /** Out of the scale, so it sits back the way a black key does. */
-  accidental: "bg-ground text-muted border-line",
+  accidental: "bg-control text-muted",
 } as const;
 
 export function PadButton({
@@ -50,8 +56,11 @@ export function PadButton({
       // No position utility here: the accidentals position themselves absolutely, and two
       // Tailwind classes for the same property are settled by stylesheet order rather than
       // by which one the caller passed - so the base class would win at random.
-      className={`flex flex-col items-center justify-center leading-none touch-none select-none cursor-pointer ${
-        sounding ? "bg-you/25 text-you border-you/60" : TONE_CLASS[tone]
+      //
+      // The radius *is* here, because every pad everywhere has the same one; only size and
+      // position are the caller's business.
+      className={`flex flex-col items-center justify-center rounded-md leading-none touch-none select-none cursor-pointer transition-colors ${
+        sounding ? "bg-you/30 text-you" : TONE_CLASS[tone]
       } ${latched ? "ring-1 ring-inset ring-you" : ""} ${className}`}
       style={style}
     >

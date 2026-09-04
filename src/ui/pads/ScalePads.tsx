@@ -15,36 +15,12 @@
 import { Menu, type MenuItem } from "../Menu";
 import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
-import { ACCIDENTAL_HEIGHT, PAD_HEIGHT } from "./geometry";
+import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
+import { IconButton } from "../controls/IconButton";
+import { CONTROL_BASE } from "../controls/tone";
 import type { PadTouch } from "./usePadTouch";
-
-/** A square step button for the octave range: finger-sized, and disabled at its limit. */
-function StepButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled: boolean;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="shrink-0 flex items-center justify-center w-8 h-8 rounded-md border border-line bg-card text-[15px] leading-none text-muted cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-    >
-      {children}
-    </button>
-  );
-}
 
 /**
  * The key and the octave range. A row of its own where there is height for one, and folded
@@ -90,36 +66,50 @@ export function ScalePadControls({
         items={keyItems}
         label="Key and scale"
         align="left"
-        triggerClassName="shrink-0 flex items-center gap-1 h-8 px-2 rounded-md border border-line bg-card font-mono text-[11px] text-muted cursor-pointer"
+        // A word, so it keeps the grey pill a word needs. `Menu` renders its own trigger, so
+        // it borrows the class rather than being a `Button`.
+        triggerClassName={`${CONTROL_BASE} shrink-0 h-8 px-3 rounded-full bg-control text-ink hover:bg-control-hover font-mono text-[11px]`}
         trigger={
           <>
             {settings.keyLabel}
-            <span className="text-[9px]">▾</span>
+            <span className="text-[11px]">▾</span>
           </>
         }
       />
-      <div className="ml-auto shrink-0 flex items-center gap-1">
-        <StepButton label="Lower octave" onClick={() => settings.moveRange(-1)} disabled={!settings.canMove(-1)}>
+      <div className="ml-auto shrink-0 flex items-center">
+        <IconButton
+          label="Lower octave"
+          size="lg"
+          onClick={() => settings.moveRange(-1)}
+          disabled={!settings.canMove(-1)}
+        >
           ◂
-        </StepButton>
+        </IconButton>
         <span className="w-16 text-center font-mono text-[10px] text-muted tabular-nums">{settings.rangeLabel}</span>
-        <StepButton label="Higher octave" onClick={() => settings.moveRange(1)} disabled={!settings.canMove(1)}>
+        <IconButton
+          label="Higher octave"
+          size="lg"
+          onClick={() => settings.moveRange(1)}
+          disabled={!settings.canMove(1)}
+        >
           ▸
-        </StepButton>
-        <StepButton
+        </IconButton>
+        <IconButton
           label={pairs ? "Fewer octaves (a row of two)" : "Fewer octaves"}
+          size="lg"
           onClick={() => settings.sizeRange(-1)}
           disabled={!settings.canSize(-1)}
         >
           −
-        </StepButton>
-        <StepButton
+        </IconButton>
+        <IconButton
           label={pairs ? "More octaves (a row of two)" : "More octaves"}
+          size="lg"
           onClick={() => settings.sizeRange(1)}
           disabled={!settings.canSize(1)}
         >
           +
-        </StepButton>
+        </IconButton>
       </div>
     </div>
   );
@@ -146,7 +136,7 @@ export function ScalePads({
     // High row on top, as the roll puts high pitches at the top.
     <div className="shrink-0 flex flex-col-reverse gap-1 px-2 pb-2">
       {rows.map((row) => (
-        <div key={row.pitches[0].pitch} data-pad-row={row.pitches[0].pitch} className="flex flex-col">
+        <div key={row.pitches[0].pitch} data-pad-row={row.pitches[0].pitch} className="flex flex-col gap-1">
           {accidentals && (
             <div className="relative shrink-0" style={{ height: ACCIDENTAL_HEIGHT }}>
               {row.accidentals.map((pad) => (
@@ -157,19 +147,22 @@ export function ScalePads({
                   label={pad.interval}
                   tone="accidental"
                   touch={touch}
-                  className="absolute top-0 h-full rounded-md border -translate-x-1/2"
-                  // Positions come from the layout in pad-width units, so the row below is
-                  // gapless: a seam here has to be a seam there.
+                  className="absolute top-0 h-full -translate-x-1/2"
+                  // Positions come from the layout in pad-width units, so an accidental still
+                  // sits over the gap it belongs to - between the two naturals it is between,
+                  // which is the whole reason this is a keyboard rather than a list. It is a
+                  // full pad wide now, so the gap it leaves has to be taken out of the width
+                  // rather than left to the layout, which has no gaps of its own to give.
                   style={{
                     left: `${(pad.center / row.pitches.length) * 100}%`,
-                    width: `${(accidentalWidth / row.pitches.length) * 100}%`,
+                    width: `calc(${(accidentalWidth / row.pitches.length) * 100}% - ${PAD_GAP}px)`,
                   }}
                 />
               ))}
             </div>
           )}
-          <div className="shrink-0 flex rounded-lg border border-line overflow-hidden" style={{ height: PAD_HEIGHT }}>
-            {row.pitches.map((pad, index) => (
+          <div className="shrink-0 flex gap-1" style={{ height: PAD_HEIGHT }}>
+            {row.pitches.map((pad) => (
               <PadButton
                 key={pad.pitch}
                 pitch={pad.pitch}
@@ -178,7 +171,7 @@ export function ScalePads({
                 sublabel={pitchName(pad.pitch)}
                 tone={pad.interval === "1" ? "tonic" : "in-scale"}
                 touch={touch}
-                className={`flex-1 min-w-0 ${index > 0 ? "border-l border-line" : ""}`}
+                className="flex-1 min-w-0"
               />
             ))}
           </div>

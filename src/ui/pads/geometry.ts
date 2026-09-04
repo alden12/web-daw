@@ -14,10 +14,23 @@
 
 /** An in-scale pad. Comfortably over the 44px hit-target floor (MOBILE-2). */
 export const PAD_HEIGHT = 52;
-/** An accidental, sitting above the row as a black key does: the note you reach *for*. */
-export const ACCIDENTAL_HEIGHT = 34;
+/**
+ * An accidental, sitting above the row as a black key does: the note you reach *for*.
+ *
+ * Shorter than a natural, and that is now the only thing that distinguishes them. They used
+ * to be narrower as well, which made them fiddly for the thing they are - a note you jab at
+ * in passing - so they went to a full pad width and height took over the job of saying
+ * "these are the ones off to the side". Still clear of the 44px floor with the gap included.
+ */
+export const ACCIDENTAL_HEIGHT = 30;
 /** Between stacked rows. */
 export const ROW_GAP = 4;
+/**
+ * Between pads, in both axes. The pads are separated by space rather than by borders, so this
+ * is what makes them read as individual keys; it is also subtracted from an accidental's
+ * width, since those are positioned rather than laid out and get no gap for free.
+ */
+export const PAD_GAP = 4;
 /** The key/scale menu and the octave range, when they get a row of their own. */
 export const CONTROLS_HEIGHT = 38;
 /** `EditorSection`'s disclosure row (`h-9`). */

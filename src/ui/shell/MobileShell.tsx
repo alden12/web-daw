@@ -55,6 +55,7 @@ import { AccountAvatar } from "../AccountAvatar";
 import { SettingsIcon } from "../ActivityRail";
 import { Menu, type MenuItem } from "../Menu";
 import { IconButton } from "../controls/IconButton";
+import { iconButtonClass } from "../controls/iconButtonStyle";
 import { Segmented } from "../controls/Segmented";
 import { RAIL_ITEMS } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
@@ -656,7 +657,7 @@ export function MobileShell({
           items={overflowItems}
           label="More controls"
           align="right"
-          triggerClassName="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border border-transparent text-muted hover:text-ink hover:bg-control cursor-pointer transition-colors"
+          triggerClassName={iconButtonClass({ size: "lg", className: "shrink-0" })}
           // A drawn glyph, not the default "⋮" character: a text kebab renders heavier
           // than the 20px stroked icons in the buttons either side of it, so at the same
           // box size it still read as the odd one out.

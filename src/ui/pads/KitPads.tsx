@@ -51,7 +51,6 @@ export function KitPads({ params, samples, touch }: { params: ParamStore; sample
             label={<span className="max-w-full truncate px-1">{label}</span>}
             sublabel={pitchName(pad.note)}
             touch={touch}
-            className="rounded-md border"
             style={{ height: PAD_HEIGHT }}
           />
         );

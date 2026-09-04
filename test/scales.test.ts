@@ -81,7 +81,11 @@ describe("padRows", () => {
     // A minor pentatonic leaves a three-semitone gap between the tonic and the b3, which
     // holds two accidentals. Stacked on the seam they would be one unplayable pad.
     const [row] = cMajor({ scale: "minor pentatonic" });
-    const inFirstGap = row.accidentals.filter((pad) => Math.round(pad.center) === 1);
+    // Picked by distance from the seam rather than by rounding to it: a pair straddles the
+    // seam by half a pad width each, so once an accidental is a full pad wide their centres
+    // land on 0.5 and 1.5 and rounding puts them in different buckets. The next seam is a
+    // whole pad away, so this cannot pull one in from the gap next door.
+    const inFirstGap = row.accidentals.filter((pad) => Math.abs(pad.center - 1) < 1);
     expect(inFirstGap.map((pad) => pitchName(pad.pitch))).toEqual(["C#3", "D3"]);
     expect(inFirstGap[1].center - inFirstGap[0].center).toBeCloseTo(accidentalWidth);
     // Straddling the seam, so the pair stays centred on the gap it belongs to.
