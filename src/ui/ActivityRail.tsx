@@ -67,7 +67,7 @@ export function ActivityRail({
             aria-current={selected ? "page" : undefined}
             onClick={() => (item.view === active ? onToggleCollapse() : onSelect(item.view))}
             className={`relative flex items-center justify-center w-full h-11 cursor-pointer ${
-              selected ? "text-bright" : "text-faint hover:text-ink"
+              selected ? "text-strong" : "text-faint hover:text-ink"
             }`}
           >
             {/* VSCode-style active marker on the near edge. */}

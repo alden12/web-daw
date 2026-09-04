@@ -391,11 +391,11 @@ export function Lane({
       )}
       {markerBeat !== null && (
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-bright pointer-events-none"
+          className="absolute top-0 bottom-0 w-0.5 bg-strong pointer-events-none"
           style={{ left: beatToX(markerBeat, pxPerBeat) }}
           title="Paste marker"
         >
-          <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-bright" />
+          <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-strong" />
         </div>
       )}
       {track.launchedClipId && (

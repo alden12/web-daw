@@ -120,15 +120,15 @@ export function LibraryHeader({
         {activeView === "project" ? (
           <>
             <span className="w-2 h-2 rounded-full bg-you shrink-0" />
-            <InlineRename value={currentName} onCommit={rename} className="font-semibold text-[13px] text-bright" />
+            <InlineRename value={currentName} onCommit={rename} className="font-semibold text-[13px] text-strong" />
           </>
         ) : (
-          <span className="font-semibold text-[13px] text-bright">{VIEW_TITLE[activeView]}</span>
+          <span className="font-semibold text-[13px] text-strong">{VIEW_TITLE[activeView]}</span>
         )}
         <Menu
           label="Project menu"
           align="right"
-          triggerClassName="ml-auto shrink-0 px-1 text-[15px] leading-none text-muted hover:text-bright cursor-pointer"
+          triggerClassName="ml-auto shrink-0 px-1 text-[15px] leading-none text-muted hover:text-strong cursor-pointer"
           items={items}
         />
       </div>

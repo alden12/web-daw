@@ -112,7 +112,7 @@ function SwatchRow({
               aria-pressed={selected}
               title={swatch.name}
               className={`w-6 h-6 rounded-full cursor-pointer border-2 ${
-                selected ? "border-bright" : "border-transparent hover:border-line"
+                selected ? "border-strong" : "border-transparent hover:border-line"
               }`}
               style={{ background: swatch.hex }}
             />
@@ -152,7 +152,7 @@ function IdentityField({
       </div>
       {authEnabled ? (
         // Signed in: the identity is fixed (your email); sign-out lives in the account panel (rail avatar).
-        <span className="text-[12.5px] font-medium text-bright truncate">{currentUser}</span>
+        <span className="text-[12.5px] font-medium text-strong truncate">{currentUser}</span>
       ) : (
         <input
           type="text"
@@ -177,7 +177,7 @@ function IdentityField({
               aria-pressed={selected}
               title={swatch.name}
               className={`w-6 h-6 rounded-full cursor-pointer border-2 ${
-                selected ? "border-bright" : "border-transparent hover:border-line"
+                selected ? "border-strong" : "border-transparent hover:border-line"
               }`}
               style={{ background: swatch.hex }}
             />

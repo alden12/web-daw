@@ -56,7 +56,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
           aria-label="Activity view"
           value={tab}
           onChange={(e) => setTab(e.target.value as "activity" | "versions")}
-          className="text-[12.5px] font-semibold text-bright bg-card border border-line rounded-md px-1.5 py-0.5 cursor-pointer"
+          className="text-[12.5px] font-semibold text-strong bg-card border border-line rounded-md px-1.5 py-0.5 cursor-pointer"
         >
           <option value="activity">Activity</option>
           <option value="versions">Versions</option>

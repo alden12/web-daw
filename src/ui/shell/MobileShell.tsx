@@ -186,7 +186,7 @@ function LibraryContent({
   return (
     <>
       <div className="shrink-0 flex items-center gap-2 h-11 px-3 border-b border-line">
-        <span className="text-[13px] font-semibold text-bright">Library</span>
+        <span className="text-[13px] font-semibold text-strong">Library</span>
         <button
           type="button"
           onClick={onClose}

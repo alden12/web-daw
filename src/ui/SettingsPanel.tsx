@@ -56,7 +56,7 @@ export function SettingsPanel({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <h2 id="settings-title" className="text-[15px] font-semibold text-bright">
+          <h2 id="settings-title" className="text-[15px] font-semibold text-strong">
             Settings
           </h2>
           <button
@@ -79,7 +79,7 @@ export function SettingsPanel({
               aria-selected={tab === id}
               onClick={() => setTab(id)}
               className={`px-3 py-1.5 text-[12px] cursor-pointer border-b-2 -mb-px ${
-                tab === id ? "border-agent text-bright" : "border-transparent text-muted hover:text-ink"
+                tab === id ? "border-agent text-strong" : "border-transparent text-muted hover:text-ink"
               }`}
             >
               {label}

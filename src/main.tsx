@@ -1,5 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+// Google Sans Flex (UI) and Google Sans Code (values), both self-hosted so there is no
+// font-CDN request on load. The weight-axis builds rather than the full variable fonts:
+// the UI varies weight and nothing else, so the optical-size/grade/width/slant files would
+// ship and never be called for. `unicode-range` in these sheets means only the latin
+// subset is actually fetched.
+import "@fontsource-variable/google-sans-flex/wght.css";
+import "@fontsource-variable/google-sans-code/wght.css";
 import "./index.css";
 import App from "./App.tsx";
 

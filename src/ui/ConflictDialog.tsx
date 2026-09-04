@@ -45,7 +45,7 @@ export function ConflictDialog({
     >
       <div className="bg-panel border border-line rounded-2xl p-7 max-w-lg mx-4 flex flex-col gap-4 shadow-2xl">
         <div className="flex flex-col gap-1.5">
-          <h2 id="conflict-title" className="text-lg font-semibold text-bright">
+          <h2 id="conflict-title" className="text-lg font-semibold text-strong">
             Reconnected with conflicting edits
           </h2>
           <p className="text-sm text-muted leading-relaxed">
@@ -64,7 +64,7 @@ export function ConflictDialog({
           <button
             type="button"
             onClick={onTakeTheirs}
-            className="font-mono text-[13px] px-4 py-2 rounded-lg border border-line bg-card text-ink cursor-pointer hover:text-bright"
+            className="font-mono text-[13px] px-4 py-2 rounded-lg border border-line bg-card text-ink cursor-pointer hover:text-strong"
           >
             Take theirs
           </button>

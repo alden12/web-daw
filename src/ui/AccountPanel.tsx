@@ -29,7 +29,7 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <h2 id="account-title" className="text-[15px] font-semibold text-bright">
+          <h2 id="account-title" className="text-[15px] font-semibold text-strong">
             Account
           </h2>
           <button
@@ -72,7 +72,7 @@ export function AccountPanel({ onClose }: { onClose: () => void }) {
                   aria-pressed={selected}
                   title={swatch.name}
                   className={`w-6 h-6 rounded-full cursor-pointer border-2 ${
-                    selected ? "border-bright" : "border-transparent hover:border-line"
+                    selected ? "border-strong" : "border-transparent hover:border-line"
                   }`}
                   style={{ background: swatch.hex }}
                 />

@@ -90,7 +90,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
             if (e.key === "Enter" && hasUncommitted) save();
           }}
           placeholder="Name this version…"
-          className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-bright placeholder:text-faint"
+          className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-strong placeholder:text-faint"
         />
         <button
           type="button"

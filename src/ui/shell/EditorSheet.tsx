@@ -88,7 +88,7 @@ export function EditorSheet({
             }}
             className="min-w-0 flex flex-col leading-tight outline-none focus-visible:ring-1 focus-visible:ring-you rounded"
           >
-            <span className="truncate text-[13px] font-semibold text-bright">{title}</span>
+            <span className="truncate text-[13px] font-semibold text-strong">{title}</span>
             {subtitle && <span className="font-mono text-[9px] tracking-wider uppercase text-faint">{subtitle}</span>}
           </div>
           {controls}
