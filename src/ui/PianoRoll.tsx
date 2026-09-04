@@ -559,15 +559,19 @@ export function PianoRoll({
   };
 
   /**
-   * Resize from one of the selected note's handles (MOBILE-7). Same drag as the note's own edge
-   * runs, entered from a target you can actually hit - and from either end, which the implicit
-   * edge never offered because there was no room to put a second invisible one.
+   * Drag the selection from one of its floating grips (MOBILE-7). Exactly the drags a mouse
+   * runs on the note itself, entered from targets you can actually hit: from either end, which
+   * the implicit edge never offered because there was no room for a second invisible one, and
+   * from a grip clear of the note, because a fingertip on a 12px note covers it.
+   *
+   * The grip's offset from the note does not need accounting for - the drag works in deltas
+   * from wherever the finger landed, so the note simply keeps its distance from it.
    */
-  const onHandleDown = (edge: "start" | "end", e: React.PointerEvent) => {
+  const onGripDown = (kind: "move" | "resize", edge: "start" | "end", e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     drag.current = {
-      kind: "resize",
+      kind,
       edge,
       ...dragTargets(selection),
       startBeat: beatAt(e.clientX),
@@ -990,9 +994,11 @@ export function PianoRoll({
                   topPitch={MAX_PITCH}
                   pxPerBeat={pxPerBeat}
                   rowH={rowH}
-                  leadPx={gutter}
+                  leadX={gutter}
+                  leadY={RULER_H}
                   scrollRef={scrollRef}
-                  onResize={onHandleDown}
+                  onResize={(edge, event) => onGripDown("resize", edge, event)}
+                  onMove={(event) => onGripDown("move", "end", event)}
                   menuItems={noteMenuItems(selectedNote)}
                 />
               )}

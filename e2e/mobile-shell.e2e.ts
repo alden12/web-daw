@@ -109,10 +109,11 @@ async function openRoll(page: Page) {
  * appear bracket the new note - which is a more direct grip on its geometry than picking it out
  * from among its neighbours, since each handle sits exactly on one of its ends.
  */
-async function addNote(page: Page) {
+async function addNote(page: Page, { fromBottom }: { fromBottom?: number } = {}) {
   const before = await page.getByTestId("note").count();
   const view = (await page.getByTestId("roll-scroll").boundingBox())!;
-  await page.touchscreen.tap(view.x + 120, view.y + view.height / 2);
+  const y = fromBottom === undefined ? view.y + view.height / 2 : view.y + view.height - fromBottom;
+  await page.touchscreen.tap(view.x + 120, y);
   await expect(page.getByTestId("note")).toHaveCount(before + 1);
   await expect(page.getByTestId("note-handle-end")).toBeVisible();
 }
@@ -399,10 +400,52 @@ test.describe("phone", () => {
       expect(box.width, `the ${edge} handle is a finger wide`).toBeGreaterThanOrEqual(44);
       expect(box.height, `the ${edge} handle is a finger tall`).toBeGreaterThanOrEqual(44);
     }
-    // The hit area is not the paint: a 44px box on a 12px row would swallow three rows if it
-    // were drawn, so the bar inside it stays the height of the note.
+    // The hit area is not the paint, but the paint still has to read as a grip: drawn at the
+    // note's own 12px height the bar disappears into the note, same colour and same box. It
+    // stands proud at both ends instead, while staying well inside the box that catches the
+    // finger - a bar the size of the hit area would swallow three rows of the grid.
+    const hit = (await page.getByTestId("note-handle-end").boundingBox())!;
     const bar = (await page.getByTestId("note-handle-end").locator("div").boundingBox())!;
-    expect(bar.height, "the drawn bar is the note's height, not the finger's").toBeLessThan(20);
+    expect(bar.height, "the bar stands proud of the note").toBeGreaterThan(16);
+    expect(bar.height, "but it is the grip, not the hit area").toBeLessThan(hit.height);
+  });
+
+  /**
+   * A fingertip parked on a 12px note covers the note, and pitch is exactly the axis where you
+   * need to see where you have got to. The grip sits clear of the note and drags it from there.
+   */
+  test("the move grip drags the note from clear of it", async ({ page }) => {
+    await openRoll(page);
+    await addNote(page);
+
+    const before = await handleCentre(page, "end");
+    const grip = (await page.getByTestId("note-move").boundingBox())!;
+    expect(grip.y, "the grip is below the note, not on it").toBeGreaterThanOrEqual(before.y + 6);
+
+    // 32px right is two snap cells at the default zoom, 24px up is two 12px rows: both axes,
+    // and both landing on a specific place rather than merely somewhere else.
+    const from = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+    await touchDrag(page, from, { x: from.x + 32, y: from.y - 24 });
+
+    await expect
+      .poll(async () => Math.round((await handleCentre(page, "end")).x), { message: "the note moved in time" })
+      .toBe(Math.round(before.x) + 32);
+    expect(Math.round((await handleCentre(page, "end")).y), "and in pitch").toBe(Math.round(before.y) - 24);
+  });
+
+  /**
+   * The grip goes above the note when there is no room below it. A grip you have to scroll to
+   * reach is worse than one on the other side, and the bottom row of the view is exactly where
+   * you end up when you scroll to something.
+   */
+  test("the move grip flips above the note at the bottom of the view", async ({ page }) => {
+    await openRoll(page);
+    // Made 24px off the bottom edge, which is less room below it than the grip needs.
+    await addNote(page, { fromBottom: 24 });
+
+    const note = await handleCentre(page, "end");
+    const grip = (await page.getByTestId("note-move").boundingBox())!;
+    expect(grip.y + grip.height, "the grip went above the note rather than off the bottom").toBeLessThanOrEqual(note.y);
   });
 
   /**
