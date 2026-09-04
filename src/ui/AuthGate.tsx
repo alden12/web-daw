@@ -9,6 +9,7 @@
  * that store, so nothing else needs to know about the session.
  */
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { BRAND_MARK } from "./brand";
 import { authEnabled, readAuthState, subscribeAuth, signInWithProvider } from "../auth/session";
 import { writeCurrentUser, DEFAULT_USER } from "./currentUser";
 
@@ -50,10 +51,7 @@ function GateCard({ children }: { children: ReactNode }) {
       aria-labelledby="auth-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <span
-          className="w-9 h-9 rounded-full"
-          style={{ background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))" }}
-        />
+        <span className="w-9 h-9 rounded-full" style={{ background: BRAND_MARK }} />
         {children}
       </div>
     </div>

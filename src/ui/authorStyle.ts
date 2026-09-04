@@ -24,12 +24,14 @@ function withAlpha(hex: string, alpha: number): string {
 }
 
 /**
- * OKLab lightness the palette is re-lit to on a white ground. Solved rather than picked: at
- * 0.55 the worst swatch reaches 4.54:1 against white, so every author clears the 4.5:1 text
- * threshold and comfortably clears the 3:1 floor for a UI component (WCAG 1.4.11). Dark is
- * left exactly as authored, since the palette was drawn for it and already runs 6.3-10.4:1.
+ * OKLab lightness the palette is re-lit to on a white ground. Solved rather than picked, and
+ * the binding case is not plain text on white: it is an accent label on a 15% tint of *itself*
+ * (`text-you bg-you/15`, the Play / + Clip / Rec buttons), where the tint darkens the ground
+ * barely at all. 0.55 left that at 3.77:1; 0.50 puts it at 4.65:1 and plain text on white at
+ * 5.8:1, so every author clears 4.5:1 in both places. Dark is left exactly as authored, since
+ * the palette was drawn for it and already runs 6.3-10.4:1.
  */
-const LIGHT_GROUND_LIGHTNESS = 0.55;
+const LIGHT_GROUND_LIGHTNESS = 0.5;
 
 /**
  * The author's accent from the viewer's perspective (own = teal, others by id), at the
