@@ -4486,6 +4486,107 @@ projects:
         id: 019fae04-4269-7649-9153-7bd2abce8210
         created_at: 2026-07-29T13:15:42.569Z
         updated_at: 2026-07-29T18:26:37.375Z
+      - ref: DAW-12.1
+        area: DAW
+        title: "Chords and scale playing, on any surface: the pads and the QWERTY
+          keyboard"
+        status: to-do
+        sort_path: "000012.000001"
+        parent: DAW-12
+        body: >
+          Split out of MOBILE-12 on 2026-09-04, because the design in that
+          ticket was never really about pads.
+
+
+          **Playing in a key is one model with two surfaces.** The scale pads
+          and the computer keyboard are both "a degree of the current key, made
+          playable"; only the input device differs. Building chords into the
+          pads alone would put the interesting half of it on the surface with
+          the least screen, and leave the laptop on a hardcoded chromatic octave
+          forever.
+
+
+          So this ticket owns the **model** plus the **QWERTY surface**;
+          MOBILE-12 keeps the pads' presentation of it.
+
+
+          ## The model
+
+
+          - `scales.ts` gains `triadAt(tonic, scale, degree)`. A chord is the
+          scale's own interval pattern read three notes at a time, so no new
+          geometry and no engine change - chords land in a clip as their notes,
+          exactly like anything else played live.
+
+          - **Variations per degree**: 7th / 9th / sus4 / sus2, layered over the
+          triad.
+
+          - Both surfaces go out through the existing `LiveNotes` seam, so
+          recording, the octavator and the MIDI devices all keep working without
+          knowing chords exist.
+
+
+          ## The QWERTY surface, which is the neglected one
+
+
+          Today it is `KEY_MAP` in `AppShell.tsx`: **thirteen hardcoded entries,
+          one chromatic octave from C4**, the classic tracker layout. It knows
+          nothing about the project key, cannot be transposed, and covers one
+          octave of a four-row keyboard.
+
+
+          What it should take from the pads:
+
+
+          - **Diatonic by default**, generated from the current key rather than
+          hardcoded - which is DAW-12's own point that degrees pack ~7 per
+          octave, so four keyboard rows become four octaves where chromatic only
+          fits one.
+
+          - **An octave range you can move**, the same control the pads have,
+          rather than being pinned at C4.
+
+          - **Chords on the same keys**, toggled, with the number row carrying
+          variations the way the pads' accidental band does.
+
+          - Later, the same lit-up feedback as MOBILE-13, if that lands as a
+          shared display rather than a pad feature.
+
+
+          A modifier (Shift) raises a semitone for accidentals, per DAW-12.
+
+
+          ## Open questions, carried over from MOBILE-12
+
+
+          Worth prototyping rather than deciding on paper, and now worth
+          prototyping on **both** surfaces, since a laptop has ten fingers and a
+          phone has one thumb:
+
+
+          - **Voicing.** Root position throughout makes a progression leap
+          around and sound like a keyboard demo. Voice-leading each chord to the
+          nearest inversion of the previous one is what makes it sound played,
+          and it is a small pure function over the previous chord - but it means
+          a key's *sound* depends on what came before, which the labels cannot
+          show.
+
+          - **Momentary or sticky variations.** Holding the 7th while pressing
+          the degree is the guitarist's answer and is natural on a keyboard;
+          tapping it to arm the next chord is the phone's, and is the only one
+          that works one-handed. This may genuinely differ per surface, which is
+          an argument for the model offering both and each surface choosing.
+
+          - Whether a clip should *remember* that a chord was played, for later
+          re-voicing. Probably no until there is a project key (see the note in
+          `padSettings.ts`).
+
+
+          Most musical value of the pad follow-ups, and the most self-contained:
+          pure maths plus labels.
+        id: 01a06ceb-cf46-7418-a66e-e55aa8a8fbda
+        created_at: 2026-09-04T14:56:28.486Z
+        updated_at: 2026-09-04T14:56:28.486Z
       - ref: DAW-13
         area: DAW
         title: Audio export and mixdown
@@ -8237,6 +8338,25 @@ projects:
             id: 019fcef0-99d2-7443-ac7c-58de74c4b1e4
             at: 2026-08-04T22:41:42.355Z
             actor: claude
+          - body: >-
+              Concrete instance of "hit-target floors", reported from a device
+              2026-09-04: **the loop markers cannot be dragged by touch.** Not a
+              missing gesture - `Ruler.tsx` already has `touch-none` and goes
+              through `beginPointerDrag`, so the machinery works. The handle is
+              `w-2 -ml-1`, i.e. **8px wide** against a 44px finger, so you can
+              almost never land on it.
+
+
+              Worth fixing here rather than in MOBILE-7: a loop handle is not a
+              selectable object that grows handles, it is chrome that needs a
+              floor. Likely shape is a wider invisible hit area around the drawn
+              8px bar (a `::before`-style pad or a wider transparent box with
+              the visible bar centred), so the ruler does not get visually
+              heavier on desktop.
+            audience: user
+            id: 01a06ce0-7ab0-73e4-adcc-a93f857f79cd
+            at: 2026-09-04T14:44:05.936Z
+            actor: claude
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"
@@ -8813,6 +8933,23 @@ projects:
         id: 019fb8bf-e9cf-7295-984e-c64745fd5f32
         created_at: 2026-07-31T15:16:52.815Z
         updated_at: 2026-07-31T15:16:52.815Z
+        comments:
+          - body: >-
+              Symptom description is half stale as of DAW-29.3 (PR #114): the
+              top bar no longer has a ✦ agent button - the agent moved into the
+              library column, reached from the icon rail at its head. So the
+              clipped-by-the-corner-radius symptom now applies to **☰ on the
+              left and the ⋮ / undo / redo cluster on the right**, and the bar
+              is five controls rather than seven.
+
+
+              The decision and the trap in the body are unaffected: still keep
+              `viewport-fit=cover`, still pad the positioned boxes rather than
+              their container.
+            audience: user
+            id: 01a06ce0-8879-76db-8463-449f8b4c8b47
+            at: 2026-09-04T14:44:09.465Z
+            actor: claude
       - ref: MOBILE-9
         area: MOBILE
         title: Adding from the library should get out of the way on a phone
@@ -9054,24 +9191,36 @@ projects:
         updated_at: 2026-08-05T15:04:11.678Z
       - ref: MOBILE-12
         area: MOBILE
-        title: "Chords mode: the pads play the key, not just the notes"
+        title: "Chords mode on the pads: the accidental band becomes the variations"
         status: to-do
         sort_path: "000012"
         deps:
+          - DAW-12.1
           - MOBILE-6
-        body: >-
-          A toggle on the scale pads that turns each in-scale pad from a note
-          into its **diatonic chord**, so a phone can lay down a progression
-          with seven pads instead of asking for three fingers on 52px targets.
-          In C major: I ii iii IV V vi vii°, labelled by degree exactly as the
-          note pads are labelled by interval.
+        body: >
+          **Narrowed 2026-09-04.** This used to hold the whole chords design.
+          The model and the computer-keyboard surface moved to **DAW-12.1**,
+          because playing in a key is one idea with two surfaces and the pads
+          are only one of them - keeping it here would have put the interesting
+          half on the surface with the least screen and left the laptop on a
+          hardcoded chromatic octave.
+
+
+          What is left here is the pads' own presentation of it, which is
+          genuinely pad-shaped:
+
+
+          A toggle that turns each in-scale pad from a note into its **diatonic
+          chord**, so a phone can lay down a progression with seven pads instead
+          of asking for three fingers on 52px targets. In C major: I ii iii IV V
+          vi vii°, labelled by degree exactly as the note pads are labelled by
+          interval.
 
 
           This is the layout's own idea taken one step further, not a new
           surface. The pads are already "a scale, drawn from its interval
           pattern"; a chord is the same pattern read three notes at a time, so
-          `scales.ts` gains a `triadAt(tonic, scale, degree)` and the geometry
-          does not move at all.
+          the geometry does not move at all.
 
 
           **The accidental band above becomes the variations**, which is what it
@@ -9082,33 +9231,20 @@ projects:
           two modes visually the same instrument.
 
 
-          Open questions worth prototyping rather than deciding on paper:
+          Note the band is now a full pad wide and 30px tall (DAW-29.3), so a
+          variation is a real target rather than the sliver a black key used to
+          be, which makes reaching for it mid-phrase plausible in a way it was
+          not when this was written.
 
 
-          - **Voicing.** Root position throughout makes a progression leap
-          around and sound like a keyboard demo. Voice-leading each chord to the
-          nearest inversion of the previous one is what makes it sound played,
-          and it is a small pure function over the previous chord - but it means
-          the pad's *sound* depends on what came before, which is a surprise the
-          labels cannot show. Try both.
-
-          - **Whether the variations are momentary or sticky.** Holding the 7th
-          while pressing the degree is the guitarist's answer; tapping it to arm
-          the next chord is the phone's. The second is easier to play
-          one-handed, which is the whole reason for the mode.
-
-          - Chords land in a clip as their notes, so nothing about recording or
-          the note model changes. Whether the clip should *remember* that a
-          chord was played (for later re-voicing) is a real question, and the
-          answer is probably no until there is a project key (see the note in
-          `padSettings.ts`).
-
-
-          Most musical value of the pad follow-ups and the most self-contained:
-          pure maths plus labels, no engine change, no new seam.
+          **Momentary or sticky** is the one open question that is genuinely the
+          pads' to answer rather than the model's: tapping a variation to arm
+          the next chord is the only version that works one-handed, and
+          one-handed is the whole reason this mode exists. The keyboard will
+          likely want the opposite (hold-to-add). DAW-12.1 carries the rest.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-08-05T16:10:13.045Z
+        updated_at: 2026-09-04T14:56:41.799Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing
