@@ -12,6 +12,7 @@ import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
 import { pitchName } from "./noteNames";
+import { Select } from "./controls/Select";
 import { authorFillStyle, authorDotStyle, authorHex } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 
@@ -55,18 +56,18 @@ function NoteSelect({
   return (
     <label className={hideLabel ? "flex items-center" : "flex flex-col items-center gap-1.5"}>
       {!hideLabel && <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>}
-      <select
+      <Select
         value={String(value)}
         aria-label={spec.label}
         onChange={(e) => onChange(spec.id, Number(e.target.value))}
-        className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
+        className="font-mono"
       >
         {notes.map((note) => (
           <option key={note} value={note}>
             {pitchName(note)}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }
@@ -314,7 +315,7 @@ export function Knob({
     enum: () => (
       <label className="flex flex-col items-center gap-1.5 min-w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
-        <select
+        <Select
           value={value as string}
           // Blur after choosing so the select doesn't keep keyboard focus and swallow the
           // note-play keys (a focused select does letter typeahead; releasing focus avoids it).
@@ -322,14 +323,15 @@ export function Knob({
             onChange(spec.id, e.target.value);
             e.target.blur();
           }}
-          className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
+          aria-label={spec.label}
+          className="font-mono"
         >
           {(spec as EnumSpec).options.map((opt) => (
             <option key={opt} value={opt}>
               {opt}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
     ),
     boolean: () => (

@@ -17,6 +17,7 @@ import { MidiDeviceChain } from "../MidiDeviceChain";
 import { InstrumentPanel } from "../InstrumentPanel";
 import { DrumkitPanel } from "../DrumkitPanel";
 import { EffectChain, FlowArrow } from "../EffectChain";
+import { Button } from "../controls/Button";
 
 /**
  * "Save as patch": capture the instrument + its params + effect chain as a named,
@@ -52,17 +53,18 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
 
   if (!naming)
     return (
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         title="Save this instrument + effects as a reusable patch"
         onClick={() => {
           setName(track.name);
           setNaming(true);
         }}
-        className="font-mono text-[10.5px] px-2 py-0.5 rounded border border-line text-muted hover:text-ink hover:border-you cursor-pointer"
+        className="font-mono text-[10.5px]"
       >
         Save as patch
-      </button>
+      </Button>
     );
 
   return (
@@ -78,13 +80,11 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
         placeholder="Patch name…"
         className="w-32 font-mono text-[11px] px-1.5 py-0.5 rounded border border-line bg-ground text-strong placeholder:text-faint"
       />
-      <button
-        type="button"
-        onClick={save}
-        className="font-mono text-[10.5px] px-2 py-0.5 rounded border border-you/45 bg-you/15 text-you cursor-pointer"
-      >
+      {/* The one primary action on this little form, and the only thing that commits it, so
+          it takes the solid variant rather than a tint. */}
+      <Button variant="solid" size="sm" onClick={save} className="font-mono text-[10.5px]">
         Save
-      </button>
+      </Button>
     </span>
   );
 }

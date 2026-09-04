@@ -41,6 +41,8 @@ import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
+import { Button } from "./controls/Button";
+import { IconButton } from "./controls/IconButton";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { isBlackKey, pitchName } from "./noteNames";
 
@@ -650,11 +652,6 @@ export function PianoRoll({
     compact,
   );
 
-  const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
-  const toolBtn =
-    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
-
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-stage overflow-hidden">
       {/* toolbar - replaced by the shell's ⋮ when compact (see compactControls above) */}
@@ -666,39 +663,45 @@ export function PianoRoll({
         <Menu items={rollControls} label="Roll settings" align="left" />
         {/* Quantize keeps a button as well as its menu entry: it is the one action here
             you repeat, and it reads the selection, so its label is worth seeing. */}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           title={selection.size ? "Quantize selected notes to the grid" : "Quantize all notes to the grid"}
-          className={toolBtn}
+          className="font-mono"
           disabled={!targets.length}
           onClick={quantize}
         >
           Quantize{selection.size ? " sel" : ""}
-        </button>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button
-            type="button"
-            title="Zoom out (time)"
-            className={zoomBtn}
+        </Button>
+        <div className="ml-auto flex items-center gap-0.5">
+          <span className="font-mono text-[10px] text-faint mr-1">zoom</span>
+          <IconButton
+            label="Zoom out (time)"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.round(pxPerBeat / 1.25))}
           >
             −
-          </button>
-          <button
-            type="button"
-            title="Zoom in (time)"
-            className={zoomBtn}
+          </IconButton>
+          <IconButton
+            label="Zoom in (time)"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.round(pxPerBeat * 1.25))}
           >
             +
-          </button>
-          <button type="button" title="Shorter rows" className={zoomBtn} onClick={() => setRowH(rowH - 2)}>
+          </IconButton>
+          <IconButton
+            label="Shorter rows"
+            size="sm"
+            className="font-mono text-[11px]"
+            onClick={() => setRowH(rowH - 2)}
+          >
             ↕−
-          </button>
-          <button type="button" title="Taller rows" className={zoomBtn} onClick={() => setRowH(rowH + 2)}>
+          </IconButton>
+          <IconButton label="Taller rows" size="sm" className="font-mono text-[11px]" onClick={() => setRowH(rowH + 2)}>
             ↕+
-          </button>
+          </IconButton>
         </div>
       </div>
 

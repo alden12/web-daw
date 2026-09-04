@@ -42,6 +42,8 @@ import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
 import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
+import { IconButton } from "./controls/IconButton";
+import { Select } from "./controls/Select";
 import {
   ROW,
   ROW_PX,
@@ -359,9 +361,6 @@ export function ArrangementTimeline({
     beginPointerDrag((ev) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX)));
   };
 
-  const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
-
   // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
   // caller supplies how to create the track (MIDI vs audio) given a destination group.
   const newTrackSubmenu = (createTrack: (groupId: string) => void) => [
@@ -474,35 +473,36 @@ export function ArrangementTimeline({
             <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
             Snap
           </label>
-          <select
+          <Select
             value={snapDiv}
             onChange={(e) => setSnapDiv(Number(e.target.value))}
             title="Snap division"
-            className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
+            aria-label="Snap division"
+            className="font-mono"
           >
             {SNAP_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-          </select>
+          </Select>
           <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button
-            type="button"
-            title="Zoom out"
-            className={zoomBtn}
+          <IconButton
+            label="Zoom out"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))}
           >
             −
-          </button>
-          <button
-            type="button"
-            title="Zoom in"
-            className={zoomBtn}
+          </IconButton>
+          <IconButton
+            label="Zoom in"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))}
           >
             +
-          </button>
+          </IconButton>
         </div>
       </div>
 

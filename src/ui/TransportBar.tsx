@@ -15,6 +15,7 @@ import { useRecorder } from "./useRecorder";
 import { usePersistentBoolean } from "./usePersistent";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
+import { Select } from "./controls/Select";
 
 export function TransportBar({
   projectStore,
@@ -92,7 +93,10 @@ export function TransportBar({
         // Stopping while recording finalizes the take (recorder.stop also stops the
         // transport), so Stop never leaves a recording dangling.
         onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
-        className={`font-mono min-w-18 ${compact ? "h-9" : ""}`}
+        // Pulled 4px back towards the record button. The gap is measured between the two
+        // boxes, but record has no visible box at rest, so the eye measures from the dot
+        // instead and reads the same 12px as a hole. Closing it to 8px looks like 12.
+        className={`font-mono min-w-18 -ml-1 ${compact ? "h-9" : ""}`}
       >
         {isPlaying ? "■ Stop" : "▶ Play"}
       </Button>
@@ -134,7 +138,7 @@ export function TransportBar({
           className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong"
         />
         <span className="text-muted">/</span>
-        <select
+        <Select
           aria-label="Beat unit (denominator)"
           value={project.timeSignature.denominator}
           onChange={(e) =>
@@ -144,14 +148,16 @@ export function TransportBar({
               denominator: Number(e.target.value),
             })
           }
-          className="font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong cursor-pointer"
+          // The lone 13px dropdown in the app: it has to match the tempo/meter number inputs
+          // beside it rather than the toolbar dropdowns it shares a component with.
+          className="font-mono text-[13px]! text-strong"
         >
           {[2, 4, 8, 16].map((denominator) => (
             <option key={denominator} value={denominator}>
               {denominator}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <IconButton
         label="Metronome"

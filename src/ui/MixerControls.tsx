@@ -101,28 +101,34 @@ export function MuteSolo({
   onMute: () => void;
   onSolo: () => void;
 }) {
-  const btn = "font-mono text-[10px] leading-none w-5 h-6 cursor-pointer";
+  // Hairline: the outline carries the shape and nothing fills it, so a row of tracks reads as
+  // a row of names rather than a column of grey chips. The fill is what "on" means here, which
+  // is the same rule the buttons follow - emphasis belongs to state, not to the control.
+  const btn = "font-mono text-[10px] leading-none w-5 h-6 cursor-pointer transition-colors";
+  const resting = "text-muted hover:text-ink hover:bg-control";
   return (
-    <div className="flex shrink-0 rounded-md border border-line overflow-hidden">
+    <div className="flex shrink-0 rounded-full border border-line overflow-hidden">
       <button
         type="button"
         title={muted ? "Unmute" : "Mute"}
+        aria-pressed={muted}
         onClick={(e) => {
           e.stopPropagation();
           onMute();
         }}
-        className={`${btn} ${muted ? "bg-claude/20 text-claude" : "bg-card text-ink hover:text-strong"}`}
+        className={`${btn} ${muted ? "bg-claude/20 text-claude" : resting}`}
       >
         M
       </button>
       <button
         type="button"
         title={solo ? "Unsolo" : "Solo"}
+        aria-pressed={solo}
         onClick={(e) => {
           e.stopPropagation();
           onSolo();
         }}
-        className={`${btn} border-l border-line ${solo ? "bg-warn/25 text-warn" : "bg-card text-ink hover:text-strong"}`}
+        className={`${btn} border-l border-line ${solo ? "bg-warn/25 text-warn" : resting}`}
       >
         S
       </button>
