@@ -7,7 +7,7 @@ you have no tooling; start with its `protocol` section. This file is the short l
 of coding conventions to follow throughout the codebase.
 
 That file is the store of an **apm** project, and the `apm` MCP server in
-`.mcp.json` is the nicer way in (`resume_project`, `list_tickets`, `open_viewer`
+`.mcp.json` is the nicer way in (`get_project`, `list_items`, `open_viewer`
 for the dependency graph). The server lives outside this repo, so that entry only
 resolves on a machine that has it checked out alongside - the YAML is the portable
 copy and stays the thing of record.
@@ -81,6 +81,24 @@ Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.
   changes go through `drizzle-kit generate` (versioned SQL under `drizzle/`). Still
   forward-only - we don't support downgrades or reading arbitrarily old shapes, just a
   continuous upgrade path. The "discard on change" shortcut is retired.
+
+## Running locally
+
+- **`yarn dev:all` is the one command for local dev.** It brings up Postgres
+  (`docker compose up -d`, idempotent), then runs the sync API and the Vite client
+  together under `concurrently`, prefixed `[api]` / `[web]`. Ctrl-C stops all of them.
+  Client on **:5155**, API on **:5170**.
+- There is **no separate migrate step**. `server/api/index.ts` calls `applyMigrations`
+  on boot, so starting the API is what brings the schema up to date.
+- Four entry points that are easy to confuse:
+  - **`yarn dev`** - Vite client only. Enough on its own if `VITE_DAW_API_URL` is unset
+    (projects then live in the browser's OPFS).
+  - **`yarn api`** - the sync API + WebSocket + Postgres, with reload. The one you pair
+    with `yarn dev`.
+  - **`yarn start`** - the *same server as `yarn api`* with no watch. Production entry
+    (Fly runs this). Not for local work.
+  - **`yarn server`** - the **MCP** server, spawned by Claude Code over stdio per
+    `.mcp.json`. Never run by hand; it talks MCP on stdout and would just sit there.
 
 ## CI
 
