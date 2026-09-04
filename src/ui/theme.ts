@@ -20,11 +20,28 @@ export type ThemeChoice = (typeof THEME_CHOICES)[number];
 
 const STORAGE_KEY = "web-daw:theme";
 
+/**
+ * The colour the browser paints its own chrome with around an installed app (MOBILE-3): the
+ * title bar on Android, the status bar area on iOS. It matches the app's frame rather than its
+ * ground, since that is the band it sits directly above.
+ *
+ * It has to be kept in step by hand, because `<meta name="theme-color">` holds a resolved
+ * colour rather than a `var()`, so it is the one part of the palette that does not follow on
+ * its own. Two static metas with `prefers-color-scheme` would look like the answer and get the
+ * override exactly backwards: choosing light on a dark OS would keep a dark title bar.
+ */
+const THEME_COLOR = { dark: "#0f1216", light: "#eceff3" } as const;
+
+function syncThemeColor(): void {
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[resolveTheme()]);
+}
+
 /** Write the choice to the document. "system" means *remove* the attribute, not set it. */
 function applyTheme(choice: ThemeChoice): void {
   const root = document.documentElement;
   if (choice === "system") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", choice);
+  syncThemeColor();
 }
 
 /**
@@ -40,6 +57,11 @@ export function applyStoredTheme(): void {
   } catch {
     // Private mode, or storage blocked. The default theme is already correct.
   }
+  // Also on the OS preference, which is what the default "system" choice resolves through.
+  // Attached here rather than lazily in `watch()`, since the chrome colour is wrong from the
+  // first paint if nothing has happened to subscribe yet.
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", syncThemeColor);
+  syncThemeColor();
 }
 
 /** The persisted choice, kept in step with the document attribute. */

@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- iOS reads this rather than the manifest's icons when you add to home screen. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- The browser's own chrome around an installed app (MOBILE-3). A resolved colour, not a
+         `var()`, so unlike the rest of the palette it does not follow the theme by itself -
+         `ui/theme.ts` writes it. The value here is the dark frame, matching the default. -->
+    <meta name="theme-color" content="#0f1216" />
     <!-- `viewport-fit=cover` lets the touch shell (MOBILE-1) reach under the notch / home
          indicator and pad itself back with the `env(safe-area-inset-*)` values. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />

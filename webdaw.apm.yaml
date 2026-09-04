@@ -8503,7 +8503,7 @@ projects:
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"
-        status: to-do
+        status: review
         sort_path: "000003"
         deps:
           - HOST-5
@@ -8528,7 +8528,7 @@ projects:
           the two tickets meet here.
         id: 019fae0c-ce5c-710d-908f-6a5903ee3c26
         created_at: 2026-07-29T13:25:02.684Z
-        updated_at: 2026-07-29T16:00:54.343Z
+        updated_at: 2026-09-04T22:32:01.319Z
       - ref: MOBILE-4
         area: MOBILE
         title: Tauri v2, desktop and mobile

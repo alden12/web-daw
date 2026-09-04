@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/google-sans-flex/wght.css";
 import "@fontsource-variable/google-sans-code/wght.css";
 import "./index.css";
+import { registerSW } from "virtual:pwa-register";
 import { applyStoredTheme } from "./ui/theme";
 import App from "./App.tsx";
 
@@ -24,6 +25,17 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
     applySimulatedInsets();
   });
 }
+
+/**
+ * Install the service worker (MOBILE-3), so the app has its own files before it is asked for
+ * them and starts with no network at all.
+ *
+ * No `onNeedRefresh`, deliberately. The plugin is on `registerType: "prompt"`, so a new worker
+ * installs and then waits rather than reloading the page under someone mid-take; it takes over
+ * on the next load. In dev and in the e2e run this is a no-op, since the worker is only
+ * generated for a real build.
+ */
+void registerSW();
 
 // Before the first render, so nobody on a non-default theme sees a frame of the wrong one.
 applyStoredTheme();

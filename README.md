@@ -60,9 +60,30 @@ If the device cannot reach the laptop at all (client isolation on the network), 
 instead - `cloudflared tunnel --url https://localhost:5155` - the tunnel hostnames are
 already in `allowedHosts`.
 
-Note that a trusted certificate (`mkcert`, plus its root installed on the device) will be
-needed before service workers and PWA install can be tested; a self-signed one is enough
-for everything above.
+### Installing it as an app
+
+The app is installable (MOBILE-3): a manifest, icons, and a service worker that precaches the
+whole shell so it starts with no network.
+
+**`yarn dev:mobile` is not enough for this one.** A browser refuses to register a service
+worker on an origin whose certificate it does not trust, and it does so quietly - no install
+prompt, no error. A self-signed certificate is fine for everything above and useless here.
+Three ways round it, cheapest first:
+
+- **A tunnel.** `cloudflared tunnel --url https://localhost:5155` gives a real certificate on
+  a `trycloudflare.com` hostname, which is already in `allowedHosts`. Live reload still works,
+  so this is the one to use while building.
+- **Deploy it.** `yarn deploy` and open the Fly URL. What the world would get.
+- **`mkcert`**, with its root certificate installed on the device. Worth it if you do this
+  often; a faff for one afternoon.
+
+Then: Chrome Android offers **Install app** in its menu, iOS Safari **Share -> Add to Home
+Screen**. Note that an installed app is a *separate storage bucket* from the browser tab it
+was installed from, so its OPFS projects start empty.
+
+`yarn check:pwa` answers the only question that matters here without a device: it builds,
+serves `dist/`, installs the worker, cuts the network and asks for a route the browser has
+never seen. CI runs it.
 
 ## Contributing
 
