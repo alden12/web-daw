@@ -5543,6 +5543,67 @@ projects:
         id: 01a06c1a-9658-7269-aecc-56c6deb3e86a
         created_at: 2026-09-04T11:07:56.889Z
         updated_at: 2026-09-04T14:25:57.348Z
+      - ref: DAW-30
+        area: DAW
+        title: A clip's loop region has a start, not just a length
+        status: to-do
+        sort_path: "000030"
+        body: >
+          Raised 2026-09-04, from noticing the piano roll's ruler has one handle
+          where the arrangement's has two.
+
+
+          **Today a clip is `[0, lengthBeats]` and only the end moves.**
+          `PianoRoll` passes `loopStart={0}` and omits `onSetLoopStart`
+          entirely, so `Ruler` does not draw the handle - deliberate, and
+          correct for the model as it stands, because a clip starts at beat 0 by
+          definition and there is nothing there to drag. The one handle it does
+          have sets the clip length via `setClipLength`.
+
+
+          Giving it a start means a clip's loop becomes a **region within its
+          content**, the way the arrangement's is a region within the project.
+          You could then write a four-bar phrase and loop bars 3-4 of it without
+          destroying bars 1-2, which is the thing you actually want when you are
+          auditioning a variation.
+
+
+          **Not a UI change.** The handle is two lines - `Ruler` already
+          supports it and the arrangement already uses it. Everything else is
+          the reason this is a ticket:
+
+
+          - **The scheduler.** `tileClipNotes` wraps notes over `[0,
+          lengthBeats]`; it would wrap over `[loopStart, loopEnd]`, and notes
+          outside the region need a decision - silent, or still audible on the
+          first pass. The arrangement's own loop is the precedent for how this
+          should feel.
+
+          - **Persistence, and it is no longer free.** Projects are hosted
+          server-side, so the "discard on format change" shortcut is retired:
+          this is a `project.json` schema bump with a forward upcaster in
+          `documentMigration.ts`, defaulting `loopStart` to 0 for every existing
+          clip.
+
+          - **Placements already have an `offset`**, which is a different thing
+          and must not be conflated: `offset` is where in the clip a *placement*
+          starts reading, and it is per-placement. A clip loop start is a
+          property of the clip itself and is shared by every placement of it.
+          Worth naming carefully, because "clip start" would read as either.
+
+          - **MCP.** `set_clip_length` gains a sibling, or becomes a region
+          setter. The palette should not grow two ways to say one thing.
+
+
+          **Open question worth settling before building:** whether this is a
+          loop region or a *trim*. A trim (the content outside is gone) is
+          simpler everywhere - no scheduler change beyond bounds, nothing to
+          decide about notes outside - but it is destructive and loses exactly
+          the non-destructive audition the feature is for. The region reading is
+          the one that earns its cost.
+        id: 01a06cff-6978-764a-8970-f4f03e487f29
+        created_at: 2026-09-04T15:17:53.144Z
+        updated_at: 2026-09-04T15:17:53.144Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority

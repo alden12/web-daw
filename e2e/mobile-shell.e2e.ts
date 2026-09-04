@@ -221,7 +221,11 @@ test.describe("phone", () => {
     for (const half of [60, 80, 100, 120]) await spread(half);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 
-    await expect.poll(zoom, { message: "the time axis zoomed in" }).toBeGreaterThan(BASELINE);
+    // Tracked the whole gesture, not merely moved. The fingers go from 80px apart to 240px,
+    // so the scale should roughly treble; asserting "greater than baseline" would pass on the
+    // bug this fixes, where the browser took the pan after one move and the zoom stopped dead
+    // a pixel in.
+    await expect.poll(zoom, { message: "the time axis tracked the whole pinch" }).toBeGreaterThan(BASELINE * 2);
     expect(await pageScale(), "the page itself never zoomed").toBe(1);
   });
 
@@ -264,6 +268,35 @@ test.describe("phone", () => {
 
     await expect.poll(() => stored("web-daw:roll-zoom-y"), { message: "rows got taller" }).toBeGreaterThan(ROWS);
     expect(await stored("web-daw:roll-zoom-x"), "the time axis was left alone").toBe(BEATS);
+  });
+
+  /**
+   * A rubber-band selection needs a pointer you can place precisely and a second one to
+   * modify with. On a phone the same drag is how you pan and half of how you pinch, so it
+   * fought both: a two-finger zoom in the roll drew a selection box across the notes.
+   * MOBILE-7 has the touch editing model that replaces it (select, then handles).
+   */
+  test("dragging on empty roll grid does not rubber-band on touch", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const box = (await page.getByTestId("roll-scroll").boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const at = (x: number) => [{ x, y, id: 1 }];
+
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(box.x + 80) });
+    for (const x of [110, 150, 190]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(box.x + x) });
+    }
+    // Checked mid-gesture: the box is torn down on release, so looking afterwards would pass
+    // whether or not it was ever drawn.
+    const marquees = await page.getByTestId("roll-marquee").count();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    expect(marquees, "no rubber-band from a finger").toBe(0);
   });
 
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {

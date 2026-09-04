@@ -23,8 +23,21 @@ export const PAD_HEIGHT = 52;
  * "these are the ones off to the side". Still clear of the 44px floor with the gap included.
  */
 export const ACCIDENTAL_HEIGHT = 30;
-/** Between stacked rows. */
+/**
+ * Between stacked rows, and it depends on whether the accidentals are showing.
+ *
+ * With them on, the band already separates one row of naturals from the next, so 4px is
+ * spacing. With them off the rows abut, and 4px is not a boundary a finger respects: a touch
+ * near the seam lands on both rows and the octaves either side of it sound together. The gap
+ * is doing hit-testing work there, not decoration, so it grows to something a fingertip
+ * cannot straddle.
+ *
+ * `padRowHeight` reads the same function the layout does, so a row's measured height and its
+ * drawn height cannot drift - that would either clip the last row or leave a dead strip.
+ */
 export const ROW_GAP = 4;
+export const BARE_ROW_GAP = 12;
+export const rowGap = (accidentals: boolean) => (accidentals ? ROW_GAP : BARE_ROW_GAP);
 /**
  * Between pads, in both axes. The pads are separated by space rather than by borders, so this
  * is what makes them read as individual keys; it is also subtracted from an accidental's
@@ -96,7 +109,8 @@ const ARRANGEMENTS: readonly { inlineControls: boolean; padsShare: number; limit
 ];
 
 /** How tall one row of pads is, accidentals included when they are on. */
-export const padRowHeight = (accidentals: boolean) => PAD_HEIGHT + (accidentals ? ACCIDENTAL_HEIGHT : 0) + ROW_GAP;
+export const padRowHeight = (accidentals: boolean) =>
+  PAD_HEIGHT + (accidentals ? ACCIDENTAL_HEIGHT : 0) + rowGap(accidentals);
 
 /**
  * What fits in `room` pixels of editor - the sheet's content box at the committed detent.
