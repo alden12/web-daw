@@ -75,23 +75,14 @@ enough:
    on a certificate it does not trust, and says nothing at all about it: no install prompt, no
    error. Fine for everything above, useless here.
 
-So: build it, serve it, and put a real certificate in front:
+**So install it from the deploy**: `yarn deploy`, then open the Fly URL on the phone. Chrome
+Android offers **Install app** in its menu, iOS Safari **Share -> Add to Home Screen**.
 
-```
-yarn preview:mobile                                   # builds, serves dist/ on :5156
-cloudflared tunnel --url http://localhost:5156        # in another terminal
-```
-
-The tunnel terminates TLS with a genuine certificate and reaches the local server over plain
-http, which is why the preview server does not need one of its own. `trycloudflare.com` is
-already in `allowedHosts`. Open the printed URL on the phone.
-
-`preview:mobile` builds in `test` mode, so it uses the committed `.env.test`: no login gate,
-projects in OPFS. To install what the world would actually get, `yarn deploy` and use the Fly
-URL instead.
-
-Then: Chrome Android offers **Install app** in its menu, iOS Safari **Share -> Add to Home
-Screen**.
+That is not a workaround for the local setup, it is the shorter path. Serving a build locally
+over a certificate a phone will trust means either a tunnel or a private CA, and either way what
+you end up testing is a build - so it may as well be the build everyone else gets, on the origin
+it will actually run on. The service worker's scope, the manifest's `start_url` and the API it
+talks to are all origin-shaped, and only the deploy has the real ones.
 
 Two things that surprise people:
 

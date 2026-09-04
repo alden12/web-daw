@@ -32,7 +32,6 @@
     "check:server": "tsc -p tsconfig.server.json",
     "check:pwa": "tsx scripts/checkPwaOffline.ts",
     "preview": "vite preview",
-    "preview:mobile": "vite build --mode test && vite preview --host",
     "worktree:new": "bash scripts/worktree.sh new",
     "worktree:rm": "bash scripts/worktree.sh rm",
     "worktree:list": "bash scripts/worktree.sh list"
