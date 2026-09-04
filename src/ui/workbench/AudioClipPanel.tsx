@@ -131,7 +131,7 @@ export function AudioClipPanel({
       <div className="h-full flex flex-col rounded-lg border border-line bg-card overflow-hidden">
         <div className="flex items-center gap-2.5 px-3 py-2 border-b border-line">
           <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Audio clip</span>
-          <span className="font-mono text-[12.5px] text-bright truncate">{clip.name}</span>
+          <span className="font-mono text-[12.5px] text-strong truncate">{clip.name}</span>
           {dur > 0 && <span className="ml-auto font-mono text-[10.5px] text-faint">{dur.toFixed(2)}s</span>}
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">

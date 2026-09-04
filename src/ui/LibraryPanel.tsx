@@ -60,7 +60,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
         e.stopPropagation();
         onClick();
       }}
-      className="shrink-0 w-6 text-center text-[16px] leading-none text-faint hover:text-bright cursor-pointer opacity-0 group-hover:opacity-100"
+      className="shrink-0 w-6 text-center text-[16px] leading-none text-faint hover:text-strong cursor-pointer opacity-0 group-hover:opacity-100"
     >
       +
     </button>

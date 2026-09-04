@@ -193,7 +193,7 @@ export function AgentPanel({
           onClick={() => setMenuOpen((open) => !open)}
           aria-label="Switch chat session"
           title="Switch chat session"
-          className="min-w-0 flex items-center gap-1 cursor-pointer text-[13px] font-semibold text-bright hover:text-white"
+          className="min-w-0 flex items-center gap-1 cursor-pointer text-[13px] font-semibold text-strong hover:text-white"
         >
           <span className="truncate">{currentTitle}</span>
           <span className="shrink-0 text-[15px] leading-none text-muted">▾</span>
@@ -233,7 +233,7 @@ export function AgentPanel({
                     setMenuOpen(false);
                   }}
                   className={`group flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-ground ${
-                    session.id === currentId ? "text-bright" : "text-muted"
+                    session.id === currentId ? "text-strong" : "text-muted"
                   }`}
                 >
                   <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-agent" />
@@ -266,7 +266,7 @@ export function AgentPanel({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-bright hover:bg-agent/25 cursor-pointer"
+              className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-strong hover:bg-agent/25 cursor-pointer"
             >
               Open settings
             </button>

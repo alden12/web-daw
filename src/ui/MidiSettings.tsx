@@ -32,7 +32,7 @@ export function MidiSettings({ midiInput }: { midiInput: MidiInput }) {
           onClick={() => (enabled ? midiInput.disable() : void midiInput.enable())}
           aria-pressed={enabled}
           className={`px-3 py-1.5 rounded-md text-[12px] cursor-pointer border ${
-            enabled ? "bg-you/15 border-you text-bright" : "border-line text-ink hover:border-muted"
+            enabled ? "bg-you/15 border-you text-strong" : "border-line text-ink hover:border-muted"
           }`}
         >
           {enabled ? "MIDI input on" : "Enable MIDI input"}

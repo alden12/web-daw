@@ -86,7 +86,7 @@ export function SharePanel({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <h2 id="share-title" className="text-[15px] font-semibold text-bright truncate">
+          <h2 id="share-title" className="text-[15px] font-semibold text-strong truncate">
             Share “{projectName}”
           </h2>
           <button

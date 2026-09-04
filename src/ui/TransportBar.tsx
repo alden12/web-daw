@@ -107,7 +107,7 @@ export function TransportBar({
           value={project.tempoBpm}
           aria-label="Tempo (BPM)"
           onChange={(e) => dispatch({ type: "setTempo", bpm: Number(e.target.value) })}
-          className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
+          className="w-14 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong"
         />
         <span className="max-sm:hidden">BPM</span>
       </label>
@@ -130,7 +130,7 @@ export function TransportBar({
               denominator: project.timeSignature.denominator,
             })
           }
-          className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright"
+          className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong"
         />
         <span className="text-muted">/</span>
         <select
@@ -143,7 +143,7 @@ export function TransportBar({
               denominator: Number(e.target.value),
             })
           }
-          className="font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-bright cursor-pointer"
+          className="font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong cursor-pointer"
         >
           {[2, 4, 8, 16].map((denominator) => (
             <option key={denominator} value={denominator}>
