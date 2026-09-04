@@ -88,6 +88,25 @@ const popoverBoxes = (page: Page) =>
   );
 
 /**
+ * Placement runs *after* whatever triggers it (a tap, a viewport change), so reading boxes
+ * straight afterwards can catch a popover mid-flight: present, but not yet moved back inside
+ * the viewport. `toHaveCount` retries the count and nothing else, which is what let a bare
+ * `getBoundingClientRect` read flake. Poll the geometry, then hand it back settled.
+ */
+async function settledPopoverBoxes(page: Page, count: number) {
+  await expect
+    .poll(
+      async () => {
+        const boxes = await popoverBoxes(page);
+        return boxes.length === count && boxes.every((box) => box.inside);
+      },
+      { message: `${count} popover(s) open and inside the viewport` },
+    )
+    .toBe(true);
+  return popoverBoxes(page);
+}
+
+/**
  * What a real device does when the finger lifts: the touch pointer is destroyed, so the
  * browser fires pointerout/pointerleave up the tap target's ancestors. Playwright's `tap`
  * does not, which is exactly why the bug this covers reached a phone - hover handlers that
@@ -119,11 +138,10 @@ test.describe("placement", () => {
     // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
     // opened by a tap has to survive the finger that opened it leaving.
     await liftFinger(page, "Beat unit");
-    await page.waitForTimeout(300);
 
-    const levels = await popoverBoxes(page);
+    // Polls, so no fixed wait for the flyout to open and settle.
+    const levels = await settledPopoverBoxes(page, 3);
     expect(levels, "three levels open at once").toHaveLength(3);
-    levels.forEach((level) => expect(level.inside, "every level inside the viewport").toBe(true));
 
     await page.getByRole("menuitemradio", { name: "8", exact: true }).tap();
     await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
@@ -145,9 +163,8 @@ test.describe("placement", () => {
     // What the keyboard does to the viewport, without needing a keyboard.
     await page.setViewportSize({ width: 390, height: 500 });
 
-    await expect(popovers(page)).toHaveCount(1);
-    const [menu] = await popoverBoxes(page);
-    expect(menu.inside, "and it is inside the viewport it was left with").toBe(true);
+    // The resize triggers a re-place, so the box has to be read once that has run.
+    await settledPopoverBoxes(page, 1);
     await page.getByRole("spinbutton", { name: "Tempo" }).fill("96");
     await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("96");
   });
@@ -158,9 +175,8 @@ test.describe("placement", () => {
     await dismissStart(page);
 
     await page.getByRole("button", { name: "More controls" }).tap();
-    const [overflow] = await popoverBoxes(page);
+    const [overflow] = await settledPopoverBoxes(page, 1);
     expect(overflow.rows, "more rows than a 390px-tall viewport can show").toBeGreaterThan(10);
-    expect(overflow.inside).toBe(true);
     expect(overflow.scrolls).toBe(true);
 
     // Scrolling *inside* the menu is the menu being used, not the page moving under it -
