@@ -49,6 +49,9 @@ function Block({
       data-testid="placement"
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
+      // Square, unlike the pill-shaped clips on the rail. A block here is a span of time
+      // whose ends are edges you line up against the grid, so it has to end where it ends;
+      // a round cap would round off the only thing the shape is for.
       className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab touch-none ${
         selected ? "" : "border-t-2 border-line bg-card hover:bg-card/70"
       }`}

@@ -48,6 +48,18 @@ export const TONE_HOVER: Record<Tone, string> = {
 };
 
 /**
+ * The focus ring. A separate map because a field can sit in a surface that speaks a different
+ * tone than the default (the agent panel rings in `agent`), and the ring is the one part of a
+ * control that has to be visible whatever the surface is doing.
+ */
+export const TONE_FOCUS: Record<Tone, string> = {
+  you: "focus-visible:[outline:2px_solid_var(--color-you)]",
+  agent: "focus-visible:[outline:2px_solid_var(--color-agent)]",
+  claude: "focus-visible:[outline:2px_solid_var(--color-claude)]",
+  warn: "focus-visible:[outline:2px_solid_var(--color-warn)]",
+};
+
+/**
  * Shared by every control here. The border is always present and transparent when resting,
  * so activating one floods an existing shape with colour rather than adding a border and
  * shifting everything beside it by a pixel.

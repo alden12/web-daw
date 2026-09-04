@@ -21,7 +21,8 @@ export function TrackRecordButton({
       type="button"
       onClick={() => recorder.recordInto(trackId)}
       title={recording ? "Stop recording" : "Record a new take into this track"}
-      className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-md border cursor-pointer ${
+      // A pill, to match the clips it sits under: what it makes is another one of them.
+      className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-full border cursor-pointer ${
         recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/85 border-claude/40 hover:bg-claude/10"
       }`}
     >

@@ -151,7 +151,7 @@ export function ClipRail({
               setDraggedClip(content);
             }}
             onDragEnd={() => clearDraggedClip()}
-            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 rounded-md border cursor-grab active:cursor-grabbing ${
+            className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-1.5 pr-1.5 rounded-full border cursor-grab active:cursor-grabbing ${
               active ? "border-you/60 bg-you/15 text-strong" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
@@ -207,7 +207,9 @@ export function ClipRail({
           type="button"
           title="Add a new empty clip"
           onClick={() => dispatch({ type: "addClip", trackId, id: newClipId(), empty: true })}
-          className={`${chipClass} font-mono text-[11px] px-2 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer whitespace-nowrap`}
+          // Bare: adding a clip is available, not urgent, and a filled accent chip at the end
+          // of the rail competed with the clips themselves for the eye.
+          className={`${chipClass} font-mono text-[11px] px-2.5 rounded-full border border-transparent text-muted hover:text-you hover:bg-control cursor-pointer whitespace-nowrap transition-colors`}
         >
           + Clip
         </button>

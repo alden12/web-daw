@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { writeAgentConfig, type AgentConfig } from "../audio/agent/config";
 import { PROVIDERS, PROVIDER_IDS, type ProviderId } from "../audio/agent/providers";
+import { Select } from "./controls/Select";
 
 const fieldClass =
   "rounded-md bg-ground border border-line px-2.5 py-2 text-[12.5px] text-ink placeholder:text-faint focus-visible:[outline:2px_solid_var(--color-agent)] focus-visible:outline-offset-1";
@@ -35,18 +36,19 @@ export function AgentSettingsSection({ config, onClose }: { config: AgentConfig;
     <div className="flex flex-col gap-4">
       <label className="flex flex-col gap-1.5">
         <span className="text-[11px] font-mono uppercase tracking-wider text-muted">Provider</span>
-        <select
+        <Select
           value={provider}
           onChange={(event) => setProvider(event.target.value as ProviderId)}
           aria-label="Provider"
-          className={`${fieldClass} cursor-pointer`}
+          size="lg"
+          tone="agent"
         >
           {PROVIDER_IDS.map((id) => (
             <option key={id} value={id}>
               {PROVIDERS[id].label}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
 
       <label className="flex flex-col gap-1.5">

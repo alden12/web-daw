@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { EditLog } from "../audio/commands/editLog";
 import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
+import { Select } from "./controls/Select";
 import { VersionTimeline } from "./VersionTimeline";
 import { authorHex } from "./authorStyle";
 import { authorLabel } from "./authorStyle";
@@ -53,15 +54,16 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-2 px-3.5 py-2 shrink-0">
-        <select
+        <Select
           aria-label="Activity view"
           value={tab}
           onChange={(e) => setTab(e.target.value as "activity" | "versions")}
-          className="text-[12.5px] font-semibold text-strong bg-card border border-line rounded-md px-1.5 py-0.5 cursor-pointer"
+          size="md"
+          className="font-semibold text-strong"
         >
           <option value="activity">Activity</option>
           <option value="versions">Versions</option>
-        </select>
+        </Select>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4">
         {tab === "versions" ? (

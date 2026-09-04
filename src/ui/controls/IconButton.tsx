@@ -42,7 +42,13 @@ export function IconButton({
   toneAtRest?: boolean;
   children?: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "aria-label">) {
-  const resting = toneAtRest ? `${TONE_TEXT[tone]} opacity-80 hover:opacity-100` : `text-muted ${TONE_HOVER[tone]}`;
+  // Bare at rest, but not bare on hover: without a fill there is nothing to tell you the
+  // target is bigger than the glyph, so the same grey a text button wears at rest shows up
+  // here under the pointer instead. It is also what makes two adjacent icons read as two
+  // targets rather than one cluster.
+  const resting = `hover:bg-control ${
+    toneAtRest ? `${TONE_TEXT[tone]} opacity-80 hover:opacity-100` : `text-muted ${TONE_HOVER[tone]}`
+  }`;
 
   return (
     <button

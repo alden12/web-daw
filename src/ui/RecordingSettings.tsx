@@ -16,15 +16,13 @@ import { useRecorder } from "./useRecorder";
 import { usePersistentNumber, usePersistentString } from "./usePersistent";
 import { RECORD_OFFSET_KEY, RECORD_OFFSET_RANGE } from "./recordOffset";
 import { OUTPUT_DEVICE_KEY } from "./outputDevice";
+import { Select } from "./controls/Select";
 
 type CalState =
   | { phase: "idle" }
   | { phase: "running"; stage: "count-in" | "measure"; beat: number; beats: number }
   | { phase: "done"; offsetMs: number; matched: number; spreadMs: number }
   | { phase: "error" };
-
-const SELECT_CLASS =
-  "flex-1 min-w-0 bg-ground border border-line rounded px-2 py-1 text-[12.5px] text-ink cursor-pointer";
 
 export function RecordingSettings({ recorder, engine }: { recorder: Recorder; engine: AudioEngine }) {
   const rec = useRecorder(recorder);
@@ -78,11 +76,12 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
         <span className="text-[11px] uppercase tracking-wide text-faint">Audio devices</span>
         <label className="flex items-center gap-2">
           <span className="w-14 text-[12px] text-muted">Input</span>
-          <select
+          <Select
             aria-label="Input device"
             value={rec.deviceId ?? ""}
             onChange={(event) => recorder.setDevice(event.target.value || null)}
-            className={SELECT_CLASS}
+            size="md"
+            className="flex-1 min-w-0"
           >
             <option value="">Default input</option>
             {rec.devices.map((device) => (
@@ -90,16 +89,17 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
                 {device.label || "Microphone"}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         {engine.canSelectOutput ? (
           <label className="flex items-center gap-2">
             <span className="w-14 text-[12px] text-muted">Output</span>
-            <select
+            <Select
               aria-label="Output device"
               value={outputId}
               onChange={(event) => pickOutput(event.target.value)}
-              className={SELECT_CLASS}
+              size="md"
+              className="flex-1 min-w-0"
             >
               <option value="">Default output</option>
               {outputs.map((device) => (
@@ -107,7 +107,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
                   {device.label || "Output"}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         ) : (
           <p className="text-[11px] text-faint">
