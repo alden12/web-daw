@@ -5318,7 +5318,7 @@ projects:
       - ref: DAW-29.2
         area: DAW
         title: Light mode
-        status: to-do
+        status: review
         sort_path: "000029.000002"
         parent: DAW-29
         body: >
@@ -5368,7 +5368,22 @@ projects:
           light one.
         id: 01a06c1a-65b1-70ec-901d-63d7d4d0ae3a
         created_at: 2026-09-04T11:07:44.433Z
-        updated_at: 2026-09-04T11:07:44.433Z
+        updated_at: 2026-09-04T11:56:27.444Z
+        comments:
+          - body: "PR #113. The find worth keeping: the author palette is drawn for a
+              near-black ground, so on white **seven of ten swatches fall under
+              the 3:1 floor** for a UI component (teal 2.03:1, lime 1.88:1). It
+              is also resolved *twice* - as a CSS var written inline on
+              `<html>`, and in JS by `colorForAuthor` - so a fix has to move
+              both or one author renders as two different teals at once.
+              Resolution: hue is identity, lightness is the theme's;
+              `src/ui/oklch.ts` re-lights via OKLab to L=0.55 (solved, worst
+              swatch 4.54:1), leaving `colorForAuthor` untouched so the picker
+              still stores what the user chose."
+            audience: user
+            id: 01a06c47-3930-76c9-8a94-41f21ca149b7
+            at: 2026-09-04T11:56:42.160Z
+            actor: claude
       - ref: DAW-29.3
         area: DAW
         title: A button system, and the segmented control
