@@ -42,8 +42,10 @@ export function AppearanceSettings() {
       </div>
 
       <p className="text-[11px] text-faint leading-relaxed">
-        Editor colours (teal for you, violet for the agent, coral for Claude) are the same in both themes: they say who
-        made an edit, so they stay recognisable rather than shifting with the background. Change them under Authors.
+        Editor colours (teal for you, violet for the agent, coral for Claude) keep their hue in both themes: they say
+        who made an edit, so they stay recognisable rather than changing identity with the background. In light mode
+        they are darkened to stay readable on white, which is the same colour wearing a different amount of light.
+        Change them under Authors.
       </p>
     </div>
   );
