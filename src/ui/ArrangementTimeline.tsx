@@ -19,7 +19,7 @@
  * is one undo step and one feed entry. Geometry is shared with the piano roll via
  * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -37,6 +37,8 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { TransportBar } from "./TransportBar";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX } from "./timeline/timeGrid";
+import { anchorZoomX } from "./timeline/anchoredZoom";
+import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
@@ -317,6 +319,22 @@ export function ArrangementTimeline({
     return () => ro.disconnect();
   }, [rows.length]);
 
+  /**
+   * Zoom the time axis about a fixed point. Shared by the wheel and the pinch, which differ
+   * only in where the factor comes from - so the clamp and the anchoring are written once and
+   * the two gestures cannot drift apart.
+   */
+  const zoomTimeAxis = useCallback(
+    (factor: number, clientX: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
+      setPxPerBeat(next);
+      anchorZoomX({ element, clientPosition: clientX, leadPx: headerW, from: pxPerBeat, to: next, panPx });
+    },
+    [pxPerBeat, setPxPerBeat, headerW],
+  );
+
   // Cursor-anchored wheel zoom on the time axis (modifier held); plain wheel scrolls.
   useEffect(() => {
     const el = scrollRef.current;
@@ -324,19 +342,25 @@ export function ArrangementTimeline({
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
       e.preventDefault();
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const rect = el.getBoundingClientRect();
-      const contentX = e.clientX - rect.left + el.scrollLeft - headerW;
-      const beatAtCursor = contentX / pxPerBeat;
-      const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
-      setPxPerBeat(next);
-      requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left) + headerW;
-      });
+      zoomTimeAxis(Math.exp(-e.deltaY * 0.0015), e.clientX);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, setPxPerBeat, headerW]);
+  }, [zoomTimeAxis]);
+
+  // One zoom axis here: the arrangement's vertical is a list of tracks with their own heights,
+  // not a continuous scale, so there is nothing for a vertical pinch to *scale*. It still
+  // pans, because the lanes scroll vertically and two fingers should move the view they are
+  // resizing.
+  const onPinch = useCallback(
+    ({ scaleX, clientX, panX, panY }: PinchGesture) => {
+      zoomTimeAxis(scaleX, clientX, panX);
+      const element = scrollRef.current;
+      if (element) element.scrollTop -= panY;
+    },
+    [zoomTimeAxis],
+  );
+  usePinchZoom(scrollRef, onPinch);
 
   // Keep the time-axis offset across remounts (a shell swap, or a phone rotated into the
   // tablet tier). A sticky header column does not consume scroll, so beat 0 is at the
@@ -512,7 +536,15 @@ export function ArrangementTimeline({
         </div>
       ) : (
         <div className="relative flex-1 min-h-0">
-          <div ref={scrollRef} data-testid="arr-scroll" className="absolute inset-0 overflow-auto">
+          {/* `pan-x pan-y` keeps native one-finger scrolling - which `useSharedGridScroll` reads -
+              while taking pinch away from the browser, which otherwise zooms the whole page and
+              scales the app's own chrome. Not a viewport-meta fix: page zoom stays available
+              everywhere else, being the only way to read small text. */}
+          <div
+            ref={scrollRef}
+            data-testid="arr-scroll"
+            className="absolute inset-0 overflow-auto [touch-action:pan-x_pan-y]"
+          >
             <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
               {/* ruler row: sticky top; the corner cell is sticky on both axes (on touch
                   it scrolls horizontally with the headers, so only the top pin remains) */}

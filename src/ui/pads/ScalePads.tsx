@@ -15,7 +15,7 @@
 import { Menu, type MenuItem } from "../Menu";
 import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
-import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT } from "./geometry";
+import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT, rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
 import { IconButton } from "../controls/IconButton";
@@ -133,8 +133,10 @@ export function ScalePads({
   const rows = padRows({ tonic, scale, lowOctave, octaves, octavesPerRow, accidentals });
 
   return (
-    // High row on top, as the roll puts high pitches at the top.
-    <div className="shrink-0 flex flex-col-reverse gap-1 px-2 pb-2">
+    // High row on top, as the roll puts high pitches at the top. The gap between rows is
+    // wider with the accidentals off, where it is the only thing keeping a fingertip from
+    // landing on two octaves at once - see `rowGap`.
+    <div className="shrink-0 flex flex-col-reverse px-2 pb-2" style={{ gap: rowGap(accidentals) }}>
       {rows.map((row) => (
         <div key={row.pitches[0].pitch} data-pad-row={row.pitches[0].pitch} className="flex flex-col gap-1">
           {accidentals && (

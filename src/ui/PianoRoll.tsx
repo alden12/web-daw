@@ -19,7 +19,7 @@
  * arrangement loop region lives in the timeline). The grid is drawn past the clip
  * end so you can scroll there and drag the end out.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { noteKey } from "../audio/commands/authorship";
 import { authorNoteStyle } from "./authorStyle";
@@ -38,6 +38,8 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
+import { anchorZoomX, anchorZoomY } from "./timeline/anchoredZoom";
+import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
@@ -126,6 +128,13 @@ type Drag =
       base: Set<string>;
       additive: boolean;
       moved: boolean;
+      /**
+       * Whether this press may become a marquee. False for touch: a rubber-band selection
+       * needs a pointer you can place precisely and a second one to modify with, and on a
+       * phone the same drag is how you pan and half of how you pinch - so it fought both.
+       * The press still counts as a tap on release, which is what deselects (MOBILE-7).
+       */
+      allowMarquee: boolean;
     };
 
 export function PianoRoll({
@@ -314,6 +323,37 @@ export function PianoRoll({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Zoom the time axis about a fixed point. Beat 0 sits at content-x = `gutter` (the reserved
+   * label column), so that is the lead.
+   */
+  const zoomTime = useCallback(
+    (factor: number, clientX: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
+      setPxPerBeat(next);
+      anchorZoomX({ element, clientPosition: clientX, leadPx: gutter, from: pxPerBeat, to: next, panPx });
+    },
+    [pxPerBeat, gutter, setPxPerBeat],
+  );
+
+  /**
+   * Zoom the pitch axis. Anchored too, unlike the old wheel path which only rescaled: with a
+   * pinch you are holding the rows you are scaling, so an unanchored one slides them out from
+   * between your fingers. The ruler is the lead, being the scrollable content above row 0.
+   */
+  const zoomPitch = useCallback(
+    (factor: number, clientY: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(rowH * factor, ZOOM_Y.min, ZOOM_Y.max);
+      setRowH(next);
+      anchorZoomY({ element, clientPosition: clientY, leadPx: RULER_H, from: rowH, to: next, panPx });
+    },
+    [rowH, setRowH],
+  );
+
   // Cursor-anchored wheel zoom (non-passive, so we can preventDefault).
   useEffect(() => {
     const el = scrollRef.current;
@@ -323,24 +363,29 @@ export function PianoRoll({
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.0015);
       if (e.metaKey && !e.ctrlKey) {
-        setRowH(rowH * factor);
+        zoomPitch(factor, e.clientY);
         return;
       }
-      // ctrl (pinch) zooms both axes; shift zooms horizontal only.
-      if (e.ctrlKey) setRowH(rowH * factor);
-      const rect = el.getBoundingClientRect();
-      // Beat 0 sits at content-x = gutter (the reserved label column), so anchor off that.
-      const contentX = e.clientX - rect.left + el.scrollLeft - gutter;
-      const beatAtCursor = contentX / pxPerBeat;
-      const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
-      setPxPerBeat(next);
-      requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next + gutter - (e.clientX - rect.left);
-      });
+      // ctrl (trackpad pinch) zooms both axes; shift zooms horizontal only.
+      if (e.ctrlKey) zoomPitch(factor, e.clientY);
+      zoomTime(factor, e.clientX);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, rowH, gutter, setPxPerBeat, setRowH]);
+  }, [zoomTime, zoomPitch]);
+
+  // Both axes, because both are continuous scales here: spreading horizontally stretches
+  // time, vertically stretches pitch, and a diagonal pinch does each by its own amount.
+  // Called on both axes unconditionally, even where the scale is 1: two fingers reposition as
+  // well as resize, and skipping an axis whose scale did not change would drop its pan too.
+  const onPinch = useCallback(
+    ({ scaleX, scaleY, clientX, clientY, panX, panY }: PinchGesture) => {
+      zoomTime(scaleX, clientX, panX);
+      zoomPitch(scaleY, clientY, panY);
+    },
+    [zoomTime, zoomPitch],
+  );
+  usePinchZoom(scrollRef, onPinch);
 
   // Drive the playhead off the audio clock (already wrapped to the loop region).
   // While a MIDI take records into this track, also grow the held-note ghosts from
@@ -485,13 +530,19 @@ export function PianoRoll({
       base: new Set(selection),
       additive: e.shiftKey,
       moved: false,
+      allowMarquee: e.pointerType === "mouse",
     };
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
       if (!d.moved && Math.hypot(ev.clientX - d.cX, ev.clientY - d.cY) < DRAG_THRESH) return;
+      // `moved` is recorded whatever the pointer was, and *before* the marquee gate. It is
+      // what tells the release handler this was a drag rather than a tap, so gating it too
+      // turned every touch drag - including each finger of a pinch - into a tap, which
+      // creates a note. Suppressing the marquee is not the same as pretending nothing moved.
       d.moved = true;
+      if (!d.allowMarquee) return;
       d.kind = "marquee";
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
@@ -709,7 +760,12 @@ export function PianoRoll({
           label gutter is reserved (drum kits), a sticky-left column holds the row labels
           beside the notes; otherwise the labels float over the grid (display:contents,
           so the layout is identical to a plain roll). */}
-      <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
+      {/* See the arrangement: pinch is ours, one-finger panning stays the browser's. */}
+      <div
+        ref={scrollRef}
+        data-testid="roll-scroll"
+        className="flex-1 min-h-0 overflow-auto [touch-action:pan-x_pan-y]"
+      >
         <div className={gutter ? "flex" : "contents"} style={gutter ? { width: gutter + width } : undefined}>
           {gutter > 0 && (
             <div className="sticky left-0 z-20 shrink-0 bg-panel border-r border-line" style={{ width: gutter }}>
@@ -804,6 +860,7 @@ export function PianoRoll({
 
               {marquee && (
                 <div
+                  data-testid="roll-marquee"
                   className="absolute border border-you/70 bg-you/10 pointer-events-none"
                   style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
                 />

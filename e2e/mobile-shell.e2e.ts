@@ -98,6 +98,251 @@ async function openOverflow(page: Page) {
 test.describe("phone", () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
+  /**
+   * MOBILE-2, hit-target floors. Two separate defects, and either one alone was enough to
+   * make the loop markers undraggable by finger:
+   *
+   * - the handle was the 8px bar you can see and nothing more, against a 44px finger;
+   * - `loopEnd` had no `touch-action: none`, so the scroll container claimed the gesture
+   *   before the first move arrived and even a perfect hit did nothing.
+   *
+   * Driven with real touch events through CDP rather than `page.mouse`, because the mouse
+   * reproduces neither of them: a cursor hits 8px fine and never competes with a scroller.
+   */
+  test("the loop markers can be dragged with a finger, not just a cursor", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
+
+    const end = page.getByTestId("arr-scroll").getByRole("slider", { name: "Loop length" });
+    const before = Number(await end.getAttribute("aria-valuenow"));
+    // The default loop ends well off the right of a 390px screen, so reach it the way a
+    // person would rather than dispatching a touch at a coordinate outside the viewport.
+    await end.scrollIntoViewIfNeeded();
+    const box = (await end.boundingBox())!;
+
+    // The floor itself, stated as a number: the box you can hit, not the bar you can see.
+    expect(box.width, "a finger-sized target on a coarse pointer").toBeGreaterThanOrEqual(40);
+
+    // The browser tells us whether it took the gesture away from us. This is the precise
+    // statement of the `touch-action` half of the defect: without it the scroll container
+    // claims the drag and the browser fires `pointercancel`, which `beginPointerDrag` does
+    // not listen for, so the drag simply stops part-way.
+    await page.evaluate(() => {
+      (window as unknown as { cancelled: boolean }).cancelled = false;
+      window.addEventListener(
+        "pointercancel",
+        () => ((window as unknown as { cancelled: boolean }).cancelled = true),
+        true,
+      );
+    });
+
+    // Real touch events, through the browser's own input pipeline - `page.mouse` reproduces
+    // neither defect, because a cursor hits 8px comfortably and never races the scroller.
+    // The press lands 4px inside the box's left edge, clear of the 8px bar at its centre, so
+    // it would have missed the old handle completely.
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    // A stable `id` across the sequence, or each move reads as a fresh touch rather than the
+    // same finger continuing, and no drag is assembled from them at all.
+    const touch = (type: string, x: number) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
+      });
+
+    await touch("touchStart", box.x + 4);
+    await touch("touchMove", box.x - 30);
+    await touch("touchMove", box.x - 80);
+    await touch("touchEnd", 0);
+
+    // **Not** "did it move at all". With the fix backed out this lands on 15 rather than 16:
+    // the one move that precedes `pointercancel` gets through, so a "moved" assertion passes
+    // on the bug. What is broken is that it stops following, so the distance is the assertion.
+    await expect
+      .poll(async () => Number(await end.getAttribute("aria-valuenow")), {
+        message: "the loop end followed the finger the whole way",
+      })
+      .toBeLessThan(before - 2);
+    expect(
+      await page.evaluate(() => (window as unknown as { cancelled: boolean }).cancelled),
+      "the scroller never took the gesture",
+    ).toBe(false);
+  });
+
+  /**
+   * MOBILE-2, the gesture half. Pinch was not merely missing: with no handler and no
+   * `touch-action` on the scrollers the gesture was unclaimed, so the browser took it as a
+   * **page** zoom - scaling the app's own chrome and breaking the layout.
+   *
+   * So there are two things to prove, and the second is the one that was actually wrong:
+   * the surface zooms, and the page does not.
+   */
+  test("pinch zooms the surface, not the whole page", async ({ page }) => {
+    // Seed the zoom, rather than reading it back as "whatever is stored, or 0". The key is
+    // only written once something changes it, so an unseeded baseline of 0 is beaten by any
+    // write at all - the assertion would have passed on a pinch that set the wrong value.
+    const BASELINE = 24;
+    await page.addInitScript((zoom) => localStorage.setItem("web-daw:arr-zoom", String(zoom)), BASELINE);
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
+
+    const scroller = page.getByTestId("arr-scroll");
+    const box = (await scroller.boundingBox())!;
+    const zoom = () => page.evaluate(() => Number(localStorage.getItem("web-daw:arr-zoom")));
+    expect(await zoom()).toBe(BASELINE);
+
+    // `visualViewport.scale` is the browser's own page zoom. It is 1 until something pinches
+    // the document itself, which is exactly the defect.
+    const pageScale = () => page.evaluate(() => visualViewport?.scale ?? 1);
+    expect(await pageScale()).toBe(1);
+
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const midX = box.x + box.width / 2;
+    const spread = (half: number) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { x: midX - half, y, id: 1 },
+          { x: midX + half, y, id: 2 },
+        ],
+      });
+
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: midX - 40, y, id: 1 },
+        { x: midX + 40, y, id: 2 },
+      ],
+    });
+    // Spreading apart zooms in. Several steps, because the gesture reports per-move ratios.
+    for (const half of [60, 80, 100, 120]) await spread(half);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    // Tracked the whole gesture, not merely moved. The fingers go from 80px apart to 240px,
+    // so the scale should roughly treble; asserting "greater than baseline" would pass on the
+    // bug this fixes, where the browser took the pan after one move and the zoom stopped dead
+    // a pixel in.
+    await expect.poll(zoom, { message: "the time axis tracked the whole pinch" }).toBeGreaterThan(BASELINE * 2);
+    expect(await pageScale(), "the page itself never zoomed").toBe(1);
+  });
+
+  /**
+   * The roll is the surface with two continuous scales, so its pinch decomposes: fingers
+   * spread vertically scale pitch and say nothing about time. That "say nothing" is the part
+   * worth a test - two fingers on a vertical line are a few noisy pixels apart horizontally,
+   * and using that as a ratio would jerk the time axis every frame.
+   */
+  test("a vertical pinch in the roll scales pitch and leaves time alone", async ({ page }) => {
+    const ROWS = 12;
+    const BEATS = 64;
+    await page.addInitScript(
+      ([rows, beats]) => {
+        localStorage.setItem("web-daw:roll-zoom-y", String(rows));
+        localStorage.setItem("web-daw:roll-zoom-x", String(beats));
+      },
+      [ROWS, BEATS],
+    );
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const box = (await page.getByTestId("roll-scroll").boundingBox())!;
+    const stored = (key: string) => page.evaluate((k) => Number(localStorage.getItem(k)), key);
+
+    const cdp = await page.context().newCDPSession(page);
+    const x = box.x + box.width / 2;
+    const midY = box.y + box.height / 2;
+    const points = (half: number) => [
+      { x, y: midY - half, id: 1 },
+      { x, y: midY + half, id: 2 },
+    ];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(30) });
+    for (const half of [45, 60, 75]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(half) });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect.poll(() => stored("web-daw:roll-zoom-y"), { message: "rows got taller" }).toBeGreaterThan(ROWS);
+    expect(await stored("web-daw:roll-zoom-x"), "the time axis was left alone").toBe(BEATS);
+  });
+
+  /**
+   * A rubber-band selection needs a pointer you can place precisely and a second one to
+   * modify with. On a phone the same drag is how you pan and half of how you pinch, so it
+   * fought both: a two-finger zoom in the roll drew a selection box across the notes.
+   * MOBILE-7 has the touch editing model that replaces it (select, then handles).
+   */
+  test("dragging on empty roll grid does not rubber-band on touch", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const box = (await page.getByTestId("roll-scroll").boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const at = (x: number) => [{ x, y, id: 1 }];
+
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(box.x + 80) });
+    for (const x of [110, 150, 190]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(box.x + x) });
+    }
+    // Checked mid-gesture: the box is torn down on release, so looking afterwards would pass
+    // whether or not it was ever drawn.
+    const marquees = await page.getByTestId("roll-marquee").count();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    expect(marquees, "no rubber-band from a finger").toBe(0);
+  });
+
+  /**
+   * Two fingers reposition as well as resize - you pinch to frame a bar, not merely to make
+   * it bigger. The browser cannot do the panning for us here, because declining the gesture
+   * to get the zoom declines its pan along with it, so the centroid's travel is applied in
+   * the same frame as the scale.
+   *
+   * Also guards the other half of what a pinch must not do: leave notes behind it. Each
+   * finger is a `pointerdown` on the grid, and the roll's empty-space press creates a note on
+   * release unless something recorded that it moved.
+   */
+  test("two fingers pan the roll as well as zoom it, and leave no notes behind", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const scroller = page.getByTestId("roll-scroll");
+    const box = (await scroller.boundingBox())!;
+    const scrollLeft = () => scroller.evaluate((el) => el.scrollLeft);
+    const notes = () => page.getByTestId("note").count();
+
+    const before = { scroll: await scrollLeft(), notes: await notes() };
+
+    // Both fingers travel the same way, keeping their separation: a pure pan, so whatever
+    // moves has to be the view rather than the scale.
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const pair = (centre: number) => [
+      { x: centre - 50, y, id: 1 },
+      { x: centre + 50, y, id: 2 },
+    ];
+    const midX = box.x + box.width / 2;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pair(midX) });
+    for (const offset of [-25, -50, -75, -100]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: pair(midX + offset) });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect
+      .poll(scrollLeft, { message: "dragging two fingers left moved the view right" })
+      .toBeGreaterThan(before.scroll);
+    expect(await notes(), "a pinch is not a note").toBe(before.notes);
+  });
+
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

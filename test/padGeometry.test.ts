@@ -5,6 +5,8 @@ import {
   PADS_SHARE,
   PAD_HEIGHT,
   ROW_GAP,
+  BARE_ROW_GAP,
+  rowGap,
   fitPads,
   padRowHeight,
 } from "../src/ui/pads/geometry";
@@ -34,7 +36,16 @@ const rollHeight = (room: number, accidentals: boolean) => {
 describe("padRowHeight", () => {
   it("counts the accidental band only when the accidentals are on", () => {
     expect(padRowHeight(true)).toBe(PAD_HEIGHT + ACCIDENTAL_HEIGHT + ROW_GAP);
-    expect(padRowHeight(false)).toBe(PAD_HEIGHT + ROW_GAP);
+    expect(padRowHeight(false)).toBe(PAD_HEIGHT + BARE_ROW_GAP);
+  });
+
+  it("leaves more room between rows with the accidentals off", () => {
+    // With the band there, it separates one row of naturals from the next. Without it the
+    // rows abut, and the gap is the only thing stopping a fingertip landing on two octaves
+    // at once - so it has to be the bigger of the two, not the same number reused.
+    expect(BARE_ROW_GAP).toBeGreaterThan(ROW_GAP);
+    expect(rowGap(true)).toBe(ROW_GAP);
+    expect(rowGap(false)).toBe(BARE_ROW_GAP);
   });
 });
 
@@ -89,7 +100,10 @@ describe("fitPads", () => {
   });
 
   it("fits more rows with the accidentals off, in the same room", () => {
-    expect(fitPads(ROOM.phoneHalf, false).rows).toBeGreaterThan(fitPads(ROOM.phoneHalf, true).rows);
+    // Measured somewhere with the room to show it. A row without accidentals is 64px against
+    // 86px with them, but rows only come whole - at `phoneHalf` both round down to one, so
+    // asserting there would be asserting about the rounding rather than about the heights.
+    expect(fitPads(ROOM.phoneFull, false).rows).toBeGreaterThan(fitPads(ROOM.phoneFull, true).rows);
   });
 
   it("never asks for more than the room it was given", () => {
