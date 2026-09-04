@@ -721,18 +721,34 @@ test.describe("phone", () => {
     expect(box.y + box.height).toBeLessThanOrEqual(PHONE.height);
   });
 
-  test("the agent opens as a sheet from the right and stays mounted when closed", async ({ page }) => {
+  test("the agent shares the library panel rather than opening a second one", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    const panel = page.getByRole("dialog", { name: "Agent" });
-    await page.getByRole("button", { name: "Agent" }).tap();
-    await expect(panel).toBeVisible();
+    const composer = page.getByRole("textbox", { name: /message the agent/i });
+    const librarySearch = page.getByRole("searchbox", { name: /search the library/i });
 
-    await page.keyboard.press("Escape");
-    // Deliberately not unmounted: an interruptible agent run must survive a close.
-    await expect(panel).toHaveCount(1);
-    await expect(panel).toHaveAttribute("inert", "");
+    // Not in the top bar any more: a phone has one bar for the whole app, and the agent is
+    // the control you open deliberately rather than reach for mid-gesture.
+    await expect(page.getByRole("button", { name: "Agent" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Library" }).tap();
+    await expect(librarySearch).toBeVisible();
+
+    // It fills the library's own column - there is no second sheet over the top of it.
+    await page.getByRole("button", { name: "Agent" }).tap();
+    await expect(composer).toBeVisible();
+    await expect(librarySearch).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Agent" })).toHaveCount(0);
+
+    // Back to a library view, and the conversation survives it: an agent run is interruptible
+    // and long-lived, so looking something up must not throw away what is in flight.
+    // `includeHidden`, because a hidden subtree is out of the accessibility tree and the
+    // default `getByRole` would report it as gone when it is only out of sight.
+    await page.getByRole("button", { name: "Instruments" }).tap();
+    await expect(librarySearch).toBeVisible();
+    await expect(composer).toBeHidden();
+    await expect(page.getByRole("textbox", { name: /message the agent/i, includeHidden: true })).toHaveCount(1);
   });
 });
 
@@ -813,7 +829,7 @@ test.describe("tablet", () => {
     await expect(desktopRail(page)).toHaveCount(0);
   });
 
-  test("docks the library and agent beside the workspace instead of over it", async ({ page }) => {
+  test("docks the library beside the workspace, and the agent shares that column", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
@@ -823,14 +839,18 @@ test.describe("tablet", () => {
     // Docked, not a sheet: no scrim, and it sits beside the workspace rather than over it.
     await expect(page.getByRole("dialog", { name: "Library" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Agent" }).tap();
-    const agent = page.getByRole("complementary", { name: "Agent" });
-    await expect(agent).toBeVisible();
-
     const libraryBox = (await library.boundingBox())!;
-    const agentBox = (await agent.boundingBox())!;
     expect(libraryBox.x, "library on the left").toBeLessThan(TABLET.width / 2);
-    expect(agentBox.x, "agent on the right").toBeGreaterThan(TABLET.width / 2);
+
+    // The agent takes over that same column rather than claiming a second one on the right.
+    // A tablet has the width for two, but not for two *and* a workspace worth editing in.
+    await page.getByRole("button", { name: "Agent" }).tap();
+    await expect(page.getByRole("textbox", { name: /message the agent/i })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Agent" })).toHaveCount(0);
+
+    const withAgentBox = (await library.boundingBox())!;
+    expect(withAgentBox.x, "still the left column").toBe(libraryBox.x);
+    expect(withAgentBox.width, "and the same width").toBe(libraryBox.width);
   });
 
   test("opens with the library already docked, and the toggle still closes it", async ({ page }) => {
