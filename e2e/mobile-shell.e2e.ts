@@ -698,9 +698,15 @@ test.describe("phone", () => {
 
     // Both surfaces grow, which is the point: the pads take a *share* of the editor, so
     // raising the sheet buys rows and notes rather than spending it all on pads. A flat
-    // reserve for the roll left it the same sliver at every detent.
+    // reserve for the roll left it the same sliver at every detent, and a ratio is what says
+    // "materially more" - the bug this guards is a roll that comes back the same size.
+    //
+    // Deliberately not an absolute pixel figure. Rows fit in whole steps, so how much room is
+    // left over for the roll depends on the pad row height, and an absolute threshold silently
+    // encodes that: shortening the accidentals by 4px packs one more row into the same share
+    // and takes the difference out of exactly this number.
     expect(full.rows).toBeGreaterThan(half.rows);
-    expect(full.roll).toBeGreaterThan(half.roll + 50);
+    expect(full.roll).toBeGreaterThan(half.roll * 1.1);
     expect(half.roll, "the roll is readable even at Half, with the pads filled").toBeGreaterThan(120);
 
     // The count is a request, not a promise: dropping back gives the rows away and raising

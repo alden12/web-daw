@@ -10,18 +10,13 @@
  * `label` is required rather than optional. There is no text to fall back on, so an icon
  * button without one is unusable by anything that cannot see it, and it is far too easy to
  * leave off when the glyph looks obvious.
+ *
+ * The look itself lives in `iconButtonStyle.ts`, so a `Menu` trigger - which renders its own
+ * element and cannot be this component - can wear exactly the same thing.
  */
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { CONTROL_BASE, TONE_ACTIVE, TONE_HOVER, TONE_TEXT, type Tone } from "./tone";
-
-export type IconButtonSize = "sm" | "md" | "lg";
-
-/** Square, so a row of them is even whatever glyph each holds. Touch wants `lg`. */
-const SIZE: Record<IconButtonSize, string> = {
-  sm: "w-6 h-6 rounded-md text-[13px]",
-  md: "w-8 h-8 rounded-lg text-[15px]",
-  lg: "w-9 h-9 rounded-lg text-[15px]",
-};
+import { iconButtonClass, type IconButtonSize } from "./iconButtonStyle";
+import type { Tone } from "./tone";
 
 export function IconButton({
   label,
@@ -42,21 +37,13 @@ export function IconButton({
   toneAtRest?: boolean;
   children?: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "aria-label">) {
-  // Bare at rest, but not bare on hover: without a fill there is nothing to tell you the
-  // target is bigger than the glyph, so the same grey a text button wears at rest shows up
-  // here under the pointer instead. It is also what makes two adjacent icons read as two
-  // targets rather than one cluster.
-  const resting = `hover:bg-control ${
-    toneAtRest ? `${TONE_TEXT[tone]} opacity-80 hover:opacity-100` : `text-muted ${TONE_HOVER[tone]}`
-  }`;
-
   return (
     <button
       type="button"
       aria-label={label}
       title={rest.title ?? label}
       aria-pressed={active}
-      className={`${CONTROL_BASE} ${SIZE[size]} ${active ? TONE_ACTIVE[tone] : resting} ${className}`}
+      className={iconButtonClass({ size, tone, active, toneAtRest, className })}
       {...rest}
     >
       {children}
