@@ -170,6 +170,102 @@ test.describe("phone", () => {
     ).toBe(false);
   });
 
+  /**
+   * MOBILE-2, the gesture half. Pinch was not merely missing: with no handler and no
+   * `touch-action` on the scrollers the gesture was unclaimed, so the browser took it as a
+   * **page** zoom - scaling the app's own chrome and breaking the layout.
+   *
+   * So there are two things to prove, and the second is the one that was actually wrong:
+   * the surface zooms, and the page does not.
+   */
+  test("pinch zooms the surface, not the whole page", async ({ page }) => {
+    // Seed the zoom, rather than reading it back as "whatever is stored, or 0". The key is
+    // only written once something changes it, so an unseeded baseline of 0 is beaten by any
+    // write at all - the assertion would have passed on a pinch that set the wrong value.
+    const BASELINE = 24;
+    await page.addInitScript((zoom) => localStorage.setItem("web-daw:arr-zoom", String(zoom)), BASELINE);
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
+
+    const scroller = page.getByTestId("arr-scroll");
+    const box = (await scroller.boundingBox())!;
+    const zoom = () => page.evaluate(() => Number(localStorage.getItem("web-daw:arr-zoom")));
+    expect(await zoom()).toBe(BASELINE);
+
+    // `visualViewport.scale` is the browser's own page zoom. It is 1 until something pinches
+    // the document itself, which is exactly the defect.
+    const pageScale = () => page.evaluate(() => visualViewport?.scale ?? 1);
+    expect(await pageScale()).toBe(1);
+
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const midX = box.x + box.width / 2;
+    const spread = (half: number) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { x: midX - half, y, id: 1 },
+          { x: midX + half, y, id: 2 },
+        ],
+      });
+
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [
+        { x: midX - 40, y, id: 1 },
+        { x: midX + 40, y, id: 2 },
+      ],
+    });
+    // Spreading apart zooms in. Several steps, because the gesture reports per-move ratios.
+    for (const half of [60, 80, 100, 120]) await spread(half);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect.poll(zoom, { message: "the time axis zoomed in" }).toBeGreaterThan(BASELINE);
+    expect(await pageScale(), "the page itself never zoomed").toBe(1);
+  });
+
+  /**
+   * The roll is the surface with two continuous scales, so its pinch decomposes: fingers
+   * spread vertically scale pitch and say nothing about time. That "say nothing" is the part
+   * worth a test - two fingers on a vertical line are a few noisy pixels apart horizontally,
+   * and using that as a ratio would jerk the time axis every frame.
+   */
+  test("a vertical pinch in the roll scales pitch and leaves time alone", async ({ page }) => {
+    const ROWS = 12;
+    const BEATS = 64;
+    await page.addInitScript(
+      ([rows, beats]) => {
+        localStorage.setItem("web-daw:roll-zoom-y", String(rows));
+        localStorage.setItem("web-daw:roll-zoom-x", String(beats));
+      },
+      [ROWS, BEATS],
+    );
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const box = (await page.getByTestId("roll-scroll").boundingBox())!;
+    const stored = (key: string) => page.evaluate((k) => Number(localStorage.getItem(k)), key);
+
+    const cdp = await page.context().newCDPSession(page);
+    const x = box.x + box.width / 2;
+    const midY = box.y + box.height / 2;
+    const points = (half: number) => [
+      { x, y: midY - half, id: 1 },
+      { x, y: midY + half, id: 2 },
+    ];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(30) });
+    for (const half of [45, 60, 75]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(half) });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect.poll(() => stored("web-daw:roll-zoom-y"), { message: "rows got taller" }).toBeGreaterThan(ROWS);
+    expect(await stored("web-daw:roll-zoom-x"), "the time axis was left alone").toBe(BEATS);
+  });
+
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
