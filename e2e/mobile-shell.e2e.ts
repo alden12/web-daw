@@ -29,8 +29,12 @@ async function dismissStart(page: Page) {
 const shell = (page: Page) => page.locator("[data-device-tier]");
 const desktopRail = (page: Page) => page.locator('[class*="grid-area:rail"]');
 const sheet = (page: Page) => page.getByTestId("editor-sheet");
-/** One of the sheet's Edit / Clips / Rack segments. Scoped, so it cannot match the desktop's editor tabs. */
-const segment = (page: Page, name: string) => sheet(page).getByRole("tab", { name });
+/**
+ * One of the sheet's Edit / Clips / Rack segments. Scoped, so it cannot match the desktop's
+ * editor tabs. A `radio` rather than a `tab`: the switch is a `Segmented` now, which says
+ * "these are the options and this is the one you are on" instead of three separate buttons.
+ */
+const segment = (page: Page, name: string) => sheet(page).getByRole("radio", { name });
 const grabber = (page: Page) => page.getByRole("slider", { name: "Editor height" });
 const trackHeader = (page: Page) => page.locator("[data-track-id]").first().locator("> div").first();
 const detentOf = (page: Page) => sheet(page).getAttribute("data-detent");
