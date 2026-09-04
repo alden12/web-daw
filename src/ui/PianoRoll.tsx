@@ -128,6 +128,13 @@ type Drag =
       base: Set<string>;
       additive: boolean;
       moved: boolean;
+      /**
+       * Whether this press may become a marquee. False for touch: a rubber-band selection
+       * needs a pointer you can place precisely and a second one to modify with, and on a
+       * phone the same drag is how you pan and half of how you pinch - so it fought both.
+       * The press still counts as a tap on release, which is what deselects (MOBILE-7).
+       */
+      allowMarquee: boolean;
     };
 
 export function PianoRoll({
@@ -521,11 +528,13 @@ export function PianoRoll({
       base: new Set(selection),
       additive: e.shiftKey,
       moved: false,
+      allowMarquee: e.pointerType === "mouse",
     };
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
+      if (!d.allowMarquee) return;
       if (!d.moved && Math.hypot(ev.clientX - d.cX, ev.clientY - d.cY) < DRAG_THRESH) return;
       d.moved = true;
       d.kind = "marquee";
@@ -845,6 +854,7 @@ export function PianoRoll({
 
               {marquee && (
                 <div
+                  data-testid="roll-marquee"
                   className="absolute border border-you/70 bg-you/10 pointer-events-none"
                   style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
                 />
