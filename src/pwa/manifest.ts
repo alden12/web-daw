@@ -39,8 +39,8 @@ export interface WebAppManifest {
 
 export const PWA_MANIFEST: WebAppManifest = {
   id: "/",
-  name: "web-daw",
-  short_name: "web-daw",
+  name: "Web DAW",
+  short_name: "WebDAW",
   description: "A digital audio workstation in the browser, with an agent that can play it too.",
   start_url: "/",
   scope: "/",
