@@ -8,60 +8,58 @@
  * It uses the Chromium that Playwright already ships rather than an image library, so nothing
  * joins the dependency tree for a job this rare.
  *
- * ## The scales, which are the only interesting part
+ * ## How big the mark is drawn, which is the only interesting part
  *
- * A **maskable** icon is cropped by the launcher to whatever shape it likes: a circle, a
- * squircle, a rounded square. The usual advice is to inset the mark to the 80% "safe zone" so
- * no crop can clip it, and that was the first attempt here. It looks wrong, and a phone said
- * so: a circular mark inset inside a circular crop is a small circle in a thick dark ring.
+ * **Inscribed: the disc touches all four edges and is not clipped by any of them.** Both of the
+ * obvious alternatives were tried and are worse.
  *
- * The inset exists to stop a crop eating the artwork. **A mark that is already the crop's shape
- * has nothing to lose**, so this one is drawn a whisker past the square's edge instead. A
- * circular mask then crops exactly at the disc and the icon fills it edge to edge; a squircle
- * reaches into the corners and finds the ground, which reads as a frame rather than a mistake.
+ * *Insetting it* to the 80% "safe zone" is the standard advice for a maskable icon, because a
+ * launcher crops one to whatever shape it likes and the safe zone is what no crop can reach.
+ * That advice is for a mark the crop could eat; **a mark already the shape of the crop has
+ * nothing to lose**, and a circle inset inside a circular crop is a small circle in a thick
+ * dark ring. That was the first attempt and a phone reported it as a black border.
  *
- * Slightly past rather than exactly on the edge, because an antialiased edge landing precisely
- * on the crop leaves a hairline of ground all the way round.
+ * *Overshooting the edge* to avoid a hairline of ground under a mask that lands exactly on the
+ * disc costs more than it saves: the overshoot is clipped by the image itself, so the disc
+ * arrives at the launcher with four flat sides.
  *
- * The alternative, if the corners ever look wrong, is to scale past the diagonal (~1.42) so
- * every mask crops into artwork. That can never show ground, at the price of the circle: the
- * silhouette goes, and the icon becomes a gradient in the launcher's own shape.
+ * Inscribed leaves ground only in the corners, where a circular crop never looks and a squircle
+ * reads it as a frame. If those corners ever look wrong, the remaining option is to scale past
+ * the diagonal (~1.42) so every mask crops into artwork and no ground can show at all - at the
+ * price of the circle, whose silhouette goes with it.
  */
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 
-/** Just past the square's edge, so no crop leaves a hairline of ground around the disc. */
-const BLEED = 1.06;
 /** The palette's dark ground: what a squircle or rounded-square crop finds in the corners. */
 const GROUND = "#0a0c0e";
 
 const ICONS = [
   // The `any` icons are shown as-is rather than cropped, so they keep transparent corners and
   // whatever backdrop the surface puts behind them.
-  { file: "public/icon-192.png", size: 192, scale: 1, background: "transparent" },
-  { file: "public/icon-512.png", size: 512, scale: 1, background: "transparent" },
-  { file: "public/icon-maskable-512.png", size: 512, scale: BLEED, background: GROUND },
+  { file: "public/icon-192.png", size: 192, background: "transparent" },
+  { file: "public/icon-512.png", size: 512, background: "transparent" },
+  { file: "public/icon-maskable-512.png", size: 512, background: GROUND },
   // iOS masks to a rounded square and composites on black, so it wants the same treatment as
   // maskable rather than the transparent one.
-  { file: "public/apple-touch-icon.png", size: 180, scale: BLEED, background: GROUND },
+  { file: "public/apple-touch-icon.png", size: 180, background: GROUND },
 ];
 
 const svg = readFileSync("public/favicon.svg", "utf8");
 const browser = await chromium.launch();
 
-for (const { file, size, scale, background } of ICONS) {
+for (const { file, size, background } of ICONS) {
   const page = await browser.newPage({ viewport: { width: size, height: size } });
-  const mark = Math.round(size * scale);
   await page.setContent(
     `<style>
        html, body { margin: 0; width: ${size}px; height: ${size}px; background: ${background};
                     display: flex; align-items: center; justify-content: center; overflow: hidden; }
-       svg { width: ${mark}px; height: ${mark}px; flex: none; }
+       svg { width: ${size}px; height: ${size}px; flex: none; }
      </style>${svg}`,
   );
   writeFileSync(file, await page.screenshot({ omitBackground: background === "transparent" }));
   await page.close();
-  console.log(`${file}  ${size}px  mark ${mark}px  ${background}`);
+  console.log(`${file}  ${size}px  ${background}`);
 }
 
 await browser.close();
