@@ -58,19 +58,25 @@ test("the URL names the open project, and opening that URL opens it again", asyn
  * race into a certainty, so this is the one that actually guards it.
  */
 test("switching projects never puts one project's name on another's link", async ({ page }) => {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 20 });
-
+  // Boot at full speed. Throttling from the start made this test fail on CI for a reason that
+  // had nothing to do with the bug: a runner is already slow, and 20x on top of that spent the
+  // whole timeout getting the app up. The throttle belongs around the race, not the fixture.
   await page.goto("/");
   await dismissStart(page);
   await page.getByRole("button", { name: "Project", exact: true }).click();
-  await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 30000 });
+  await expect(page).toHaveURL(/\/p\/untitled~/);
 
   page.once("dialog", (dialog) => void dialog.accept("Deep House Jam"));
   await projectMenu(page).click();
   await page.getByRole("menuitem", { name: "Rename…" }).click();
-  await expect(page).toHaveURL(/\/p\/deep-house-jam~/, { timeout: 30000 });
+  await expect(page).toHaveURL(/\/p\/deep-house-jam~/);
   const renamedId = page.url().split("~")[1];
+
+  // Now slow the machine down, for the switch alone. The window being widened is the one
+  // between repointing the repository and the store finishing the load, so this is all it has
+  // to cover - and a rate this high is affordable when it is only spanning a couple of clicks.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 20 });
 
   // Sample densely across the switch rather than checking the settled value: the bug is a
   // transient, and a transient that reaches the address bar is one a user can copy.
@@ -86,6 +92,7 @@ test("switching projects never puts one project's name on another's link", async
   await page.getByRole("menuitem", { name: "New project" }).click();
   await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 30000 });
   clearInterval(sampler);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
 
   const mismatched = [...seen].filter((path) => path.startsWith("/p/deep-house-jam~") && !path.endsWith(renamedId));
   expect(mismatched, "a URL naming the new project with the old project's name").toEqual([]);
