@@ -16,6 +16,12 @@ import App from "./App.tsx";
 // production builds and never ships. See ./audio/engine/renderHarness.ts and AGENT-4.1.
 if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   void import("./audio/engine/renderHarness").then(({ installRenderHarness }) => installRenderHarness());
+  // Safe-area insets, on the console rather than behind an import: the thing you want to try
+  // them on is a phone, and a phone has no editor to add an import statement in. See
+  // `ui/shell/safeArea.ts` for what to pass and why it exists (MOBILE-8).
+  void import("./ui/shell/safeArea").then(({ simulateInsets }) => {
+    (window as unknown as { simulateInsets: typeof simulateInsets }).simulateInsets = simulateInsets;
+  });
 }
 
 // Before the first render, so nobody on a non-default theme sees a frame of the wrong one.

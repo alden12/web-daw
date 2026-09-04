@@ -344,43 +344,50 @@ test.describe("phone", () => {
   });
 
   /**
-   * MOBILE-8. A **structural** guard, and deliberately so: `env(safe-area-inset-*)` resolves
-   * to 0 in every browser without a notch, so no assertion about a computed pixel value can
-   * tell a correct implementation from a missing one here. What it can prove is that each box
-   * still declares the edges it owns - which is the thing that gets deleted by accident, and
-   * which nothing else in the suite would notice.
+   * MOBILE-8. `env(safe-area-inset-*)` is 0 in every browser with no inset to report, so this
+   * drives the *simulated* ones (`safeArea.ts`) - which exist precisely because the layout was
+   * otherwise impossible to look at anywhere but a notched phone, which is how it came to be
+   * half-implemented.
    *
-   * The split is the point. Both sheets are absolutely positioned, so padding on an ancestor
-   * resolves against its *padding box* and leaves them exactly where they were: they have to
-   * carry their own. The real check is a notched device in landscape, both ways up, because
-   * the notch swaps sides with the rotation direction.
+   * The split is the point of the test. Both sheets are absolutely positioned, so padding on
+   * an ancestor resolves against its *padding box* and leaves them exactly where they were:
+   * they have to carry their own, and this is what would catch someone "simplifying" that
+   * back into one padded container.
+   *
+   * A device still has the last word on whether iOS reports the insets we assumed. What this
+   * settles is whether the app does anything with them.
    */
   test("every edge of the shell is padded back from the display's insets", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await page.getByRole("button", { name: "Library" }).tap();
 
-    const declares = (locator: ReturnType<Page["locator"]>, property: string) =>
-      locator.evaluate(
-        (element, name) => (element as HTMLElement).style.getPropertyValue(name),
-        property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`),
-      );
+    const INSETS = { top: 59, bottom: 34, left: 12, right: 21 };
+    await page.evaluate((insets) => {
+      (window as unknown as { simulateInsets: (i: typeof insets) => void }).simulateInsets(insets);
+    }, INSETS);
 
-    // The top bar: the edges a notch and the corner radii actually eat.
+    const padding = (locator: ReturnType<Page["locator"]>, edge: string) =>
+      locator.evaluate((element, side) => getComputedStyle(element).getPropertyValue(`padding-${side}`), edge);
+
+    // The top bar: the edges a notch and the corner radii actually eat. Its own padding is
+    // 6px, so the inset winning here is also the `max()` doing its job.
     const topBar = page.locator("[data-device-tier] > div").first();
-    expect(await declares(topBar, "paddingTop")).toContain("safe-area-inset-top");
-    expect(await declares(topBar, "paddingLeft")).toContain("safe-area-inset-left");
-    expect(await declares(topBar, "paddingRight")).toContain("safe-area-inset-right");
+    expect(await padding(topBar, "top")).toBe(`${INSETS.top}px`);
+    expect(await padding(topBar, "left")).toBe(`${INSETS.left}px`);
+    expect(await padding(topBar, "right")).toBe(`${INSETS.right}px`);
 
-    // The editor sheet, which is abspos against the workspace and so gets nothing from it.
+    // The editor sheet, abspos against the workspace and so given nothing by its padding.
     const editor = sheet(page);
-    expect(await declares(editor, "paddingBottom")).toContain("safe-area-inset-bottom");
-    expect(await declares(editor, "paddingLeft")).toContain("safe-area-inset-left");
+    expect(await padding(editor, "bottom")).toBe(`${INSETS.bottom}px`);
+    expect(await padding(editor, "left")).toBe(`${INSETS.left}px`);
 
-    // The library sheet, which is abspos against the shell for the same reason.
+    // The library sheet, abspos against the shell for the same reason. Only the outer side
+    // matters horizontally - its inner edge faces the app, not the display.
     const library = page.getByRole("dialog", { name: "Library" });
-    expect(await declares(library, "paddingTop")).toContain("safe-area-inset-top");
-    expect(await declares(library, "paddingBottom")).toContain("safe-area-inset-bottom");
+    expect(await padding(library, "top")).toBe(`${INSETS.top}px`);
+    expect(await padding(library, "bottom")).toBe(`${INSETS.bottom}px`);
+    expect(await padding(library, "left")).toBe(`${INSETS.left}px`);
   });
 
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
