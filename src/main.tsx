@@ -19,8 +19,9 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   // Safe-area insets, on the console rather than behind an import: the thing you want to try
   // them on is a phone, and a phone has no editor to add an import statement in. See
   // `ui/shell/safeArea.ts` for what to pass and why it exists (MOBILE-8).
-  void import("./ui/shell/safeArea").then(({ simulateInsets }) => {
+  void import("./ui/shell/safeArea").then(({ simulateInsets, applySimulatedInsets }) => {
     (window as unknown as { simulateInsets: typeof simulateInsets }).simulateInsets = simulateInsets;
+    applySimulatedInsets();
   });
 }
 

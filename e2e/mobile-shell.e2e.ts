@@ -366,6 +366,8 @@ test.describe("phone", () => {
     await page.evaluate((insets) => {
       (window as unknown as { simulateInsets: (i: typeof insets) => void }).simulateInsets(insets);
     }, INSETS);
+    // The same values the URL path would set, so a phone can be pointed at `?insets=notch`
+    // and see what this asserts.
 
     const padding = (locator: ReturnType<Page["locator"]>, edge: string) =>
       locator.evaluate((element, side) => getComputedStyle(element).getPropertyValue(`padding-${side}`), edge);
