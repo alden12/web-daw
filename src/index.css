@@ -23,6 +23,10 @@
      dark void rather than a lit table. `stage` is the one step up out of it, used only
      for the panels you actually work on (the piano roll, the device rack). */
   --color-ground: #0a0c0e;
+  /* The app's outer frame: the icon rail down the left, and the editor tab bar across the
+     top. Separate from `rail` because in light they are the only two surfaces that stay
+     grey while the panels they frame go white. */
+  --color-frame: #0f1216;
   --color-rail: #0f1216;
   --color-panel: #14171c;
   --color-stage: #101317;
@@ -42,6 +46,15 @@
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
 
+  /* An overlay that dims a region *toward the app background*, whichever ground that is:
+     the ruler's out-of-loop shading, and the roll past the clip end. A literal black wash
+     works in dark and turns those regions into bruises on a light ground. */
+  --color-recess: rgba(0, 0, 0, 0.28);
+
+  /* Black-key rows in the roll. Has to move *away* from the surface in both themes: a
+     lift on a dark ground, a shade on a light one, since you cannot lighten white. */
+  --color-row-tint: rgba(255, 255, 255, 0.035);
+
   /* Google Sans Flex for the interface, Google Sans Code for values (note names, tempo,
      meter, every param readout). Both SIL OFL, both loaded in main.tsx and self-hosted, so
      no font-CDN request on load. The stacks behind them still matter: a variable webfont is
@@ -50,7 +63,105 @@
   --font-mono: "Google Sans Code Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
+/* Deliberately not a `--color-*` token: `--color-shadow` would have Tailwind generate
+   `shadow-*` colour utilities that collide with its own `shadow-<size>` family, the same
+   trap as `--color-center` and `text-center` above. Used through arbitrary values. */
+:root {
+  --sheet-shadow: rgba(0, 0, 0, 0.72);
+}
+
+/* ---------------------------------------------------------------------------
+   Light theme.
+
+   Dark is the default (a DAW opens dark), so light is opt-in: the OS preference,
+   unless an explicit choice overrides it. Three states, and the guard is what makes
+   them resolve:
+
+   - no `data-theme`  -> whatever the OS says (the media query decides)
+   - `data-theme="light"` -> light, even on a dark OS (the second block)
+   - `data-theme="dark"`  -> dark, even on a light OS (the `:not()` skips the media
+                             block, so the @theme values above stand)
+
+   These live outside `@layer` on purpose: Tailwind emits `@theme` into `@layer theme`,
+   and unlayered rules beat layered ones whatever their specificity. The palette is
+   written twice because plain CSS has no way to share a declaration block between a
+   media query and a selector; keep the two in step.
+
+   This is NOT the dark ramp inverted, and the ordering deliberately does not survive.
+
+   In dark, the work surfaces are the deepest thing and the chrome lifts off them. In light
+   that reads as grime: a grey workspace looks dirty rather than deep, and it is the wrong
+   way round anyway, since the surface you stare at all day wants to be the clean one. So
+   the roles swap. **The work areas go white** (`ground`: the centre, the lanes, the device
+   bodies, the inputs; `stage`: the roll and the rack, a hair off white so a white device
+   still lifts off its tray), and **the chrome goes grey** (`panel`: track headers, the
+   ruler, the clip rail; `rail`: the activity rail and library).
+
+   `card` flips with them. In dark a button lifts off its surface by being lighter; in
+   light there is nothing above white, so it separates by being *darker*. Same rule ("a
+   control contrasts with what it sits on"), opposite direction, which is exactly why a
+   light theme cannot be generated from a dark one.
+   --------------------------------------------------------------------------- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --color-ground: #ffffff;
+    --color-stage: #fbfcfd;
+    --color-panel: #ffffff;
+    --color-rail: #ffffff;
+    --color-frame: #eceff3;
+    --color-card: #e8ebef;
+    --color-line: #dde1e7;
+    --color-line-soft: #edeff3;
+    --color-ink: #1a1d22;
+    --color-strong: #0b0d11;
+    /* Darker than the dark theme's greys are light, because these carry 9-10px uppercase
+       labels (MIDI/AUDIO tags, section names, ruler numbers, roll note names) and small text
+       needs 4.5:1. Measured against `card` (#e8ebef), the darkest surface they sit on: muted
+       6.0:1, faint 4.9:1. The hierarchy compresses as a result; size and weight carry the
+       rest of it. */
+    --color-muted: #4f5866;
+    --color-faint: #5d6675;
+    /* No `--color-you` / `-agent` / `-claude` here, and it would be dead if there were.
+       They are user-configurable, so `useSyncAuthorColorVars` writes them as inline styles
+       on <html>, which outrank any stylesheet. They are also resolved a second way, in JS
+       (`colorForAuthor`), for the surfaces that tint by author: knob arcs, fader fills,
+       notes, clip blocks. Theme-adjusting the CSS copy would put two different teals on
+       screen at once. A voice identifies a *person*, so it stays put across themes. */
+    --color-good: #15a34a;
+    --color-warn: #b07908;
+    --color-recess: rgba(20, 24, 32, 0.06);
+    --color-row-tint: rgba(20, 24, 32, 0.045);
+    --sheet-shadow: rgba(20, 24, 32, 0.16);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-ground: #ffffff;
+  --color-stage: #fbfcfd;
+  --color-panel: #ffffff;
+  --color-rail: #ffffff;
+  --color-frame: #eceff3;
+  --color-card: #e8ebef;
+  --color-line: #dde1e7;
+  --color-line-soft: #edeff3;
+  --color-ink: #1a1d22;
+  --color-strong: #0b0d11;
+  --color-muted: #4f5866;
+  --color-faint: #5d6675;
+  --color-good: #15a34a;
+  --color-warn: #b07908;
+  --color-recess: rgba(20, 24, 32, 0.06);
+  --color-row-tint: rgba(20, 24, 32, 0.045);
+  --sheet-shadow: rgba(20, 24, 32, 0.16);
+}
+
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   html,
   body,
   #root {
@@ -89,7 +200,7 @@
     @supports not selector(::-webkit-scrollbar) {
       * {
         scrollbar-width: thin;
-        scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+        scrollbar-color: color-mix(in srgb, var(--color-ink) 35%, transparent) transparent;
       }
     }
     *::-webkit-scrollbar {
@@ -101,13 +212,13 @@
       background: transparent;
     }
     *::-webkit-scrollbar-thumb {
-      background-color: rgba(255, 255, 255, 0.35);
+      background-color: color-mix(in srgb, var(--color-ink) 35%, transparent);
       border: 2px solid transparent;
       background-clip: padding-box;
       border-radius: 999px;
     }
     *::-webkit-scrollbar-thumb:hover {
-      background-color: rgba(255, 255, 255, 0.5);
+      background-color: color-mix(in srgb, var(--color-ink) 55%, transparent);
     }
   }
 }

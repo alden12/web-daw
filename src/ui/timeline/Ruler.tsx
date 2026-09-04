@@ -57,10 +57,10 @@ export function Ruler({
     >
       {/* dim the area outside the loop region */}
       {loopStart > 0 && (
-        <div className="absolute top-0 bottom-0 left-0 bg-black/30" style={{ width: beatToX(loopStart, pxPerBeat) }} />
+        <div className="absolute top-0 bottom-0 left-0 bg-recess" style={{ width: beatToX(loopStart, pxPerBeat) }} />
       )}
       <div
-        className="absolute top-0 bottom-0 bg-black/30"
+        className="absolute top-0 bottom-0 bg-recess"
         style={{ left: beatToX(loopEnd, pxPerBeat), width: beatToX(viewBeats - loopEnd, pxPerBeat) }}
       />
 

@@ -55,7 +55,7 @@ export function EditorSheet({
       data-testid="editor-sheet"
       data-detent={detent}
       aria-label="Editor"
-      className="absolute bottom-0 left-0 right-0 flex flex-col rounded-t-2xl border-t border-line bg-panel shadow-[0_-14px_40px_-12px_#000] will-change-transform"
+      className="absolute bottom-0 left-0 right-0 flex flex-col rounded-t-2xl border-t border-line bg-panel shadow-[0_-14px_40px_-12px_var(--sheet-shadow)] will-change-transform"
       // The insets go here rather than as padding on the workspace: an absolutely
       // positioned box resolves against its containing block's *padding box*, so padding
       // out there would be silently ignored by this element (MOBILE-8).

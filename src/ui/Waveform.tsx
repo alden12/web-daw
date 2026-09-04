@@ -7,6 +7,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { loadPeaks, type Peaks } from "../audio/waveform";
+import { useThemeVersion } from "./theme";
 
 /** Peaks for a file, loaded lazily; re-renders when ready. (loadPeaks resolves
  *  synchronously-fast for an already-cached file, so a cache hit paints next tick.) */
@@ -69,10 +70,15 @@ export function Waveform({
   const peaks = useWaveform(fileId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // A canvas holds pixels, not `var()` references, so it keeps whatever palette it was
+  // painted with. Depending on the theme version re-resolves the colours and redraws when
+  // the theme changes, which every other surface gets for free from CSS.
+  const themeVersion = useThemeVersion();
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks) return;
-    // Resolve theme colours once (canvas needs concrete colours, not CSS vars).
+    // Resolve theme colours once per draw pass (canvas needs concrete colours, not CSS vars).
     const root = getComputedStyle(document.documentElement);
     const color = root.getPropertyValue("--color-you").trim() || "#56c7c2";
     const clipColor = root.getPropertyValue("--color-claude").trim() || "#e0795f";
@@ -81,7 +87,7 @@ export function Waveform({
     const ro = new ResizeObserver(render);
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [peaks, gain]);
+  }, [peaks, gain, themeVersion]);
 
   if (!peaks) return null;
   return <canvas ref={canvasRef} aria-hidden="true" style={style} className={`pointer-events-none ${className}`} />;

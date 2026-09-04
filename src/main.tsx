@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/google-sans-flex/wght.css";
 import "@fontsource-variable/google-sans-code/wght.css";
 import "./index.css";
+import { applyStoredTheme } from "./ui/theme";
 import App from "./App.tsx";
 
 // Dev/test-only: install the offline-render e2e harness (the window.__daw* hooks the Playwright
@@ -16,6 +17,9 @@ import App from "./App.tsx";
 if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   void import("./audio/engine/renderHarness").then(({ installRenderHarness }) => installRenderHarness());
 }
+
+// Before the first render, so nobody on a non-default theme sees a frame of the wrong one.
+applyStoredTheme();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

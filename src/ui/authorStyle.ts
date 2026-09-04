@@ -11,6 +11,7 @@
  */
 import type { CSSProperties } from "react";
 import { colorForAuthor } from "./authorColors";
+import { withLightness } from "./oklch";
 import type { AuthorPresence } from "./authorColorsContext";
 
 /** #rrggbb -> rgba() at `alpha`, so an accent can tint fills/borders at any opacity (Tailwind's `/NN`). */
@@ -22,9 +23,29 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/** The author's accent hex from the viewer's perspective (own = teal, others by id). */
-export const authorHex = (author: string, presence: AuthorPresence): string =>
-  colorForAuthor(author, presence.config, presence.self);
+/**
+ * OKLab lightness the palette is re-lit to on a white ground. Solved rather than picked, and
+ * the binding case is not plain text on white: it is an accent label on a 15% tint of *itself*
+ * (`text-you bg-you/15`, the Play / + Clip / Rec buttons), where the tint darkens the ground
+ * barely at all. 0.55 left that at 3.77:1; 0.50 puts it at 4.65:1 and plain text on white at
+ * 5.8:1, so every author clears 4.5:1 in both places. Dark is left exactly as authored, since
+ * the palette was drawn for it and already runs 6.3-10.4:1.
+ */
+const LIGHT_GROUND_LIGHTNESS = 0.5;
+
+/**
+ * The author's accent from the viewer's perspective (own = teal, others by id), at the
+ * lightness the current ground needs.
+ *
+ * `colorForAuthor` stays the identity: it is what the Authors picker shows and what gets
+ * stored, so a chosen colour is never quietly rewritten. Only the *rendered* value moves,
+ * and only downwards, and only on white. Hue and chroma are untouched, so teal is still
+ * recognisably teal; it just stops being invisible.
+ */
+export const authorHex = (author: string, presence: AuthorPresence): string => {
+  const identity = colorForAuthor(author, presence.config, presence.self);
+  return presence.theme === "light" ? withLightness(identity, LIGHT_GROUND_LIGHTNESS) : identity;
+};
 
 /** A small coloured dot / solid pointer in the author's colour. */
 export const authorDotStyle = (author: string, presence: AuthorPresence): CSSProperties => ({
