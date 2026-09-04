@@ -1,11 +1,13 @@
 /**
  * A segmented control: pick one of a few, all visible at once.
  *
- * Worth having as its own thing because the app is full of choices that *are* a group and are
- * currently drawn as loose buttons that happen to sit near each other (snap division, zoom,
- * the Melodic/Drums switch, the drum editor's Keys/Pads). Grouping them says "these are the
- * options, and this is the one you are on" in the markup as well as the paint: one shared
- * border, `role="radiogroup"`, arrow keys.
+ * Worth having as its own thing because the app has choices that *are* a group and were drawn
+ * as loose buttons that happen to sit near each other: the touch shell's editor surface
+ * (Edit / Clips / Rack) and the drum editor's Keys / Pads. Both told assistive tech the wrong
+ * thing - one was a `tablist`, the other a `group` whose members each claimed `aria-pressed`,
+ * which announces as independent switches rather than one choice. Grouping them says "these
+ * are the options, and this is the one you are on" in the markup as well as the paint: one
+ * shared border, `role="radiogroup"`, arrow keys.
  *
  * Two or three short options. More than that wants a select, which does not ask the layout to
  * grow with the vocabulary.
