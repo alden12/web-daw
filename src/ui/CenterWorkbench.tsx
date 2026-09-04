@@ -149,7 +149,7 @@ export function CenterWorkbench({
   if (!selectedTrack) {
     return (
       <div className="[grid-area:center] bg-ground flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
-        <div className="flex items-center h-11 border-b border-line shrink-0">{indicators}</div>
+        <div className="flex items-center h-11 border-b border-line bg-frame shrink-0">{indicators}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
         </div>
@@ -169,9 +169,13 @@ export function CenterWorkbench({
       {/* The selected track is a single editor tab (reserving space for future
           multi-window tabs); it carries the track name + kind chip. The agent-expand
           control sits at the far right of the tab bar. */}
-      <div className="flex items-stretch h-11 border-b border-line shrink-0" role="tablist" aria-label="Open editors">
-        {/* No fill on the active tab: the bar sits on `ground`, and the teal underline is
-            what marks selection. A lighter chip here was the one thing lifting off it. */}
+      <div
+        className="flex items-stretch h-11 border-b border-line bg-frame shrink-0"
+        role="tablist"
+        aria-label="Open editors"
+      >
+        {/* No fill on the active tab: the bar is its own surface (`frame`) and the teal underline
+            is what marks selection. A lighter chip here was the one thing lifting off it. */}
         <div className="relative flex items-center gap-2 h-full pl-3.5 pr-4 border-r border-line max-w-72">
           <span className="absolute left-0 right-0 bottom-0 h-0.5 bg-you" />
           <span className="w-2 h-2 rounded-full bg-you shrink-0" />

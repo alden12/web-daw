@@ -12,9 +12,16 @@ export interface AuthorPresence {
   config: AuthorColorConfig;
   /** The viewer's own author id, painted with the "you" hue. */
   self: string;
+  /**
+   * The resolved theme. The palette is tuned to glow on a near-black ground, where every
+   * swatch clears 6:1; on white the same hues fall to 1.9-3.1:1 and stop being visible as
+   * UI at all. So a hue is the identity and its lightness is the theme's, and the surfaces
+   * that tint by author need to know which ground they are on. See `authorStyle.ts`.
+   */
+  theme: "dark" | "light";
 }
 
-const AuthorColorsContext = createContext<AuthorPresence>({ config: {}, self: "you" });
+const AuthorColorsContext = createContext<AuthorPresence>({ config: {}, self: "you", theme: "dark" });
 
 export const AuthorColorsProvider = AuthorColorsContext.Provider;
 

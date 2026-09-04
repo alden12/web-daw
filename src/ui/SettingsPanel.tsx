@@ -1,11 +1,12 @@
 /**
  * The settings modal: a small tabbed panel opened from the gear at the bottom of the activity
  * rail. "Agent" holds the BYOK provider/key/model config; "Authors" holds the per-voice colour
- * swatches; "MIDI" holds hardware MIDI input. Each tab renders its own section; Agent is the
- * default so the BYOK flow opens straight to it.
+ * swatches; "MIDI" holds hardware MIDI input; "Appearance" holds the theme. Each tab renders
+ * its own section; Agent is the default so the BYOK flow opens straight to it.
  */
 import { useState } from "react";
 import { AgentSettingsSection } from "./AgentSettings";
+import { AppearanceSettings } from "./AppearanceSettings";
 import { AuthorColorSettings } from "./AuthorColorSettings";
 import { MidiSettings } from "./MidiSettings";
 import { RecordingSettings } from "./RecordingSettings";
@@ -16,12 +17,13 @@ import type { MidiInput } from "../audio/midi/midiInput";
 import type { Recorder } from "../audio/recording/recorder";
 import type { AudioEngine } from "../audio/engine/AudioEngine";
 
-type Tab = "agent" | "authors" | "midi" | "recording";
+type Tab = "agent" | "authors" | "midi" | "recording" | "appearance";
 const TABS: { id: Tab; label: string }[] = [
   { id: "agent", label: "Agent" },
   { id: "authors", label: "Authors" },
   { id: "midi", label: "MIDI" },
   { id: "recording", label: "Recording" },
+  { id: "appearance", label: "Appearance" },
 ];
 
 export function SettingsPanel({
@@ -91,6 +93,7 @@ export function SettingsPanel({
         {tab === "authors" && <AuthorColorSettings config={authorColors} editLog={editLog} />}
         {tab === "midi" && <MidiSettings midiInput={midiInput} />}
         {tab === "recording" && <RecordingSettings recorder={recorder} engine={engine} />}
+        {tab === "appearance" && <AppearanceSettings />}
       </div>
     </div>
   );
