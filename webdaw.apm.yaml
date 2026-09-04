@@ -5206,6 +5206,227 @@ projects:
         id: 019fb8c0-0fcb-7420-acaa-00a45ee59c2d
         created_at: 2026-07-31T15:17:02.539Z
         updated_at: 2026-07-31T15:17:02.539Z
+      - ref: DAW-29
+        area: DAW
+        title: "UI refresh: token ramp, control language, light mode"
+        status: in-progress
+        sort_path: "000029"
+        body: >
+          A visual pass over the shell, worked out against a mockup and then
+          applied in slices. The plan, the token table (current -> dark ->
+          light) and the codebase findings live in `docs/UI-REFRESH.md`; this
+          item is the tracking parent.
+
+
+          **Not a library adoption.** The mockup was first drawn in shadcn/ui,
+          which turned out to be the wrong lesson: shadcn is a component library
+          plus a naming convention, and this app is ~70% custom widgets (knobs,
+          faders, waveforms, the roll, lanes, the rack) that no general-purpose
+          library has an answer for. Two findings settled it:
+
+
+          - shadcn gives **two surface tiers** where this app wants five, so
+          whichever depth hierarchy you pick there is nowhere to express it.
+
+          - The parts shadcn would actually cover are menus, dialogs, selects
+          and number fields. Everything else it does not touch.
+
+
+          So the visual direction was kept and the library dropped. The one
+          piece still worth taking is **React Aria Components** (Apache 2.0,
+          headless, zero CSS) for the behaviour under menus, dialogs, number
+          fields, and the awkward widgets Radix has no primitive for: `useMove`
+          for knobs and faders, `useDrag`/`useDrop` for clips, `Tree` for the
+          track column, `Meter` for level meters. Adopting it changes no pixels.
+          That is a separate, later decision, deliberately not part of this
+          item. Note that **React Spectrum** (Adobe's *styled* system) is a
+          different thing and is not on the table: Adobe Clean is proprietary
+          and cannot be redistributed, so the look cannot legally be reproduced
+          anyway.
+
+
+          **Why the depth model matters.** The centre workbench is now `ground`,
+          a dark void, with `stage` as the raised panels inside it. That inverts
+          what the tokens used to say (`--color-stage` was the *lightest*
+          chrome, and index.css claimed the centre "reads brightest"). The
+          inversion was Alden's call after seeing both, and it reads better:
+          wells cut into a dark surface rather than a bright table under dim
+          chrome.
+
+
+          **The naming rule earned a second clause.** `--color-bright` was
+          renamed to `--color-strong` because appearance names only describe one
+          theme, and a token called `bright` holding near-black in light mode is
+          a lie. That is the same class of mistake as the earlier
+          `--color-center` / `text-center` utility collision, which index.css
+          already documented.
+        id: 01a06c19-fb4f-765f-879e-c69be9382bdf
+        created_at: 2026-09-04T11:07:17.199Z
+        updated_at: 2026-09-04T11:07:17.199Z
+      - ref: DAW-29.1
+        area: DAW
+        title: Token ramp, controls, workbench layout, Google Sans
+        status: review
+        sort_path: "000029.000001"
+        parent: DAW-29
+        body: >
+          PR #112, stacked on `slice-101-header-pinning` (#111).
+
+
+          - **Tokens.** `--color-bright` -> `--color-strong` (37 files,
+          mechanical). Dark ramp drops a step at every tier for contrast
+          headroom. `--color-stage` changes meaning, not just value: centre is
+          `ground`, `stage` is the raised panels in it.
+
+          - **Controls.** One rule across all three: a 2px track, accent as the
+          filled portion. Knobs became arcs (value is the sweep length, legible
+          at 40px where a bare pointer is not), device faders got 16x8 caps,
+          mixer faders 9px ring handles. All tint by author via `authorHex` /
+          `authorFillStyle`, not a fixed accent.
+
+          - **Layout.** The pitched roll reserves a label gutter and names every
+          row, density following zoom via `RollRows.labelPriority` (octave Cs
+          always, naturals from 11px, accidentals from 16px; rows go down to 7px
+          where 9px text would spill). The workbench became a full-height clip
+          rail beside a column holding the notes surface and the rack, so the
+          panels share a left edge and the record button sits at the foot of the
+          rail.
+
+          - **Fonts.** Google Sans Flex (interface) + Google Sans Code (values),
+          both SIL OFL, self-hosted, weight-axis builds. 84K latin over the
+          wire. Keeping the mono in the same family matters more here than
+          usual: on this screen the mono is not an accent, it is most of the
+          text you read while working.
+
+
+          **Pre-existing bugs fixed on the way:** the vertical fader's cap was
+          centred with `-translate-y-1/2` against a `bottom` anchor (shifts the
+          wrong way); its hit area was the 8px visible track, now a 24px box;
+          and the roll's sticky label gutter was `z-6` while the velocity lane
+          and `Ruler` are both `z-10`, so scrolling dragged them across the note
+          names.
+
+
+          **Flaky specs seen, not caused by this:** `agent-chat.e2e.ts:78` and
+          `menus.e2e.ts:139` each failed once and passed on re-run plus two
+          further full runs. The menus one was checked properly rather than
+          assumed, since menu placement is measured from text widths and this
+          changes the font.
+        id: 01a06c1a-348c-70a6-94a1-09fc70c53aea
+        created_at: 2026-09-04T11:07:31.853Z
+        updated_at: 2026-09-04T11:07:31.853Z
+      - ref: DAW-29.2
+        area: DAW
+        title: Light mode
+        status: to-do
+        sort_path: "000029.000002"
+        parent: DAW-29
+        body: >
+          The second value per token, plus the things that assume a dark ground.
+          No new dependency, and independent of every other slice.
+
+
+          **The spike is already done and it passed.** Tailwind v4 `@theme`
+          emits tokens as `:root` custom properties and utilities reference them
+          via `var()` (`.bg-ground{background-color:var(--color-ground)}`),
+          verified by reading the emitted CSS from a real `vite build`. So a
+          `[data-theme="light"]` block repaints every plain utility and the
+          semantic layer does **not** need moving out of `@theme`.
+
+
+          One caveat found in the same output: opacity modifiers compile to a
+          baked hex fallback plus a `@supports (color-mix(...))` branch using
+          the var. The `@supports` branch is theme-reactive and wins on any
+          browser from 2023 on, and nothing that lacks `color-mix` can run Web
+          Audio + AudioWorklet + OPFS anyway. Documented rather than blocking.
+
+
+          **The actual work is 13 hardcoded colours** (enumerated in
+          `docs/UI-REFRESH.md`), every one of which assumes a dark ground: the
+          scrollbar thumb in index.css, the roll's grid gradients and
+          black-key/scale-tone tints, the Ruler's outside-loop shading (which
+          has to become a *lightening* in light mode, not a darkening), and the
+          sheet scrims and shadows.
+
+
+          Plus two behavioural items:
+
+
+          - `Waveform.tsx:76-79` resolves `--color-you` / `--color-claude` once
+          into a canvas draw. Correct today, wrong the moment a theme can change
+          at runtime, since the canvas keeps the old colours until something
+          else forces a redraw. Needs the theme as an effect dependency or a
+          `MutationObserver` on the theme attribute.
+
+          - Opacity modifiers like `bg-card/40` are tuned against a dark
+          backdrop and need re-checking, not just re-valuing.
+
+
+          **The design rule:** in light the ramp deliberately collapses. Almost
+          every surface goes white and `--color-line` does the separating,
+          because stacked greys read as depth on a dark ground and as grime on a
+          light one.
+        id: 01a06c1a-65b1-70ec-901d-63d7d4d0ae3a
+        created_at: 2026-09-04T11:07:44.433Z
+        updated_at: 2026-09-04T11:07:44.433Z
+      - ref: DAW-29.3
+        area: DAW
+        title: A button system, and the segmented control
+        status: to-do
+        sort_path: "000029.000003"
+        parent: DAW-29
+        body: >
+          The largest slice and the only one that touches file count rather than
+          values, so the one that can sprawl.
+
+
+          **There is no shared Button component.** `bg-card` appears ~38 times
+          across 24 files as bespoke Tailwind class strings (`bg-card border
+          border-line rounded-md ...`). This needs a `Button` / `IconButton` /
+          `Segmented` trio under `src/ui/controls/`, then migration.
+
+
+          **The agreed system**, settled by trying six treatments on the real
+          transport bar rather than in isolation, which changed the answer
+          twice:
+
+
+          - **Text buttons:** a subtle grey pill at rest, `color-mix(in srgb,
+          var(--color-ink) 9%, transparent)`.
+
+          - **Icon buttons:** nothing at rest. A word in a toolbar has no edges
+          of its own so it needs a container; an icon is already a shape, and a
+          box round it says the same thing twice.
+
+          - **Active state:** an accent-tinted pill in the control's semantic
+          colour (teal for play, coral for record), at the **same footprint** as
+          the resting state so nothing shifts on activation. Emphasis becomes a
+          property of *state* rather than a fixed property of a button, which is
+          the same rule the arc knobs and faders already follow.
+
+          - **Grouped choices:** a real segmented control.
+
+
+          What the transport bar exposed that isolated buttons did not: a fully
+          bare resting state leaves Play with the least affordance at exactly
+          the moment you need to find it; `Ruled` loses the record dot's target
+          entirely; a solid accent Play is loud enough that everything else
+          reads as disabled; and tinting record, play and metronome alike
+          flattens the hierarchy so nothing says which is primary.
+
+
+          **The segmented control is worth adding regardless of the rest**,
+          since snap division, zoom and the Melodic/Drums switch are all
+          currently loose buttons pretending not to be a group.
+
+
+          **Stopping point if it sprawls:** ship the components plus
+          `TransportBar` (the densest, most-used instance, which will surface
+          anything the components got wrong) and migrate the rest
+          opportunistically as files are touched.
+        id: 01a06c1a-9658-7269-aecc-56c6deb3e86a
+        created_at: 2026-09-04T11:07:56.889Z
+        updated_at: 2026-09-04T11:07:56.889Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
