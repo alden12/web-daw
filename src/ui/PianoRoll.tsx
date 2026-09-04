@@ -328,12 +328,12 @@ export function PianoRoll({
    * label column), so that is the lead.
    */
   const zoomTime = useCallback(
-    (factor: number, clientX: number) => {
+    (factor: number, clientX: number, panPx = 0) => {
       const element = scrollRef.current;
       if (!element) return;
       const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
       setPxPerBeat(next);
-      anchorZoomX({ element, clientPosition: clientX, leadPx: gutter, from: pxPerBeat, to: next });
+      anchorZoomX({ element, clientPosition: clientX, leadPx: gutter, from: pxPerBeat, to: next, panPx });
     },
     [pxPerBeat, gutter, setPxPerBeat],
   );
@@ -344,12 +344,12 @@ export function PianoRoll({
    * between your fingers. The ruler is the lead, being the scrollable content above row 0.
    */
   const zoomPitch = useCallback(
-    (factor: number, clientY: number) => {
+    (factor: number, clientY: number, panPx = 0) => {
       const element = scrollRef.current;
       if (!element) return;
       const next = clamp(rowH * factor, ZOOM_Y.min, ZOOM_Y.max);
       setRowH(next);
-      anchorZoomY({ element, clientPosition: clientY, leadPx: RULER_H, from: rowH, to: next });
+      anchorZoomY({ element, clientPosition: clientY, leadPx: RULER_H, from: rowH, to: next, panPx });
     },
     [rowH, setRowH],
   );
@@ -376,10 +376,12 @@ export function PianoRoll({
 
   // Both axes, because both are continuous scales here: spreading horizontally stretches
   // time, vertically stretches pitch, and a diagonal pinch does each by its own amount.
+  // Called on both axes unconditionally, even where the scale is 1: two fingers reposition as
+  // well as resize, and skipping an axis whose scale did not change would drop its pan too.
   const onPinch = useCallback(
-    ({ scaleX, scaleY, clientX, clientY }: PinchGesture) => {
-      if (scaleX !== 1) zoomTime(scaleX, clientX);
-      if (scaleY !== 1) zoomPitch(scaleY, clientY);
+    ({ scaleX, scaleY, clientX, clientY, panX, panY }: PinchGesture) => {
+      zoomTime(scaleX, clientX, panX);
+      zoomPitch(scaleY, clientY, panY);
     },
     [zoomTime, zoomPitch],
   );
@@ -534,9 +536,13 @@ export function PianoRoll({
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
-      if (!d.allowMarquee) return;
       if (!d.moved && Math.hypot(ev.clientX - d.cX, ev.clientY - d.cY) < DRAG_THRESH) return;
+      // `moved` is recorded whatever the pointer was, and *before* the marquee gate. It is
+      // what tells the release handler this was a drag rather than a tap, so gating it too
+      // turned every touch drag - including each finger of a pinch - into a tap, which
+      // creates a note. Suppressing the marquee is not the same as pretending nothing moved.
       d.moved = true;
+      if (!d.allowMarquee) return;
       d.kind = "marquee";
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;

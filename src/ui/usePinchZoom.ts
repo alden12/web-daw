@@ -48,6 +48,19 @@ export interface PinchGesture {
   /** The midpoint between the fingers, to anchor the zoom on. */
   clientX: number;
   clientY: number;
+  /**
+   * How far that midpoint travelled since the last report. Two fingers reposition as well as
+   * scale - you pinch to frame a bar, not merely to resize it - and the browser cannot do it
+   * for us here, because declining the gesture to get the zoom declines its pan along with it.
+   */
+  panX: number;
+  panY: number;
+}
+
+/** The midpoint between the first two touches. */
+function centreOf(touches: TouchList): { x: number; y: number } {
+  const [first, second] = [touches[0], touches[1]];
+  return { x: (first.clientX + second.clientX) / 2, y: (first.clientY + second.clientY) / 2 };
 }
 
 /** Absolute separation between the first two touches, per axis. */
@@ -87,7 +100,8 @@ export function usePinchZoom(
     // every call in a frame reads the same stale scale and only the last survives - a pinch
     // that should treble the zoom lands at under twice. Multiplying them up and emitting once
     // per frame keeps the whole gesture and gives the anchoring a committed layout to measure.
-    let pending: { x: number; y: number; clientX: number; clientY: number } | null = null;
+    let pending: { x: number; y: number; clientX: number; clientY: number; panX: number; panY: number } | null = null;
+    let lastCentre: { x: number; y: number } | null = null;
     let frame = 0;
 
     const flush = () => {
@@ -95,7 +109,14 @@ export function usePinchZoom(
       const gesture = pending;
       pending = null;
       if (gesture)
-        latest.current({ scaleX: gesture.x, scaleY: gesture.y, clientX: gesture.clientX, clientY: gesture.clientY });
+        latest.current({
+          scaleX: gesture.x,
+          scaleY: gesture.y,
+          clientX: gesture.clientX,
+          clientY: gesture.clientY,
+          panX: gesture.panX,
+          panY: gesture.panY,
+        });
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -108,6 +129,7 @@ export function usePinchZoom(
       // its first move.
       event.preventDefault();
       lastSpread = spreadOf(event.touches);
+      lastCentre = centreOf(event.touches);
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -115,27 +137,32 @@ export function usePinchZoom(
       event.preventDefault();
 
       const spread = spreadOf(event.touches);
-      if (!lastSpread) {
+      const centre = centreOf(event.touches);
+      if (!lastSpread || !lastCentre) {
         lastSpread = spread;
+        lastCentre = centre;
         return;
       }
       const ratio = (now: number, before: number) =>
         now >= MIN_SEPARATION && before >= MIN_SEPARATION ? now / before : 1;
-      const [first, second] = [event.touches[0], event.touches[1]];
       pending = {
         x: (pending?.x ?? 1) * ratio(spread.x, lastSpread.x),
         y: (pending?.y ?? 1) * ratio(spread.y, lastSpread.y),
-        clientX: (first.clientX + second.clientX) / 2,
-        clientY: (first.clientY + second.clientY) / 2,
+        clientX: centre.x,
+        clientY: centre.y,
+        panX: (pending?.panX ?? 0) + (centre.x - lastCentre.x),
+        panY: (pending?.panY ?? 0) + (centre.y - lastCentre.y),
       };
       if (!frame) frame = requestAnimationFrame(flush);
       lastSpread = spread;
+      lastCentre = centre;
     };
 
     const onTouchEnd = (event: TouchEvent) => {
       // Rebaseline rather than resume: lifting one finger of three, or one of two and
       // replacing it, must not read the jump between old and new fingers as a zoom.
       lastSpread = event.touches.length === 2 ? spreadOf(event.touches) : null;
+      lastCentre = event.touches.length === 2 ? centreOf(event.touches) : null;
     };
 
     // Non-passive, or `preventDefault` is ignored and the browser scrolls anyway.
