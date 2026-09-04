@@ -345,7 +345,7 @@ test.describe("phone", () => {
 
   /**
    * MOBILE-8. `env(safe-area-inset-*)` is 0 in every browser with no inset to report, so this
-   * drives the *simulated* ones (`safeArea.ts`) - which exist precisely because the layout was
+   * drives the *simulated* ones (`safeAreaSimulation.ts`) - which exist because the layout was
    * otherwise impossible to look at anywhere but a notched phone, which is how it came to be
    * half-implemented.
    *
