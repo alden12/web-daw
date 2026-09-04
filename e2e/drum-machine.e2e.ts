@@ -25,7 +25,7 @@ test("a Drum Kit track shows the step grid; toggling a cell writes a note", asyn
   // loads the built-in pads. Switch the editor to Pads to get the step grid.
   await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
   await expect(page.getByRole("tablist").getByText("drumkit", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Pads", exact: true }).click();
+  await page.getByRole("radio", { name: "Pads", exact: true }).click();
 
   // A pad row for the built-in Kick, with its step cells.
   const kickStep1 = page.getByRole("button", { name: "Kick step 1", exact: true });
@@ -46,12 +46,12 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
 
   // Place a kick hit in the step grid (writes a note into the clip).
-  await page.getByRole("button", { name: "Pads", exact: true }).click();
+  await page.getByRole("radio", { name: "Pads", exact: true }).click();
   await page.getByRole("button", { name: "Kick step 1", exact: true }).click();
 
   // Switch the editor to Keys: the step grid is replaced by the piano roll, and the
   // hit we placed shows up as a note there (same clip, different surface).
-  await page.getByRole("button", { name: "Keys", exact: true }).click();
+  await page.getByRole("radio", { name: "Keys", exact: true }).click();
   const grid = page.getByTestId("piano-grid");
   await expect(grid).toBeVisible();
   await expect(page.getByTestId("note")).toHaveCount(1);
@@ -61,6 +61,6 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await expect(page.getByText("C2 Kick", { exact: true })).toBeVisible();
 
   // Back to Pads: the step grid returns with the hit still lit.
-  await page.getByRole("button", { name: "Pads", exact: true }).click();
+  await page.getByRole("radio", { name: "Pads", exact: true }).click();
   await expect(page.getByRole("button", { name: "Kick step 1", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
