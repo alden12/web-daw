@@ -45,8 +45,8 @@ export function InstrumentPanel({
     onReveal: onRevealSamples,
   };
   return (
-    <div className="shrink-0 border border-line rounded-xl bg-card">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-line text-[12px] font-semibold text-bright">
+    <div className="shrink-0 border border-line rounded-xl bg-ground">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-line text-[12px] font-semibold text-strong">
         <span className="truncate" title={label}>
           {label}
         </span>

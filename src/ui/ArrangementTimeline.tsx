@@ -360,7 +360,7 @@ export function ArrangementTimeline({
   };
 
   const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
 
   // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
   // caller supplies how to create the track (MIDI vs audio) given a destination group.
@@ -545,7 +545,7 @@ export function ArrangementTimeline({
                         dispatch={dispatch}
                       />
                     </div>
-                    <div className={`${ROW} border-b border-line bg-stage/40`} style={{ width: laneWidth }} />
+                    <div className={`${ROW} border-b border-line bg-panel/40`} style={{ width: laneWidth }} />
                   </div>
                 ) : (
                   <TrackRow

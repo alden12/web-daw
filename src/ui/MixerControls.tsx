@@ -1,9 +1,10 @@
 /**
- * Shared mixer controls for the track/group headers: a low-profile Fader (a thin
- * line with a triangle ticker) and an adjoined Mute/Solo button pair. The Fader is
- * built to host a live level meter later - it already accepts an optional `level`
- * (0..1) and `clip` and renders a meter bar behind the line (red when clipping);
- * callers just don't pass them yet (per-bus metering is DAW-8.5).
+ * Shared mixer controls for the track/group headers: a low-profile Fader (a thin track
+ * with the accent as its filled portion and a small ring handle) and an adjoined
+ * Mute/Solo button pair. The Fader is built to host a live level meter later - it
+ * already accepts an optional `level` (0..1) and `clip` and renders a meter bar behind
+ * the track (red when clipping); callers just don't pass them yet (per-bus metering is
+ * DAW-8.5).
  */
 import { useRef } from "react";
 
@@ -72,12 +73,19 @@ export function Fader({
           style={{ width: `${Math.min(1, Math.max(0, level)) * 100}%` }}
         />
       )}
-      {/* The fader line. */}
-      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-px bg-line" />
-      {/* Triangle ticker at the current value. */}
-      <div className="absolute top-1/2 -translate-x-1/2 -translate-y-[5px]" style={{ left: `${frac * 100}%` }}>
-        <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent border-t-bright" />
-      </div>
+      {/* The track, and the accent as the filled portion - the same rule the knobs and the
+          device faders follow, so the three read as one family. */}
+      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 rounded-full bg-line" />
+      <div
+        className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 rounded-full bg-you"
+        style={{ width: `${frac * 100}%` }}
+      />
+      {/* A 9px ring handle. Small on purpose: the row is 46px tall and the name has to fit
+          beside it. The hit area is the whole 16px-tall track, not this. */}
+      <div
+        className="absolute top-1/2 w-2.25 h-2.25 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-you bg-panel"
+        style={{ left: `${frac * 100}%` }}
+      />
     </div>
   );
 }
@@ -103,7 +111,7 @@ export function MuteSolo({
           e.stopPropagation();
           onMute();
         }}
-        className={`${btn} ${muted ? "bg-claude/20 text-claude" : "bg-card text-ink hover:text-bright"}`}
+        className={`${btn} ${muted ? "bg-claude/20 text-claude" : "bg-card text-ink hover:text-strong"}`}
       >
         M
       </button>
@@ -114,7 +122,7 @@ export function MuteSolo({
           e.stopPropagation();
           onSolo();
         }}
-        className={`${btn} border-l border-line ${solo ? "bg-warn/25 text-warn" : "bg-card text-ink hover:text-bright"}`}
+        className={`${btn} border-l border-line ${solo ? "bg-warn/25 text-warn" : "bg-card text-ink hover:text-strong"}`}
       >
         S
       </button>

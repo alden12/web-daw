@@ -138,7 +138,7 @@ export function CenterWorkbench({
           onClick={onExpandAgent}
           aria-label="Expand agent panel"
           title="Open the agent panel"
-          className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-bright hover:bg-panel cursor-pointer"
+          className="flex items-center justify-center w-7 h-7 rounded-md text-muted hover:text-strong hover:bg-panel cursor-pointer"
         >
           <span className="text-lg leading-none">«</span>
         </button>
@@ -148,7 +148,7 @@ export function CenterWorkbench({
 
   if (!selectedTrack) {
     return (
-      <div className="[grid-area:center] bg-stage flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+      <div className="[grid-area:center] bg-ground flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
         <div className="flex items-center h-11 border-b border-line shrink-0">{indicators}</div>
         <div className="flex-1 flex items-center justify-center text-muted text-sm">
           No track selected. Add an instrument or import audio from the library.
@@ -165,18 +165,20 @@ export function CenterWorkbench({
         : selectedTrack.instrumentType;
 
   return (
-    <div className="[grid-area:center] bg-stage flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
+    <div className="[grid-area:center] bg-ground flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden">
       {/* The selected track is a single editor tab (reserving space for future
           multi-window tabs); it carries the track name + kind chip. The agent-expand
           control sits at the far right of the tab bar. */}
       <div className="flex items-stretch h-11 border-b border-line shrink-0" role="tablist" aria-label="Open editors">
-        <div className="relative flex items-center gap-2 h-full pl-3.5 pr-4 border-r border-line bg-card/50 max-w-72">
+        {/* No fill on the active tab: the bar sits on `ground`, and the teal underline is
+            what marks selection. A lighter chip here was the one thing lifting off it. */}
+        <div className="relative flex items-center gap-2 h-full pl-3.5 pr-4 border-r border-line max-w-72">
           <span className="absolute left-0 right-0 bottom-0 h-0.5 bg-you" />
           <span className="w-2 h-2 rounded-full bg-you shrink-0" />
           <InlineRename
             value={selectedTrack.name}
             onCommit={(name) => dispatch({ type: "setTrack", trackId: selectedTrack.id, name })}
-            className="font-semibold text-sm text-bright"
+            className="font-semibold text-sm text-strong"
           />
           <span className="font-mono text-[9px] tracking-wider uppercase text-faint shrink-0">{kindLabel}</span>
         </div>
@@ -184,23 +186,28 @@ export function CenterWorkbench({
       </div>
 
       {/* Measured so the fixed-height device rack can be clamped against it. */}
-      <div ref={bodyRef} className="flex-1 min-h-0 min-w-0 flex flex-col">
-        <div className="flex-1 min-h-0 min-w-0 flex" key={`${selectedTrack.id}:body`}>
-          <div ref={clipRailRef} className="relative shrink-0 flex" style={{ width: clipRailW }}>
-            <ClipRail
-              projectStore={projectStore}
-              scheduler={scheduler}
-              trackId={selectedTrack.id}
-              dispatch={dispatch}
-              orientation="vertical"
-              footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
-            />
-            <ResizeHandle
-              ariaLabel="Resize clips"
-              onResize={(x) => setClipRailW(x - (clipRailRef.current?.getBoundingClientRect().left ?? 0))}
-              style={{ right: 0, top: 0, bottom: 0 }}
-            />
-          </div>
+      {/* The clip rail runs the full height of the workbench, and the notes surface and the
+          device rack stack in the column beside it. That keeps the two panels left-aligned
+          with each other, and puts the record button at the bottom of the rail rather than
+          floating under the last clip. */}
+      <div ref={bodyRef} className="flex-1 min-h-0 min-w-0 flex" key={`${selectedTrack.id}:body`}>
+        <div ref={clipRailRef} className="relative shrink-0 flex" style={{ width: clipRailW }}>
+          <ClipRail
+            projectStore={projectStore}
+            scheduler={scheduler}
+            trackId={selectedTrack.id}
+            dispatch={dispatch}
+            orientation="vertical"
+            footer={<TrackRecordButton trackId={selectedTrack.id} recorder={recorder} recording={recording} />}
+          />
+          <ResizeHandle
+            ariaLabel="Resize clips"
+            onResize={(x) => setClipRailW(x - (clipRailRef.current?.getBoundingClientRect().left ?? 0))}
+            style={{ right: 0, top: 0, bottom: 0 }}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           <TrackEditor
             track={selectedTrack}
             scheduler={scheduler}
@@ -208,29 +215,32 @@ export function CenterWorkbench({
             dispatch={dispatch}
             projectStore={projectStore}
           />
-        </div>
 
-        {/* The device rack sits below the notes (resizable height, drag its top edge),
-            so the flow reads notes -> instrument -> effects -> output. */}
-        <div
-          ref={deviceRef}
-          className="relative shrink-0 flex flex-col border-t border-line"
-          style={{ height: effDeviceH }}
-          key={`${selectedTrack.id}:dev`}
-        >
-          <ResizeHandle
-            ariaLabel="Resize devices"
-            orientation="horizontal"
-            onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
-            style={{ left: 0, right: 0, top: 0 }}
-          />
-          <DeviceRack
-            track={selectedTrack}
-            samples={project.samples}
-            dispatch={dispatch}
-            projectStore={projectStore}
-            onRevealSamples={onRevealSamples}
-          />
+          {/* The device rack sits below the notes (resizable height, drag its top edge),
+              so the flow reads notes -> instrument -> effects -> output. Same card as the
+              notes surface: both are panels on the workbench, not one panel and one band. */}
+          <div
+            ref={deviceRef}
+            className="relative shrink-0 flex flex-col px-3 pb-3"
+            style={{ height: effDeviceH }}
+            key={`${selectedTrack.id}:dev`}
+          >
+            <ResizeHandle
+              ariaLabel="Resize devices"
+              orientation="horizontal"
+              onResize={(y) => setDeviceH((deviceRef.current?.getBoundingClientRect().bottom ?? 0) - y)}
+              style={{ left: 0, right: 0, top: 0 }}
+            />
+            <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-line bg-stage overflow-hidden">
+              <DeviceRack
+                track={selectedTrack}
+                samples={project.samples}
+                dispatch={dispatch}
+                projectStore={projectStore}
+                onRevealSamples={onRevealSamples}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
