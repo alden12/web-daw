@@ -20,6 +20,16 @@ import { PWA_MANIFEST } from "./src/pwa/manifest";
  */
 const mobileHttps = process.env.MOBILE_HTTPS === "1";
 
+/**
+ * Tunnels (cloudflared, ngrok) address a local server by hostname rather than by IP, and Vite
+ * rejects unknown hosts by default. Both servers need the list: the dev server for everyday
+ * phone work, and the preview server because **a tunnel is the only way to try the PWA**. A
+ * self-signed certificate is not enough for a service worker - a browser declines to register
+ * one on a certificate it does not trust, and says nothing about it - while a tunnel terminates
+ * TLS with a real one and reaches the local server over plain http.
+ */
+const TUNNEL_HOSTS = [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"];
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -62,8 +72,15 @@ export default defineConfig({
         // then walk into a lift" should not need a reload nobody knows to perform.
         clientsClaim: true,
       },
-      // Off in dev and in the e2e run, which uses the dev server: a worker serving yesterday's
-      // bundle to a test suite is a class of flake worth never having.
+      /**
+       * Off in dev and in the e2e run, which uses the dev server: a worker serving yesterday's
+       * bundle to a test suite is a class of flake worth never having.
+       *
+       * The consequence is worth stating, because it is not obvious and it wastes an
+       * afternoon: **there is no manifest and no worker on the dev server at all**, so the app
+       * is not installable there however the origin is served. Trying the PWA means a build.
+       * `yarn preview:mobile` is that, served for a tunnel to point at.
+       */
       devOptions: { enabled: false },
     }),
   ],
@@ -71,9 +88,7 @@ export default defineConfig({
     port: 5155,
     ...(mobileHttps
       ? {
-          // Tunnels (cloudflared, ngrok) address the dev server by hostname rather than
-          // IP, and Vite rejects unknown hosts by default.
-          allowedHosts: [".trycloudflare.com", ".ngrok-free.app", ".ngrok.io"],
+          allowedHosts: TUNNEL_HOSTS,
           // Fail rather than wander to the next free port. The URL here is typed into a
           // phone by hand, so a silent drift to 5156 means the address you remember now
           // points at whatever still holds 5155 - most likely an orphaned earlier run,
@@ -81,5 +96,16 @@ export default defineConfig({
           strictPort: true,
         }
       : {}),
+  },
+  /**
+   * `yarn preview:mobile` serves a real build for a tunnel to point at, which is the only way
+   * to try the installed app (see `devOptions` above). Plain http on purpose: the tunnel is
+   * what makes the public origin secure, and a self-signed certificate here would defeat the
+   * whole exercise by making the browser refuse the worker.
+   */
+  preview: {
+    port: 5156,
+    strictPort: true,
+    allowedHosts: TUNNEL_HOSTS,
   },
 });

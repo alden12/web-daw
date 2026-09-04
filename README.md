@@ -65,25 +65,44 @@ already in `allowedHosts`.
 The app is installable (MOBILE-3): a manifest, icons, and a service worker that precaches the
 whole shell so it starts with no network.
 
-**`yarn dev:mobile` is not enough for this one.** A browser refuses to register a service
-worker on an origin whose certificate it does not trust, and it does so quietly - no install
-prompt, no error. A self-signed certificate is fine for everything above and useless here.
-Three ways round it, cheapest first:
+**`yarn dev:mobile` cannot show you this**, for two separate reasons, and each on its own is
+enough:
 
-- **A tunnel.** `cloudflared tunnel --url https://localhost:5155` gives a real certificate on
-  a `trycloudflare.com` hostname, which is already in `allowedHosts`. Live reload still works,
-  so this is the one to use while building.
-- **Deploy it.** `yarn deploy` and open the Fly URL. What the world would get.
-- **`mkcert`**, with its root certificate installed on the device. Worth it if you do this
-  often; a faff for one afternoon.
+1. **There is no manifest or worker on the dev server.** They are generated for a real build
+   only (`devOptions.enabled: false`, so a stale worker can never serve the test suite). Nothing
+   is installable there however the origin is served.
+2. **A self-signed certificate is not enough.** A browser declines to register a service worker
+   on a certificate it does not trust, and says nothing at all about it: no install prompt, no
+   error. Fine for everything above, useless here.
+
+So: build it, serve it, and put a real certificate in front:
+
+```
+yarn preview:mobile                                   # builds, serves dist/ on :5156
+cloudflared tunnel --url http://localhost:5156        # in another terminal
+```
+
+The tunnel terminates TLS with a genuine certificate and reaches the local server over plain
+http, which is why the preview server does not need one of its own. `trycloudflare.com` is
+already in `allowedHosts`. Open the printed URL on the phone.
+
+`preview:mobile` builds in `test` mode, so it uses the committed `.env.test`: no login gate,
+projects in OPFS. To install what the world would actually get, `yarn deploy` and use the Fly
+URL instead.
 
 Then: Chrome Android offers **Install app** in its menu, iOS Safari **Share -> Add to Home
-Screen**. Note that an installed app is a *separate storage bucket* from the browser tab it
-was installed from, so its OPFS projects start empty.
+Screen**.
 
-`yarn check:pwa` answers the only question that matters here without a device: it builds,
-serves `dist/`, installs the worker, cuts the network and asks for a route the browser has
-never seen. CI runs it.
+Two things that surprise people:
+
+- An installed app is a **separate storage bucket** from the browser tab it was installed from,
+  so its OPFS projects start empty. It is a different app as far as the browser is concerned.
+- There is **no live reload**. It is a build; rebuild and reload to see a change, and the worker
+  hands over the new version on the load after that.
+
+`yarn check:pwa` answers the offline question without a device at all: it serves `dist/`,
+installs the worker, cuts the network and asks for a route the browser has never seen. CI runs
+it after the build.
 
 ## Contributing
 
