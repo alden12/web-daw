@@ -74,21 +74,36 @@ export type RollRows = {
   label: (pitch: number) => string | null;
   /** Rows to tint (black keys, or loaded pads). */
   highlight: (pitch: number) => boolean;
+  /**
+   * How much room a label needs before it earns its place: 0 = always (the octave
+   * landmarks), 1 = once rows are comfortable, 2 = only when they are roomy. The pitched
+   * roll names all 128 rows, so it sheds the accidentals and then the naturals as you zoom
+   * out rather than stacking 9px text into 7px rows. Priority 0 also styles as a landmark.
+   * Omitted = every label always shows (a drum kit's pads are sparse and already spaced).
+   */
+  labelPriority?: (pitch: number) => number;
   /** Pitch range to scroll into view when the clip is empty. */
   frame: { lo: number; hi: number };
   /**
-   * Width (px) of a reserved left gutter for the row labels. 0/undefined = labels float
-   * over the grid at the left edge (the chromatic default); a drum kit reserves a column
-   * so the pad names sit beside the notes rather than on top of them.
+   * Width (px) of a reserved left gutter for the row labels. Both rolls reserve one, so a
+   * label never sits on top of a note it is meant to be describing: the pitched roll needs
+   * ~34px for "C4", a drum kit needs far more for "C4 Kick". 0/undefined falls back to
+   * floating the labels over the grid at the left edge.
    */
   gutter?: number;
 };
 
 const CHROMATIC_ROWS: RollRows = {
-  label: (pitch) => (pitch % 12 === 0 ? pitchName(pitch) : null),
+  label: pitchName,
   highlight: isBlackKey,
   frame: { lo: 57, hi: 64 }, // around middle C
+  labelPriority: (pitch) => (pitch % 12 === 0 ? 0 : isBlackKey(pitch) ? 2 : 1),
+  // Wide enough for the longest name the range produces, "C#-1".
+  gutter: 38,
 };
+
+/** Row heights at which the roll starts showing the next tier of labels down. */
+const LABEL_TIERS = { naturals: 11, all: 16 };
 
 type Drag =
   | {
@@ -203,6 +218,9 @@ export function PianoRoll({
   const height = ROWS * rowH;
   const cellW = pxPerBeat * snapDiv;
   const gutter = rows.gutter ?? 0; // reserved left column for row labels (0 = float over the grid)
+  // How many names the current row height can carry: all of them, the naturals, or just
+  // the octave landmarks. Labels are 9px, so 128 of them only fit once rows are roomy.
+  const labelTier = rowH >= LABEL_TIERS.all ? 2 : rowH >= LABEL_TIERS.naturals ? 1 : 0;
 
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const clampStart = (b: number) => clamp(b, 0, Math.max(0, len - GRID));
@@ -633,16 +651,16 @@ export function PianoRoll({
   );
 
   const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
   const toolBtn =
-    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-strong";
 
   return (
-    <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
+    <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-stage overflow-hidden">
       {/* toolbar - replaced by the shell's ⋮ when compact (see compactControls above) */}
       <div
         hidden={compact}
-        className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail shrink-0 text-muted"
+        className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-panel shrink-0 text-muted"
       >
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Piano roll</span>
         <Menu items={rollControls} label="Roll settings" align="left" />
@@ -691,22 +709,26 @@ export function PianoRoll({
       <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
         <div className={gutter ? "flex" : "contents"} style={gutter ? { width: gutter + width } : undefined}>
           {gutter > 0 && (
-            <div className="sticky left-0 z-6 shrink-0 bg-rail border-r border-line" style={{ width: gutter }}>
+            <div className="sticky left-0 z-20 shrink-0 bg-panel border-r border-line" style={{ width: gutter }}>
               <div style={{ height: RULER_H }} />
               <div className="relative" style={{ height }}>
                 {Array.from({ length: ROWS }, (_unused, row) => {
                   const pitch = MAX_PITCH - row;
                   const rowLabel = rows.label(pitch);
-                  return rowLabel ? (
+                  const priority = rows.labelPriority?.(pitch) ?? 0;
+                  if (!rowLabel || priority > labelTier) return null;
+                  return (
                     <div
                       key={pitch}
                       title={rowLabel}
-                      className="absolute left-0 right-0 flex items-center truncate px-1.5 font-mono text-[9px] leading-none text-muted"
+                      className={`absolute left-0 right-0 flex items-center overflow-hidden truncate px-1.5 font-mono text-[9px] leading-none ${
+                        rows.labelPriority ? (priority === 0 ? "text-ink" : "text-faint") : "text-muted"
+                      }`}
                       style={{ top: row * rowH, height: rowH }}
                     >
                       {rowLabel}
                     </div>
-                  ) : null;
+                  );
                 })}
               </div>
             </div>
@@ -760,7 +782,7 @@ export function PianoRoll({
                     data-testid="note"
                     onPointerDown={(e) => onNoteDown(note, e)}
                     className={`absolute rounded-sm box-border cursor-grab border touch-none ${
-                      selected ? "bg-bright" : "hover:brightness-125"
+                      selected ? "bg-strong" : "hover:brightness-125"
                     }`}
                     style={{
                       ...authorNoteStyle(author, selected, presence),
@@ -831,7 +853,7 @@ export function PianoRoll({
             <div
               ref={velRef}
               hidden={!velOpen}
-              className="sticky bottom-0 z-10 border-t border-line bg-rail"
+              className="sticky bottom-0 z-10 border-t border-line bg-panel"
               style={{ width, height: effVelH }}
               title="Velocity - drag a bar"
             >
@@ -848,7 +870,7 @@ export function PianoRoll({
                   <div
                     key={note.id}
                     onPointerDown={(e) => onVelDown(note, e)}
-                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize touch-none ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
+                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize touch-none ${selected ? "bg-strong" : "bg-you/80 hover:bg-you"}`}
                     style={{
                       left: beatToX(note.start, pxPerBeat),
                       width: VEL_BAR_W,

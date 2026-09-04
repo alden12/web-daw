@@ -281,7 +281,7 @@ function NumberRow({
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
-        className="w-14 shrink-0 font-mono text-[12.5px] text-center px-1 py-1 rounded-md border border-line bg-ground text-bright"
+        className="w-14 shrink-0 font-mono text-[12.5px] text-center px-1 py-1 rounded-md border border-line bg-ground text-strong"
       />
       <button
         type="button"

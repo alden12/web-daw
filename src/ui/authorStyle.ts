@@ -45,7 +45,7 @@ export const authorBorderStyle = (author: string, presence: AuthorPresence): CSS
 export const authorNoteStyle = (author: string, selected: boolean, presence: AuthorPresence): CSSProperties => {
   const hex = authorHex(author, presence);
   return selected
-    ? { borderColor: hex, boxShadow: `0 0 0 1px ${hex}` } // ring-1; bg-bright stays a class
+    ? { borderColor: hex, boxShadow: `0 0 0 1px ${hex}` } // ring-1; bg-strong stays a class
     : { background: hex, borderColor: withAlpha(hex, 0.4) };
 };
 

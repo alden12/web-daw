@@ -76,7 +76,7 @@ function SavePatchControl({ track }: { track: InstrumentTrack }) {
           if (e.key === "Escape") setNaming(false);
         }}
         placeholder="Patch name…"
-        className="w-32 font-mono text-[11px] px-1.5 py-0.5 rounded border border-line bg-ground text-bright placeholder:text-faint"
+        className="w-32 font-mono text-[11px] px-1.5 py-0.5 rounded border border-line bg-ground text-strong placeholder:text-faint"
       />
       <button
         type="button"
@@ -100,7 +100,7 @@ function InstrumentPicker({ trackId, dispatch }: { trackId: string; dispatch: Di
             key={info.type}
             type="button"
             onClick={() => dispatch({ type: "setInstrument", trackId, instrumentType: info.type })}
-            className="px-2.5 py-1 rounded-md border border-line text-[12px] text-ink hover:text-bright hover:border-you cursor-pointer"
+            className="px-2.5 py-1 rounded-md border border-line text-[12px] text-ink hover:text-strong hover:border-you cursor-pointer"
           >
             {info.label}
           </button>
@@ -126,7 +126,7 @@ export function DeviceRack({
 }) {
   return (
     <>
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line shrink-0">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-line bg-panel shrink-0">
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Devices</span>
         {track.kind === "instrument" && track.instrumentType !== EMPTY_INSTRUMENT && (
           <span className="ml-auto">

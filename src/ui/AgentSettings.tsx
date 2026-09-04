@@ -124,7 +124,7 @@ export function AgentSettingsSection({ config, onClose }: { config: AgentConfig;
         <button
           type="button"
           onClick={save}
-          className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-bright hover:bg-agent/25 cursor-pointer"
+          className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-strong hover:bg-agent/25 cursor-pointer"
         >
           Save
         </button>

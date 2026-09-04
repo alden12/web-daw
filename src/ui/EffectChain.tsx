@@ -42,10 +42,10 @@ export function EffectChain({
         // flex group, so the arrow stays glued to the device's right edge on wrap.
         return (
           <div key={fx.id} className="flex items-stretch shrink-0">
-            <div className={`shrink-0 border border-line rounded-xl bg-card ${fx.bypassed ? "opacity-50" : ""}`}>
+            <div className={`shrink-0 border border-line rounded-xl bg-ground ${fx.bypassed ? "opacity-50" : ""}`}>
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
                 <span
-                  className="font-mono text-[12px] font-semibold text-bright mr-1 truncate"
+                  className="font-mono text-[12px] font-semibold text-strong mr-1 truncate"
                   title={effectCatalogEntry(fx.type).label}
                 >
                   {effectCatalogEntry(fx.type).label}

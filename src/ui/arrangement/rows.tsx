@@ -54,7 +54,7 @@ export function GroupHeader({
       <InlineRename
         value={group.name}
         onCommit={(name) => dispatch({ type: "setGroup", groupId: group.id, name })}
-        className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
+        className="font-mono text-[11px] tracking-wide uppercase text-strong flex-1 min-w-0"
       />
       <Fader
         value={group.volume}
@@ -149,7 +149,7 @@ function TrackHeader({
       <InlineRename
         value={track.name}
         onCommit={(name) => dispatch({ type: "setTrack", trackId: track.id, name })}
-        className="font-mono text-[13px] text-bright flex-1 min-w-0"
+        className="font-mono text-[13px] text-strong flex-1 min-w-0"
       />
       <Fader
         value={track.volume}

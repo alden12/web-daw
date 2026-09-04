@@ -16,7 +16,7 @@ export function StartDialog({ onStart, error }: { onStart: () => void; error?: s
           className="w-9 h-9 rounded-full"
           style={{ background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))" }}
         />
-        <h2 id="start-title" className="text-lg font-semibold text-bright">
+        <h2 id="start-title" className="text-lg font-semibold text-strong">
           Start the audio engine
         </h2>
         <p className="text-sm text-muted leading-relaxed">

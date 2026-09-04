@@ -1,27 +1,39 @@
 @import "tailwindcss";
 
-/* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
-   center workbench reads brightest. Voices: you = teal, agent (built-in AI) =
-   violet, claude (the MCP / Claude Code driver) = coral.
+/* Design tokens. Value hierarchy: ground (darkest) -> card (lightest). The centre
+   workbench sits on `ground` and the panels inside it lift to `stage`, so depth reads
+   as wells cut into a dark surface rather than a bright table under dim chrome.
+   Voices: you = teal, agent (built-in AI) = violet, claude (the MCP / Claude Code
+   driver) = coral.
 
-   Name tokens after their ROLE, never after a position or an alignment. Tailwind
-   generates a utility per token, so a token named for a position collides with the
-   utility of the same name: `--color-center` made `text-center` a text *colour* as
-   well as an alignment, both rules matched, and colour sorts later - so a centred
-   label silently came out #22262f. Nothing in the class list said why. */
+   Name tokens after their ROLE, never after a position, an alignment, or an
+   appearance. Tailwind generates a utility per token, so a token named for a
+   position collides with the utility of the same name: `--color-center` made
+   `text-center` a text *colour* as well as an alignment, both rules matched, and
+   colour sorts later - so a centred label silently came out #22262f. Nothing in the
+   class list said why.
+
+   Appearance names break for a quieter reason: they only describe one theme.
+   `--color-strong` (emphasised text) was `--color-bright`, which reads fine while
+   white is the only answer and becomes a lie the moment a light theme needs it to
+   hold near-black. Role names survive a palette change; appearance names do not. */
 @theme {
-  --color-ground: #101216;
-  --color-rail: #14171c;
-  --color-panel: #1a1d24;
-  --color-stage: #22262f;
-  --color-card: #2b313c;
-  --color-line: #363d49;
-  --color-line-soft: #282e38;
+  /* Surfaces, deepest first. `ground` does the most work: it is the app background,
+     the lane grids, the inputs, AND the centre surround, so the workbench reads as a
+     dark void rather than a lit table. `stage` is the one step up out of it, used only
+     for the panels you actually work on (the piano roll, the device rack). */
+  --color-ground: #0a0c0e;
+  --color-rail: #0f1216;
+  --color-panel: #14171c;
+  --color-stage: #101317;
+  --color-card: #242a33;
+  --color-line: #2a3038;
+  --color-line-soft: #1c2129;
 
-  --color-ink: #e8e6e0;
-  --color-bright: #ffffff;
-  --color-muted: #868c99;
-  --color-faint: #5c626e;
+  --color-ink: #e8e7e3;
+  --color-strong: #ffffff;
+  --color-muted: #8b929c;
+  --color-faint: #5f656f;
 
   --color-you: #56c7c2;
   --color-agent: #a884f3;
@@ -30,8 +42,12 @@
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
 
-  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  /* Google Sans Flex for the interface, Google Sans Code for values (note names, tempo,
+     meter, every param readout). Both SIL OFL, both loaded in main.tsx and self-hosted, so
+     no font-CDN request on load. The stacks behind them still matter: a variable webfont is
+     a network asset, so the UI has to be legible in the fallback before it lands. */
+  --font-sans: "Google Sans Flex Variable", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Google Sans Code Variable", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
@@ -147,7 +163,7 @@
   margin: 0.9em 0 0.4em;
   font-weight: 600;
   line-height: 1.3;
-  color: var(--color-bright);
+  color: var(--color-strong);
 }
 .md h1 {
   font-size: 1.25em;
@@ -181,7 +197,7 @@
 }
 .md strong {
   font-weight: 600;
-  color: var(--color-bright);
+  color: var(--color-strong);
 }
 .md blockquote {
   padding-left: 0.8em;
@@ -261,7 +277,7 @@
 .md .hljs-title,
 .md .hljs-name,
 .md .hljs-section {
-  color: var(--color-bright);
+  color: var(--color-strong);
   font-weight: 600;
 }
 .md .hljs-type,

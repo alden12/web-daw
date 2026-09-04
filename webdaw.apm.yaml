@@ -29,7 +29,7 @@ projects:
         is deployed (Fly + Neon, single-origin, auth on).
 
 
-        **This project's tickets came from `docs/DESIGN.md`**, migrated on
+        **This project's items came from `docs/DESIGN.md`**, migrated on
         2026-07-29. That doc and the `yarn roadmap:*` tooling are being retired
         in favour of this project. Still live in the repo and worth reading
         rather than duplicating here:
@@ -39,7 +39,7 @@ projects:
         maps over `switch`, split large files, keep formatted, forward-only
         migrations, CI must stay green).
 
-        - `docs/RESEARCH.md` - the user-research evidence file. Several tickets
+        - `docs/RESEARCH.md` - the user-research evidence file. Several items
         cite it by section; it is the source for the librarian framing, the
         reported-struggle percentages, and the branching/WAM decisions.
 
@@ -49,57 +49,74 @@ projects:
         `docs/mockups/mobile-ux.html`.
 
 
-        **Running a session.** Open with `resume_project`. Most sessions are one
-        of three shapes:
+        **A note on vocabulary.** The toolset now calls every unit of work an
+        **item** (`get_item`, `create_item`, `edit_item`, `list_items`), not a
+        "ticket" - the older word still appears in code comments, commit
+        messages and older prose and means exactly the same thing. Refs are
+        unchanged (`DAW-10`, `HOST-6.2`, ...), so every one of those references
+        still resolves.
 
-        1. *Build a ticket.* Read it with `get_ticket`, check the context
-        sections it references, work in the repo. Flip the status as it moves.
 
-        2. *Shape the roadmap.* Add or revise tickets and context as decisions
-        firm up.
+        **Running a session.** Open with `get_project` - the whole project at a
+        glance, and an ordinary read you call again any time you have lost track
+        of where things stand. It is an index: item bodies, context sections and
+        comments are named but not carried, so reach for `get_item` /
+        `get_context` / `list_comments`, and `search_plan` before re-deriving a
+        decision already recorded. Most sessions are one of three shapes:
 
-        3. *Review / triage.* Sweep for stale statuses and stale prose.
+        1. *Build an item.* Read it with `get_item`, open the context sections
+        it references with `get_context`, work in the repo. Move its status with
+        `set_status` as it progresses.
+
+        2. *Shape the roadmap.* Add or revise items (`create_item` /
+        `edit_item`) and the settled narrative (`set_context`) as decisions firm
+        up; record the agreed order to work in with `set_next`, and the one-line
+        direction with `set_direction`.
+
+        3. *Review / triage.* Sweep for stale statuses (`set_status`) and stale
+        prose (`edit_item` / `set_context`).
 
 
         **Status vocabulary** (unchanged from the old doc, so it reads the
-        same): `done` = on `main` / shipped · `review` = built and working,
-        often deployed, but in an open PR not yet merged · `in-progress` = being
-        built on a branch right now · `to-do` = designed and ready to build,
-        next up · `planning` = still being shaped / longer horizon.
+        same), set with `set_status`: `done` = on `main` / shipped · `review` =
+        built and working, often deployed, but in an open PR not yet merged ·
+        `in-progress` = being built on a branch right now · `to-do` = designed
+        and ready to build, next up · `planning` = still being shaped / longer
+        horizon.
 
 
         **Keeping status current is a manual discipline - nothing moves it
-        automatically.** When you open a PR that implements a ticket, set it to
-        `review` in the same change; set it `done` when the PR merges. Whenever
-        you notice a stale status (a ticket really
+        automatically.** When you open a PR that implements an item,
+        `set_status` it to `review` in the same change; set it `done` when the
+        PR merges. Whenever you notice a stale status (an item really
         done/merged/in-progress/abandoned but marked otherwise), fix it right
         away in whatever change you are already making - don't wait to be asked.
         The same goes for stale *prose*: the old design doc accumulated items
         still listed as roadmap that had actually shipped (Web MIDI input, the
-        arpeggiator), so when a ticket's body contradicts the code, correct the
-        ticket.
+        arpeggiator), so when an item's body contradicts the code, correct it
+        with `edit_item`.
 
 
         **Refs match the old design-doc ids exactly**, including the dotted
-        sub-tickets (`DAW-8.1`, `AGENT-4.1`, `HOST-6.2`, `HOST-8.4`, ...), so
-        code comments referencing e.g. `DAW-10` or "Phase B2" still resolve. Two
+        sub-items (`DAW-8.1`, `AGENT-4.1`, `HOST-6.2`, `HOST-8.4`, ...), so code
+        comments referencing e.g. `DAW-10` or "Phase B2" still resolve. Two
         deliberate departures: `DAW-10.1`/`DAW-10.2` were folded into DAW-10
         (two slices of one delivered feature, no independent status to track),
-        and four tickets are **new** - INST-7 (audio pitch and time), INST-8
+        and four items are **new** - INST-7 (audio pitch and time), INST-8
         (autotune), INST-9 (drum-kit sourcing), INST-10 (in-app IDE) - which
         were roadmap prose in the doc with no marker.
 
 
-        **Dependencies are structured edges** (`deps` on
-        `create_ticket`/`edit_ticket`), not prose - the graph is laid out from
-        them and a cycle is refused. Two conventions: a sub-ticket never needs a
-        dep on its own parent (nesting already expresses it, and the server
-        refuses the redundant edge); and `deps` **replaces** the whole set, so
-        pass the full list when revising. *Legacy to tidy as you touch things:*
-        some bodies still carry a redundant trailing "Deps: X" line from before
-        edges existed. Where it duplicates a real edge it is merely noise -
-        delete it when you next rewrite that body, and never let prose and edges
-        disagree.
+        **Dependencies are structured edges** (`deps` on `create_item` /
+        `edit_item`), not prose - the graph is laid out from them
+        (`open_viewer`) and a cycle is refused. Two conventions: a sub-item
+        never needs a dep on its own parent (nesting already expresses it, and
+        the server refuses the redundant edge); and `deps` **replaces** the
+        whole set, so pass the full list when revising. *Legacy to tidy as you
+        touch things:* some bodies still carry a redundant trailing "Deps: X"
+        line from before edges existed. Where it duplicates a real edge it is
+        merely noise - delete it when you next rewrite that body, and never let
+        prose and edges disagree.
 
 
         **Areas.** `DAW` core engine and UI · `INST` instruments, effects and
@@ -110,13 +127,16 @@ projects:
 
         **Write as you go. Do not save it for the end - there is no end.** A
         conversation gets abandoned rather than closed, so anything held back
-        for a final write is lost. Use `add_note` whenever something is worth
+        for a final write is lost. Use `add_comment` whenever something is worth
         having next time: what the user asked, a decision made in passing, what
-        to pick up next. One line, no reading first, cheap enough mid-task.
-        Correct one with `edit_note` or drop it with `delete_note` if it turns
-        out to be wrong. Use `set_context` when revising the project's settled
-        narrative, and `checkpoint_session` only when a real chunk of work has
-        finished or the user says they are stopping.
+        to pick up next. One line, no reading first, cheap enough mid-task - but
+        capped at 800 characters, so when it is reasoning that belongs to the
+        item itself, put it in the body with `edit_item`, where a reader will
+        find it. Set a comment's `audience` to `agent` for your own working
+        notes (kept out of user-facing summaries, though the user can still read
+        them). Correct a comment with `edit_comment` or drop it with
+        `delete_comment` if it turns out to be wrong. Use `set_context` when
+        revising the project's settled narrative.
       Thesis: >-
         An open-source, web-based DAW where three ideas reinforce each other:
 
@@ -1659,27 +1679,7 @@ projects:
         project map until 2026-07-29, when it was migrated into this project and
         deleted. Its full text is in git history if an unmigrated detail is ever
         needed.
-    sessions:
-      - summary: "Migrated the whole `docs/DESIGN.md` roadmap into this project: 83
-          tickets at their original refs (dotted sub-tickets included), 16
-          context sections carrying the design narrative, and a protocol
-          replacing the doc's \"Roadmap markers\" section. Done in two passes -
-          the first ran against an apm build without
-          `deps`/`parent`/`ref`/`delete_ticket`, so sub-tickets were flattened
-          and deps were prose; those four tools shipped the same day and the
-          second pass redid it properly, deleting the 24 flattened tickets and
-          recreating them at their true refs with real dependency edges.
-          Corrected two stale entries the doc still listed as roadmap but which
-          had shipped (Web MIDI input, the arpeggiator). Four tickets are new
-          (INST-7 to INST-10) for roadmap prose the doc never gave a marker.
-          Verified the final graph: 83 items, no dangling deps, no orphaned
-          sub-tickets. Still outstanding: deleting `docs/DESIGN.md` + the `yarn
-          roadmap:*` tooling and updating the ~30 code comments and 6 docs that
-          reference them."
-        started_at: 2026-07-29T17:23:36.218Z
-        ended_at: 2026-07-29T17:23:36.218Z
-        actor: claude
-    notes:
+    comments:
       - body: Migrated from `docs/DESIGN.md` + the `yarn roadmap:*` tooling on
           2026-07-29. All 81 markers came across at their original refs, dotted
           sub-tickets included (`DAW-10.1`/`10.2` were folded into DAW-10 - two
@@ -1773,7 +1773,6 @@ projects:
         title: MCP and Claude Desktop/Code control
         status: done
         sort_path: "000001"
-        priority: 0
         deps:
           - DAW-1
           - DAW-7
@@ -1826,7 +1825,6 @@ projects:
         title: In-app agent panel
         status: review
         sort_path: "000002"
-        priority: 0
         deps:
           - AGENT-1
         body: >-
@@ -1869,7 +1867,6 @@ projects:
         title: Persist agent intent into history
         status: done
         sort_path: "000003"
-        priority: 0
         deps:
           - DAW-7
         body: >-
@@ -1911,7 +1908,6 @@ projects:
         title: Agent ears - offline audio analysis
         status: in-progress
         sort_path: "000004"
-        priority: 0
         deps:
           - AGENT-2
         body: >-
@@ -1959,7 +1955,6 @@ projects:
         title: Objective DSP analysis
         status: in-progress
         sort_path: "000004.000001"
-        priority: 0
         parent: AGENT-4
         body: >-
           *The tier-1 foundation the rest of the ears depend on.*
@@ -1986,7 +1981,6 @@ projects:
         title: MIR analysis
         status: to-do
         sort_path: "000004.000002"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-4.1
@@ -2006,7 +2000,6 @@ projects:
         title: Perceptual / semantic analysis
         status: to-do
         sort_path: "000004.000003"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-4.2
@@ -2026,7 +2019,6 @@ projects:
         title: "Scoped render: a subset of tracks or a bar range"
         status: to-do
         sort_path: "000004.000004"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-4.1
@@ -2052,7 +2044,6 @@ projects:
         title: Unify the live and offline graph build
         status: to-do
         sort_path: "000004.000005"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-4.1
@@ -2092,7 +2083,6 @@ projects:
         title: Expose analyze_mix over MCP via the bridge
         status: to-do
         sort_path: "000004.000006"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-1
@@ -2120,7 +2110,6 @@ projects:
         title: "Render fidelity: match the live output"
         status: review
         sort_path: "000004.000007"
-        priority: 0
         parent: AGENT-4
         deps:
           - AGENT-4.1
@@ -2152,7 +2141,6 @@ projects:
         title: "Play-an-idea: notes as a prompt"
         status: to-do
         sort_path: "000005"
-        priority: 0
         deps:
           - AGENT-2
           - DAW-6
@@ -2194,7 +2182,6 @@ projects:
         title: MCP/agent tool consolidation
         status: to-do
         sort_path: "000006"
-        priority: 0
         deps:
           - AGENT-1
           - AGENT-2
@@ -2243,7 +2230,6 @@ projects:
         title: zod validation of model responses
         status: review
         sort_path: "000007"
-        priority: 0
         deps:
           - AGENT-2
         body: >-
@@ -2284,7 +2270,6 @@ projects:
         title: "Agent modes: off / librarian / full"
         status: to-do
         sort_path: "000008"
-        priority: 0
         deps:
           - AGENT-2
           - AGENT-6
@@ -2341,7 +2326,6 @@ projects:
         title: Local-by-default provenance, strip authorship on export
         status: to-do
         sort_path: "000009"
-        priority: 0
         deps:
           - AGENT-3
           - DAW-13
@@ -2385,7 +2369,6 @@ projects:
         title: Agentic loop, run-until-done
         status: review
         sort_path: "000010"
-        priority: 0
         deps:
           - AGENT-2
         body: >-
@@ -2435,7 +2418,6 @@ projects:
         title: Streaming replies + reasoning capture
         status: to-do
         sort_path: "000010.000001"
-        priority: 0
         parent: AGENT-10
         body: >-
           Swap the provider transport from a whole-body `response.text()` to
@@ -2470,7 +2452,6 @@ projects:
         title: Interactive plan artifact + approval gate
         status: to-do
         sort_path: "000011"
-        priority: 0
         deps:
           - AGENT-10
         body: >-
@@ -2515,7 +2496,6 @@ projects:
         title: Auto-generated version summaries
         status: to-do
         sort_path: "000012"
-        priority: 0
         deps:
           - AGENT-2
           - AGENT-3
@@ -2550,7 +2530,6 @@ projects:
         title: "Blank page: where do I start"
         status: to-do
         sort_path: "000013"
-        priority: 0
         deps:
           - AGENT-2
           - AGENT-8
@@ -2588,7 +2567,6 @@ projects:
         title: Mixing assist
         status: to-do
         sort_path: "000014"
-        priority: 0
         deps:
           - AGENT-4.1
           - AGENT-8
@@ -2622,7 +2600,6 @@ projects:
         title: Objective DSP analysis
         status: in-progress
         sort_path: "000015"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.1`. The tier-1 foundation the rest
           of the ears deps on.*
@@ -2650,7 +2627,6 @@ projects:
         title: MIR analysis
         status: to-do
         sort_path: "000016"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.2`. Deps: AGENT-15.*
 
@@ -2671,7 +2647,6 @@ projects:
         title: Perceptual / semantic analysis
         status: to-do
         sort_path: "000017"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.3`. Deps: AGENT-16.*
 
@@ -2692,7 +2667,6 @@ projects:
         title: "Scoped render: a subset of tracks or a bar range"
         status: to-do
         sort_path: "000018"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.4`. Deps: AGENT-15.*
 
@@ -2719,7 +2693,6 @@ projects:
         title: Unify the live and offline graph build
         status: to-do
         sort_path: "000019"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.5`. Deps: AGENT-15.*
 
@@ -2759,7 +2732,6 @@ projects:
         title: Expose analyze_mix over MCP via the bridge
         status: to-do
         sort_path: "000020"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.6`. Deps: AGENT-15.*
 
@@ -2787,7 +2759,6 @@ projects:
         title: "Render fidelity: match the live output"
         status: review
         sort_path: "000021"
-        priority: 0
         body: >-
           *Part of AGENT-4. Formerly `AGENT-4.7`. Deps: AGENT-15.*
 
@@ -2820,7 +2791,6 @@ projects:
         title: Streaming replies + reasoning capture
         status: to-do
         sort_path: "000022"
-        priority: 0
         body: >-
           *Part of AGENT-10. Formerly `AGENT-10.1`. Deps: AGENT-10.*
 
@@ -2858,7 +2828,6 @@ projects:
         title: Two MCP clients on one machine collide on the WebSocket port
         status: to-do
         sort_path: "000023"
-        priority: 0
         body: >-
           `server/index.ts` binds a fixed `ws://localhost:8765` and calls
           `process.exit(1)` on `EADDRINUSE`. That is deliberate and correct for
@@ -2899,7 +2868,7 @@ projects:
         id: 019fb3c7-7c7a-764c-ac83-f5eaef4a3c7f
         created_at: 2026-07-30T16:07:03.035Z
         updated_at: 2026-07-30T16:07:03.035Z
-        notes:
+        comments:
           - body: >-
               **Reviewed 2026-07-31; two refinements that change the option
               ordering above.**
@@ -2958,7 +2927,6 @@ projects:
         title: The loop costs too much per turn
         status: to-do
         sort_path: "000024"
-        priority: 0
         deps:
           - AGENT-10
         body: >-
@@ -3052,7 +3020,6 @@ projects:
         title: A local provider backed by the Agent SDK, so the loop can be developed
         status: to-do
         sort_path: "000025"
-        priority: 0
         deps:
           - AGENT-24
         body: >-
@@ -3125,7 +3092,6 @@ projects:
         title: Point the agent at any OpenAI-compatible endpoint
         status: to-do
         sort_path: "000026"
-        priority: 0
         deps:
           - AGENT-25
         body: >-
@@ -3181,7 +3147,6 @@ projects:
         title: Split projectStore / state management
         status: to-do
         sort_path: "000001"
-        priority: 0
         body: >-
           `projectStore.ts` has grown oversized (the repo conventions already
           flag it as a file to chip away at, alongside `AudioEngine.ts` and
@@ -3220,7 +3185,6 @@ projects:
         title: Share MIDI and audio device-chain code
         status: planning
         sort_path: "000002"
-        priority: 0
         deps:
           - INST-1
           - INST-2
@@ -3292,7 +3256,6 @@ projects:
         title: Editing preferences are app state, not component state
         status: in-progress
         sort_path: "000003"
-        priority: 0
         body: >-
           Raised during the MOBILE-1 code review, as a deliberate architectural
           decision rather than a drive-by cleanup.
@@ -3391,7 +3354,6 @@ projects:
         title: Enforce the layering rules with dependency-cruiser
         status: to-do
         sort_path: "000004"
-        priority: 0
         body: >-
           The architectural rules in `CLAUDE.md` are prose, enforced by
           discipline and by whatever `tsc` happens to catch. Make the
@@ -3488,7 +3450,6 @@ projects:
         title: Real identity on the log
         status: done
         sort_path: "000001"
-        priority: 0
         deps:
           - HOST-2
         body: >-
@@ -3545,7 +3506,6 @@ projects:
         title: Presence and live cursors
         status: to-do
         sort_path: "000002"
-        priority: 0
         deps:
           - COLLAB-1
           - HOST-1
@@ -3587,7 +3547,6 @@ projects:
         title: Comments and review flow
         status: to-do
         sort_path: "000003"
-        priority: 0
         deps:
           - COLLAB-2
           - HOST-6
@@ -3611,7 +3570,6 @@ projects:
         title: Param-schema keystone and catalogs
         status: done
         sort_path: "000001"
-        priority: 0
         body: >-
           The foundation everything else projects from.
 
@@ -3642,7 +3600,6 @@ projects:
         title: Tracks, groups, mixer
         status: done
         sort_path: "000002"
-        priority: 0
         deps:
           - DAW-1
         body: >-
@@ -3682,7 +3639,6 @@ projects:
         title: Clips, variants, launch
         status: done
         sort_path: "000003"
-        priority: 0
         deps:
           - DAW-2
         body: >-
@@ -3751,7 +3707,6 @@ projects:
         title: Arrangement timeline
         status: done
         sort_path: "000004"
-        priority: 0
         deps:
           - DAW-3
         body: >-
@@ -3791,7 +3746,6 @@ projects:
         title: Piano roll and step grid
         status: done
         sort_path: "000005"
-        priority: 0
         deps:
           - DAW-1
         body: >-
@@ -3862,7 +3816,6 @@ projects:
         title: Recording and input
         status: done
         sort_path: "000006"
-        priority: 0
         deps:
           - DAW-4
           - DAW-5
@@ -3955,7 +3908,6 @@ projects:
         title: Undo/redo and activity feed
         status: done
         sort_path: "000007"
-        priority: 0
         deps:
           - DAW-1
         body: >-
@@ -4000,7 +3952,6 @@ projects:
         title: UI polish and bug batch
         status: to-do
         sort_path: "000008"
-        priority: 0
         body: >-
           A batch of small/medium UI polish and bug fixes, several sharing three
           reusable primitives built once and reused: an editable/truncating
@@ -4028,7 +3979,6 @@ projects:
         title: Shipped UI tidy-ups (slices 25-42)
         status: done
         sort_path: "000008.000001"
-        priority: 0
         parent: DAW-8
         body: >-
           The already-shipped items from the UI-tidy-ups and timeline-usability
@@ -4105,7 +4055,6 @@ projects:
         title: Editable title primitive everywhere
         status: to-do
         sort_path: "000008.000002"
-        priority: 0
         parent: DAW-8
         body: >-
           One component for inline-rename + truncate-with-full-title-on-hover,
@@ -4122,7 +4071,6 @@ projects:
         title: Per-track timeline row height
         status: to-do
         sort_path: "000008.000003"
-        priority: 0
         parent: DAW-8
         deps:
           - DAW-4
@@ -4155,7 +4103,6 @@ projects:
         title: Small UI polish batch
         status: to-do
         sort_path: "000008.000004"
-        priority: 0
         parent: DAW-8
         body: >-
           - **Clip delete always available** - show the × even on the last clip;
@@ -4185,7 +4132,6 @@ projects:
         title: Master gain and live level meter
         status: to-do
         sort_path: "000008.000005"
-        priority: 0
         parent: DAW-8
         deps:
           - DAW-2
@@ -4212,7 +4158,6 @@ projects:
         title: Library drag-and-drop
         status: to-do
         sort_path: "000008.000006"
-        priority: 0
         parent: DAW-8
         body: >-
           *A feature in its own slice.*
@@ -4235,7 +4180,6 @@ projects:
         title: Timeline and clip editing gaps
         status: to-do
         sort_path: "000008.000007"
-        priority: 0
         parent: DAW-8
         deps:
           - DAW-4
@@ -4293,7 +4237,6 @@ projects:
         title: "Bug: note-drag snapping off-grid"
         status: to-do
         sort_path: "000008.000008"
-        priority: 0
         parent: DAW-8
         body: >-
           Dragging a note in the piano roll doesn't always land its start on a
@@ -4310,7 +4253,6 @@ projects:
         title: "Bug: clip playhead ignores arrangement position"
         status: to-do
         sort_path: "000008.000009"
-        priority: 0
         parent: DAW-8
         body: >-
           The piano roll / step grid draw a playhead in the selected clip
@@ -4336,7 +4278,6 @@ projects:
         title: "Bug: default objects show a hashed hue, not the user's colour"
         status: to-do
         sort_path: "000008.000010"
-        priority: 0
         parent: DAW-8
         deps:
           - COLLAB-1
@@ -4387,7 +4328,6 @@ projects:
         title: Activity feed at scale
         status: to-do
         sort_path: "000008.000011"
-        priority: 0
         parent: DAW-8
         deps:
           - DAW-7
@@ -4402,7 +4342,6 @@ projects:
         title: Group/track selection + group-FX editing
         status: to-do
         sort_path: "000009"
-        priority: 0
         deps:
           - DAW-2
           - INST-2
@@ -4422,7 +4361,6 @@ projects:
         title: Changeable time signature
         status: review
         sort_path: "000010"
-        priority: 0
         deps:
           - DAW-4
           - DAW-5
@@ -4475,7 +4413,6 @@ projects:
         title: Timeline loop enable/disable toggle
         status: to-do
         sort_path: "000011"
-        priority: 0
         deps:
           - DAW-4
         body: >-
@@ -4496,7 +4433,6 @@ projects:
         title: Key and tonic-relative intervals
         status: planning
         sort_path: "000012"
-        priority: 0
         deps:
           - DAW-5
           - INST-1
@@ -4555,7 +4491,6 @@ projects:
         title: Audio export and mixdown
         status: to-do
         sort_path: "000013"
-        priority: 0
         deps:
           - AGENT-4.1
         body: >-
@@ -4592,7 +4527,6 @@ projects:
         title: Shipped UI tidy-ups (slices 25-42)
         status: done
         sort_path: "000014"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.1`.* The already-shipped items from
           the UI-tidy-ups and timeline-usability batches, kept as the historical
@@ -4670,7 +4604,6 @@ projects:
         title: Editable title primitive everywhere
         status: to-do
         sort_path: "000015"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.2`.*
 
@@ -4690,7 +4623,6 @@ projects:
         title: Per-track timeline row height
         status: to-do
         sort_path: "000016"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.3`.*
 
@@ -4724,7 +4656,6 @@ projects:
         title: Small UI polish batch
         status: to-do
         sort_path: "000017"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.4`.*
 
@@ -4757,7 +4688,6 @@ projects:
         title: Master gain and live level meter
         status: to-do
         sort_path: "000018"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.5`.*
 
@@ -4785,7 +4715,6 @@ projects:
         title: Library drag-and-drop
         status: to-do
         sort_path: "000019"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.6`. A feature in its own slice.*
 
@@ -4808,7 +4737,6 @@ projects:
         title: Timeline and clip editing gaps
         status: to-do
         sort_path: "000020"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.7`.*
 
@@ -4867,7 +4795,6 @@ projects:
         title: "Bug: note-drag snapping off-grid"
         status: to-do
         sort_path: "000021"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.8`.*
 
@@ -4887,7 +4814,6 @@ projects:
         title: "Bug: clip playhead ignores arrangement position"
         status: to-do
         sort_path: "000022"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.9`.*
 
@@ -4916,7 +4842,6 @@ projects:
         title: "Bug: default objects show a hashed hue, not the user's colour"
         status: to-do
         sort_path: "000023"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.10`.*
 
@@ -4968,7 +4893,6 @@ projects:
         title: Activity feed at scale
         status: to-do
         sort_path: "000024"
-        priority: 0
         body: >-
           *Part of DAW-8. Formerly `DAW-8.11`.*
 
@@ -4986,7 +4910,6 @@ projects:
           shell's Clips tab"
         status: planning
         sort_path: "000025"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-
@@ -5045,7 +4968,6 @@ projects:
           grid)"
         status: planning
         sort_path: "000026"
-        priority: 0
         deps:
           - DAW-3
         body: >
@@ -5210,7 +5132,6 @@ projects:
         title: "Clock-driven MIDI generators: phase-lock the cycle to the transport"
         status: to-do
         sort_path: "000027"
-        priority: 0
         body: >-
           The arpeggiator and the Euclidean sequencer place their *steps* on the
           transport beat grid while playing (`stepTimes` in
@@ -5255,7 +5176,6 @@ projects:
         title: Note names on notes in the piano roll
         status: to-do
         sort_path: "000028"
-        priority: 0
         body: >-
           Draw each note's name (`C4`, `F#3`) inside the note, in low-contrast
           ink, always on - not on hover, not selection-only.
@@ -5286,12 +5206,232 @@ projects:
         id: 019fb8c0-0fcb-7420-acaa-00a45ee59c2d
         created_at: 2026-07-31T15:17:02.539Z
         updated_at: 2026-07-31T15:17:02.539Z
+      - ref: DAW-29
+        area: DAW
+        title: "UI refresh: token ramp, control language, light mode"
+        status: in-progress
+        sort_path: "000029"
+        body: >
+          A visual pass over the shell, worked out against a mockup and then
+          applied in slices. The plan, the token table (current -> dark ->
+          light) and the codebase findings live in `docs/UI-REFRESH.md`; this
+          item is the tracking parent.
+
+
+          **Not a library adoption.** The mockup was first drawn in shadcn/ui,
+          which turned out to be the wrong lesson: shadcn is a component library
+          plus a naming convention, and this app is ~70% custom widgets (knobs,
+          faders, waveforms, the roll, lanes, the rack) that no general-purpose
+          library has an answer for. Two findings settled it:
+
+
+          - shadcn gives **two surface tiers** where this app wants five, so
+          whichever depth hierarchy you pick there is nowhere to express it.
+
+          - The parts shadcn would actually cover are menus, dialogs, selects
+          and number fields. Everything else it does not touch.
+
+
+          So the visual direction was kept and the library dropped. The one
+          piece still worth taking is **React Aria Components** (Apache 2.0,
+          headless, zero CSS) for the behaviour under menus, dialogs, number
+          fields, and the awkward widgets Radix has no primitive for: `useMove`
+          for knobs and faders, `useDrag`/`useDrop` for clips, `Tree` for the
+          track column, `Meter` for level meters. Adopting it changes no pixels.
+          That is a separate, later decision, deliberately not part of this
+          item. Note that **React Spectrum** (Adobe's *styled* system) is a
+          different thing and is not on the table: Adobe Clean is proprietary
+          and cannot be redistributed, so the look cannot legally be reproduced
+          anyway.
+
+
+          **Why the depth model matters.** The centre workbench is now `ground`,
+          a dark void, with `stage` as the raised panels inside it. That inverts
+          what the tokens used to say (`--color-stage` was the *lightest*
+          chrome, and index.css claimed the centre "reads brightest"). The
+          inversion was Alden's call after seeing both, and it reads better:
+          wells cut into a dark surface rather than a bright table under dim
+          chrome.
+
+
+          **The naming rule earned a second clause.** `--color-bright` was
+          renamed to `--color-strong` because appearance names only describe one
+          theme, and a token called `bright` holding near-black in light mode is
+          a lie. That is the same class of mistake as the earlier
+          `--color-center` / `text-center` utility collision, which index.css
+          already documented.
+        id: 01a06c19-fb4f-765f-879e-c69be9382bdf
+        created_at: 2026-09-04T11:07:17.199Z
+        updated_at: 2026-09-04T11:07:17.199Z
+      - ref: DAW-29.1
+        area: DAW
+        title: Token ramp, controls, workbench layout, Google Sans
+        status: review
+        sort_path: "000029.000001"
+        parent: DAW-29
+        body: >
+          PR #112, stacked on `slice-101-header-pinning` (#111).
+
+
+          - **Tokens.** `--color-bright` -> `--color-strong` (37 files,
+          mechanical). Dark ramp drops a step at every tier for contrast
+          headroom. `--color-stage` changes meaning, not just value: centre is
+          `ground`, `stage` is the raised panels in it.
+
+          - **Controls.** One rule across all three: a 2px track, accent as the
+          filled portion. Knobs became arcs (value is the sweep length, legible
+          at 40px where a bare pointer is not), device faders got 16x8 caps,
+          mixer faders 9px ring handles. All tint by author via `authorHex` /
+          `authorFillStyle`, not a fixed accent.
+
+          - **Layout.** The pitched roll reserves a label gutter and names every
+          row, density following zoom via `RollRows.labelPriority` (octave Cs
+          always, naturals from 11px, accidentals from 16px; rows go down to 7px
+          where 9px text would spill). The workbench became a full-height clip
+          rail beside a column holding the notes surface and the rack, so the
+          panels share a left edge and the record button sits at the foot of the
+          rail.
+
+          - **Fonts.** Google Sans Flex (interface) + Google Sans Code (values),
+          both SIL OFL, self-hosted, weight-axis builds. 84K latin over the
+          wire. Keeping the mono in the same family matters more here than
+          usual: on this screen the mono is not an accent, it is most of the
+          text you read while working.
+
+
+          **Pre-existing bugs fixed on the way:** the vertical fader's cap was
+          centred with `-translate-y-1/2` against a `bottom` anchor (shifts the
+          wrong way); its hit area was the 8px visible track, now a 24px box;
+          and the roll's sticky label gutter was `z-6` while the velocity lane
+          and `Ruler` are both `z-10`, so scrolling dragged them across the note
+          names.
+
+
+          **Flaky specs seen, not caused by this:** `agent-chat.e2e.ts:78` and
+          `menus.e2e.ts:139` each failed once and passed on re-run plus two
+          further full runs. The menus one was checked properly rather than
+          assumed, since menu placement is measured from text widths and this
+          changes the font.
+        id: 01a06c1a-348c-70a6-94a1-09fc70c53aea
+        created_at: 2026-09-04T11:07:31.853Z
+        updated_at: 2026-09-04T11:07:31.853Z
+      - ref: DAW-29.2
+        area: DAW
+        title: Light mode
+        status: to-do
+        sort_path: "000029.000002"
+        parent: DAW-29
+        body: >
+          The second value per token, plus the things that assume a dark ground.
+          No new dependency, and independent of every other slice.
+
+
+          **The spike is already done and it passed.** Tailwind v4 `@theme`
+          emits tokens as `:root` custom properties and utilities reference them
+          via `var()` (`.bg-ground{background-color:var(--color-ground)}`),
+          verified by reading the emitted CSS from a real `vite build`. So a
+          `[data-theme="light"]` block repaints every plain utility and the
+          semantic layer does **not** need moving out of `@theme`.
+
+
+          One caveat found in the same output: opacity modifiers compile to a
+          baked hex fallback plus a `@supports (color-mix(...))` branch using
+          the var. The `@supports` branch is theme-reactive and wins on any
+          browser from 2023 on, and nothing that lacks `color-mix` can run Web
+          Audio + AudioWorklet + OPFS anyway. Documented rather than blocking.
+
+
+          **The actual work is 13 hardcoded colours** (enumerated in
+          `docs/UI-REFRESH.md`), every one of which assumes a dark ground: the
+          scrollbar thumb in index.css, the roll's grid gradients and
+          black-key/scale-tone tints, the Ruler's outside-loop shading (which
+          has to become a *lightening* in light mode, not a darkening), and the
+          sheet scrims and shadows.
+
+
+          Plus two behavioural items:
+
+
+          - `Waveform.tsx:76-79` resolves `--color-you` / `--color-claude` once
+          into a canvas draw. Correct today, wrong the moment a theme can change
+          at runtime, since the canvas keeps the old colours until something
+          else forces a redraw. Needs the theme as an effect dependency or a
+          `MutationObserver` on the theme attribute.
+
+          - Opacity modifiers like `bg-card/40` are tuned against a dark
+          backdrop and need re-checking, not just re-valuing.
+
+
+          **The design rule:** in light the ramp deliberately collapses. Almost
+          every surface goes white and `--color-line` does the separating,
+          because stacked greys read as depth on a dark ground and as grime on a
+          light one.
+        id: 01a06c1a-65b1-70ec-901d-63d7d4d0ae3a
+        created_at: 2026-09-04T11:07:44.433Z
+        updated_at: 2026-09-04T11:07:44.433Z
+      - ref: DAW-29.3
+        area: DAW
+        title: A button system, and the segmented control
+        status: to-do
+        sort_path: "000029.000003"
+        parent: DAW-29
+        body: >
+          The largest slice and the only one that touches file count rather than
+          values, so the one that can sprawl.
+
+
+          **There is no shared Button component.** `bg-card` appears ~38 times
+          across 24 files as bespoke Tailwind class strings (`bg-card border
+          border-line rounded-md ...`). This needs a `Button` / `IconButton` /
+          `Segmented` trio under `src/ui/controls/`, then migration.
+
+
+          **The agreed system**, settled by trying six treatments on the real
+          transport bar rather than in isolation, which changed the answer
+          twice:
+
+
+          - **Text buttons:** a subtle grey pill at rest, `color-mix(in srgb,
+          var(--color-ink) 9%, transparent)`.
+
+          - **Icon buttons:** nothing at rest. A word in a toolbar has no edges
+          of its own so it needs a container; an icon is already a shape, and a
+          box round it says the same thing twice.
+
+          - **Active state:** an accent-tinted pill in the control's semantic
+          colour (teal for play, coral for record), at the **same footprint** as
+          the resting state so nothing shifts on activation. Emphasis becomes a
+          property of *state* rather than a fixed property of a button, which is
+          the same rule the arc knobs and faders already follow.
+
+          - **Grouped choices:** a real segmented control.
+
+
+          What the transport bar exposed that isolated buttons did not: a fully
+          bare resting state leaves Play with the least affordance at exactly
+          the moment you need to find it; `Ruled` loses the record dot's target
+          entirely; a solid accent Play is loud enough that everything else
+          reads as disabled; and tinting record, play and metronome alike
+          flattens the hierarchy so nothing says which is primary.
+
+
+          **The segmented control is worth adding regardless of the rest**,
+          since snap division, zoom and the Melodic/Drums switch are all
+          currently loose buttons pretending not to be a group.
+
+
+          **Stopping point if it sprawls:** ship the components plus
+          `TransportBar` (the densest, most-used instance, which will surface
+          anything the components got wrong) and migrate the rest
+          opportunistically as files are touched.
+        id: 01a06c1a-9658-7269-aecc-56c6deb3e86a
+        created_at: 2026-09-04T11:07:56.889Z
+        updated_at: 2026-09-04T11:07:56.889Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
         status: review
         sort_path: "000001"
-        priority: 0
         body: >-
           **Motivation for the whole HOST area:** browser storage
           (OPFS/localStorage) was evicted by Chrome and wiped projects. We
@@ -5404,7 +5544,6 @@ projects:
         title: "Auth: principal, login, sharing"
         status: review
         sort_path: "000002"
-        priority: 0
         deps:
           - HOST-1
         body: >-
@@ -5530,7 +5669,6 @@ projects:
         title: Deploy on Fly and Neon, single-origin
         status: review
         sort_path: "000003"
-        priority: 0
         deps:
           - HOST-1
           - HOST-2
@@ -5606,7 +5744,6 @@ projects:
         title: B1 server keyframes and compaction
         status: review
         sort_path: "000004"
-        priority: 0
         deps:
           - HOST-1
         body: >-
@@ -5700,7 +5837,6 @@ projects:
         title: Offline foundation
         status: review
         sort_path: "000005"
-        priority: 0
         deps:
           - HOST-1
         body: >-
@@ -5777,7 +5913,6 @@ projects:
         title: B2 server-authoritative history
         status: review
         sort_path: "000006"
-        priority: 0
         deps:
           - HOST-4
           - HOST-5
@@ -5861,7 +5996,6 @@ projects:
         title: Commit as a log marker
         status: done
         sort_path: "000006.000001"
-        priority: 0
         parent: HOST-6
         body: >-
           *Steps 1-2 of HOST-6.*
@@ -5887,7 +6021,6 @@ projects:
           revert-as-marker
         status: done
         sort_path: "000006.000002"
-        priority: 0
         parent: HOST-6
         deps:
           - HOST-6.1
@@ -5936,7 +6069,6 @@ projects:
         title: "Verify live: two accounts, revert converges, cold-start exact"
         status: done
         sort_path: "000006.000003"
-        priority: 0
         parent: HOST-6
         deps:
           - HOST-6.2
@@ -5955,7 +6087,6 @@ projects:
         title: B3 headless MCP sync client
         status: to-do
         sort_path: "000007"
-        priority: 0
         deps:
           - AGENT-6
           - HOST-6
@@ -6010,7 +6141,6 @@ projects:
         title: "Hardening: quotas, rate-limit, sockets, auth config"
         status: to-do
         sort_path: "000008"
-        priority: 0
         deps:
           - HOST-2
           - HOST-3
@@ -6039,7 +6169,6 @@ projects:
         title: Per-owner quotas
         status: to-do
         sort_path: "000008.000001"
-        priority: 0
         parent: HOST-8
         body: >-
           Caps on projects / files / bytes per owner, so a single account can't
@@ -6056,7 +6185,6 @@ projects:
         title: Rate-limiting on the auth/JWT path
         status: to-do
         sort_path: "000008.000002"
-        priority: 0
         parent: HOST-8
         deps:
           - HOST-2
@@ -6075,7 +6203,6 @@ projects:
         title: WS ping/pong heartbeat + sweep
         status: to-do
         sort_path: "000008.000003"
-        priority: 0
         parent: HOST-8
         deps:
           - HOST-1
@@ -6095,7 +6222,6 @@ projects:
         title: Fail closed without auth config
         status: review
         sort_path: "000008.000004"
-        priority: 0
         parent: HOST-8
         body: >-
           **Done.** `resolveAuthConfig` (`server/api/principal.ts`) is the
@@ -6127,7 +6253,6 @@ projects:
         title: Configurable JWT audience
         status: to-do
         sort_path: "000008.000005"
-        priority: 0
         parent: HOST-8
         deps:
           - HOST-2
@@ -6151,7 +6276,6 @@ projects:
         title: Observability, structured logs
         status: to-do
         sort_path: "000009"
-        priority: 0
         deps:
           - HOST-3
         body: >-
@@ -6194,7 +6318,6 @@ projects:
         title: "MCP mirror: stream edits instead of full snapshots"
         status: to-do
         sort_path: "000010"
-        priority: 0
         deps:
           - AGENT-1
         body: >-
@@ -6238,7 +6361,6 @@ projects:
         title: Per-owner quotas
         status: to-do
         sort_path: "000011"
-        priority: 0
         body: >-
           *Part of HOST-8. Formerly `HOST-8.1`.*
 
@@ -6258,7 +6380,6 @@ projects:
         title: Rate-limiting on the auth/JWT path
         status: to-do
         sort_path: "000012"
-        priority: 0
         body: >-
           *Part of HOST-8. Formerly `HOST-8.2`.*
 
@@ -6278,7 +6399,6 @@ projects:
         title: WS ping/pong heartbeat + sweep
         status: to-do
         sort_path: "000013"
-        priority: 0
         body: >-
           *Part of HOST-8. Formerly `HOST-8.3`.*
 
@@ -6299,7 +6419,6 @@ projects:
         title: Fail closed without auth config
         status: review
         sort_path: "000014"
-        priority: 0
         body: >-
           *Part of HOST-8. Formerly `HOST-8.4`.*
 
@@ -6334,7 +6453,6 @@ projects:
         title: Configurable JWT audience
         status: to-do
         sort_path: "000015"
-        priority: 0
         body: >-
           *Part of HOST-8. Formerly `HOST-8.5`.*
 
@@ -6360,7 +6478,6 @@ projects:
           oscillates"
         status: to-do
         sort_path: "000016"
-        priority: 0
         body: >-
           Reported by the user, 2026-07-30, on the deployed build with **no
           internet**: the top bar and the sync chip flash while the client tries
@@ -6447,7 +6564,6 @@ projects:
         title: A project has a link
         status: review
         sort_path: "000017"
-        priority: 0
         deps:
           - HOST-2
         body: >-
@@ -6519,7 +6635,6 @@ projects:
         title: Built-in instruments
         status: done
         sort_path: "000001"
-        priority: 0
         deps:
           - DAW-1
         body: >-
@@ -6633,7 +6748,6 @@ projects:
         title: Effects chain
         status: done
         sort_path: "000002"
-        priority: 0
         deps:
           - INST-1
         body: >-
@@ -6667,7 +6781,6 @@ projects:
         title: Factory patches and sample library
         status: done
         sort_path: "000003"
-        priority: 0
         deps:
           - INST-1
           - INST-2
@@ -6746,7 +6859,6 @@ projects:
         title: User-authored declarative DSP
         status: review
         sort_path: "000004"
-        priority: 0
         body: >-
           **The direction in one line.** Make the **declarative primitive graph
           the primary instrument/effect format** (data, not code), cover as much
@@ -6840,7 +6952,7 @@ projects:
         id: 019fae08-0604-778c-9969-16ce3b4f438e
         created_at: 2026-07-29T13:19:49.252Z
         updated_at: 2026-07-29T13:19:49.252Z
-        notes:
+        comments:
           - body: "2026-08-12: agreed the follow-on ordering off this ticket, after
               reviewing what actually shipped. The format, interpreter,
               validation, persistence, undo and live registration all work, and
@@ -6868,7 +6980,6 @@ projects:
         title: Extension SDK for third-party devices
         status: to-do
         sort_path: "000005"
-        priority: 0
         deps:
           - INST-4
         body: >-
@@ -6991,7 +7102,6 @@ projects:
         title: WASM DSP and Faust factory
         status: planning
         sort_path: "000006"
-        priority: 0
         deps:
           - INST-15
           - INST-5
@@ -7098,7 +7208,6 @@ projects:
         title: Audio pitch and time
         status: to-do
         sort_path: "000007"
-        priority: 0
         deps:
           - DAW-6
         body: >-
@@ -7139,7 +7248,6 @@ projects:
         title: Autotune / pitch correction
         status: planning
         sort_path: "000008"
-        priority: 0
         deps:
           - DAW-12
           - INST-7
@@ -7199,7 +7307,6 @@ projects:
         title: Drum-kit sourcing and synthesized voices
         status: to-do
         sort_path: "000009"
-        priority: 0
         deps:
           - INST-1
           - INST-13
@@ -7250,7 +7357,6 @@ projects:
         title: In-app IDE and user-authored components
         status: planning
         sort_path: "000010"
-        priority: 0
         deps:
           - INST-5
         body: >-
@@ -7283,7 +7389,6 @@ projects:
         title: Agent-authored MIDI devices (the note path is code-only)
         status: planning
         sort_path: "000011"
-        priority: 0
         deps:
           - INST-4
         body: >-
@@ -7342,7 +7447,7 @@ projects:
         id: 019fb3c7-2d49-7606-85ba-d12f7460aae0
         created_at: 2026-07-30T16:06:42.762Z
         updated_at: 2026-07-30T16:06:42.762Z
-        notes:
+        comments:
           - body: 'Shipped the Euclidean MIDI device (Torso T-1 style) on branch
               `slice-96-mobile-shell`, 2026-07-30. The user then asked how much
               of it the in-app agent could have built itself - the answer was
@@ -7359,7 +7464,6 @@ projects:
         title: Envelopes and per-note gates in the declarative format
         status: to-do
         sort_path: "000012"
-        priority: 0
         deps:
           - INST-4
         body: >-
@@ -7415,7 +7519,6 @@ projects:
         title: Grow the native-node vocabulary
         status: to-do
         sort_path: "000013"
-        priority: 0
         deps:
           - INST-4
         body: >-
@@ -7489,7 +7592,6 @@ projects:
         title: Author declarative devices from the in-app agent panel
         status: to-do
         sort_path: "000014"
-        priority: 0
         deps:
           - AGENT-2
           - INST-4
@@ -7541,7 +7643,6 @@ projects:
         title: Worklet-backed leaf primitives in the vocabulary
         status: to-do
         sort_path: "000015"
-        priority: 0
         deps:
           - INST-4
         body: >-
@@ -7601,7 +7702,6 @@ projects:
         title: Responsive shell, tier by device
         status: in-progress
         sort_path: "000001"
-        priority: 0
         body: >-
           An epic; direction settled 2026-07-14. The four-region video-editor
           grid assumes a wide screen; touch devices need a different shape. A
@@ -7653,7 +7753,7 @@ projects:
         id: 019fae0c-8f83-7472-86e9-e1e8f5f0c6cd
         created_at: 2026-07-29T13:24:46.595Z
         updated_at: 2026-07-29T18:37:35.521Z
-        notes:
+        comments:
           - body: "Step 1 of the sequencing (the spike) is built on `slice-96-mobile-shell`:
               `useDeviceTier` (phone/tablet/desktop from `pointer: coarse` +
               width), `DesktopShell` extracted out of `AppShell` verbatim, and a
@@ -7938,7 +8038,6 @@ projects:
         title: "Touch gestures: pinch-zoom, two-finger pan, hit-target floors"
         status: to-do
         sort_path: "000002"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-
@@ -7995,7 +8094,7 @@ projects:
         id: 019fae0c-b32a-724c-bad1-b354de720785
         created_at: 2026-07-29T13:24:55.722Z
         updated_at: 2026-07-31T15:33:36.331Z
-        notes:
+        comments:
           - body: >-
               Observed on the deployed MOBILE-1 build, 2026-07-30: **pinch on
               the arrangement timeline and the piano roll zooms the whole
@@ -8128,7 +8227,6 @@ projects:
         title: "PWA packaging: manifest, service worker, icons"
         status: to-do
         sort_path: "000003"
-        priority: 0
         deps:
           - HOST-5
         body: >-
@@ -8158,7 +8256,6 @@ projects:
         title: Tauri v2, desktop and mobile
         status: planning
         sort_path: "000004"
-        priority: 0
         deps:
           - MOBILE-3
         body: >-
@@ -8204,7 +8301,6 @@ projects:
         title: "The editor sheet: throwable detents over the arrangement"
         status: review
         sort_path: "000005"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-
@@ -8342,7 +8438,6 @@ projects:
         title: Pads and clips as sections under the roll
         status: review
         sort_path: "000006"
-        priority: 0
         deps:
           - MOBILE-5
         body: >-
@@ -8541,7 +8636,6 @@ projects:
         title: "Touch editing: select, then handles and a kebab"
         status: to-do
         sort_path: "000007"
-        priority: 0
         deps:
           - MOBILE-5
         body: >-
@@ -8632,7 +8726,7 @@ projects:
         id: 019fb8bf-be5a-756f-9c63-7d0ac202be7f
         created_at: 2026-07-31T15:16:41.690Z
         updated_at: 2026-07-31T15:33:36.974Z
-        notes:
+        comments:
           - body: "**Settled 2026-07-31, same day it was raised** (the note previously
               flagged it as blocking). In the roll, a tap on empty space means
               *deselect if something is selected, otherwise create a note* - the
@@ -8653,7 +8747,6 @@ projects:
         title: "Safe areas: pad all four insets, not just the bottom"
         status: to-do
         sort_path: "000008"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-
@@ -8710,7 +8803,6 @@ projects:
         title: Adding from the library should get out of the way on a phone
         status: review
         sort_path: "000009"
-        priority: 0
         deps:
           - MOBILE-5
         body: >-
@@ -8779,7 +8871,6 @@ projects:
         title: Swipe the library and agent sheets closed
         status: to-do
         sort_path: "000010"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-
@@ -8883,7 +8974,6 @@ projects:
         title: Project settings are unreachable while the sheet is up
         status: review
         sort_path: "000011"
-        priority: 0
         deps:
           - MOBILE-5
         body: >-
@@ -8952,7 +9042,6 @@ projects:
         title: "Chords mode: the pads play the key, not just the notes"
         status: to-do
         sort_path: "000012"
-        priority: 0
         deps:
           - MOBILE-6
         body: >-
@@ -9010,7 +9099,6 @@ projects:
         title: The pads light up with what the track is actually playing
         status: to-do
         sort_path: "000013"
-        priority: 0
         deps:
           - MOBILE-6
         body: >-
@@ -9062,7 +9150,6 @@ projects:
         title: Velocity you can play, not just edit
         status: to-do
         sort_path: "000014"
-        priority: 0
         deps:
           - MOBILE-6
         body: >-
@@ -9111,7 +9198,6 @@ projects:
         title: Drag up to bend, like pushing a string
         status: to-do
         sort_path: "000015"
-        priority: 0
         deps:
           - MOBILE-6
         body: >-
@@ -9162,7 +9248,6 @@ projects:
         title: Pinned headers are a question about room, not about tier
         status: review
         sort_path: "000016"
-        priority: 0
         deps:
           - MOBILE-1
         body: >-

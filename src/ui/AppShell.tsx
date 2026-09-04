@@ -19,7 +19,12 @@ import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operations";
 import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
-import { currentProjectId, setCurrentProject, subscribeCurrentProject } from "../audio/projectRepository";
+import {
+  currentProjectId,
+  loadedProjectId,
+  setCurrentProject,
+  subscribeCurrentProject,
+} from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
 import type { ConflictInfo } from "../audio/sync/conflict";
@@ -189,11 +194,18 @@ export function AppShell() {
    */
   const linkedProjectId = useRef(projectIdFromLocation() ?? projectIdFromPath(takeAuthReturnPath() ?? ""));
   const openProjectId = useSyncExternalStore(subscribeCurrentProject, currentProjectId);
+  const storeHolds = useSyncExternalStore(subscribeCurrentProject, loadedProjectId);
   useEffect(() => {
     // Not before the library has opened something: until then the id is a placeholder, and
     // pointing the address bar at it would clobber the link we were asked to open.
-    if (projectLoaded) syncProjectUrl(openProjectId, project.name);
-  }, [projectLoaded, openProjectId, project.name]);
+    //
+    // And not while those two disagree. `setCurrentProject` repoints synchronously, but the
+    // store keeps the previous project until a load finishes some `await`s later, so during a
+    // switch `openProjectId` is the new project and `project.name` is still the old one's -
+    // which would put the old name's slug on the new project's URL. CI caught it; the gap is
+    // milliseconds locally and long enough there to see.
+    if (projectLoaded && storeHolds === openProjectId) syncProjectUrl(openProjectId, project.name);
+  }, [projectLoaded, storeHolds, openProjectId, project.name]);
 
   const versionStore = useMemo(() => new VersionStore(projectStore, editLog), [projectStore, editLog]);
 

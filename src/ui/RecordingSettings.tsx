@@ -125,7 +125,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
           <label htmlFor="record-offset" className="text-[12.5px] text-ink">
             Recording latency
           </label>
-          <span className="ml-auto font-mono text-[12px] text-bright tabular-nums">{offsetMs} ms</span>
+          <span className="ml-auto font-mono text-[12px] text-strong tabular-nums">{offsetMs} ms</span>
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -168,7 +168,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
         ) : cal.phase === "done" ? (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[12.5px] text-ink">
-              Measured <span className="font-mono text-bright">{cal.offsetMs} ms</span>{" "}
+              Measured <span className="font-mono text-strong">{cal.offsetMs} ms</span>{" "}
               <span className="text-faint">
                 ({cal.matched} taps, ±{cal.spreadMs} ms
                 {cal.spreadMs > 20 ? " - a bit shaky, redo for a tighter read" : ""})
@@ -178,7 +178,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
               <button
                 type="button"
                 onClick={applyCalibration}
-                className="px-2.5 py-1 rounded-md text-[12px] cursor-pointer bg-you/15 border border-you text-bright"
+                className="px-2.5 py-1 rounded-md text-[12px] cursor-pointer bg-you/15 border border-you text-strong"
               >
                 Apply
               </button>

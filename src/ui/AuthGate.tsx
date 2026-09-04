@@ -70,7 +70,7 @@ const GITHUB_ENABLED = false;
 function LoginScreen() {
   return (
     <GateCard>
-      <h2 id="auth-title" className="text-lg font-semibold text-bright">
+      <h2 id="auth-title" className="text-lg font-semibold text-strong">
         Sign in to web-daw
       </h2>
       <p className="text-sm text-muted leading-relaxed">
