@@ -8834,7 +8834,7 @@ projects:
         sort_path: "000007"
         deps:
           - MOBILE-5
-        body: >-
+        body: >
           One editing model for notes in the piano roll and clips in the
           timeline. **This answers the "explicit tool model (draw / select /
           erase)" question MOBILE-2 raises** - differently, and that ticket has
@@ -8919,9 +8919,72 @@ projects:
           Applies to the desktop surfaces too wherever it costs nothing -
           MOBILE-2's standing point is that touch-reachable equivalents are
           cheap to build in and expensive to retrofit.
+
+
+          ## Selecting more than one (raised 2026-09-04)
+
+
+          The single-selection model above needs a way to reach a group, or
+          every multi-note edit on a phone is one note at a time. Proposed:
+          **long-press a note to begin multi-selecting**, then handles that act
+          on the whole set.
+
+
+          Long-press is free to use. It is conventionally the context-menu
+          trigger, but the actions live on a kebab attached to the object here,
+          so nothing else wants it.
+
+
+          **The open question is whether it is a mode at all**, and it is worth
+          settling before building, because MOBILE-2 rejected an explicit tool
+          model on the grounds that selection alone should decide what a gesture
+          means. A multi-select mode reintroduces a lighter version of that.
+          Three readings, in increasing weight:
+
+
+          1. **Long-press is the shift key.** No mode: a tap replaces the
+          selection, a long-press adds to it. Nothing to enter, nothing to exit,
+          nothing to display, and it is the same mental model as the desktop's
+          shift-click. Slow to build a large selection, at ~500ms a note.
+
+          2. **Long-press, then sweep.** Long-press a note and keep dragging to
+          gather everything the finger passes - the iOS Photos gesture. Fast,
+          and it is the *marquee we just took away*: the rubber band was not
+          wrong, it was wrong as the default meaning of an empty-space drag,
+          where it fought panning and pinching. Behind a deliberate gesture that
+          conflict disappears.
+
+          3. **A real mode**, entered by long-press and exited explicitly, in
+          which taps toggle membership. The most discoverable and the most
+          conventional, and the only one that needs an exit affordance and a
+          visible state.
+
+
+          (1) and (2) compose, and together they may be the whole answer without
+          a mode: long-press to add, long-press-and-sweep to add many.
+
+
+          **Group handles are not just bigger handles.** A selection gets a
+          bounding box with its own move and resize handles, but *resize* means
+          two different things at that scale and only one of them is what a
+          single note's resize means:
+
+
+          - **Trim** - every note's length changes by the same amount, which is
+          the single-note behaviour applied n times.
+
+          - **Scale** - the whole span stretches, so note starts move apart and
+          lengths grow proportionally. This is the musically interesting one
+          (stretch a phrase to double time) and it is a genuinely different
+          operation.
+
+
+          Both are wanted eventually; picking one for the corner handle and
+          putting the other in the kebab is the likely answer, but which way
+          round is not obvious and should be tried rather than argued.
         id: 019fb8bf-be5a-756f-9c63-7d0ac202be7f
         created_at: 2026-07-31T15:16:41.690Z
-        updated_at: 2026-07-31T15:33:36.974Z
+        updated_at: 2026-09-04T16:57:01.923Z
         comments:
           - body: "**Settled 2026-07-31, same day it was raised** (the note previously
               flagged it as blocking). In the roll, a tap on empty space means
