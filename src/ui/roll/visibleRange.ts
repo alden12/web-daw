@@ -15,20 +15,21 @@
 export function clampIntoView({
   wanted,
   width,
-  scrollLeft,
-  clientWidth,
+  scrollOffset,
+  viewportSize,
   leadPx,
 }: {
   /** Where the thing would go if nothing were in the way, in content pixels. */
   wanted: number;
   /** How wide it is, so its far edge lands inside the viewport rather than its near one. */
   width: number;
-  scrollLeft: number;
-  clientWidth: number;
+  /** `scrollLeft`, or `scrollTop` on the other axis - none of this cares which. */
+  scrollOffset: number;
+  viewportSize: number;
   leadPx: number;
 }): number {
-  const first = scrollLeft;
-  const last = scrollLeft + clientWidth - leadPx - width;
+  const first = scrollOffset;
+  const last = scrollOffset + viewportSize - leadPx - width;
   // `first` wins a viewport too narrow to hold the thing at all, so it stays reachable at the
   // near edge rather than being pushed off the far one.
   return Math.max(first, Math.min(wanted, last));
