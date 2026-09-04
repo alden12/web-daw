@@ -325,12 +325,12 @@ export function ArrangementTimeline({
    * the two gestures cannot drift apart.
    */
   const zoomTimeAxis = useCallback(
-    (factor: number, clientX: number) => {
+    (factor: number, clientX: number, panPx = 0) => {
       const element = scrollRef.current;
       if (!element) return;
       const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
       setPxPerBeat(next);
-      anchorZoomX({ element, clientPosition: clientX, leadPx: headerW, from: pxPerBeat, to: next });
+      anchorZoomX({ element, clientPosition: clientX, leadPx: headerW, from: pxPerBeat, to: next, panPx });
     },
     [pxPerBeat, setPxPerBeat, headerW],
   );
@@ -348,9 +348,18 @@ export function ArrangementTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomTimeAxis]);
 
-  // One axis here: the arrangement's vertical is a list of tracks with their own heights, not
-  // a continuous scale, so there is nothing for a vertical pinch to mean.
-  const onPinch = useCallback(({ scaleX, clientX }: PinchGesture) => zoomTimeAxis(scaleX, clientX), [zoomTimeAxis]);
+  // One zoom axis here: the arrangement's vertical is a list of tracks with their own heights,
+  // not a continuous scale, so there is nothing for a vertical pinch to *scale*. It still
+  // pans, because the lanes scroll vertically and two fingers should move the view they are
+  // resizing.
+  const onPinch = useCallback(
+    ({ scaleX, clientX, panX, panY }: PinchGesture) => {
+      zoomTimeAxis(scaleX, clientX, panX);
+      const element = scrollRef.current;
+      if (element) element.scrollTop -= panY;
+    },
+    [zoomTimeAxis],
+  );
   usePinchZoom(scrollRef, onPinch);
 
   // Keep the time-axis offset across remounts (a shell swap, or a phone rotated into the

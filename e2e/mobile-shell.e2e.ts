@@ -299,6 +299,50 @@ test.describe("phone", () => {
     expect(marquees, "no rubber-band from a finger").toBe(0);
   });
 
+  /**
+   * Two fingers reposition as well as resize - you pinch to frame a bar, not merely to make
+   * it bigger. The browser cannot do the panning for us here, because declining the gesture
+   * to get the zoom declines its pan along with it, so the centroid's travel is applied in
+   * the same frame as the scale.
+   *
+   * Also guards the other half of what a pinch must not do: leave notes behind it. Each
+   * finger is a `pointerdown` on the grid, and the roll's empty-space press creates a note on
+   * release unless something recorded that it moved.
+   */
+  test("two fingers pan the roll as well as zoom it, and leave no notes behind", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await segment(page, "Edit").tap();
+
+    const scroller = page.getByTestId("roll-scroll");
+    const box = (await scroller.boundingBox())!;
+    const scrollLeft = () => scroller.evaluate((el) => el.scrollLeft);
+    const notes = () => page.getByTestId("note").count();
+
+    const before = { scroll: await scrollLeft(), notes: await notes() };
+
+    // Both fingers travel the same way, keeping their separation: a pure pan, so whatever
+    // moves has to be the view rather than the scale.
+    const cdp = await page.context().newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const pair = (centre: number) => [
+      { x: centre - 50, y, id: 1 },
+      { x: centre + 50, y, id: 2 },
+    ];
+    const midX = box.x + box.width / 2;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pair(midX) });
+    for (const offset of [-25, -50, -75, -100]) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: pair(midX + offset) });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect
+      .poll(scrollLeft, { message: "dragging two fingers left moved the view right" })
+      .toBeGreaterThan(before.scroll);
+    expect(await notes(), "a pinch is not a note").toBe(before.notes);
+  });
+
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

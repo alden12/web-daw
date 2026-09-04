@@ -30,24 +30,30 @@ export interface AnchoredZoom {
   /** Scale before and after, in pixels per content unit (a beat, or a pitch row). */
   from: number;
   to: number;
+  /**
+   * How far the anchor itself travelled, for a gesture that repositions as well as scales.
+   * Applied in the same frame as the zoom rather than as a separate scroll write, so the two
+   * cannot land in different frames and judder against each other.
+   */
+  panPx?: number;
 }
 
 /** Horizontal: keeps the beat under `clientPosition` where it was. */
-export function anchorZoomX({ element, clientPosition, leadPx, from, to }: AnchoredZoom): void {
+export function anchorZoomX({ element, clientPosition, leadPx, from, to, panPx = 0 }: AnchoredZoom): void {
   if (from <= 0 || to <= 0) return;
   const local = clientPosition - element.getBoundingClientRect().left;
   const unitAtAnchor = (local + element.scrollLeft - leadPx) / from;
   requestAnimationFrame(() => {
-    element.scrollLeft = unitAtAnchor * to - local + leadPx;
+    element.scrollLeft = unitAtAnchor * to - local + leadPx - panPx;
   });
 }
 
 /** Vertical: keeps the pitch row under `clientPosition` where it was. */
-export function anchorZoomY({ element, clientPosition, leadPx, from, to }: AnchoredZoom): void {
+export function anchorZoomY({ element, clientPosition, leadPx, from, to, panPx = 0 }: AnchoredZoom): void {
   if (from <= 0 || to <= 0) return;
   const local = clientPosition - element.getBoundingClientRect().top;
   const unitAtAnchor = (local + element.scrollTop - leadPx) / from;
   requestAnimationFrame(() => {
-    element.scrollTop = unitAtAnchor * to - local + leadPx;
+    element.scrollTop = unitAtAnchor * to - local + leadPx - panPx;
   });
 }
