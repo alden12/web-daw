@@ -12,7 +12,7 @@
  * canvas can list it as an effect dependency instead of every component growing its own
  * observer.
  */
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { usePersistentString } from "./usePersistent";
 
 export const THEME_CHOICES = ["system", "dark", "light"] as const;
@@ -103,6 +103,16 @@ function resolveTheme(): "dark" | "light" {
  * for free from CSS.
  */
 export function useResolvedTheme(): "dark" | "light" {
-  const version = useThemeVersion();
-  return useMemo(() => resolveTheme(), [version]);
+  // The same subscription as `useThemeVersion`, reading the resolved theme rather than a
+  // counter. A string snapshot compares by value, so this re-renders on a real change and
+  // not on every notification.
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      watch();
+      listeners.add(onStoreChange);
+      return () => void listeners.delete(onStoreChange);
+    },
+    resolveTheme,
+    () => "dark",
+  );
 }
