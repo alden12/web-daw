@@ -13,7 +13,7 @@ Status: in progress. Written 2026-09-04.
 - [x] **Slice 2**: dark ramp retune + the `--color-stage` remap.
 - [x] **Slice 3**: controls (arc knob, thin-track fader, vertical fader cap).
 - [x] **Slice 3.5**: pitched-roll label gutter, and the device rack as a panel.
-- [ ] Slice 4: light mode.
+- [x] **Slice 4**: light mode, including re-lighting the author palette for a white ground.
 - [ ] Slice 5: button system.
 
 ## How well does it actually apply?
@@ -60,21 +60,21 @@ All values in `src/index.css:14-37`.
 | Token | Today | Dark (new) | Light (new) | Uses | Role |
 | --- | --- | --- | --- | --- | --- |
 | `--color-ground` | `#101216` | `#0a0c0e` | `#ffffff` | 47 | App background, inputs, lane grids, the centre surround, device bodies |
-| `--color-rail` | `#14171c` | `#0f1216` | `#fafafa` | 12 | Activity rail, library, toolbars |
+| `--color-rail` | `#14171c` | `#0f1216` | `#ffffff` | 12 | Activity rail, library, toolbars |
 | `--color-panel` | `#1a1d24` | `#14171c` | `#ffffff` | 13 | Agent panel, track headers, the device tray, mobile sheets |
-| `--color-stage` | `#22262f` | `#101317` | `#ffffff` | 3 | **Meaning changes.** No longer the centre surround; now the raised panels in it (piano roll, device rack) |
-| `--color-card` | `#2b313c` | `#242a33` | `#f4f4f5` | 38 | Buttons, clip blocks, menus |
-| `--color-line` | `#363d49` | `#2a3038` | `#e4e4e7` | 149 | Borders. In light these carry the structure |
-| `--color-line-soft` | `#282e38` | `#1c2129` | `#eeeef0` | 4 | Softer borders, beat lines |
-| `--color-ink` | `#e8e6e0` | `#e8e7e3` | `#16181c` | 83 | Body text, kept faintly warm on purpose |
+| `--color-stage` | `#22262f` | `#101317` | `#fbfcfd` | 3 | **Meaning changes.** No longer the centre surround; now the raised panels in it (piano roll, device rack) |
+| `--color-card` | `#2b313c` | `#242a33` | `#e8ebef` | 38 | Buttons, clip blocks, menus |
+| `--color-line` | `#363d49` | `#2a3038` | `#dde1e7` | 149 | Borders. In light these carry the structure |
+| `--color-line-soft` | `#282e38` | `#1c2129` | `#edeff3` | 4 | Softer borders, beat lines |
+| `--color-ink` | `#e8e6e0` | `#e8e7e3` | `#1a1d22` | 83 | Body text, kept faintly warm on purpose |
 | `--color-bright` | `#ffffff` | see Part 2 | see Part 2 | 57 | Emphasised text |
-| `--color-muted` | `#868c99` | `#8b929c` | `#6a6f78` | 99 | Secondary text, labels |
-| `--color-faint` | `#5c626e` | `#5f656f` | `#9aa0aa` | 99 | Tertiary text, inactive icons |
-| `--color-you` | `#56c7c2` | unchanged | `#0d9488` | - | Your edits, playhead, selection, primary accent |
-| `--color-agent` | `#a884f3` | unchanged | `#7c5cde` | - | Built-in agent |
-| `--color-claude` | `#d9775a` | unchanged | `#c2532f` | - | MCP / Claude driver, record |
+| `--color-muted` | `#868c99` | `#8b929c` | `#667080` | 99 | Secondary text, labels |
+| `--color-faint` | `#5c626e` | `#5f656f` | `#98a0ac` | 99 | Tertiary text, inactive icons |
+| `--color-you` | `#56c7c2` | unchanged | re-lit, see below | - | Your edits, playhead, selection, primary accent |
+| `--color-agent` | `#a884f3` | unchanged | re-lit, see below | - | Built-in agent |
+| `--color-claude` | `#d9775a` | unchanged | re-lit, see below | - | MCP / Claude driver, record |
 | `--color-good` | `#2ecc71` | unchanged | `#15a34a` | - | Success |
-| `--color-warn` | `#f1c40f` | unchanged | `#ca8a04` | - | Warning, solo |
+| `--color-warn` | `#f1c40f` | unchanged | `#b07908` | - | Warning, solo |
 
 Two rules behind the dark column:
 
@@ -85,13 +85,27 @@ Two rules behind the dark column:
    is the single step up, used only for the surfaces you actually work on. This
    inverts the current hierarchy, where `stage` is the lightest chrome.
 
-And the rule behind the light column: **the ramp deliberately collapses.**
-Almost every surface goes white and `--color-line` does the separating. Stacked
-greys read as depth on a dark ground and as grime on a light one. Only the rail
-keeps a barely-off-white.
+And the rule behind the light column, which is **not** the dark ramp inverted.
+In dark the work surfaces are the deepest thing and the chrome lifts off them; on
+a light ground that reads as grime, and it is backwards anyway, since the surface
+you stare at all day should be the clean one. So the roles swap: the work areas go
+white (`ground`, `stage`) and the chrome goes grey (`panel`, and `frame` for the
+icon rail and tab bar). `card` flips with them, separating by being *darker* since
+there is nothing above white.
 
-The voice colours are unchanged in dark and darkened in light purely for
-contrast against white. They stay the identity in both.
+`--color-frame` is new: the icon rail and the editor tab bar are the only two
+surfaces that stay grey in light while everything they frame goes white, so they
+needed a role of their own rather than sharing `rail` with the library.
+
+**The author palette had to be re-lit, and that was the real find.** The swatches
+are drawn for a near-black ground; on white, seven of ten fall under the 3:1 floor
+for a UI component (teal 2.03:1, lime 1.88:1). They are also resolved *twice* - as
+a CSS variable, and in JS by `colorForAuthor` for everything that tints by author -
+so any fix has to move both, or you get two different teals in one window. The
+resolution: hue and chroma are the identity, lightness belongs to the theme. Light
+mode re-lights via OKLab (`src/ui/oklch.ts`) to L=0.55, solved rather than picked
+(worst swatch lands at 4.54:1). `colorForAuthor` is untouched, so the Authors
+picker still shows and stores exactly what the user chose.
 
 ## Part 2: The `--color-bright` problem
 

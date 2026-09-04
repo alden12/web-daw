@@ -11,6 +11,7 @@
  */
 import type { CSSProperties } from "react";
 import { colorForAuthor } from "./authorColors";
+import { withLightness } from "./oklch";
 import type { AuthorPresence } from "./authorColorsContext";
 
 /** #rrggbb -> rgba() at `alpha`, so an accent can tint fills/borders at any opacity (Tailwind's `/NN`). */
@@ -22,9 +23,27 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/** The author's accent hex from the viewer's perspective (own = teal, others by id). */
-export const authorHex = (author: string, presence: AuthorPresence): string =>
-  colorForAuthor(author, presence.config, presence.self);
+/**
+ * OKLab lightness the palette is re-lit to on a white ground. Solved rather than picked: at
+ * 0.55 the worst swatch reaches 4.54:1 against white, so every author clears the 4.5:1 text
+ * threshold and comfortably clears the 3:1 floor for a UI component (WCAG 1.4.11). Dark is
+ * left exactly as authored, since the palette was drawn for it and already runs 6.3-10.4:1.
+ */
+const LIGHT_GROUND_LIGHTNESS = 0.55;
+
+/**
+ * The author's accent from the viewer's perspective (own = teal, others by id), at the
+ * lightness the current ground needs.
+ *
+ * `colorForAuthor` stays the identity: it is what the Authors picker shows and what gets
+ * stored, so a chosen colour is never quietly rewritten. Only the *rendered* value moves,
+ * and only downwards, and only on white. Hue and chroma are untouched, so teal is still
+ * recognisably teal; it just stops being invisible.
+ */
+export const authorHex = (author: string, presence: AuthorPresence): string => {
+  const identity = colorForAuthor(author, presence.config, presence.self);
+  return presence.theme === "light" ? withLightness(identity, LIGHT_GROUND_LIGHTNESS) : identity;
+};
 
 /** A small coloured dot / solid pointer in the author's colour. */
 export const authorDotStyle = (author: string, presence: AuthorPresence): CSSProperties => ({

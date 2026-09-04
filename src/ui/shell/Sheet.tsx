@@ -66,8 +66,8 @@ export function Sheet({
         inert={!open}
         className={`absolute top-0 bottom-0 z-50 flex flex-col bg-panel ${
           side === "left"
-            ? "left-0 border-r shadow-[14px_0_40px_-12px_#000]"
-            : "right-0 border-l shadow-[-14px_0_40px_-12px_#000]"
+            ? "left-0 border-r shadow-[14px_0_40px_-12px_var(--sheet-shadow)]"
+            : "right-0 border-l shadow-[-14px_0_40px_-12px_var(--sheet-shadow)]"
         } border-line ${widthClass ?? "w-[88%] max-w-108"} transition-transform duration-200 motion-reduce:transition-none ${
           open ? "translate-x-0" : `${hidden} pointer-events-none`
         }`}

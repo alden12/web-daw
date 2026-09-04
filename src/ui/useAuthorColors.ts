@@ -6,7 +6,9 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { readAuthorColors, subscribeAuthorColors, type AuthorColorConfig } from "./authorColors";
-import { DEFAULT_VOICE_COLORS, type Voice } from "./authorVoice";
+import { type Voice } from "./authorVoice";
+import { authorHex } from "./authorStyle";
+import { useResolvedTheme } from "./theme";
 
 export function useAuthorColors(): AuthorColorConfig {
   return useSyncExternalStore(subscribeAuthorColors, readAuthorColors, readAuthorColors);
@@ -14,12 +16,24 @@ export function useAuthorColors(): AuthorColorConfig {
 
 const VOICES: Voice[] = ["you", "agent", "claude"];
 
-/** Push the configured (or default) voice colours into the root CSS variables. */
+/**
+ * Push the configured (or default) voice colours into the root CSS variables, re-lit for the
+ * ground they will be drawn on.
+ *
+ * These are written as inline styles on <html>, which outrank any stylesheet, so this is the
+ * only place the CSS side of a voice can be themed. It has to apply exactly the same
+ * transform as `authorHex` does for the JS side: the two paths meet constantly (a clip block
+ * is `authorBlockStyle`, the play button beside it is `text-you`), and any drift shows up as
+ * two different teals in one window.
+ */
 export function useSyncAuthorColorVars(config: AuthorColorConfig): void {
+  const presence = { config, self: "you", theme: useResolvedTheme() };
   useEffect(() => {
     const root = document.documentElement;
     for (const voice of VOICES) {
-      root.style.setProperty(`--color-${voice}`, config[voice] ?? DEFAULT_VOICE_COLORS[voice]);
+      root.style.setProperty(`--color-${voice}`, authorHex(voice, presence));
     }
-  }, [config]);
+    // `presence` is rebuilt each render; its contents are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, presence.theme]);
 }

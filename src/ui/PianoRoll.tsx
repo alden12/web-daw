@@ -566,8 +566,8 @@ export function PianoRoll({
 
   const gridBg = [
     `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${pxPerBeat}px)`,
-    `repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${cellW}px)`,
-    `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${rowH}px)`,
+    `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${cellW}px)`,
+    `repeating-linear-gradient(0deg, var(--color-line-soft) 0 1px, transparent 1px ${rowH}px)`,
   ].join(", ");
 
   // Quantize the selection (or the whole clip if nothing is selected) to the snap grid,
@@ -752,7 +752,7 @@ export function PianoRoll({
             >
               {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
               <div
-                className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
+                className="absolute top-0 bottom-0 bg-recess pointer-events-none"
                 style={{ left: beatToX(len, pxPerBeat), width: beatToX(viewBeats - len, pxPerBeat) }}
               />
 
@@ -762,7 +762,7 @@ export function PianoRoll({
                 return (
                   <div
                     key={pitch}
-                    className={`absolute left-0 right-0 pointer-events-none ${rows.highlight(pitch) ? "bg-white/[0.035]" : ""}`}
+                    className={`absolute left-0 right-0 pointer-events-none ${rows.highlight(pitch) ? "bg-row-tint" : ""}`}
                     style={{ top: row * rowH, height: rowH }}
                   >
                     {rowLabel && gutter === 0 && (

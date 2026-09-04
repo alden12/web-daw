@@ -49,6 +49,7 @@ import { SharePanel } from "./SharePanel";
 import { AccountPanel } from "./AccountPanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
+import { useResolvedTheme } from "./theme";
 import { AuthorColorsProvider } from "./authorColorsContext";
 import { activeKey } from "../audio/agent/config";
 import { StartDialog } from "./StartDialog";
@@ -147,6 +148,9 @@ export function AppShell() {
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
+  // The palette is re-lit for a white ground, so every author-tinted surface needs to know
+  // which one it is on (see authorStyle.ts).
+  const theme = useResolvedTheme();
   // The current user id (default "you"), stamped on local edits and used to paint *my* edits as the
   // "you" hue while peers get their own colour (perspective-relative; see authorColors.ts).
   const currentUser = useSyncExternalStore(subscribeCurrentUser, readCurrentUser, readCurrentUser);
@@ -411,7 +415,7 @@ export function AppShell() {
   };
 
   return (
-    <AuthorColorsProvider value={{ config: authorColors, self: currentUser }}>
+    <AuthorColorsProvider value={{ config: authorColors, self: currentUser, theme }}>
       {/* `dvh`, not `vh`: mobile browsers count their collapsing address bar in `vh`, so
           a `100vh` shell puts the bottom tabs under the chrome until the user scrolls. */}
       <div className="flex flex-col h-dvh overflow-hidden bg-ground text-ink">
