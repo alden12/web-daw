@@ -76,13 +76,6 @@ const VEL = { min: 24, max: 160 };
 const STRENGTH_OPTIONS = [0.25, 0.5, 0.75, 1];
 
 /**
- * The velocities the selected note's menu offers (MOBILE-7). Coarse on purpose: this is the
- * touch answer to the velocity lane, which a phone has no room for, and 0.8 is among them so
- * the default a tapped note is born with reads as the one that is selected.
- */
-const VELOCITY_OPTIONS = [0.2, 0.4, 0.6, 0.8, 1];
-
-/**
  * How the roll's pitch rows are labelled, tinted, and framed. The default is the
  * chromatic keyboard (C-names, black-key stripes, framed around middle C); a drum
  * kit passes a mapping so rows read as pad names and frame to the pad range - see
@@ -676,11 +669,13 @@ export function PianoRoll({
   const noteMenuItems = (note: NoteEvent): MenuItem[] => [
     {
       label: "Velocity",
-      choices: {
-        options: VELOCITY_OPTIONS.map((value) => ({ value: String(value), label: String(Math.round(value * 100)) })),
-        value: String(note.velocity),
-        onChange: (value) =>
-          dispatch({ type: "editNotes", trackId, clipId, notes: [{ ...note, velocity: Number(value) }] }),
+      fader: {
+        // Already a fraction, so the fader's 0..1 needs no conversion.
+        position: note.velocity,
+        onPosition: (position) =>
+          dispatch({ type: "editNotes", trackId, clipId, notes: [{ ...note, velocity: position }] }),
+        display: String(Math.round(note.velocity * 100)),
+        aria: { now: Math.round(note.velocity * 100), min: 0, max: 100 },
       },
     },
     { separator: true },
