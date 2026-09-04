@@ -52,7 +52,7 @@ export function Ruler({
   return (
     <div
       ref={ref}
-      className="sticky top-0 z-10 bg-rail border-b border-line select-none"
+      className="sticky top-0 z-10 bg-panel border-b border-line select-none"
       style={{ width, height: RULER_H }}
     >
       {/* dim the area outside the loop region */}

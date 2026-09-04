@@ -1,6 +1,7 @@
 /**
- * The note editor for an instrument track: the clip header (name + drum-mode toggle)
- * over the editing surface. A drum-kit track can be edited as a pad x step grid
+ * The note editor for an instrument track: the editing surface, under a drum-mode toggle
+ * on kit tracks only. The clip's name lives in the clip rail beside this, which is also
+ * where it is renamed. A drum-kit track can be edited as a pad x step grid
  * ("Pads") or the drum-labelled piano roll ("Keys"), remembered per track; every
  * other instrument is the plain piano roll. All three drive the same note clip.
  *
@@ -13,7 +14,6 @@ import type { Recorder } from "../../audio/recording/recorder";
 import type { Dispatch } from "../../audio/commands/types";
 import type { SampleAsset } from "../../audio/samples/catalog";
 import { usePersistentString } from "../usePersistent";
-import { InlineRename } from "../InlineRename";
 import { PianoRoll } from "../PianoRoll";
 import { DrumRoll } from "../DrumRoll";
 import { StepGrid } from "../StepGrid";
@@ -68,17 +68,13 @@ export function InstrumentEditor({
 
   return (
     <div className="flex-1 min-w-0 min-h-0 p-3 flex flex-col gap-2">
-      <div className="shrink-0 flex items-center gap-2">
-        <div className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-faint">
-          clip
-          <InlineRename
-            value={active.name}
-            onCommit={(name) => dispatch({ type: "renameClip", trackId: track.id, clipId: active.id, name })}
-            className="text-[12px] text-bright"
-          />
+      {/* No clip name here: the clip rail beside this already names the active clip and is
+          where you rename it, so a second copy only cost a row of vertical space. */}
+      {isDrumkit && (
+        <div className="shrink-0 flex items-center gap-2">
+          <DrumEditorToggle mode={mode} onChange={setMode} />
         </div>
-        {isDrumkit && <DrumEditorToggle mode={mode} onChange={setMode} />}
-      </div>
+      )}
       {/* Key by the active clip so the surface remounts (re-fits, resets selection) on switch. */}
       <div className="flex-1 min-h-0">
         {isDrumkit && mode === "pads" ? (

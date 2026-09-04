@@ -116,7 +116,7 @@ export function ClipRail({
   // The horizontal and grid layouts are the touch ones (MOBILE-1): roomier padding on
   // both axes so the chips are comfortable tap targets rather than a squashed strip.
   const containerClass = vertical
-    ? "flex flex-col gap-1.5 p-2 w-full min-h-0 border-r border-line overflow-y-auto"
+    ? "flex flex-col gap-1.5 p-2 w-full min-h-0 border-r border-line bg-panel overflow-y-auto"
     : grid
       ? "flex flex-wrap content-start gap-2 p-3 flex-1 min-h-0 overflow-y-auto"
       : "flex items-center gap-2 px-3 py-2.5 border-b border-line overflow-x-auto shrink-0";
@@ -152,7 +152,7 @@ export function ClipRail({
             }}
             onDragEnd={() => clearDraggedClip()}
             className={`group ${chipClass} inline-flex items-center gap-1.5 font-mono text-[11px] pl-2 pr-1 rounded-md border cursor-grab active:cursor-grabbing ${
-              active ? "border-you/60 bg-you/15 text-bright" : "border-line bg-card text-muted hover:bg-ground"
+              active ? "border-you/60 bg-you/15 text-strong" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
             title={`${authorLabel(clip.author)} - drag onto the lane to place`}
@@ -212,7 +212,9 @@ export function ClipRail({
           + Clip
         </button>
       )}
-      {footer}
+      {/* Vertical: the rail is full-height, so the record button belongs at its foot rather
+          than trailing the last clip. Other orientations keep it inline (`contents`). */}
+      {footer && <div className={vertical ? "mt-auto shrink-0 pt-2" : "contents"}>{footer}</div>}
     </div>
   );
 }

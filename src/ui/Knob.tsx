@@ -12,7 +12,7 @@ import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
 import { pitchName } from "./noteNames";
-import { authorFillStyle, authorDotStyle } from "./authorStyle";
+import { authorFillStyle, authorDotStyle, authorHex } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 
 /** Extra context the `sample` control needs (the project library + import action);
@@ -170,10 +170,19 @@ function NumberKnob({
     drag.current = null;
   };
 
+  // The value is the LENGTH of the arc, not just where a tick points: a filled sweep is
+  // readable at 40px in a way a bare pointer is not. The travel is the same 270 degrees the
+  // pointer used, starting at -135 (conic 225deg, since conic 0 is twelve o'clock).
+  const hex = authorHex(author ?? "you", presence);
+  const sweep = norm * 270;
+
   return (
     <div className="flex flex-col items-center gap-1.5 w-14">
       <div
-        className="relative w-10 h-10 rounded-full bg-ground border border-line cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
+        className="relative w-10 h-10 rounded-full cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
+        style={{
+          background: `conic-gradient(from 225deg, ${hex} 0deg ${sweep}deg, var(--color-line) ${sweep}deg 270deg, transparent 270deg 360deg)`,
+        }}
         role="slider"
         aria-label={spec.label}
         aria-valuemin={spec.min}
@@ -184,8 +193,11 @@ function NumberKnob({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
+        {/* Punches the ring out of the sweep, so the arc reads as a track rather than a pie. */}
+        <span className="absolute inset-1.25 rounded-full bg-ground" />
+        {/* A short tick still marks the exact position; the arc alone is coarse to read precisely. */}
         <span
-          className="absolute left-1/2 bottom-1/2 w-0.5 h-4 rounded-full origin-bottom"
+          className="absolute left-1/2 top-1.25 w-0.5 h-2 rounded-full origin-[50%_15px]"
           style={{ ...authorDotStyle(author ?? "you", presence), transform: `translateX(-50%) rotate(${angle}deg)` }}
         />
       </div>
@@ -230,8 +242,10 @@ function NumberSlider({
 
   return (
     <div className="flex flex-col items-center gap-1.5 w-12">
+      {/* The hit area is the full 24px box; the visible track is a 2px line down the middle.
+          Drawing the track *as* the target would leave an 8px-wide thing to hit on touch. */}
       <div
-        className="relative w-2 h-16 rounded-full bg-ground border border-line cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
+        className="relative w-6 h-16 cursor-ns-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
         role="slider"
         aria-label={spec.label}
         aria-valuemin={spec.min}
@@ -242,13 +256,16 @@ function NumberSlider({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
+        <span className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 rounded-full bg-line" />
         <span
-          className="absolute left-0 right-0 bottom-0 rounded-full"
-          style={{ ...authorFillStyle(author ?? "you", presence), height: `${norm * 100}%` }}
+          className="absolute left-1/2 bottom-0 w-0.5 -translate-x-1/2 rounded-full"
+          style={{ ...authorFillStyle(author ?? "you", presence, 1), height: `${norm * 100}%` }}
         />
+        {/* A fader cap, not a ring: wider than it is tall, so it reads as a thing that slides
+            up and down. `translate-y-1/2` centres it on the value (bottom puts its edge there). */}
         <span
-          className="absolute left-1/2 h-1.5 w-4 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
-          style={{ bottom: `${norm * 100}%` }}
+          className="absolute left-1/2 h-2 w-4 -translate-x-1/2 translate-y-1/2 rounded-[3px] border-2 bg-ground"
+          style={{ bottom: `${norm * 100}%`, borderColor: authorHex(author ?? "you", presence) }}
         />
       </div>
       <span className="text-[9px] uppercase tracking-wide text-muted text-center leading-tight">{spec.label}</span>
