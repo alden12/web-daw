@@ -51,6 +51,13 @@
      works in dark and turns those regions into bruises on a light ground. */
   --color-recess: rgba(0, 0, 0, 0.28);
 
+  /* A control's resting fill. Derived from `ink` rather than given a value per theme, so it
+     needs no light override: on a dark ground `ink` is near-white and 9% of it reads as a
+     lift, on a light ground it is near-black and the same 9% reads as a shade. Either way
+     the button separates from what it sits on, which is the only thing it has to do. */
+  --color-control: color-mix(in srgb, var(--color-ink) 9%, transparent);
+  --color-control-hover: color-mix(in srgb, var(--color-ink) 15%, transparent);
+
   /* Black-key rows in the roll. Has to move *away* from the surface in both themes: a
      lift on a dark ground, a shade on a light one, since you cannot lighten white. */
   --color-row-tint: rgba(255, 255, 255, 0.035);

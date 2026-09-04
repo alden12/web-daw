@@ -17,30 +17,29 @@ import { usePersistentString } from "../usePersistent";
 import { PianoRoll } from "../PianoRoll";
 import { DrumRoll } from "../DrumRoll";
 import { StepGrid } from "../StepGrid";
+import { Segmented } from "../controls/Segmented";
 
 /** The two editor surfaces a drum-kit track offers over its one note clip. */
 export type DrumEditor = "pads" | "keys";
 const DRUM_EDITORS: readonly DrumEditor[] = ["keys", "pads"];
 const DRUM_EDITOR_LABEL: Record<DrumEditor, string> = { pads: "Pads", keys: "Keys" };
 
-/** A little Pads | Keys segmented toggle: pick the step grid or the piano roll. */
+/**
+ * A little Keys | Pads segmented toggle: pick the step grid or the piano roll.
+ *
+ * `Segmented` rather than a `role="group"` of buttons each claiming `aria-pressed`, which
+ * announced two independent switches that happen to sit together instead of one choice with
+ * two options. Same paint, true markup, and arrow keys for free.
+ */
 function DrumEditorToggle({ mode, onChange }: { mode: DrumEditor; onChange: (mode: DrumEditor) => void }) {
   return (
-    <div className="ml-auto inline-flex items-center rounded-md border border-line overflow-hidden" role="group">
-      {DRUM_EDITORS.map((editor) => (
-        <button
-          key={editor}
-          type="button"
-          aria-pressed={mode === editor}
-          onClick={() => onChange(editor)}
-          className={`font-mono text-[10.5px] px-2 py-0.5 cursor-pointer ${
-            mode === editor ? "bg-you/20 text-you" : "text-muted hover:text-ink"
-          }`}
-        >
-          {DRUM_EDITOR_LABEL[editor]}
-        </button>
-      ))}
-    </div>
+    <Segmented
+      label="Drum editor"
+      options={DRUM_EDITORS.map((editor) => ({ value: editor, label: DRUM_EDITOR_LABEL[editor] }))}
+      value={mode}
+      onChange={onChange}
+      className="ml-auto font-mono"
+    />
   );
 }
 

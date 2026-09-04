@@ -7,6 +7,7 @@
 import { useRef } from "react";
 import type { ParamSpec } from "../audio/params/types";
 import { BUILTIN_SAMPLES, builtinRef, type SampleAsset } from "../audio/samples/catalog";
+import { Select } from "./controls/Select";
 
 export function SamplePicker({
   spec,
@@ -39,10 +40,11 @@ export function SamplePicker({
     <label className={hideLabel ? "flex items-center gap-1 w-full" : "flex flex-col items-center gap-1.5 w-24"}>
       {!hideLabel && <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>}
       <div className="flex items-center gap-1 w-full">
-        <select
+        <Select
           value={value}
           onChange={(e) => onChange(spec.id, e.target.value)}
-          className="flex-1 min-w-0 font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
+          aria-label={spec.label}
+          className="flex-1 min-w-0 font-mono"
         >
           <option value="">None</option>
           <optgroup label="Built-in">
@@ -61,7 +63,7 @@ export function SamplePicker({
               ))}
             </optgroup>
           )}
-        </select>
+        </Select>
         {onReveal && value === "" && (
           <button
             type="button"

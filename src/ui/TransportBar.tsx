@@ -13,6 +13,9 @@ import { useProject } from "../audio/project/useProject";
 import { TEMPO_BPM_RANGE, TIME_SIGNATURE_NUMERATOR_RANGE } from "../audio/project/schema";
 import { useRecorder } from "./useRecorder";
 import { usePersistentBoolean } from "./usePersistent";
+import { Button } from "./controls/Button";
+import { IconButton } from "./controls/IconButton";
+import { Select } from "./controls/Select";
 
 export function TransportBar({
   projectStore,
@@ -53,11 +56,19 @@ export function TransportBar({
 
   return (
     <div className={`flex items-center ${compact ? "gap-2" : "gap-3"}`}>
-      <button
-        type="button"
+      {/* Record keeps its colour at rest: a red dot reads as "record" before you press it in a
+          way a grey one does not, and it is the one control here you look for rather than at. */}
+      <IconButton
+        label="Record"
+        tone="claude"
+        toneAtRest
+        size={compact ? "lg" : "md"}
+        // Only while compact, where a bar button sits immediately to the left and the dot's
+        // own 12px of leading padding reads as a gap on top of the row's. On desktop record
+        // leads the row against the container's padding, which already looks right.
+        className={compact ? "-ml-1" : ""}
         disabled={!started}
-        aria-label="Record"
-        aria-pressed={recording}
+        active={recording}
         title={
           recording
             ? rec.status === "counting"
@@ -66,16 +77,9 @@ export function TransportBar({
             : "Record a clip"
         }
         onClick={() => recorder.toggle()}
-        className={`inline-flex items-center justify-center rounded-lg border cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-          compact ? "w-9 h-9" : "w-8 h-8"
-        } ${
-          recording
-            ? "text-claude bg-claude/15 border-claude/55"
-            : "text-claude/80 bg-card border-line hover:border-claude/55"
-        }`}
       >
         <span className={`w-3 h-3 rounded-full bg-current ${rec.status === "counting" ? "animate-pulse" : ""}`} />
-      </button>
+      </IconButton>
 
       {rec.status === "error" && rec.error && (
         <span className="font-mono text-[10.5px] text-claude" role="alert">
@@ -83,18 +87,23 @@ export function TransportBar({
         </span>
       )}
 
-      <button
-        type="button"
+      {/* Grey while stopped, teal while playing: the accent says what the transport is doing
+          rather than which button is the important one. */}
+      <Button
+        tone="you"
+        active={isPlaying}
         disabled={!started}
+        title={isPlaying ? "Stop" : "Play"}
         // Stopping while recording finalizes the take (recorder.stop also stops the
         // transport), so Stop never leaves a recording dangling.
         onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
-        className={`font-mono text-[13px] min-w-18 px-3 rounded-lg text-you bg-you/15 border border-you/45 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-          compact ? "h-9" : "py-1.5"
-        }`}
+        // Pulled 4px back towards the record button. The gap is measured between the two
+        // boxes, but record has no visible box at rest, so the eye measures from the dot
+        // instead and reads the same 12px as a hole. Closing it to 8px looks like 12.
+        className={`font-mono min-w-18 -ml-1 ${compact ? "h-9" : ""}`}
       >
         {isPlaying ? "■ Stop" : "▶ Play"}
-      </button>
+      </Button>
       {/* The word labels drop below `sm`: on a phone the transport is pinned above every
           view (MOBILE-1) and has to fit 390px without clipping. The fields keep their
           `aria-label` / `title`, so nothing is lost to assistive tech. */}
@@ -133,7 +142,7 @@ export function TransportBar({
           className="w-12 font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong"
         />
         <span className="text-muted">/</span>
-        <select
+        <Select
           aria-label="Beat unit (denominator)"
           value={project.timeSignature.denominator}
           onChange={(e) =>
@@ -143,25 +152,24 @@ export function TransportBar({
               denominator: Number(e.target.value),
             })
           }
-          className="font-mono text-[13px] px-1.5 py-1 rounded-md border border-line bg-ground text-strong cursor-pointer"
+          // The lone 13px dropdown in the app: it has to match the tempo/meter number inputs
+          // beside it rather than the toolbar dropdowns it shares a component with.
+          className="font-mono text-[13px]! text-strong"
         >
           {[2, 4, 8, 16].map((denominator) => (
             <option key={denominator} value={denominator}>
               {denominator}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
-      <button
-        type="button"
+      <IconButton
+        label="Metronome"
+        tone="you"
         hidden={compact}
-        aria-label="Metronome"
-        aria-pressed={metronome}
+        active={metronome}
         title={metronome ? "Metronome on" : "Metronome off"}
         onClick={() => setMetronome(!metronome)}
-        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border cursor-pointer ${
-          metronome ? "text-you bg-you/15 border-you/45" : "text-muted bg-card border-line hover:text-ink"
-        }`}
       >
         {/* a small metronome: trapezoid body + pendulum */}
         <svg
@@ -179,7 +187,7 @@ export function TransportBar({
           <line x1="4.3" y1="10" x2="11.7" y2="10" />
           <line x1="8" y1="10" x2="11" y2="3.5" />
         </svg>
-      </button>
+      </IconButton>
     </div>
   );
 }

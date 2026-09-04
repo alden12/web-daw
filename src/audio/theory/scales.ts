@@ -68,8 +68,17 @@ export interface PadRow {
   accidentals: AccidentalPad[];
 }
 
-/** How wide an accidental is, in in-scale pad widths. Keeps two-in-a-gap clear of each other. */
-const ACCIDENTAL_WIDTH = 0.62;
+/**
+ * How wide an accidental is, in in-scale pad widths.
+ *
+ * A full pad. It was 0.62 - narrow, like the black key it stands in for - which made the note
+ * you jab at in passing the hardest one on the board to hit. Width is not what has to say
+ * "this one is off to the side" when the row above is already shorter and set back, so it
+ * goes to the target size and height carries the distinction instead.
+ *
+ * `center` still spaces two-in-a-gap by exactly this, so they abut rather than overlap.
+ */
+const ACCIDENTAL_WIDTH = 1;
 
 export interface PadLayoutOptions {
   /** Tonic pitch class, 0..11. */

@@ -22,10 +22,17 @@
  * at the timeline and the roll together, so following the front-most surface meant hiding
  * controls for a panel in plain view (`surfaceControls.ts` has the longer version).
  *
- * Library and agent are reached from the same ☰ / ✦ buttons at either end of the top bar,
- * but framed by device: a phone gets a sheet over the app, a tablet **docks** them as
- * columns beside the workspace, because it has the width and covering what you are
- * editing to pick an instrument for it is a phone compromise rather than a virtue.
+ * The library is reached from the ☰ at the left of the top bar, framed by device: a phone
+ * gets a sheet over the app, a tablet **docks** it as a column beside the workspace, because
+ * it has the width and covering what you are editing to pick an instrument for it is a phone
+ * compromise rather than a virtue.
+ *
+ * **The agent lives inside that same column**, chosen from the rail at its head rather than
+ * from a button of its own. It used to be a second sheet (phone) or a second docked column
+ * (tablet) on the right, which on a phone meant two full-screen things fighting over one
+ * screen, and on a tablet a workspace squeezed between two columns. Neither device has room
+ * for two panels *and* something worth editing between them, so there is one panel and the
+ * rail says what is in it.
  *
  * The top bar keeps only what you reach for mid-idea - record, play, undo, redo - and
  * everything else is behind ⋮, above the project's tempo, meter and metronome.
@@ -47,6 +54,9 @@ import { TransportBar } from "../TransportBar";
 import { AccountAvatar } from "../AccountAvatar";
 import { SettingsIcon } from "../ActivityRail";
 import { Menu, type MenuItem } from "../Menu";
+import { IconButton } from "../controls/IconButton";
+import { iconButtonClass } from "../controls/iconButtonStyle";
+import { Segmented } from "../controls/Segmented";
 import { RAIL_ITEMS } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
@@ -89,7 +99,14 @@ const SURFACE_ITEMS: SurfaceItem[] = [
   { surface: "devices", label: "Rack" },
 ];
 
-/** A square icon button sized for a finger, not a cursor. */
+/**
+ * A top-bar icon button, sized for a finger rather than a cursor.
+ *
+ * Thin wrapper over `IconButton` so touch inherits the house rule (bare at rest, accent pill
+ * when active) and the `lg` touch size in one place, rather than the bar keeping its own
+ * palette. It exists only for the size default and `shrink-0` - a top bar that lets its
+ * controls compress is a top bar that clips at 390px.
+ */
 function BarButton({
   label,
   onClick,
@@ -105,24 +122,18 @@ function BarButton({
   tint?: "agent";
   children: ReactNode;
 }) {
-  const colour = active
-    ? tint === "agent"
-      ? "text-agent border-agent/55 bg-agent/15"
-      : "text-you border-you/55 bg-you/15"
-    : tint === "agent"
-      ? "text-agent/80 border-line bg-card"
-      : "text-muted border-line bg-card";
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <IconButton
+      label={label}
+      tone={tint === "agent" ? "agent" : "you"}
+      size="lg"
+      active={active}
       disabled={disabled}
-      aria-label={label}
-      title={label}
-      className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${colour}`}
+      onClick={onClick}
+      className="shrink-0"
     >
       {children}
-    </button>
+    </IconButton>
   );
 }
 
@@ -144,9 +155,13 @@ const UndoIcon = ({ flip = false }: { flip?: boolean }) => (
 );
 
 /**
- * The library's contents. The six rail views become a scrollable strip of chips - the
- * same `RAIL_ITEMS` data the desktop rail lays out vertically - with settings and the
- * account pinned at the bottom, where the rail also keeps them.
+ * The library's contents: the desktop's icon rail laid on its side across the top, the panel
+ * below it, and settings plus the account pinned at the bottom, where the rail also keeps
+ * them. Same `RAIL_ITEMS` data the desktop lays out vertically, so both platforms teach the
+ * same vocabulary rather than one each.
+ *
+ * The agent is the first entry on that rail and shares the panel below it. See the file
+ * header for why it is not a panel of its own.
  *
  * Wrapper-agnostic on purpose: a phone hosts this in a `Sheet` over the app, a tablet
  * docks it as a column beside the workspace. Only the frame differs.
@@ -165,6 +180,9 @@ function LibraryContent({
   onOpenShare,
   onOpenSettings,
   onOpenAccount,
+  onOpenAgent,
+  agentOpen,
+  agent,
 }: Pick<
   ShellProps,
   | "libView"
@@ -182,63 +200,106 @@ function LibraryContent({
   onClose: () => void;
   /** Set only where this is a sheet: see `LibraryPanel`'s `onPick`. */
   onPick?: () => void;
+  /** Toggle the agent panel. It is reached from here on every touch layout, not the top bar. */
+  onOpenAgent: () => void;
+  agentOpen: boolean;
+  /** The agent panel itself, which shares this column rather than opening a second one. */
+  agent: ReactNode;
 }) {
   return (
     <>
       <div className="shrink-0 flex items-center gap-2 h-11 px-3 border-b border-line">
         <span className="text-[13px] font-semibold text-strong">Library</span>
+        <IconButton label="Close library" size="lg" onClick={onClose} className="ml-auto text-lg leading-none">
+          ✕
+        </IconButton>
+      </div>
+      {/* The desktop rail, laid on its side. It used to be a scrolling strip of labelled
+          pills, which is a lot of width spent on words you learn once - and it still did not
+          fit, so the last views were off-screen behind a scroll nobody discovers. Icons fit
+          all of them at once, and touch and desktop end up teaching the same vocabulary
+          instead of two.
+
+          The agent leads it. It is the one entry that is not a library view - it fills this
+          panel with a conversation rather than switching what the panel lists - so it keeps
+          its own voice colour, which separates it from the views without needing a rule
+          drawn between them, and it reports pressed rather than current. */}
+      <nav aria-label="Library views" className="shrink-0 flex items-stretch px-1 border-b border-line bg-frame">
         <button
           type="button"
-          onClick={onClose}
-          aria-label="Close library"
-          className="ml-auto flex items-center justify-center w-8 h-8 rounded-md text-muted text-lg leading-none cursor-pointer"
+          onClick={onOpenAgent}
+          aria-pressed={agentOpen}
+          aria-label="Agent"
+          title="Agent"
+          className={`relative flex-1 flex items-center justify-center h-11 cursor-pointer ${
+            agentOpen ? "text-agent" : "text-agent/70 hover:text-agent"
+          }`}
         >
-          ✕
-        </button>
-      </div>
-      <nav
-        aria-label="Library views"
-        className="shrink-0 flex items-center gap-1.5 px-2 py-2 border-b border-line bg-rail overflow-x-auto"
-      >
-        {RAIL_ITEMS.map((item) => (
-          <button
-            key={item.view}
-            type="button"
-            onClick={() => onSelectView(item.view)}
-            aria-current={item.view === libView}
-            className={`shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-full border font-mono text-[11px] cursor-pointer ${
-              item.view === libView ? "border-you/55 bg-you/15 text-you" : "border-line text-muted"
+          <span
+            className={`absolute left-1.5 right-1.5 bottom-0 h-0.5 rounded-full bg-agent transition-opacity ${
+              agentOpen ? "opacity-100" : "opacity-0"
             }`}
-          >
-            {item.icon}
-            {item.label}
-          </button>
-        ))}
+          />
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-4.5 h-4.5">
+            <path d="M8 1.75l1.6 4.15 4.15 1.6-4.15 1.6L8 13.25l-1.6-4.15L2.25 7.5l4.15-1.6z" />
+          </svg>
+        </button>
+        {RAIL_ITEMS.map((item) => {
+          const selected = item.view === libView && !agentOpen;
+          return (
+            <button
+              key={item.view}
+              type="button"
+              title={item.label}
+              aria-label={item.label}
+              aria-current={selected ? "page" : undefined}
+              onClick={() => onSelectView(item.view)}
+              className={`relative flex-1 flex items-center justify-center h-11 cursor-pointer ${
+                selected ? "text-strong" : "text-faint hover:text-ink"
+              }`}
+            >
+              {/* The desktop rail marks the near edge; laid on its side that is the bottom. */}
+              <span
+                className={`absolute left-1.5 right-1.5 bottom-0 h-0.5 rounded-full bg-you transition-opacity ${
+                  selected ? "opacity-100" : "opacity-0"
+                }`}
+              />
+              {item.icon}
+            </button>
+          );
+        })}
       </nav>
-      <LibraryPanel
-        projectStore={projectStore}
-        editLog={editLog}
-        versionStore={versionStore}
-        dispatch={dispatch}
-        activeView={libView}
-        search={search}
-        onSearch={onSearch}
-        onOpenShare={onOpenShare}
-        onPick={onPick}
-      />
+      {/* Both mounted, one shown. The agent shares this panel rather than opening a second
+          one: on touch there is only ever room for one column of chrome beside the
+          workspace, so a separate agent sheet was a second thing covering the same space
+          the library was already covering.
+
+          `hidden` rather than a conditional, because an agent run is interruptible and
+          long-lived - unmounting the panel to look something up in the library would throw
+          away the conversation and whatever is in flight. */}
+      <div hidden={agentOpen} className="flex-1 min-h-0 flex flex-col">
+        <LibraryPanel
+          projectStore={projectStore}
+          editLog={editLog}
+          versionStore={versionStore}
+          dispatch={dispatch}
+          activeView={libView}
+          search={search}
+          onSearch={onSearch}
+          onOpenShare={onOpenShare}
+          onPick={onPick}
+        />
+      </div>
+      <div hidden={!agentOpen} className="flex-1 min-h-0 flex flex-col">
+        {agent}
+      </div>
       <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-t border-line">
         <span className="w-10 shrink-0 empty:hidden">
           <AccountAvatar onClick={onOpenAccount} />
         </span>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-          title="Settings"
-          className="ml-auto flex items-center justify-center w-10 h-10 rounded-md text-muted cursor-pointer"
-        >
+        <IconButton label="Settings" size="lg" onClick={onOpenSettings} className="ml-auto">
           <SettingsIcon className="w-5 h-5" />
-        </button>
+        </IconButton>
       </div>
     </>
   );
@@ -510,6 +571,18 @@ export function MobileShell({
     ...projectItems,
   ];
 
+  const agent = (
+    <AgentPanel
+      // Back to the library list: there is no separate panel to close any more.
+      onCollapse={() => setAgentOpen(false)}
+      projectStore={projectStore}
+      dispatch={dispatch}
+      scheduler={scheduler}
+      hasApiKey={hasApiKey}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+
   // Built once, framed twice: a sheet on a phone, a docked column on a tablet.
   const library = (
     <LibraryContent
@@ -519,8 +592,16 @@ export function MobileShell({
       // happen. A docked column is beside that track rather than over it, so it stays, and
       // picking several things in a row keeps working.
       onPick={docked ? undefined : () => setLibraryOpen(false)}
+      agentOpen={agentOpen}
+      agent={agent}
+      onOpenAgent={() => setAgentOpen(!agentOpen)}
       libView={libView}
-      onSelectView={onSelectView}
+      // Picking a view means you want the library, so it stands the agent down. They share
+      // one column now, and the rail is the one control that says which of them is in it.
+      onSelectView={(view) => {
+        setAgentOpen(false);
+        onSelectView(view);
+      }}
       search={search}
       onSearch={onSearch}
       projectStore={projectStore}
@@ -530,16 +611,6 @@ export function MobileShell({
       onOpenShare={onOpenShare}
       onOpenSettings={onOpenSettings}
       onOpenAccount={onOpenAccount}
-    />
-  );
-  const agent = (
-    <AgentPanel
-      onCollapse={() => setAgentOpen(false)}
-      projectStore={projectStore}
-      dispatch={dispatch}
-      scheduler={scheduler}
-      hasApiKey={hasApiKey}
-      onOpenSettings={onOpenSettings}
     />
   );
 
@@ -586,7 +657,7 @@ export function MobileShell({
           items={overflowItems}
           label="More controls"
           align="right"
-          triggerClassName="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg border border-line bg-card text-muted cursor-pointer"
+          triggerClassName={iconButtonClass({ size: "lg", className: "shrink-0" })}
           // A drawn glyph, not the default "⋮" character: a text kebab renders heavier
           // than the 20px stroked icons in the buttons either side of it, so at the same
           // box size it still read as the odd one out.
@@ -598,11 +669,6 @@ export function MobileShell({
             </svg>
           }
         />
-        <BarButton label="Agent" onClick={() => setAgentOpen(!agentOpen)} active={agentOpen} tint="agent">
-          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-5 h-5">
-            <path d="M8 1.75l1.6 4.15 4.15 1.6-4.15 1.6L8 13.25l-1.6-4.15L2.25 7.5l4.15-1.6z" />
-          </svg>
-        </BarButton>
       </div>
 
       {/* The middle band: docked panels flank the workspace on a tablet; on a phone they
@@ -653,33 +719,20 @@ export function MobileShell({
               title={selectedTrack.name}
               subtitle={selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType}
               controls={
-                <div
-                  role="tablist"
-                  aria-label="Editor surface"
-                  className="ml-auto shrink-0 flex gap-0.5 p-0.5 rounded-lg border border-line bg-ground"
-                >
-                  {SURFACE_ITEMS.map((item) => {
-                    const selected = item.surface === surface;
-                    return (
-                      <button
-                        key={item.surface}
-                        type="button"
-                        role="tab"
-                        aria-selected={selected}
-                        onClick={() => {
-                          setSurface(item.surface);
-                          // Asking for a surface while parked means you want to see it.
-                          if (detent === "peek") setDetent("half");
-                        }}
-                        className={`px-2.5 h-8 rounded-md font-mono text-[11px] uppercase tracking-wide cursor-pointer ${
-                          selected ? "bg-you/20 text-you" : "text-muted"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                // Three short options, exactly one chosen: a segmented control, and now an
+                // actual radiogroup rather than a `tablist` of buttons that each carried
+                // their own corners - so it announces as one choice and takes arrow keys.
+                <Segmented
+                  label="Editor surface"
+                  options={SURFACE_ITEMS.map((item) => ({ value: item.surface, label: item.label }))}
+                  value={surface}
+                  onChange={(next) => {
+                    setSurface(next);
+                    // Asking for a surface while parked means you want to see it.
+                    if (detent === "peek") setDetent("half");
+                  }}
+                  className="ml-auto shrink-0 font-mono uppercase tracking-wide"
+                />
               }
             >
               {surfacesFor(selectedTrack)[surface]}
@@ -702,28 +755,18 @@ export function MobileShell({
             </EditorSheet>
           )}
         </div>
-        {docked && agentOpen && (
-          <DockedPanel side="right" label="Agent">
-            {agent}
-          </DockedPanel>
-        )}
       </div>
 
       {!docked && (
-        <>
-          <Sheet
-            open={libraryOpen}
-            side="left"
-            label="Library"
-            onClose={() => setLibraryOpen(false)}
-            widthClass="w-[86%] max-w-100"
-          >
-            {library}
-          </Sheet>
-          <Sheet open={agentOpen} side="right" label="Agent" onClose={() => setAgentOpen(false)}>
-            {agent}
-          </Sheet>
-        </>
+        <Sheet
+          open={libraryOpen}
+          side="left"
+          label="Library"
+          onClose={() => setLibraryOpen(false)}
+          widthClass="w-[86%] max-w-100"
+        >
+          {library}
+        </Sheet>
       )}
     </div>
   );

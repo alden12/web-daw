@@ -29,8 +29,12 @@ async function dismissStart(page: Page) {
 const shell = (page: Page) => page.locator("[data-device-tier]");
 const desktopRail = (page: Page) => page.locator('[class*="grid-area:rail"]');
 const sheet = (page: Page) => page.getByTestId("editor-sheet");
-/** One of the sheet's Edit / Clips / Rack segments. Scoped, so it cannot match the desktop's editor tabs. */
-const segment = (page: Page, name: string) => sheet(page).getByRole("tab", { name });
+/**
+ * One of the sheet's Edit / Clips / Rack segments. Scoped, so it cannot match the desktop's
+ * editor tabs. A `radio` rather than a `tab`: the switch is a `Segmented` now, which says
+ * "these are the options and this is the one you are on" instead of three separate buttons.
+ */
+const segment = (page: Page, name: string) => sheet(page).getByRole("radio", { name });
 const grabber = (page: Page) => page.getByRole("slider", { name: "Editor height" });
 const trackHeader = (page: Page) => page.locator("[data-track-id]").first().locator("> div").first();
 const detentOf = (page: Page) => sheet(page).getAttribute("data-detent");
@@ -694,9 +698,15 @@ test.describe("phone", () => {
 
     // Both surfaces grow, which is the point: the pads take a *share* of the editor, so
     // raising the sheet buys rows and notes rather than spending it all on pads. A flat
-    // reserve for the roll left it the same sliver at every detent.
+    // reserve for the roll left it the same sliver at every detent, and a ratio is what says
+    // "materially more" - the bug this guards is a roll that comes back the same size.
+    //
+    // Deliberately not an absolute pixel figure. Rows fit in whole steps, so how much room is
+    // left over for the roll depends on the pad row height, and an absolute threshold silently
+    // encodes that: shortening the accidentals by 4px packs one more row into the same share
+    // and takes the difference out of exactly this number.
     expect(full.rows).toBeGreaterThan(half.rows);
-    expect(full.roll).toBeGreaterThan(half.roll + 50);
+    expect(full.roll).toBeGreaterThan(half.roll * 1.1);
     expect(half.roll, "the roll is readable even at Half, with the pads filled").toBeGreaterThan(120);
 
     // The count is a request, not a promise: dropping back gives the rows away and raising
@@ -721,18 +731,34 @@ test.describe("phone", () => {
     expect(box.y + box.height).toBeLessThanOrEqual(PHONE.height);
   });
 
-  test("the agent opens as a sheet from the right and stays mounted when closed", async ({ page }) => {
+  test("the agent shares the library panel rather than opening a second one", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    const panel = page.getByRole("dialog", { name: "Agent" });
-    await page.getByRole("button", { name: "Agent" }).tap();
-    await expect(panel).toBeVisible();
+    const composer = page.getByRole("textbox", { name: /message the agent/i });
+    const librarySearch = page.getByRole("searchbox", { name: /search the library/i });
 
-    await page.keyboard.press("Escape");
-    // Deliberately not unmounted: an interruptible agent run must survive a close.
-    await expect(panel).toHaveCount(1);
-    await expect(panel).toHaveAttribute("inert", "");
+    // Not in the top bar any more: a phone has one bar for the whole app, and the agent is
+    // the control you open deliberately rather than reach for mid-gesture.
+    await expect(page.getByRole("button", { name: "Agent" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Library" }).tap();
+    await expect(librarySearch).toBeVisible();
+
+    // It fills the library's own column - there is no second sheet over the top of it.
+    await page.getByRole("button", { name: "Agent" }).tap();
+    await expect(composer).toBeVisible();
+    await expect(librarySearch).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Agent" })).toHaveCount(0);
+
+    // Back to a library view, and the conversation survives it: an agent run is interruptible
+    // and long-lived, so looking something up must not throw away what is in flight.
+    // `includeHidden`, because a hidden subtree is out of the accessibility tree and the
+    // default `getByRole` would report it as gone when it is only out of sight.
+    await page.getByRole("button", { name: "Instruments" }).tap();
+    await expect(librarySearch).toBeVisible();
+    await expect(composer).toBeHidden();
+    await expect(page.getByRole("textbox", { name: /message the agent/i, includeHidden: true })).toHaveCount(1);
   });
 });
 
@@ -813,7 +839,7 @@ test.describe("tablet", () => {
     await expect(desktopRail(page)).toHaveCount(0);
   });
 
-  test("docks the library and agent beside the workspace instead of over it", async ({ page }) => {
+  test("docks the library beside the workspace, and the agent shares that column", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
@@ -823,14 +849,18 @@ test.describe("tablet", () => {
     // Docked, not a sheet: no scrim, and it sits beside the workspace rather than over it.
     await expect(page.getByRole("dialog", { name: "Library" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Agent" }).tap();
-    const agent = page.getByRole("complementary", { name: "Agent" });
-    await expect(agent).toBeVisible();
-
     const libraryBox = (await library.boundingBox())!;
-    const agentBox = (await agent.boundingBox())!;
     expect(libraryBox.x, "library on the left").toBeLessThan(TABLET.width / 2);
-    expect(agentBox.x, "agent on the right").toBeGreaterThan(TABLET.width / 2);
+
+    // The agent takes over that same column rather than claiming a second one on the right.
+    // A tablet has the width for two, but not for two *and* a workspace worth editing in.
+    await page.getByRole("button", { name: "Agent" }).tap();
+    await expect(page.getByRole("textbox", { name: /message the agent/i })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Agent" })).toHaveCount(0);
+
+    const withAgentBox = (await library.boundingBox())!;
+    expect(withAgentBox.x, "still the left column").toBe(libraryBox.x);
+    expect(withAgentBox.width, "and the same width").toBe(libraryBox.width);
   });
 
   test("opens with the library already docked, and the toggle still closes it", async ({ page }) => {
