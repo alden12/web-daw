@@ -62,9 +62,14 @@ export const PWA_MANIFEST: WebAppManifest = {
     { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
     { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
     /**
-     * A launcher crops a maskable icon to whatever shape it likes - a circle, a squircle, a
-     * rounded square - so the mark sits inside the 80% safe zone on a solid ground. The `any`
-     * icons above are full-bleed and would lose their edges to that crop.
+     * A launcher crops a maskable icon to whatever shape it likes: a circle, a squircle, a
+     * rounded square. The usual advice is to inset the mark to the 80% safe zone so no crop can
+     * clip it, which for a circular mark inside a circular crop draws a small circle in a thick
+     * dark ring - the first attempt here, and a phone said so.
+     *
+     * The inset exists to stop a crop eating the artwork, and **a mark already the shape of the
+     * crop has nothing to lose**, so it is drawn a whisker past the square's edge instead. See
+     * `scripts/generateIcons.ts` for the scales and the alternative.
      */
     { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
