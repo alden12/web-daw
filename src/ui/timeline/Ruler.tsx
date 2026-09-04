@@ -14,6 +14,25 @@ import { beginPointerDrag } from "../pointerDrag";
 
 const RULER_H = 22; // px
 
+/**
+ * A loop handle is a **2px bar you can see inside a box you can hit** (MOBILE-2, hit-target
+ * floors). It used to be the bar and nothing else: 8px wide, which is a comfortable target
+ * for a cursor and an almost impossible one for a finger.
+ *
+ * The box widens on a coarse pointer rather than for everyone, because the two handles can
+ * sit `minLoop` apart - one beat - and at a low zoom that is fewer pixels than a finger is
+ * wide. Overlapping targets are the price of a touch floor and are worth paying there; making
+ * a mouse pay it too would swallow ruler clicks either side of every handle for no gain.
+ *
+ * `touch-none` on both, which is the other half of the defect: without it the scroll container
+ * claims the gesture before the first move arrives, so on touch even a perfect hit did
+ * nothing. `loopStart` had it and `loopEnd` never did.
+ */
+const HANDLE_HIT_AREA =
+  "group absolute top-0 bottom-0 flex justify-center w-6 -ml-3 cursor-ew-resize touch-none " +
+  "[@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:-ml-[22px]";
+const HANDLE_BAR = "w-2 h-full bg-you/70 group-hover:bg-you pointer-events-none";
+
 export function Ruler({
   viewBeats,
   loopStart,
@@ -82,9 +101,11 @@ export function Ruler({
           aria-valuenow={loopStart}
           title={`Loop start: beat ${loopStart} - drag to move`}
           onPointerDown={(e) => drag(e, (b) => onSetLoopStart(Math.min(b, loopEnd - minLoop)))}
-          className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you touch-none"
+          className={HANDLE_HIT_AREA}
           style={{ left: beatToX(loopStart, pxPerBeat) }}
-        />
+        >
+          <span className={HANDLE_BAR} />
+        </div>
       )}
       {/* loop end handle */}
       <div
@@ -93,9 +114,11 @@ export function Ruler({
         aria-valuenow={loopEnd}
         title={`Loop end: beat ${loopEnd} (${loopEnd / beatsPerBar} bars) - drag to resize`}
         onPointerDown={(e) => drag(e, (b) => onSetLoopEnd(Math.max(b, loopStart + minLoop)))}
-        className="absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize bg-you/70 hover:bg-you"
+        className={HANDLE_HIT_AREA}
         style={{ left: beatToX(loopEnd, pxPerBeat) }}
-      />
+      >
+        <span className={HANDLE_BAR} />
+      </div>
     </div>
   );
 }
