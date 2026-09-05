@@ -8,6 +8,10 @@ projects:
       the keystone that UI, agent, automation and persistence all project from;
       every edit is an authored event in one log, so history, versioning and an
       AI co-author fall out rather than being bolted on.
+    next:
+      - MOBILE-7
+      - DAW-31
+      - DAW-33
     id: 019fadff-8808-7358-b599-5f4175bd287f
     created_at: 2026-07-29T13:10:32.712Z
     updated_at: 2026-07-29T13:34:58.278Z
@@ -9357,6 +9361,28 @@ projects:
             audience: user
             id: 01a06f02-1bba-736f-8b99-8977759c385b
             at: 2026-09-05T00:40:04.283Z
+            actor: claude
+          - body: >-
+              **Multi-select is NOT built and is the next thing here**
+              (2026-09-05). Confirmed with Alden while stopping for the day.
+              Everything else in this ticket has shipped: the roll's notes, then
+              the timeline's clips.
+
+
+              **Do it in the piano roll first.** That is where the design was
+              settled (long-press to enter the mode, every note outlines itself
+              as the mode indicator, taps toggle membership), and it is where
+              group handles have something to say - trim vs scale only differs
+              musically over notes. The arrangement can follow once the pattern
+              is proven, and should reuse whatever the roll grows, the way
+              `ObjectHandles` was reused.
+
+
+              Also still open, smaller: the empty-range -> Create clip / Paste
+              menu in the timeline.
+            audience: user
+            id: 01a06f03-ef42-705f-bc69-40a4aeff5882
+            at: 2026-09-05T00:42:03.970Z
             actor: claude
       - ref: MOBILE-8
         area: MOBILE
