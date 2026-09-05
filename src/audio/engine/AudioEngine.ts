@@ -129,6 +129,43 @@ export class AudioEngine {
     return this.ctx?.currentTime ?? 0;
   }
 
+  /** The context's own state, or `"closed"` before audio has been started. */
+  get contextState(): AudioContextState {
+    return this.ctx?.state ?? "closed";
+  }
+
+  /**
+   * Park the audio thread, and with it `currentTime` (DAW-33).
+   *
+   * **A hidden page does not get a hidden audio thread, it gets a starved one.** The graph keeps
+   * being asked for samples by hardware that is still running at 48kHz, while the main thread
+   * that feeds it is throttled to a wake a second, so the render underruns and the device repeats
+   * whatever it has - which is the gargling an idle backgrounded app makes with nothing playing
+   * at all. Nothing in the transport can fix that, because the transport is not what is making
+   * the sound.
+   *
+   * Suspending is the only thing that actually stops the render, and it also **freezes
+   * `currentTime`**, which is the second half of the bug: while the clock runs on unattended, the
+   * app's whole sense of "now" drifts away from the last thing it managed to schedule, and coming
+   * back means racing across the gap. A frozen clock has no gap to race.
+   */
+  async suspend(): Promise<void> {
+    if (this.ctx?.state !== "running") return;
+    await this.ctx.suspend();
+  }
+
+  /**
+   * Wake the audio thread. Safari can also park a context on its own (an "interrupted" state
+   * outside the spec's three), so this resumes anything that is not already running rather than
+   * only what `suspend` parked.
+   */
+  async resume(): Promise<void> {
+    // Anything that is neither already running nor disposed, so Safari's off-spec "interrupted"
+    // (what a phone call leaves behind, and it does not lift on its own) is covered by exclusion.
+    if (!this.ctx || this.ctx.state === "running" || this.ctx.state === "closed") return;
+    await this.ctx.resume();
+  }
+
   /** Must be called from a user gesture. Builds audio for the project's tracks. */
   async start(project: ProjectStore): Promise<void> {
     this.project = project;

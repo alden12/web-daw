@@ -33,6 +33,8 @@ import { bundleLocalMirror } from "../audio/sync/localMirror";
 import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleStore";
 import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
 import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
+import { UpdateNotice } from "./UpdateNotice";
+import { applyUpdate, useUpdateWaiting } from "../pwa/serviceWorkerUpdate";
 import { ConflictDialog } from "./ConflictDialog";
 import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
@@ -43,6 +45,7 @@ import { type LibraryView } from "./ActivityRail";
 import { DesktopShell } from "./shell/DesktopShell";
 import { MobileShell } from "./shell/MobileShell";
 import { useDeviceShape } from "./shell/useDeviceShape";
+import { useBackgroundAudio } from "./shell/useBackgroundAudio";
 import type { ShellProps } from "./shell/types";
 import { SettingsPanel } from "./SettingsPanel";
 import { SharePanel } from "./SharePanel";
@@ -326,6 +329,11 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [editLog]);
 
+  const updateWaiting = useUpdateWaiting();
+
+  // Hiding a touch app stops the transport and parks the audio thread (DAW-33).
+  useBackgroundAudio({ engine, scheduler, recorder, enabled: deviceShape.tier !== "desktop" });
+
   // Space anywhere toggles play/stop, unless typing in a field (scheduler.play
   // is a no-op until audio is started).
   useEffect(() => {
@@ -419,6 +427,7 @@ export function AppShell() {
       {/* `dvh`, not `vh`: mobile browsers count their collapsing address bar in `vh`, so
           a `100vh` shell puts the bottom tabs under the chrome until the user scrolls. */}
       <div className="flex flex-col h-dvh overflow-hidden bg-ground text-ink">
+        {updateWaiting && <UpdateNotice onReload={applyUpdate} />}
         {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
         {deviceShape.tier === "desktop" ? (
           <DesktopShell {...shellProps} />
