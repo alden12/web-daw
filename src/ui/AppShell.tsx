@@ -45,6 +45,7 @@ import { type LibraryView } from "./ActivityRail";
 import { DesktopShell } from "./shell/DesktopShell";
 import { MobileShell } from "./shell/MobileShell";
 import { useDeviceShape } from "./shell/useDeviceShape";
+import { useBackgroundAudio } from "./shell/useBackgroundAudio";
 import type { ShellProps } from "./shell/types";
 import { SettingsPanel } from "./SettingsPanel";
 import { SharePanel } from "./SharePanel";
@@ -330,29 +331,8 @@ export function AppShell() {
 
   const updateWaiting = useUpdateWaiting();
 
-  /**
-   * **Stop the transport when a touch device hides the app** (DAW-33).
-   *
-   * A backgrounded page has its timers throttled to a fraction of their rate, and the scheduler
-   * is a timer: it wakes, finds the window it should have covered has already gone past, and
-   * skips it (DAW-32). So a minimised phone plays a sparse, arrhythmic version of the project to
-   * nobody, and comes back in a state nobody asked for. There is nothing to preserve there.
-   *
-   * Touch only. A desktop tab that is playing audio is largely exempt from timer throttling, so
-   * backgrounding one and carrying on listening works properly and is a thing people do.
-   *
-   * A take in flight is finalised rather than dropped, the same as pressing stop or space.
-   */
-  useEffect(() => {
-    if (deviceShape.tier === "desktop") return;
-    const onVisibility = () => {
-      if (document.visibilityState !== "hidden" || !scheduler.isPlaying) return;
-      if (recorder.isActive) void recorder.stop();
-      else scheduler.stop();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [deviceShape.tier, scheduler, recorder]);
+  // Hiding a touch app stops the transport and parks the audio thread (DAW-33).
+  useBackgroundAudio({ engine, scheduler, recorder, enabled: deviceShape.tier !== "desktop" });
 
   // Space anywhere toggles play/stop, unless typing in a field (scheduler.play
   // is a no-op until audio is started).

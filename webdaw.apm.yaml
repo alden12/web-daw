@@ -5817,7 +5817,7 @@ projects:
             actor: claude
       - ref: DAW-33
         area: DAW
-        title: Hiding a touch app stops the transport
+        title: Hiding a touch app stops the transport and parks the audio thread
         status: review
         sort_path: "000033"
         body: >
@@ -5826,72 +5826,88 @@ projects:
           again it plays super fast and stays that way".
 
 
-          ## The half that is understood, and shipped
+          Re-reported after the first fix shipped, with the detail that cracked
+          it: **it also makes "some weird gargling noise when minimised even
+          without anything playing"**. Nothing in the transport can produce
+          sound with the transport stopped, so the transport was never the whole
+          story.
 
 
-          A backgrounded page has its timers throttled to a fraction of their
-          rate, and the scheduler *is* a timer. It wakes, finds the window it
-          should have covered has already gone past, and skips it (DAW-32, which
-          is working as designed here). So a minimised phone plays a sparse,
-          arrhythmic version of the project to nobody at all.
+          ## It is the context, not the transport
 
 
-          There is nothing worth preserving in that, so **hiding a touch app
-          stops the transport**. A take in flight is finalised rather than
-          dropped, the same as pressing stop.
+          **A hidden page does not get a hidden audio thread, it gets a starved
+          one.** The AudioContext is never suspended anywhere in the app - it is
+          created in `AudioEngine.start()` and runs until the tab closes - so a
+          backgrounded page leaves hardware pulling samples at 48kHz from a
+          graph whose main thread is throttled to roughly a wake a second. The
+          render underruns and the device repeats whatever it last had. That is
+          the gargle, it happens with nothing playing, and it is also a battery
+          drain nobody asked for.
 
 
-          Touch only. A desktop tab that is *playing audio* is largely exempt
-          from timer throttling, so backgrounding one and carrying on listening
-          works properly and is a thing people do deliberately.
+          The same fact explains the rest of the report. `currentTime` runs on
+          unattended while the app cannot service it, so the app's sense of
+          "now" drifts away from the last thing it managed to schedule, and
+          returning means racing across the whole gap. That is the "plays really
+          fast, skipping, sounds almost like noise, then eventually catches up
+          after several seconds" - it is not a scheduler bug, it is the clock
+          being seconds ahead of the audio.
 
 
-          Note this is also what DAW-32 traded for: before that fix,
-          backgrounding produced a burst on return instead of sparseness during.
-          Both are the same underlying fact - a scheduler that cannot be woken
-          cannot schedule - and stopping is the only response that is honest
-          about it.
+          `suspend()` is the only thing that actually stops the render, and per
+          spec it **freezes `currentTime`** with it. A frozen clock has no gap
+          to race, which is why one call fixes both halves.
 
 
-          ## The half that is NOT explained
+          ## Shipped
 
 
-          "Plays super fast **and stays that way**" is a persistent state
-          change, and nothing found so far accounts for it:
+          - `AudioEngine.suspend()` / `resume()` / `contextState`.
+
+          - `useBackgroundAudio` (extracted from `AppShell`, which is
+          oversized): on hidden, stop the transport (finalising a take in flight
+          first, and awaited so the context is still running under the capture
+          being closed), then suspend. On visible, resume. Order matters -
+          suspending under a running transport leaves it anchored to a clock
+          that has stopped moving.
+
+          - A pointerdown fallback that resumes anything not running. Returning
+          to an installed app does not always count as the gesture iOS wants,
+          and the failure is silent: every control works and nothing makes a
+          sound. This also covers Safari's off-spec `"interrupted"` state (what
+          a phone call leaves behind), which does not lift on its own.
+
+          - Touch only, as before. A desktop tab playing audio is largely exempt
+          from throttling and backgrounding one is deliberate.
+
+
+          ## Ruled out along the way
+
+
+          Kept because it is the list not to re-walk if something persists:
 
 
           - The playhead cannot drift on its own. `useAnimationFrame` re-reads
-          `getPositionBeats()` every frame and accumulates nothing, so a
-          fast-looking playhead means the clock maths is genuinely returning
-          fast-advancing values.
+          `getPositionBeats()` every frame and accumulates nothing.
 
-          - `reanchor()` is an identity transform when the tempo has not changed
-          (`anchorBeat += elapsed * lastBps; anchorTime = now`), so repeated
-          calls cannot corrupt the anchor - and it stays self-consistent even if
-          `engine.currentTime` returns 0 transiently, because the same shift
-          lands in both terms.
+          - `reanchor()` is an identity transform at constant tempo, so repeated
+          calls cannot corrupt the anchor.
 
           - `lastBps` only ever comes from `project.tempo`, which is not
           changing.
 
           - A second interval is not possible on one `Scheduler` (`play()`
-          returns early when `timer !== null`), and `AppShell` holds one in
-          `useState` and disposes it on unmount.
+          returns early when `timer !== null`), and `AppShell` holds one.
 
 
-          What is left, and what to look at if it survives: **something
-          scheduling each note more than once**, which would sound dense (like
-          "fast") and would persist. Worth instrumenting `playNote` with a count
-          per beat on a device rather than reasoning further from here.
-
-
-          Stopping on hide should mask it in practice, because there is no
-          longer a stalled transport to return to. That is a reason to keep this
-          ticket open rather than to close it: the trigger is gone, the cause is
-          not.
+          Tested by patching `AudioContext.prototype.suspend`/`resume` from an
+          init script rather than exposing the context, since a hook for it
+          would be production surface bought for one assertion. Verified to fail
+          with the `suspend()` call backed out.
         id: 01a06ecd-b049-7317-8dac-f7377ec56b04
         created_at: 2026-09-04T23:42:48.905Z
-        updated_at: 2026-09-04T23:42:48.905Z
+        updated_at: 2026-09-05T00:09:38.049Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
