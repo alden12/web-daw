@@ -40,7 +40,9 @@ export interface WebAppManifest {
 export const PWA_MANIFEST: WebAppManifest = {
   id: "/",
   name: "Web DAW",
-  short_name: "WebDAW",
+  /** What appears *under the icon*, so it is the one that has to read right. `name` only shows in
+   *  the install prompt and in app listings. Both spelled the same; there is room for it. */
+  short_name: "Web DAW",
   description: "A digital audio workstation in the browser, with an agent that can play it too.",
   start_url: "/",
   scope: "/",

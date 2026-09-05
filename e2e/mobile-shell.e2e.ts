@@ -26,6 +26,18 @@ async function dismissStart(page: Page) {
   }
 }
 
+/**
+ * Going to the home screen, or coming back. Driven by hand because Playwright cannot actually
+ * background a page: `visibilityState` is redefined (configurably, so it can be redefined again)
+ * and the event the app listens for is dispatched.
+ */
+async function setVisibility(page: Page, state: "hidden" | "visible") {
+  await page.evaluate((value) => {
+    Object.defineProperty(document, "visibilityState", { value, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+}
+
 const shell = (page: Page) => page.locator("[data-device-tier]");
 const desktopRail = (page: Page) => page.locator('[class*="grid-area:rail"]');
 const sheet = (page: Page) => page.getByTestId("editor-sheet");
@@ -427,10 +439,18 @@ test.describe("phone", () => {
     const from = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
     await touchDrag(page, from, { x: from.x + 32, y: from.y - 24 });
 
+    // Both axes read from one measurement, and polled together. Polling x and then asserting y
+    // separately is a race: the drag interpolates, so x can reach its final snap cell a frame
+    // before y reaches its row, which satisfies the poll and then reads a y that is still moving.
     await expect
-      .poll(async () => Math.round((await handleCentre(page, "end")).x), { message: "the note moved in time" })
-      .toBe(Math.round(before.x) + 32);
-    expect(Math.round((await handleCentre(page, "end")).y), "and in pitch").toBe(Math.round(before.y) - 24);
+      .poll(
+        async () => {
+          const after = await handleCentre(page, "end");
+          return { x: Math.round(after.x), y: Math.round(after.y) };
+        },
+        { message: "the note moved in time and in pitch" },
+      )
+      .toEqual({ x: Math.round(before.x) + 32, y: Math.round(before.y) - 24 });
   });
 
   /**
@@ -1438,13 +1458,41 @@ test.describe("phone (backgrounding)", () => {
     await page.keyboard.press("Space");
     await expect(page.getByRole("button", { name: /Stop/ })).toBeVisible();
 
-    // The event a phone fires on going to the home screen or switching apps. Dispatched rather
-    // than driven through the browser, since Playwright cannot actually background a page.
-    await page.evaluate(() => {
-      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
+    await setVisibility(page, "hidden");
 
     await expect(page.getByRole("button", { name: /Play/ }), "the transport stopped").toBeVisible();
+  });
+
+  /**
+   * The half of DAW-33 that the transport cannot reach. A hidden page's audio thread is starved
+   * rather than stopped, so it underruns and repeats itself - audible as a gargle even with
+   * nothing playing - and `currentTime` runs on unattended, so coming back means racing across
+   * the gap. Suspending stops the render and freezes the clock; both symptoms go with it.
+   */
+  test("minimising the app parks the audio thread, and returning wakes it", async ({ page }) => {
+    // Instrumented at the prototype rather than read off the engine: the context is private to
+    // `AudioEngine`, and a hook to expose it would be production surface bought for one assertion.
+    await page.addInitScript(() => {
+      const calls: string[] = [];
+      (window as unknown as { __contextCalls: string[] }).__contextCalls = calls;
+      for (const name of ["suspend", "resume"] as const) {
+        const real = AudioContext.prototype[name];
+        AudioContext.prototype[name] = function patched(this: AudioContext) {
+          calls.push(name);
+          return real.call(this);
+        };
+      }
+    });
+    const calls = () => page.evaluate(() => (window as unknown as { __contextCalls: string[] }).__contextCalls);
+
+    await page.goto("/");
+    await dismissStart(page); // starting audio resumes the context, which is not what we are asserting
+    await page.evaluate(() => ((window as unknown as { __contextCalls: string[] }).__contextCalls.length = 0));
+
+    await setVisibility(page, "hidden");
+    await expect.poll(calls, { message: "the audio thread was parked" }).toContain("suspend");
+
+    await setVisibility(page, "visible");
+    await expect.poll(calls, { message: "the audio thread woke again" }).toContain("resume");
   });
 });
