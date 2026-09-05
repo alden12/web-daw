@@ -117,7 +117,15 @@ export type ServerToBrowser =
       length?: number;
     }
   | { type: "movePlacement"; trackId: string; placementId: string; startBeat: number }
-  | { type: "resizePlacement"; trackId: string; placementId: string; offset?: number; length?: number }
+  | {
+      type: "resizePlacement";
+      trackId: string;
+      placementId: string;
+      /** Set when trimming the left edge, which moves the start and the offset together. */
+      startBeat?: number;
+      offset?: number;
+      length?: number;
+    }
   | { type: "removePlacement"; trackId: string; placementId: string }
   | { type: "splitPlacement"; trackId: string; placementId: string; atBeat: number; newId: string }
   // Clip launching (a launched clip loops over the transport, overriding placements)
