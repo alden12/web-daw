@@ -17,7 +17,7 @@
  * pointer you can place inside 6px - so it gets the same model reached differently
  * (MOBILE-7): a selected note grows finger-sized end handles and a kebab of actions, and
  * the marquee is off entirely because on a phone that same drag is how you pan. Both live
- * in `roll/NoteHandles.tsx`. There is no touch *mode*: the affordances are simply sized by
+ * in `editing/ObjectHandles.tsx`. There is no touch *mode*: the affordances are simply sized by
  * pointer type, so a mouse still gets the drag-edge and the marquee it always had.
  *
  * Every multi-note gesture commits through ONE plural command (`editNotes` /
@@ -50,7 +50,7 @@ import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
-import { NoteHandles } from "./roll/NoteHandles";
+import { ObjectHandles } from "./editing/ObjectHandles";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
@@ -965,11 +965,13 @@ export function PianoRoll({
               })}
 
               {selectedNote && (
-                <NoteHandles
-                  note={selectedNote}
-                  topPitch={MAX_PITCH}
-                  pxPerBeat={pxPerBeat}
-                  rowH={rowH}
+                <ObjectHandles
+                  name="note"
+                  title="Note"
+                  left={beatToX(selectedNote.start, pxPerBeat)}
+                  right={beatToX(selectedNote.start + selectedNote.length, pxPerBeat)}
+                  top={(MAX_PITCH - selectedNote.pitch) * rowH}
+                  height={rowH}
                   leadX={gutter}
                   leadY={RULER_H}
                   scrollRef={scrollRef}

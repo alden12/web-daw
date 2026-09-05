@@ -1118,9 +1118,21 @@ export class ProjectStore {
     this.emit();
   }
 
-  resizePlacement(trackId: string, placementId: string, patch: { offset?: number; length?: number }): void {
+  /**
+   * Change a placement's extent. `startBeat` is here rather than on `movePlacement` because
+   * **trimming the left edge is one gesture and has to be one command**: it moves the start,
+   * pulls the offset the same distance so the clip's content stays put under the window, and
+   * shortens the length to match. Split across two commands it would be two undo steps per drag
+   * frame, since they coalesce under different keys.
+   */
+  resizePlacement(
+    trackId: string,
+    placementId: string,
+    patch: { startBeat?: number; offset?: number; length?: number },
+  ): void {
     const p = this.getTrack(trackId)?.placements.find((placement) => placement.id === placementId);
     if (!p) return;
+    if (patch.startBeat !== undefined) p.startBeat = Math.max(0, patch.startBeat);
     if (patch.offset !== undefined) p.offset = Math.max(0, patch.offset);
     if (patch.length !== undefined) p.length = Math.max(GRID, patch.length);
     this.emit();

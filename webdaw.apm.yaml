@@ -9335,6 +9335,29 @@ projects:
             id: 01a06e66-32cf-768c-a871-712c3be8f1ad
             at: 2026-09-04T21:49:46.575Z
             actor: claude
+          - body: >-
+              **The timeline half shipped (2026-09-05), and the reuse worked
+              out.** `NoteHandles` became `editing/ObjectHandles`, taking a
+              rectangle in its container's pixels rather than a note, so one
+              component serves the roll's notes and the arrangement's clips.
+              Callers keep what an edge drag *means*: resize a note, trim a
+              clip.
+
+
+              Two deliberate differences for clips. **No move grip** - it exists
+              to get a fingertip off a 12px note whose pitch you are watching,
+              and a 34px block that only moves in time has neither problem.
+              **Trimming needed a model change**: `resizePlacement` gained
+              `startBeat`, since a left trim moves start, offset and length
+              together and splitting it would cost an undo step per drag frame.
+
+
+              Still open: the empty-range -> Create clip / Paste menu, and
+              multi-select.
+            audience: user
+            id: 01a06f02-1bba-736f-8b99-8977759c385b
+            at: 2026-09-05T00:40:04.283Z
+            actor: claude
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
