@@ -201,6 +201,12 @@ export function ArrangementTimeline({
     projectStore.selectClip(trackId, p.clipId);
   };
 
+  /** Drop both the selected clip and any paste marker: the timeline's "nothing is chosen" state. */
+  const clearSelection = () => {
+    setSelection(null);
+    setMarker(null);
+  };
+
   // Clicking an empty lane drops a paste marker (track + beat) and clears the
   // selection - paste then lands at the marker.
   const placeMarker = (trackId: string, beat: number) => {
@@ -543,6 +549,15 @@ export function ArrangementTimeline({
           <div
             ref={scrollRef}
             data-testid="arr-scroll"
+            /**
+             * Pressing anywhere that is not a lane clears the selection. A lane handles its own
+             * empty space (it drops a paste marker there), so this covers what is left: the room
+             * below the last track, and the header column. Without it a selection could only be
+             * swapped for another one or dismissed with a key that a phone does not have.
+             */
+            onPointerDown={(e) => {
+              if (!(e.target as HTMLElement).closest('[data-testid="lane"]')) clearSelection();
+            }}
             className="absolute inset-0 overflow-auto [touch-action:pan-x_pan-y]"
           >
             <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
@@ -601,6 +616,7 @@ export function ArrangementTimeline({
                     onSelect={selectPlacement}
                     onMark={placeMarker}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
+                    scrollRef={scrollRef}
                     stickyHeader={stickyHeaders}
                   />
                 ),

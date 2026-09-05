@@ -24,7 +24,7 @@ function timeAgo(ms: number, now: number): string {
 export function VersionTimeline({ versionStore, editLog }: { versionStore: VersionStore; editLog: EditLog }) {
   const presence = useAuthorPresence();
   const [commits, setCommits] = useState<CommitSummary[]>([]);
-  const [hasUncommitted, setHasUncommitted] = useState(false);
+  const [hasUnnamedChanges, setHasUnnamedChanges] = useState(false);
   const [message, setMessage] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [diff, setDiff] = useState<string[] | null>(null);
@@ -40,7 +40,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
   useEffect(() => {
     let alive = true;
     const refresh = () => {
-      setHasUncommitted(versionStore.getState().hasUncommitted);
+      setHasUnnamedChanges(versionStore.getState().hasUnnamedChanges);
       void versionStore.history().then((commits) => {
         if (alive) setCommits(commits);
       });
@@ -73,11 +73,13 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
     // The intent narration captured with this version (notes are not edits).
     if (commit.noteCount > 0) void versionStore.getCommit(commit.id).then((full) => setNotes(full?.notes ?? []));
     else setNotes([]);
-    if (!commit.parent) {
+    // Measured from `diffBase`, not the parent: for a named version that is the previous *named*
+    // one, so an auto checkpoint landing in between cannot empty the diff (see `CommitSummary`).
+    if (!commit.diffBase) {
       setDiff([]); // root commit: nothing before it
       return;
     }
-    void versionStore.diff(commit.parent, commit.id).then((diff) => setDiff(diff));
+    void versionStore.diff(commit.diffBase, commit.id).then((diff) => setDiff(diff));
   };
 
   return (
@@ -87,7 +89,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && hasUncommitted) save();
+            if (e.key === "Enter" && hasUnnamedChanges) save();
           }}
           placeholder="Name this version…"
           className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-strong placeholder:text-faint"
@@ -95,8 +97,8 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
         <button
           type="button"
           onClick={save}
-          disabled={!hasUncommitted}
-          title={hasUncommitted ? "Save a named version" : "No changes since the last version"}
+          disabled={!hasUnnamedChanges}
+          title={hasUnnamedChanges ? "Save a named version" : "No changes since the last version"}
           className="font-mono text-[11.5px] px-2.5 py-1.5 rounded-md border border-you/45 bg-you/15 text-you cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed whitespace-nowrap"
         >
           Save
@@ -105,7 +107,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
 
       {commits.length === 0 ? (
         <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
-          {hasUncommitted
+          {hasUnnamedChanges
             ? "Unsaved changes - save a version to start the history."
             : "Versions you and Claude save appear here."}
         </div>
@@ -154,7 +156,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                       <span className="font-mono text-[10.5px] text-faint">Diffing…</span>
                     ) : diff.length === 0 ? (
                       <span className="font-mono text-[10.5px] text-faint">
-                        {commit.parent ? "No detected changes." : "Initial version."}
+                        {commit.diffBase ? "No detected changes." : "Initial version."}
                       </span>
                     ) : (
                       <ul className="flex flex-col gap-0.5">

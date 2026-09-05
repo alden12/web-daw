@@ -226,3 +226,75 @@ test("a placed clip persists across reload", async ({ page }) => {
   await dismissStart(page);
   await expect(placements(page)).toHaveCount(2);
 });
+
+test("pressing outside the lanes deselects the clip", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await zoomOut(page);
+
+  // A selected clip grows handles, which is the visible proof of selection on either pointer.
+  await placements(page).first().click();
+  await expect(page.getByTestId("clip-handle-end")).toBeVisible();
+
+  // The room below the last track: inside the scroller, outside every lane. Before this, a
+  // selection could only be swapped for another or dismissed with Escape.
+  const scroller = (await page.getByTestId("arr-scroll").boundingBox())!;
+  await page.mouse.click(scroller.x + scroller.width / 2, scroller.y + scroller.height - 12);
+
+  await expect(page.getByTestId("clip-handle-end"), "the selection cleared").toHaveCount(0);
+});
+
+test("a selected clip grows handles but no touch furniture on a mouse", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await zoomOut(page);
+
+  await placements(page).first().click();
+  // Handles serve both pointers; the kebab is touch's answer to actions a mouse reaches by
+  // keyboard, so it is present in the tree and hidden by the pointer media query.
+  await expect(page.getByTestId("clip-handle-start")).toBeVisible();
+  await expect(page.getByTestId("clip-handle-end")).toBeVisible();
+  await expect(page.getByTestId("clip-actions")).toBeHidden();
+  // No move grip at all for a clip: it is 34px tall and only moves horizontally, so a fingertip
+  // never hides the edge being aimed. That is a prop, not a media query, hence absent not hidden.
+  await expect(page.getByTestId("clip-move")).toHaveCount(0);
+});
+
+test("dragging the start handle trims the clip instead of moving it", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await zoomOut(page);
+
+  // Drag out a clip well clear of the seed. Not the seed itself: it starts at beat 0, where the
+  // start handle straddles the boundary with the pinned header column and the column (z-10) wins
+  // the top half of it. Nothing is to the left of beat 0 to trim into anyway.
+  const seed = (await placements(page).first().boundingBox())!;
+  const y = seed.y + seed.height / 2;
+  await page.mouse.move(seed.x + seed.width + 60, y);
+  await page.mouse.down();
+  await page.mouse.move(seed.x + seed.width + 220, y, { steps: 10 });
+  await page.mouse.up();
+  await expect(placements(page)).toHaveCount(2);
+
+  // Creating selects it, so the handles are already up.
+  const target = placements(page).nth(1);
+  const before = (await target.boundingBox())!;
+  const handle = (await page.getByTestId("clip-handle-start").boundingBox())!;
+
+  // Drag the start to the right: the left edge follows and the right edge stays put. A move
+  // would carry both, which is the mistake this handle exists to make impossible.
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + handle.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect
+    .poll(
+      async () => {
+        const after = (await target.boundingBox())!;
+        return { trimmed: Math.round(after.x) > Math.round(before.x), right: Math.round(after.x + after.width) };
+      },
+      { message: "the start moved in and the end stayed" },
+    )
+    .toEqual({ trimmed: true, right: Math.round(before.x + before.width) });
+});

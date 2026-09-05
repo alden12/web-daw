@@ -33,13 +33,18 @@ describe("VersionStore (commit DAG)", () => {
     expect(hist.map((c) => c.message)).toEqual(["second", "first"]);
   });
 
-  it("is a no-op when there is nothing uncommitted", async () => {
+  it("no-ops an empty auto checkpoint, but never an empty named version", async () => {
     const { project, log, repo } = setup();
     const vs = new VersionStore(project, log, repo);
     await vs.load();
     log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-1" });
     expect(await vs.commit("x")).toBeTruthy();
-    expect(await vs.commit("again")).toBeNull();
+
+    // A checkpoint with nothing to record is not worth a node in the DAG.
+    expect(await vs.commit(undefined, undefined, true)).toBeNull();
+    // A named version marks a state you want to come back to, so it stands on its own. It used
+    // to return null here, which is how a Save could do nothing and say nothing.
+    expect(await vs.commit("again")).toBeTruthy();
   });
 
   it("auto-checkpoints a burst of edits after the debounce", async () => {
@@ -60,6 +65,51 @@ describe("VersionStore (commit DAG)", () => {
     expect(hist[0].entryCount).toBe(2); // both edits in one checkpoint
   });
 
+  /**
+   * The checkpoint debounce is four seconds, so pausing that long between your last edit and
+   * pressing Save used to grey the button out ("No changes since the last version") and, if you
+   * got the click in, do nothing. Both halves were the same mistake: treating "uncommitted" as
+   * "unsaved", when an auto checkpoint is plumbing nobody asked for and nobody sees.
+   */
+  it("still has something to name after an auto checkpoint has swept the edits", async () => {
+    vi.useFakeTimers();
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+    const dispose = vs.attach();
+
+    log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-1" });
+    await vi.runAllTimersAsync(); // the pause that lets the checkpoint win the race
+    dispose();
+    expect((await vs.history())[0].auto, "the checkpoint took the edit").toBe(true);
+
+    expect(vs.getState().hasUnnamedChanges, "so Save stays available").toBe(true);
+    expect(await vs.commit("named after the pause"), "and naming it produces a version").toBeTruthy();
+    expect(vs.getState().hasUnnamedChanges, "which then leaves nothing to name").toBe(false);
+  });
+
+  it("diffs a version against the last named one, skipping the checkpoints between", async () => {
+    vi.useFakeTimers();
+    const { project, log, repo } = setup();
+    const vs = new VersionStore(project, log, repo);
+    await vs.load();
+
+    log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-1" });
+    const first = await vs.commit("first", "you");
+
+    // An edit, then a pause long enough for a checkpoint to claim it, then the named save.
+    const dispose = vs.attach();
+    log.dispatch({ type: "setTempo", bpm: 143 });
+    await vi.runAllTimersAsync();
+    dispose();
+    const second = await vs.commit("second", "you");
+
+    // Against its literal parent (the checkpoint) this diff would be empty, which is how a
+    // version you saved reported "No detected changes" about an edit you had just made.
+    expect(second!.diffBase).toBe(first!.id);
+    expect(await vs.diff(second!.diffBase!, second!.id)).toContain("Tempo 120 -> 143 BPM");
+  });
+
   it("persists the DAG: a new store on the same repo reads the history", async () => {
     const { project, log, repo } = setup();
     const vs = new VersionStore(project, log, repo);
@@ -70,8 +120,8 @@ describe("VersionStore (commit DAG)", () => {
     const vs2 = new VersionStore(project, log, repo); // simulate reload
     await vs2.load();
     expect((await vs2.history()).map((c) => c.message)).toEqual(["only"]);
-    // lastCommittedSeq restored -> no phantom re-commit of already-committed edits.
-    expect(await vs2.commit("noop")).toBeNull();
+    // lastCommittedSeq restored -> the already-committed edit is not swept up a second time.
+    expect((await vs2.commit("noop"))?.entryCount).toBe(0);
   });
 
   it("starts history from the current point when loading a project with no commits", async () => {
@@ -79,9 +129,9 @@ describe("VersionStore (commit DAG)", () => {
     log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-1" }); // pre-existing working edit
     const vs = new VersionStore(project, log, repo);
     await vs.load();
-    expect(await vs.commit("nothing new")).toBeNull(); // not retro-committed
+    expect((await vs.commit("nothing new"))?.entryCount).toBe(0); // the pre-existing edit is not retro-committed
     log.dispatch({ type: "setTempo", bpm: 100 });
-    expect(await vs.commit("forward")).toBeTruthy();
+    expect((await vs.commit("forward"))?.entryCount).toBe(1);
   });
 
   it("treats a commit as a coalescing boundary (same-target edits after it are new)", async () => {
@@ -154,12 +204,12 @@ describe("VersionStore (commit DAG)", () => {
     expect(project.getTrack("t-1")).toBeTruthy();
   });
 
-  it("does not commit on a note alone (a note creates no uncommitted edit)", async () => {
+  it("does not auto-checkpoint on a note alone (a note creates no uncommitted edit)", async () => {
     const { project, log, repo } = setup();
     const vs = new VersionStore(project, log, repo);
     await vs.load();
     log.note("just thinking out loud", "claude");
-    expect(await vs.commit("nope")).toBeNull(); // nothing to commit yet
+    expect(await vs.commit(undefined, undefined, true)).toBeNull(); // nothing to checkpoint yet
 
     // The pending note rides into the next real commit.
     log.dispatch({ type: "setTempo", bpm: 100 });
@@ -339,11 +389,11 @@ describe("VersionStore (remote / server-authoritative history)", () => {
   it("reports HEAD + uncommitted from the log", async () => {
     // A trailing edit after the last marker -> uncommitted work, HEAD is the last marker.
     const withPending = await remoteSetup([entry(0, track("t-0")), entry(1, commit("v1")), entry(2, track("t-1"))]);
-    expect(withPending.vs.getState()).toMatchObject({ headId: "1", hasUncommitted: true });
+    expect(withPending.vs.getState()).toMatchObject({ headId: "1", hasUnnamedChanges: true });
 
     // Nothing after the last marker -> clean.
     const clean = await remoteSetup([entry(0, track("t-0")), entry(1, commit("v1"))]);
-    expect(clean.vs.getState()).toMatchObject({ headId: "1", hasUncommitted: false });
+    expect(clean.vs.getState()).toMatchObject({ headId: "1", hasUnnamedChanges: false });
   });
 
   it("authors a commit through the session sink only when there is uncommitted work", async () => {
