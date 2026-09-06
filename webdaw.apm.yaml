@@ -7978,6 +7978,98 @@ projects:
         id: 01a07812-0838-740e-910a-4147c9743ce4
         created_at: 2026-09-06T18:54:02.808Z
         updated_at: 2026-09-06T18:54:02.808Z
+      - ref: HOST-20
+        area: HOST
+        title: An email allowlist, because Google's testing mode does not gate sign-in
+        status: review
+        sort_path: "000020"
+        body: >
+          **Google's OAuth "testing mode" test-user list does not restrict who
+          can sign in.** It gates *sensitive scopes*, not authentication, so
+          anyone with a Google account can complete the flow. Learned the hard
+          way on the adjacent `ai-project-manager` project (2026-09-06), which
+          solved it with a server-side allowlist table. The same hole is open
+          here.
+
+
+          ## The gap today
+
+
+          `server/api/principal.ts` `makeJwtResolver` verifies the JWT against
+          Supabase's JWKS, calls `ensureUser(db, payload.sub, email)` and
+          returns a principal. **There is no check on who that person is.** A
+          stranger who signs in gets an account and a workspace.
+
+
+          The exposure is bounded but real: projects are scoped by `ownerId`, so
+          nobody sees anyone else's work. What a stranger gets is an account on
+          someone else's deployment - storage, database rows, WebSocket
+          connections and compute, all on a personal Fly bill. It also quietly
+          makes the "who is this for" question ambiguous while the answer is
+          meant to be "one person and some invited friends".
+
+
+          ## Where it goes, and it is not only the MCP server
+
+
+          The instinct was to attach it to the hosted MCP work (AGENT-28) to
+          keep that auth honest. **It should go one layer lower:
+          `resolvePrincipal` in `server/api/principal.ts`.**
+
+
+          That module's own header says it is "shared by the HTTP middleware
+          (app.ts) and the WS upgrade", so it is the single seam every
+          authenticated path already passes through - and the MCP server will
+          pass through it too when it arrives. Putting the check on the MCP
+          server alone would leave the sync API, the file endpoints and the
+          socket wide open, which is the larger surface.
+
+
+          One seam, every surface, including the ones not written yet.
+
+
+          ## Copy the design from next door
+
+
+          `../ai-project-manager/src/domain/access.ts` (`isEmailAllowed` /
+          `allowEmail` / `revokeEmail`), with two decisions worth taking as-is:
+
+
+          - **A table, not an environment variable.** The recorded reason is
+          sharper than convenience: `APM_ALLOWED_EMAILS`'s real defect was that
+          **unset meant everyone**. An empty table means nobody. That inversion
+          is the whole point, and it fails safe on a fresh deploy rather than
+          open.
+
+          - **Deliberately uncached.** One indexed lookup per request, on a path
+          that already does one for `ensureUser`. The reason to move off a
+          secret was that access changes should take effect when they are made;
+          a cache reintroduces exactly the "why is this person still getting in"
+          lag that a machine restart used to have. Revisit only with a
+          measurement.
+
+
+          Addresses normalise to lower case on both write and lookup, so the
+          primary key agrees with the query.
+
+
+          ## Notes
+
+
+          - Schema change goes through `drizzle-kit generate` (versioned SQL
+          under `drizzle/`), per the persistence rules.
+
+          - Email is best-effort on a `Principal` - a provider may omit the
+          claim - so decide explicitly what happens when it is absent. **Absent
+          should mean refused**, for the same fail-safe reason as the empty
+          table.
+
+          - This is independent of AGENT-28 and should not wait for it. It is
+          more urgent than it looks now that the deployment is being shown to
+          people (HOST-18).
+        id: 01a07815-7e56-75f3-81f1-cf8f4f841309
+        created_at: 2026-09-06T18:57:49.654Z
+        updated_at: 2026-09-06T19:13:31.288Z
       - ref: INST-1
         area: INST
         title: Built-in instruments

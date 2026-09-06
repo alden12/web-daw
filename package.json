@@ -27,6 +27,7 @@
     "db:down": "docker compose down",
     "db:reset": "tsx --env-file-if-exists=.env server/db/reset.ts",
     "db:generate": "drizzle-kit generate",
+    "allow": "tsx --env-file-if-exists=.env server/db/allow.ts",
     "db:migrate": "tsx --env-file-if-exists=.env server/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "check:server": "tsc -p tsconfig.server.json",
