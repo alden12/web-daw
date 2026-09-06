@@ -5,7 +5,7 @@
  * roll agree on what's active. `Block` and `NoteMinis` are the lane's own block
  * rendering, kept here since nothing else uses them.
  */
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import type { ProjectStore, Track } from "../../audio/project/projectStore";
 import type { ClipStore } from "../../audio/sequencer/clipStore";
 import type { Placement } from "../../audio/project/types";
@@ -20,7 +20,11 @@ import { beginPointerDrag } from "../pointerDrag";
 import { Waveform } from "../Waveform";
 import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "../clipDnd";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "../timeline/timeGrid";
-import { ROW, RESIZE_PX, DRAG_THRESH, type Selection } from "./shared";
+import { ObjectHandles } from "../editing/ObjectHandles";
+import { ROW, ROW_PX, RULER_H, RESIZE_PX, DRAG_THRESH, type Selection } from "./shared";
+
+/** The block's `top-1.5 bottom-1.5` inset, as a number the handles can be placed against. */
+const BLOCK_INSET_Y = 6;
 
 /** A placement block: pixel-positioned region with a label, shared by both kinds. Tinted by the
  *  clip's last editor (its `author` voice). */
@@ -149,6 +153,9 @@ export function Lane({
   selection,
   markerBeat,
   dropBeat,
+  headerW,
+  stickyHeader,
+  scrollRef,
   onSelect,
   onMark,
   onHover,
@@ -164,6 +171,12 @@ export function Lane({
   selection: Selection;
   markerBeat: number | null;
   dropBeat: number | null;
+  /** The track-header column's width, which is where this lane starts in the scrolled content. */
+  headerW: number;
+  /** Whether that column is pinned, in which case it also covers the lane's left edge. */
+  stickyHeader: boolean;
+  /** The timeline's scroller, so a selected clip's kebab can be clamped into view. */
+  scrollRef: RefObject<HTMLElement | null>;
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
   onHover: (beat: number | null) => void;
@@ -172,6 +185,8 @@ export function Lane({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ left: number; width: number } | null>(null);
+  const selectedPlacement =
+    selection?.trackId === track.id ? track.placements.find((placement) => placement.id === selection.id) : undefined;
   const beatAt = (clientX: number) => xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
@@ -228,39 +243,80 @@ export function Lane({
     onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
   };
 
-  // Drag a block: body -> move, right edge -> resize. Both snap and coalesce.
-  const onBlockDown = (p: Placement, e: React.PointerEvent) => {
+  /**
+   * One drag, three meanings: move the window, drag its end, or trim its start. All snap, all
+   * coalesce into a single undo step.
+   *
+   * **Trimming the start is one command on purpose.** It moves three things at once - the
+   * window's start, its offset into the clip so the content underneath does not slide, and its
+   * length - and `movePlacement` plus `resizePlacement` coalesce under different keys, so
+   * splitting it would cost an undo step per frame of the drag. Hence `startBeat` on
+   * `resizePlacement`.
+   */
+  const beginPlacementDrag = (p: Placement, gesture: "move" | "start" | "end", e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     onSelect(track.id, p);
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const isEdge = rect.right - e.clientX <= RESIZE_PX;
     const downBeat = beatAt(e.clientX);
-    const origin = { startBeat: p.startBeat, length: p.length };
+    const origin = { startBeat: p.startBeat, length: p.length, offset: p.offset };
+    const minLength = snapOn ? snapDiv : GRID;
 
     const onMove = (ev: PointerEvent) => {
       const delta = beatAt(ev.clientX) - downBeat;
-      if (isEdge) {
-        const length = Math.max(snapOn ? snapDiv : GRID, snapB(origin.length + delta));
-        if (length !== p.length)
-          dispatch({
-            type: "resizePlacement",
-            trackId: track.id,
-            placementId: p.id,
-            length,
-          });
-      } else {
+      if (gesture === "move") {
         const startBeat = Math.max(0, snapB(origin.startBeat + delta));
         if (startBeat !== p.startBeat)
-          dispatch({
-            type: "movePlacement",
-            trackId: track.id,
-            placementId: p.id,
-            startBeat,
-          });
+          dispatch({ type: "movePlacement", trackId: track.id, placementId: p.id, startBeat });
+        return;
       }
+      if (gesture === "end") {
+        const length = Math.max(minLength, snapB(origin.length + delta));
+        if (length !== p.length) dispatch({ type: "resizePlacement", trackId: track.id, placementId: p.id, length });
+        return;
+      }
+      // Clamped against the window's own end, so trimming can shorten it but never invert it.
+      const startBeat = Math.max(
+        0,
+        Math.min(snapB(origin.startBeat + delta), origin.startBeat + origin.length - minLength),
+      );
+      const shift = startBeat - origin.startBeat;
+      if (startBeat !== p.startBeat)
+        dispatch({
+          type: "resizePlacement",
+          trackId: track.id,
+          placementId: p.id,
+          startBeat,
+          offset: origin.offset + shift,
+          length: origin.length - shift,
+        });
     };
     beginPointerDrag(onMove);
+  };
+
+  /**
+   * A press on the block body. The right-edge grab zone is **mouse only**: a 7px target is not a
+   * touch affordance, and on touch the selected clip's own handles do this job at finger size
+   * (MOBILE-7). Same split as the roll's notes.
+   */
+  const onBlockDown = (p: Placement, e: React.PointerEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const isEdge = e.pointerType === "mouse" && rect.right - e.clientX <= RESIZE_PX;
+    beginPlacementDrag(p, isEdge ? "end" : "move", e);
+  };
+
+  /** Place a second window over the same clip, immediately after this one. */
+  const duplicatePlacement = (p: Placement) => {
+    const id = newPlacementId();
+    dispatch({
+      type: "addPlacement",
+      trackId: track.id,
+      id,
+      clipId: p.clipId,
+      startBeat: p.startBeat + p.length,
+      length: p.length,
+      offset: p.offset,
+    });
+    onSelect(track.id, { ...p, id, startBeat: p.startBeat + p.length });
   };
 
   // Double-click a block to split it at the cursor.
@@ -380,6 +436,32 @@ export function Lane({
           </Block>
         );
       })}
+      {selectedPlacement && (
+        <ObjectHandles
+          name="clip"
+          title="Clip"
+          left={beatToX(selectedPlacement.startBeat, pxPerBeat)}
+          right={beatToX(selectedPlacement.startBeat + selectedPlacement.length, pxPerBeat)}
+          top={BLOCK_INSET_Y}
+          height={ROW_PX - BLOCK_INSET_Y * 2}
+          leadX={stickyHeader ? headerW : 0}
+          leadY={RULER_H}
+          // The lane starts after the track-header column, so its own pixels are that far into
+          // the scroller's content.
+          offsetX={headerW}
+          scrollRef={scrollRef}
+          onResize={(edge, e) => beginPlacementDrag(selectedPlacement, edge, e)}
+          menuItems={[
+            { label: "Duplicate", onClick: () => duplicatePlacement(selectedPlacement) },
+            {
+              label: "Delete",
+              danger: true,
+              onClick: () =>
+                dispatch({ type: "removePlacement", trackId: track.id, placementId: selectedPlacement.id }),
+            },
+          ]}
+        />
+      )}
       {draft && (
         <div
           className="absolute top-1.5 bottom-1.5 rounded border border-dashed border-you bg-you/15 pointer-events-none"

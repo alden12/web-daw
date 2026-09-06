@@ -8,6 +8,10 @@ projects:
       the keystone that UI, agent, automation and persistence all project from;
       every edit is an authored event in one log, so history, versioning and an
       AI co-author fall out rather than being bolted on.
+    next:
+      - MOBILE-7
+      - DAW-31
+      - DAW-33
     id: 019fadff-8808-7358-b599-5f4175bd287f
     created_at: 2026-07-29T13:10:32.712Z
     updated_at: 2026-07-29T13:34:58.278Z
@@ -692,53 +696,76 @@ projects:
         **A thin server earns its place even local-first:** to hold/proxy the AI
         API key (never ship it in the client) and for sharing/collab/backup -
         the git "local repo + optional remote" model.
-      "The agent: pluggable, not either/or": >-
+      "The agent: pluggable, not either/or": >
         The MCP tool surface is just a set of tools over the store. What drives
-        them is interchangeable:
+        them is interchangeable. **Revised 2026-09-06: the connector is now the
+        first-class driver, and the in-app panel is deferred rather than "the
+        product". The pluggability below is unchanged - what changed is which
+        plug goes in first.**
 
 
-        - **In-app agent** (AGENT-2) - the Claude API with the same operations
-        exposed as tool-use functions. This makes "agent front and center" real
-        for a general user who just opens the app, no install. Build this; it is
-        the product.
+        - **A host over MCP** (AGENT-1, AGENT-28) - Claude Code, Claude Desktop,
+        the Claude apps. **Build this first.** It gives a capable agent on an
+        existing subscription with no key to proxy, no loop to maintain and no
+        per-token cost, and it is how the author actually works: *"I find I
+        never really use people's in-app agents, I prefer to just use Claude and
+        connect to other people's tools."*
 
-        - **Claude Code / Desktop over MCP** (AGENT-1, today's setup) - keep it.
-        Perfect for the developer/tinkerer audience driving the same tools from
-        a terminal or scripts. It already gives a capable agent on an existing
-        subscription (no per-token API key).
-
-
-        So: own in-app agent **and** the MCP server, sharing one tool/store
-        layer. We do not build a bespoke agent from scratch; we reuse the tools
-        and let the model reason, on the latest models.
+        - **In-app agent** (AGENT-2) - the same operations as tool-use functions
+        against an API key. Still the answer for "agent front and center" for a
+        general user who just opens the app with nothing installed, and worth
+        returning to when there are such users. Deferred, not abandoned.
 
 
-        **Concretely:** the agent **loop runs client-side** - tool calls execute
-        in the browser through the same `dispatch` seam (authored `claude`,
-        coral in the feed) - and **one shared tool catalog** (zod -> JSON
-        Schema) feeds both the MCP server and the panel (AGENT-6 is that
-        consolidation; it is not done yet - the two surfaces declare their tools
-        separately today, though the edit *semantics* are already shared).
+        **Why the order flipped.** The in-app panel is the most expensive thing
+        in this area (key proxy, streaming UI, tool loop, prompt upkeep,
+        provider churn) and it competes with clients that already do it better.
+        Every hour there is an hour not spent on the DAW, while the MCP surface
+        makes the DAW useful from a client someone else maintains. See AGENT-28
+        for the full argument, including why relaying subscription tokens into
+        the app is not an option at all: no third-party app can spend a Claude
+        subscription, so an in-app agent means API credits whatever else is
+        true.
 
 
-        **The thin server is only a key-proxy.** Keep it **provider-agnostic**
-        (an OpenAI-compatible base URL + model, so a free tier or a local model
-        can drive tests; default Claude Sonnet), and keep the key **server-side
-        only** - spend-capped, never `VITE_`-inlined into the client, with auth
-        + rate-limiting before any non-localhost deploy.
+        **The key-proxy plan stands for when the panel returns.** A thin server,
+        **provider-agnostic** (an OpenAI-compatible base URL + model, so a free
+        tier or a local model can drive tests; default Claude Sonnet), key
+        **server-side only** - spend-capped, never `VITE_`-inlined into the
+        client, with auth + rate-limiting before any non-localhost deploy.
+
+
+        **Where the loop runs differs by driver, and that is the real design
+        consequence.** For the in-app panel the loop runs client-side, tool
+        calls executing in the browser through the same `dispatch` seam
+        (authored `claude`, coral in the feed). For a hosted connector there is
+        no browser in the loop at all: edits apply to the **stored** project
+        server-side, and a DAW open anywhere picks them up over the existing
+        WebSocket sync. `VersionStore.materialize()` already proves headless
+        server-side editing works - a DOM-free `ProjectStore` replaying the same
+        `EditCommand` union.
+
+
+        **One shared tool catalog** (zod -> JSON Schema) should feed every
+        driver (AGENT-6 is that consolidation; not done - the surfaces declare
+        their tools separately today, though the edit *semantics* are already
+        shared).
 
 
         **The agent reasons on symbolic data and cannot hear its output.**
         Audio-analysis tools give it "ears" (AGENT-4). Play-an-idea (AGENT-5) is
         the mirror image: notes-in as the prompt, audio-analysis-out as the
         feedback, so the loop becomes play-an-idea -> agent develops it -> you
-        hear it and keep or reject.
+        hear it and keep or reject. Proven to work headlessly under Chromium and
+        measured at well under a second per render (AGENT-28), so a
+        connector-driven agent can have ears too - it just needs its own
+        machine, since Chromium fits neither the API's 256MB nor its slim image.
 
 
         **The genuinely novel surface is the activity feed itself** - a shared,
         two-voice timeline of the *edits* and the agent's *stated intent*, not a
-        chat log. That holds whether the chat lives in Claude Desktop/Code or
-        the embedded panel.
+        chat log. That holds whether the chat lives in a host or an embedded
+        panel, and it is the part that survives the driver changing.
 
 
         **Note the distinct streams.** Agent chat (the reasoning transcript) is
@@ -751,8 +778,10 @@ projects:
 
         Running ideas kept from design sessions: composite tools (coarser verbs
         that bundle several edits, so the model spends fewer round-trips),
-        prompt patterns worth standardising, and giving the LLM ears via
-        offline-render audio analysis (now AGENT-4, in flight).
+        prompt patterns worth standardising, and **widgets** - rendering real
+        playable UI inside a host via MCP Apps (AGENT-27, parked on a host bug,
+        with the decision recorded there to target that spec without adopting
+        its transport internally).
       Collaboration - options and rationale: >-
         Captured so the tradeoffs are on record. The concurrency decision has
         since been **made and largely built** (HOST-1); this section keeps the
@@ -3142,6 +3171,419 @@ projects:
         id: 019fed47-6f4a-719a-9e0a-18b0db4e1f86
         created_at: 2026-08-10T20:05:09.579Z
         updated_at: 2026-08-10T20:05:09.579Z
+      - ref: AGENT-27
+        area: AGENT
+        title: "Audio tools in Claude as MCP widgets: parked, the host does not render
+          views yet"
+        status: to-do
+        sort_path: "000027"
+        body: |
+          Expose a small set of music-making tools inside the Claude app - a playable instrument, a MIDI score you can hear, a pattern you can nudge - as MCP responses that render custom UI and run the real DSP **on the reader's own device**.
+
+          ## Outcome (2026-09-06): parked on a known host bug, not on anything here
+
+          **Every device capability this needs was proved to work. The blocker is that `claude-ai` does not render third-party MCP App views, and that is a widely reported bug rather than a mistake in this server.**
+
+          Probed to exhaustion in one session against a real connector on Claude Desktop. The host **declares** `io.modelcontextprotocol/ui` with `mimeTypes: ["text/html;profile=mcp-app"]`, calls `resources/list` repeatedly, and calls **`resources/read` never**. Both delivery conventions were tried:
+
+          - **Predeclared** (what SEP-1865 specifies): a `ui://` resource plus `_meta.ui.resourceUri` on the tool, emitted under both the short key and the fully-qualified `io.modelcontextprotocol/ui`, mime type exact with the `profile=` suffix. Never fetched.
+          - **Embedded** (MCP-UI's convention, one of the spec's own "alternatives considered"): the resource inside the tool result. Delivered fine - the HTML reached the model as text - and still rendered nothing.
+
+          The decisive detail is that **the page's static markup does not render either.** The view carries a plain `<h1>` and a list of stage lines needing no JavaScript, and the container is blank. Not a CSP question, not a script question, not a callback question: the host allocates a container and does not render into it.
+
+          **None of the individual probes ever ran**, so everything concluded mid-session about callbacks, CSP and `blob:` worklets *inside a widget* is void - there was never a view executing to test any of it. What stands is only what the Artifacts sandbox established.
+
+          ## It is not us: the issue trail
+
+          At least eight open reports across three repositories, the oldest from April 2026, none with a maintainer response, a milestone or a timeline. The consistent pattern is that **the same server renders correctly in MCP Inspector and in the SDK's own basic-host harness, and blank in Claude.**
+
+          - [claude-ai-mcp#471](https://github.com/anthropics/claude-ai-mcp/issues/471) - the closest match: custom remote connector, spec-correct server verified by raw JSON-RPC, five conversations, no iframe. **Closed as `duplicate`, not planned**, with no pointer to what it duplicates.
+          - [ext-apps#671](https://github.com/modelcontextprotocol/ext-apps/issues/671) - Desktop and claude.ai, renders fine in the SDK harness. Open since 2026-05-27, no response.
+          - [claude-ai-mcp#165](https://github.com/anthropics/claude-ai-mcp/issues/165) - iframe handshake never initiated, `app.connect()` hangs with zero messages logged. Open since 2026-04-10.
+          - [claude-code#65653](https://github.com/anthropics/claude-code/issues/65653) - "a labelled but completely empty container", the same empty box seen here, against a first-party connector.
+          - Also [ext-apps#615](https://github.com/modelcontextprotocol/ext-apps/issues/615), [ext-apps#482](https://github.com/modelcontextprotocol/ext-apps/issues/482), [claude-ai-mcp#236](https://github.com/anthropics/claude-ai-mcp/issues/236), [claude-ai-mcp#61](https://github.com/anthropics/claude-ai-mcp/issues/61).
+
+          Note a difference worth keeping straight: several reporters **do** see `resources/read` called before the blank iframe. Here it was never called at all. Same wall, slightly earlier.
+
+          ## When to come back, and what to watch
+
+          Nothing suggests this is imminent - the oldest report is five months old with no maintainer reply - but the capability is advertised, so it reads as unfinished rather than abandoned. Four signals, cheapest first:
+
+          1. **Any interactive widget rendering in Claude from any connector at all.** The strongest and most passive signal. If a first-party or directory-listed connector shows one, the host runtime works and the question narrows to whether custom connectors are allowlisted - a completely different problem with a different fix.
+          2. **The client version string moves off `0.1.0`.** The probe reports it (`client: {"name":"claude-ai","version":"0.1.0"}`), so a retest reads it for free.
+          3. **A maintainer response or a close on [ext-apps#671](https://github.com/modelcontextprotocol/ext-apps/issues/671) or [claude-ai-mcp#165](https://github.com/anthropics/claude-ai-mcp/issues/165)**, the two canonical trackers.
+          4. **Release notes or connector-directory docs mentioning MCP Apps for custom connectors.**
+
+          ### The retest, which is a minute of work
+
+          **The probe was removed from the tree once it had answered** (commit `5667a5a`), because `/mcp` and `/mcp-probe/*` took no credentials and woke a scale-to-zero machine - the same category of thing HOST-20 closed. It was not rewritten away, though:
+
+          ```
+          git revert 5667a5a     # restores server/api/mcpProbe.ts, mcpProbeView.ts and the mount
+          ```
+
+          Then deploy, add `https://web-daw.fly.dev/mcp` as a custom connector, run `run_sandbox_probe`, and read `/mcp-probe/log`. **`resources/read` showing a timestamp means the host has started fetching views**, and anything appearing on screen means the rest of this ticket is live again. Remove it again afterwards.
+
+          Two things that will otherwise cost a round trip each: **only removing and re-adding the connector picks up server changes** (a tool-list refresh and an app restart both fail to), and the log's counters reset on every deploy and every cold start, which is why it reports its own uptime.
+
+          ## What is genuinely known, and still encouraging
+
+          From the Artifacts sandbox, on **Android, iOS and desktop with matching results**:
+
+          | probe | result |
+          |---|---|
+          | Custom DSP loads from `blob:` **and genuinely runs** | pass |
+          | Offline render with no user gesture | pass |
+          | localStorage / IndexedDB / persistence across reloads | pass |
+          | OPFS | pass, except **iOS** |
+          | Live audible output through a worklet | pass |
+          | Outbound `fetch` | fail (that sandbox has `connect-src 'none'` and no way to declare domains) |
+
+          "Genuinely runs" is not inferred: a 3-bit crusher rendered offline to exactly 15 distinct levels (k/7 for k in -7..7), which cannot happen unless the processor executed.
+
+          **A widget would persist through IndexedDB, not OPFS.** Cheap, because `BundleStore` is already an interface with `OpfsBundleStore` / `MemoryBundleStore` implementations, so an `IndexedDbBundleStore` slots into an existing seam.
+
+          **The DSP is the small part.** From a production build: `index` (React, all UI, engine) 864K, `Markdown` 316K, `nimbus.worklet` 8K, `wavetable.worklet` 4K. A widget carrying the audio core plus one instrument's controls is plausibly under 200K.
+
+          ## Why this shape at all
+
+          1. Spend the existing Claude subscription, not API credits. 2. Work from a phone. 3. No server-side audio rendering.
+
+          **(1) is a hard constraint that decides the architecture.** No third-party app can spend a Claude subscription; there is no OAuth-for-inference. So the conversation must happen inside an Anthropic client, and the only question is how the DAW becomes something it can call.
+
+          **The relay is the obvious answer and mobile kills it.** Forwarding tool calls over the existing WebSocket to the user's live browser session satisfies all three on paper, and most of it exists (`mcp/bridge.ts`, `server/api/wsServer.ts`). But a phone backgrounds the DAW the moment you switch to the Claude app, and iOS *freezes* a backgrounded PWA rather than throttling it.
+
+          ## Prefer the predeclared shape when this becomes possible
+
+          Not merely because it is what the spec asks for. **An embedded view puts its entire HTML source into the model's context on every call**, so a view's markup is read as text by the model and a routine widget pays that on each invocation. `resources/read` keeps view source out of the context window altogether.
+
+          ## The live option meanwhile
+
+          **Relay to a desktop session** rather than the phone: Claude app on the phone, relay through Fly, DAW running on a desktop that is awake and foregrounded. Satisfies all three requirements as actually intended, and is mostly built already.
+
+          **And price the API with an own key.** Fails (1) as written but may be cheap enough that the requirement dissolves - a DAW agent is short tool-calling turns, not long documents. Worth ten minutes with a calculator before building anything.
+        id: 01a07741-83a5-7169-acfa-c611e91537c2
+        created_at: 2026-09-06T15:06:17.381Z
+        updated_at: 2026-09-06T20:34:35.783Z
+        comments:
+          - body: >-
+              **Probed on a Pixel 7 Pro in the Claude Android app's own webview
+              (2026-09-06). The sandbox is not the blocker.**
+
+
+              Custom DSP loaded from a `blob:` URL **and genuinely ran**: a
+              3-bit crusher rendered offline to exactly 15 distinct levels (k/7
+              for k in -7..7), which cannot happen unless the processor
+              executed. Offline render needed no gesture, and live audible
+              output through a worklet worked too.
+
+
+              Storage is better than hoped: the frame gets a **real per-artifact
+              origin**, not an opaque one, so localStorage, IndexedDB **and
+              OPFS** all work - the same storage model the app already uses.
+
+
+              Two fails, one irrelevant (`data:` URLs, moot since `blob:` works)
+              and one informative: **no outbound fetch at all**. Samples can
+              never be pulled, only embedded or passed through the host.
+            audience: user
+            id: 01a07750-e27e-74e4-b9aa-0a10d4ae430e
+            at: 2026-09-06T15:23:04.702Z
+            actor: claude
+          - body: >-
+              **iPhone probed 2026-09-06: identical to Android and desktop
+              except OPFS, which failed.** Custom DSP still loaded from `blob:`
+              and rendered correctly, and localStorage, IndexedDB and cross-load
+              persistence all passed - so the critical results hold on WebKit,
+              which is the strictest host this will meet.
+
+
+              Only casualty is `navigator.storage.getDirectory`. Notably
+              localStorage and IndexedDB survive, so this is OPFS specifically
+              rather than storage being partitioned away in a cross-site frame.
+
+
+              **Consequence: a widget must persist through IndexedDB, not
+              OPFS.** That is cheaper than it sounds - `BundleStore` is already
+              an interface with `OpfsBundleStore` / `MemoryBundleStore`
+              implementations, so an `IndexedDbBundleStore` slots into an
+              existing seam rather than forking the storage layer.
+            audience: user
+            id: 01a0775f-46d7-771c-9b83-ba7f729a8918
+            at: 2026-09-06T15:38:47.896Z
+            actor: claude
+          - body: >-
+              **Operational findings from the first probe session (2026-09-06),
+              each of which cost a round trip:**
+
+
+              - **Only removing and re-adding the connector picks up server
+              changes.** A tool-list refresh does not, nor does an app restart.
+              Disconnect/reconnect refreshed the tool list but seemingly not the
+              prefetched `ui://` template, which the spec has hosts prefetching.
+
+              - **`structuredContent` can hide `content` from the model.** A
+              result carrying both was reported as only the structured half.
+              Audit the app's own MCP tools for this.
+
+              - **The service worker shadowed `/mcp-probe/*`** with the app
+              shell, so the control page looked undeployed. Invisible unless the
+              PWA is installed. Fixed by adding `/mcp` to
+              `navigateFallbackDenylist`.
+
+              - The view renders in a plain browser tab, so the page is sound.
+            audience: agent
+            id: 01a07794-4354-7219-9e93-1a1e98c56b66
+            at: 2026-09-06T16:36:40.404Z
+            actor: claude
+          - body: >-
+              **Decided 2026-09-06: target the spec, do not adopt its transport
+              internally.**
+
+
+              SEP-1865 is Final, authored jointly across OpenAI and Anthropic,
+              and unifies MCP-UI with the Apps SDK, so it is a safe *target*.
+              The risk is hosts not implementing it, not the spec dying.
+
+
+              The in-app agent panel should **not** render widgets through it.
+              That design solves *untrusted server renders UI inside a host*; in
+              our own panel there is no untrusted party, so it buys an iframe
+              and a message hop per widget for isolation we do not need.
+
+
+              Copy the **boundary**, not the transport: build each widget as a
+              self-contained bundle (data in, events out, no app globals), so it
+              mounts in-app directly and wraps into a `ui://` resource
+              externally. Keep tool-to-view mapping as data, so it projects into
+              `_meta` later.
+            audience: user
+            id: 01a077f2-2034-76f1-8f65-72d693afa5b3
+            at: 2026-09-06T18:19:11.796Z
+            actor: claude
+      - ref: AGENT-28
+        area: AGENT
+        title: Hosted MCP over the stored project, and defer the in-app agent panel
+        status: to-do
+        sort_path: "000028"
+        body: >
+          **Decided 2026-09-06.** Make the DAW something Claude can drive
+          through a connector, rather than building an agent inside the app.
+          Ship it in two phases, and the first needs no audio at all.
+
+
+          ## Why not the in-app panel
+
+
+          Two options were weighed: a home server relaying Claude account tokens
+          into an in-app agent, versus a hosted MCP server called from the
+          Claude apps.
+
+
+          **The first is not available.** No third-party app can spend a Claude
+          subscription - there is no OAuth-for-inference, and subscription
+          tokens are spent through Anthropic's own clients. A machine at home
+          changes nothing about that; it would have to drive a Claude client
+          headlessly to launder subscription inference into the app, which is
+          not what the subscription is for and would break on any client update.
+          The honest version of that option is "API key plus in-app panel",
+          which needs no home server at all, since a proxy on Fly would do.
+
+
+          **And the deciding argument is use, not architecture** (Alden,
+          2026-09-06): *"I find I never really use people's in-app agents, I
+          prefer to just use Claude and connect to other people's tools."*
+          Building a panel he would not use is the worst outcome available - it
+          is the most expensive thing on this area's roadmap (key proxy,
+          streaming UI, tool loop, prompt upkeep, provider churn) and it
+          competes with a client that is already better at it.
+
+
+          This supersedes the standing "provider-agnostic key-proxy" direction,
+          and the context section "The agent: pluggable, not either/or" has been
+          re-pointed to match. The panel is **deferred, not abandoned** - it is
+          still the answer for a general user who opens the app with nothing
+          installed.
+
+
+          ## Phase 1: editing tools, no audio
+
+
+          **Almost every tool is pure data** - create a track, add notes, set
+          params, quantise, split a clip. None of it touches audio. Rendering is
+          needed only for *agent ears*, which is one feature rather than the
+          platform, so it does not belong in the first cut.
+
+
+          **The hard part already exists.** `VersionStore.materialize()` does
+          headless server-side project editing today:
+
+
+          ```ts
+
+          const store = new ProjectStore(false);
+
+          store.load(base.snapshot);
+
+          for (const entry of commit.entries) applyEdit(store, entry.command,
+          entry.author);
+
+          ```
+
+
+          A `ProjectStore` with no DOM, replaying the same `EditCommand` union
+          the MCP tools already speak, inside the API process. So a hosted MCP
+          editing stored projects is not new architecture, it is pointing
+          existing pieces at each other.
+
+
+          **And the composition is the good bit:** Claude edits through the
+          connector, and a DAW open in any browser picks the changes up over the
+          existing WebSocket sync. The agent's edits land live without the agent
+          ever touching audio.
+
+
+          The probe server from AGENT-27 already proves the connector half: a
+          hand-rolled JSON-RPC endpoint at `/mcp` on the existing Hono app,
+          unauthenticated because the auth middleware gates `/projects` only.
+          Real auth is a phase-1 question, since editing real projects is not a
+          probe.
+
+
+          ## Phase 2: rendering, and it is not a dead end
+
+
+          Validated 2026-09-06 before committing to this path, because a phase 2
+          that turned out impossible would have made phase 1 a trap.
+
+
+          **It already works, and it already runs on every CI push.**
+          `e2e/offline-render.e2e.ts` renders worklet instruments, samplers,
+          audio tracks and MIDI devices through `renderProjectOffline` under
+          Playwright's headless Chromium, and `__dawAnalyzeMix` covers the
+          analysis chain. CI is `ubuntu-latest` with `playwright install
+          --with-deps chromium`, so **headless Chromium on Linux rendering our
+          worklets is already proven on the target OS.**
+
+
+          **Measured timings** (six paths, local, 2026-09-06): ~1.2s each
+          including page load, and the render-plus-analyse chain 454ms.
+          `OfflineAudioContext` renders far faster than realtime, so this is not
+          a compute problem. It also needs **no audio device** - it renders to a
+          buffer, so there is no ALSA or PulseAudio fight. A realtime
+          `AudioContext` would be a different story; we do not need one.
+
+
+          **The cost is packaging.** The API runs `shared-cpu-1x` / 256MB on
+          `node:22-slim`. Chromium fits neither: roughly 300-400MB more image,
+          and 200-500MB of RAM.
+
+
+          ### Its own Fly app, not another machine
+
+
+          **Machines within one Fly app share a single image.** Process groups
+          can differ in VM size but not in image, so a second machine in
+          `web-daw` would put Chromium in the image the API boots from and slow
+          its cold start for a dependency it never uses. A separate app
+          (`web-daw-render`) gets its own Dockerfile, VM size and scaling; the
+          API stays slim. Same org means private networking at
+          `web-daw-render.internal`, so nothing is publicly exposed. Apps are
+          free, machines cost, so the split is not more expensive than a second
+          machine would have been - and the failure domains stay apart, which
+          matters: a renderer that exhausts memory should not take the project
+          store with it.
+
+
+          ### The container gotchas, all routine
+
+
+          - **Missing shared libraries** on `node:22-slim` (`libnss3`, `libatk`,
+          `libgbm`, `libasound2`, fonts). Same fix as CI: `playwright install
+          --with-deps chromium`, or base on `mcr.microsoft.com/playwright`.
+
+          - **`/dev/shm` is 64MB in containers**, which crashes Chromium in ways
+          that look random. Launch with `--disable-dev-shm-usage`.
+
+          - **The sandbox needs user namespaces** containers often withhold.
+          `--no-sandbox`, defensible because the only page it loads is ours.
+
+          - **Budget 1GB.** 256MB will not do it.
+
+
+          ### First acceptance check, before any plumbing
+
+
+          CI runs on a full GitHub runner; Fly's `shared-cpu-1x` is a much
+          smaller slice, and **Chromium under memory pressure fails confusingly
+          rather than cleanly**. So the render service's *first* job on boot is
+          to run the existing `__dawRenderProjectSmoke` and log peak plus
+          timing. Pass, and everything downstream is plumbing. Fail, and one
+          deploy has bought the knowledge that it needs a bigger VM - rather
+          than finding out through mysterious behaviour later.
+
+
+          One thing to design around: the render harness is dev/test-only and
+          dead-code-eliminated from production builds, so the service needs its
+          own small entry point that imports `renderOffline` directly rather
+          than reusing the e2e hooks.
+
+
+          ### Serverless was considered
+
+
+          **AWS Lambda can do this** - container-image Lambdas take up to 10GB,
+          memory up to 10GB, a 15-minute ceiling far beyond a sub-second render,
+          and `@sparticuz/chromium` exists for exactly this. Cloudflare's
+          Browser Rendering is a similar option. Cost would be negligible under
+          the free tier.
+
+
+          **Rejected for now on operational grounds, not technical ones.** It
+          means a second cloud, its own IAM and deploy tooling, for one function
+          - against one more `fly.toml` where everything already lives. Cold
+          start is comparable either way (seconds, dominated by launching
+          Chromium, not by the render).
+
+
+          **The real case for serverless is concurrency, not cost.** Fly with
+          `max_machines_running = 1` queues simultaneous renders; Lambda runs
+          them in parallel. Revisit if the public demo (HOST-18) ever produces
+          real concurrent load - with one user it is the wrong trade.
+
+
+          ## Not doing
+
+
+          The home server. The in-app agent panel, for now.
+        id: 01a077fa-a6ce-703a-be02-9d2eae1d98f9
+        created_at: 2026-09-06T18:28:30.542Z
+        updated_at: 2026-09-06T18:40:30.941Z
+        comments:
+          - body: >-
+              **Reference implementation next door:
+              `../ai-project-manager/src/mcp/`** (2026-09-06). It already runs
+              this stack on Fly, so phase 1 copies rather than rediscovers.
+
+
+              - `http.ts` - Streamable HTTP via the SDK's
+              `StreamableHTTPServerTransport`, **stateless**
+              (`sessionIdGenerator: undefined`), so any request lands on any
+              instance with no affinity. Use the SDK; AGENT-27's probe
+              hand-rolled JSON-RPC, right for a probe and wrong for this.
+
+              - `auth.ts` - resource-server pattern: Supabase JWT via `jose`,
+              plus `/.well-known/oauth-protected-resource`. Its shape came from
+              our own `server/api/principal.ts`, so it comes home.
+
+
+              **Settles the phase-1 auth question: a connector takes a URL and
+              OAuth credentials, with nowhere for a hand-written header.** A
+              static bearer reaches Claude Code only.
+            audience: user
+            id: 01a07811-c8e2-7297-a90a-d7b96aedfa1d
+            at: 2026-09-06T18:53:46.594Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -4124,9 +4566,19 @@ projects:
           - **Selected track-header opacity** - a selected track header used a
           translucent tint, letting the lane's clip notes bleed through the
           sticky header column; use an opaque teal-tinted panel colour.
+
+          - **The clip chip's launch button sits off-centre when stopped**
+          (raised 2026-09-06 on a phone). `ClipRail.tsx:169` centres its glyph
+          with `pl-px pb-px` on a plain block - an optical nudge tuned for `▶`,
+          which is visually left-weighted. `■` is symmetric, so the same nudge
+          pushes it off centre in the 16px circle. Give the button `inline-flex
+          items-center justify-center` and apply the nudge to the `▶` glyph only
+          (a span), so the two states centre independently. Worth folding into
+          the button-system work of DAW-29 rather than patching in place, since
+          that is where the icon-in-a-circle pattern is being standardised.
         id: 019fae99-8a07-740b-a6f2-9395641daaec
         created_at: 2026-07-29T15:58:45.767Z
-        updated_at: 2026-07-29T15:58:45.767Z
+        updated_at: 2026-09-06T16:54:28.616Z
       - ref: DAW-8.5
         area: DAW
         title: Master gain and live level meter
@@ -4337,6 +4789,207 @@ projects:
         id: 019fae99-fe7f-73de-9cdc-3321e69e180a
         created_at: 2026-07-29T15:59:15.583Z
         updated_at: 2026-07-29T16:00:37.748Z
+      - ref: DAW-8.12
+        area: DAW
+        title: "Bug: the clip-length handle edits the active clip, not the open one"
+        status: to-do
+        sort_path: "000008.000012"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06 from a phone session: "loop length is not saved on
+          clip (is it setting on wrong clip?)". It is.
+
+
+          **Root cause, and it is one line.** `PianoRoll` threads `clipId`
+          through every note command (`addNotes`, `editNotes`, `removeNotes`),
+          but the ruler's length handle omits it:
+
+
+          ```ts
+
+          // src/ui/PianoRoll.tsx:908
+
+          onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId,
+          lengthBeats: beats })}
+
+          ```
+
+
+          `clipId` is optional on the command (`protocol.ts`), and
+          `ProjectStore.setClipLength` resolves `undefined` through
+          `getClipStore(trackId, undefined)`, which falls back to the track's
+          **active** clip. So editing the length of any clip that is not the
+          active one silently resizes a different clip - and the open clip
+          appears to "not save" because nothing changed on it.
+
+
+          **Fix:** pass `clipId`. Then decide whether `clipId` should stay
+          optional on the command at all: the agent tool
+          (`agent/tools/clips.ts`) always passes one, so the only caller relying
+          on the fallback is the buggy one. Making it required would have caught
+          this at the type level, which is the argument for doing it while here.
+
+
+          The coalesce key already includes the clip
+          (`setClipLength:${trackId}:${clipId ?? ""}`), so history grouping
+          follows the fix for free.
+
+
+          Wants a regression test: open a non-active clip, drag the handle,
+          assert the active clip's length is untouched.
+
+
+          Related but separate: DAW-30 gives a clip's loop region a *start*,
+          which touches the same command.
+        id: 01a077a3-8170-732c-a66c-797a89d85d3d
+        created_at: 2026-09-06T16:53:19.344Z
+        updated_at: 2026-09-06T16:53:19.344Z
+      - ref: DAW-8.13
+        area: DAW
+        title: "Bug: a clip-length drag lands several history entries instead of one"
+        status: to-do
+        sort_path: "000008.000013"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "clip length is committing on drag not just on
+          resolve, leading to lots of commits."
+
+
+          **Cause: coalescing is time-windowed, not gesture-scoped.**
+          `setClipLength` is in `COALESCABLE` (`src/audio/commands/editLog.ts`)
+          with a stable key, but `COALESCE_MS = 400` means successive frames
+          only merge if they arrive within 400ms of each other. A drag that
+          pauses - which a finger dragging a handle on a phone does constantly -
+          crosses the window and starts a fresh checkpoint. A slow ten-second
+          trim can leave a dozen feed entries and a dozen undo steps for one
+          gesture.
+
+
+          **The right shape is the gesture, not a timer.** A pointer drag knows
+          exactly when it begins and ends; the log should too. Options, in
+          preference order:
+
+
+          1. **An explicit gesture scope** - `editLog.beginGesture()` /
+          `endGesture()` (or a `gesture` id on the command) so every command
+          inside one drag coalesces regardless of elapsed time, and the next
+          drag starts a new entry no matter how fast it follows.
+          `pointerDrag.ts` already owns start/end for every draggable thing in
+          the app, so there is one place to put it.
+
+          2. **Dispatch only on release**, keeping the drag itself local state.
+          Cheapest per call site, but it costs the live model update that makes
+          the roll and the arrangement redraw together, and it has to be done
+          again for every draggable.
+
+
+          Option 1 also fixes the same defect everywhere else it exists - it is
+          not specific to clip length. `setParam` knob drags, `movePlacement`,
+          `resizePlacement` and note edits all ride the same 400ms window and
+          all fragment the same way on a slow drag. Worth confirming on a knob
+          before building, since desktop drags are fast enough that this rarely
+          shows.
+
+
+          Note the vocabulary: these are undo checkpoints and feed entries, not
+          *commits* - commits stay user-driven (see apm: "History and
+          versioning"). The user-visible symptom is feed noise and undo taking
+          many presses to walk back one drag.
+        id: 01a077a3-ac78-77d0-ab07-b28aa791198b
+        created_at: 2026-09-06T16:53:30.360Z
+        updated_at: 2026-09-06T16:53:30.360Z
+      - ref: DAW-8.14
+        area: DAW
+        title: Commit markers in the Activity feed carry no time and no way back
+        status: to-do
+        sort_path: "000008.000014"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "commits need a time displayed and ability to go
+          back to that point if possible."
+
+
+          **Both already exist - in the other tab.** `VersionTimeline` renders
+          `timeAgo(commit.time)` ("5m ago", refreshed on a 30s interval) and a
+          "Revert to this version" action calling `versionStore.revertTo`.
+          `ActivityView` merges commits into the feed by `seq` and renders none
+          of it: no timestamp on any row, and a commit marker is inert.
+
+
+          So this is not new machinery, it is the feed reusing what the Versions
+          tab has:
+
+
+          - **Time on commit rows at least.** `CommitSummary.time` is already
+          loaded. Whether *edits* get times too is a separate question: log
+          entries are ordered by `seq`, and stamping every row makes a dense
+          feed noisier. A reasonable middle is a time on commit markers plus a
+          hover title on edits.
+
+          - **Revert from the marker.** Same call the Versions tab makes. It
+          records a new version rather than detaching (git-revert style, see
+          `history.ts`), so it is safe to offer inline.
+
+
+          Consider whether the two tabs should converge instead: the feed
+          already contains commit markers, so the Versions tab is arguably a
+          filtered view of it. Not a call to make inside a bug fix, but worth
+          noting before building the same row twice.
+        id: 01a077a3-daf4-7641-88fc-e55cd8dd690c
+        created_at: 2026-09-06T16:53:42.260Z
+        updated_at: 2026-09-06T16:53:42.260Z
+      - ref: DAW-8.15
+        area: DAW
+        title: "Bug: undo does not survive a page reload, though the machinery says it
+          should"
+        status: to-do
+        sort_path: "000008.000015"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "maintain undo on page reload would be useful." It
+          was built (DAW-7) - so this is a repair, not a feature.
+
+
+          **The wiring is all present.** `undo.json` has a schema
+          (`project/schema.ts`), a delta-encoded form (`PackedStack`, one base
+          snapshot + each checkpoint's command, `PERSIST_UNDO_DEPTH = 30`), a
+          writer and a reader on `ProjectRepository`, and both load paths call
+          them:
+
+
+          - `persistence.ts:41` - `restoreProject` layers `readUndo()` back on
+          via `editLog.restoreCheckpoints`.
+
+          - `projects/operations.ts:45` - the project-open path does the same,
+          and line 35 writes on close.
+
+          - `attachAutosave`'s keyframe writes `editLog.getCheckpoints()`
+          alongside the snapshot.
+
+
+          **So the bug is in which path a hosted reload actually takes**, and
+          that is the first thing to find out. Candidates, cheapest first:
+
+
+          1. The remote/`ProjectRepository` backend does not persist `undo.json`
+          the way OPFS does, so `readUndo()` returns null on the server-backed
+          path.
+
+          2. Restore runs but `restoreCheckpoints` no-ops - e.g. the base
+          snapshot's schema version moved, or the packed steps fail to replay
+          through `applyEdit`.
+
+          3. Something re-initialises the log after restore, dropping the stacks
+          that were just layered on.
+
+
+          Reproduce first: edit, reload, press undo, and log whether
+          `readUndo()` returned anything. A test that reloads a repository
+          round-trip and asserts one undo step survives is what stops it
+          regressing.
+        id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
+        created_at: 2026-09-06T16:53:50.952Z
+        updated_at: 2026-09-06T16:53:50.952Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing
@@ -7111,6 +7764,220 @@ projects:
         id: 019fd716-70c0-737c-863e-d13aa5ceb908
         created_at: 2026-08-06T12:39:59.936Z
         updated_at: 2026-08-06T12:53:40.587Z
+      - ref: HOST-18
+        area: HOST
+        title: A public demo on GitHub Pages, offline-only and free to run
+        status: in-progress
+        sort_path: "000018"
+        body: >
+          Something to show people without asking them to sign in, and without
+          paying Fly for the compute of strangers poking at it. A static build
+          on `alden12.github.io/web-daw`, no backend at all.
+
+
+          **Assume it is shown on a phone.** The likely use is handing someone a
+          link while out and about, so the touch shell is the primary surface
+          here, not the desktop one. That has already killed one design (see the
+          banner).
+
+
+          ## The mode already exists and is continuously proven
+
+
+          `.env.test` **is** this configuration, and it is committed: blank
+          `VITE_SUPABASE_*` (no login gate, auth is opt-in) and blank
+          `VITE_DAW_API_URL` (projects live in OPFS). All 148 e2e tests run
+          against exactly it on every CI push, and `yarn check:pwa` already
+          proves the built app boots with the network cut. So this is a
+          packaging job, not a feature.
+
+
+          Sharing degrades correctly rather than erroring: `sharingAvailable` is
+          false and the Share panel is never offered.
+
+
+          **No cross-origin isolation needed.** Nothing uses
+          `SharedArrayBuffer`, so `AudioWorklet` runs without the COOP/COEP
+          headers GitHub Pages cannot set. That was the one thing that could
+          have ruled this out.
+
+
+          ## What a base path costs
+
+
+          A project site serves from `/web-daw/`, and Vite currently sets no
+          `base`. Decided against a custom domain (2026-09-05), so the base path
+          is real and four things follow from it:
+
+
+          1. **`base` in `vite.config.ts`**, or everything 404s.
+
+          2. **The manifest's absolute paths.** `manifest.ts` hardcodes `/` for
+          `id`, `start_url`, `scope` and all three icons, and `navigateFallback`
+          is `/index.html`. Wrong under a base, and the failure is silent - the
+          browser simply never offers to install, which is the exact failure
+          that file's doc comment exists to prevent. Whatever is done here must
+          keep the Fly deploy (served from `/`) working.
+
+          3. **`404.html`.** Pages has no SPA fallback, so a deep link 404s on
+          first load. Copy `index.html` to `404.html` at build.
+
+          4. **Project links escape the base.** `projectUrl.ts` writes
+          `/p/<slug>~<id>` with `replaceState` and reads straight from
+          `pathname`. Under `/web-daw/` that rewrites the address bar to
+          `/p/...`, outside the base, so a reload or a shared link lands on
+          GitHub's own 404. This is the only one that needs code rather than
+          config.
+
+
+          Plus a deploy workflow; `.github/workflows/` has only `ci.yml` today.
+
+
+          ## The banner
+
+
+          The demo has to say what it is, because "my work vanished" is the
+          impression this otherwise leaves. Wanted wording, roughly:
+
+
+          > Offline mode, files saved in browser storage. Online coming soon -
+          reach out to the repo owner to join the dev preview.
+
+
+          It should read as **a deliberate mode, not a degraded one** - the app
+          works, the storage is simply local.
+
+
+          **It carries the repo link too.** The demo's most interesting claim is
+          that an agent can play the thing, and that is the one part a static
+          build cannot show, so it should say where to get it:
+          `github.com/alden12/web-daw`, with the gist that driving it over MCP
+          means cloning and running locally.
+
+
+          **Dismissable, and it stays dismissed.** `usePersistentBoolean` is the
+          mechanism (localStorage-backed, same as the roll's settings) rather
+          than `UpdateNotice`'s in-memory `useState`, which comes back on every
+          load. This also settles the phone question: a notice that cannot be
+          closed for good is furniture, and MOBILE-1 is short of rows.
+
+
+          One consequence to handle rather than ignore: **dismissing must not
+          destroy the only explanation of where the files went.** Someone who
+          closes it and returns a month later should still be able to find out -
+          so the same text wants a permanent home in the settings panel, with
+          the banner as the thing that surfaces it once.
+
+
+          Only on the static build, not on Fly. That means it keys off the same
+          "no API configured" fact the storage layer already reads, rather than
+          a new flag.
+
+
+          ### Rejected: hanging the repo link off the MCP status dot
+
+
+          Tried and wrong twice over (2026-09-05). `CenterWorkbench` renders
+          that dot, and **`CenterWorkbench` is only rendered by `DesktopShell`**
+          - the touch shell has no such indicator, which rules it out for the
+          surface this demo is actually shown on. And even on desktop the dot
+          only renders when `mcpStatus === "connected"`, which on a static build
+          never happens. So it is invisible on every device in exactly this
+          deployment. The banner carries the link.
+
+
+          ## Not doing: connecting the Pages build to a local MCP server
+
+
+          Asked (2026-09-05). The bridge opens
+          `ws://localhost:<DEFAULT_WS_PORT>`, and from an `https://` page that
+          is a public-to-local-network connection. The mixed-content spec treats
+          `localhost` as trustworthy so Chrome would likely allow it today, but
+          Private Network Access is actively tightening exactly this, and Safari
+          is stricter still. Worth a five-minute test before believing either
+          way.
+
+
+          It is moot regardless: **the MCP server is spawned by Claude Code over
+          stdio from `.mcp.json`, so anyone who can run it has the repo checked
+          out - and can therefore run `yarn dev` and get a same-origin page with
+          no mixed-content question at all.** The Pages build would be solving a
+          problem its own audience does not have. Hence pointing at the repo
+          instead.
+
+
+          ## Worth deciding separately: what the demo shows
+
+
+          A fresh install seeds one instrument track and one clip, which
+          demonstrates the UI and not the app. A seeded demo project with actual
+          music in it is what makes this worth showing anyone, and it is its own
+          piece of work.
+        id: 01a07270-24de-746e-9aa1-a2c184aecd82
+        created_at: 2026-09-05T16:39:07.230Z
+        updated_at: 2026-09-05T16:50:28.848Z
+      - ref: HOST-19
+        area: HOST
+        title: "Possible future: move the stack to AWS"
+        status: to-do
+        sort_path: "000019"
+        body: >
+          Raised 2026-09-06 while sizing the render service. **Not scheduled,
+          recorded so the trigger is recognisable when it arrives.**
+
+
+          ## The motivation is not cost
+
+
+          Fly is currently effectively free at this usage and the machines
+          auto-stop, so nothing about the bill argues for moving. The reasons
+          are **learning AWS** and **wanting more control over the whole stack**
+          - which are legitimate reasons to move infrastructure, but they are
+          the kind that should be spent deliberately rather than drifted into.
+
+
+          ## The technical trigger, if one comes
+
+
+          **Concurrency.** The Fly app is capped at `max_machines_running = 1`
+          as a cost ceiling, so simultaneous renders queue. Lambda runs them in
+          parallel without being asked. With one user that is irrelevant; if the
+          public demo (HOST-18) ever produces real concurrent load, it stops
+          being irrelevant quickly.
+
+
+          So the honest ordering is: keep an eye on Fly costs and on whether
+          anything ever queues. Either of those turning real is the moment to
+          look, and until then this is a preference rather than a need.
+
+
+          ## What already exists on Fly, and would have to move
+
+
+          - The sync API + WebSocket (`server/api`), Postgres, and the built
+          client, all single-origin on one machine.
+
+          - Whatever AGENT-28 phase 1 adds (hosted MCP).
+
+          - The render service AGENT-28 phase 2 wants, which is the piece with
+          the clearest serverless story: container-image Lambdas take up to
+          10GB, memory to 10GB, a 15-minute ceiling far beyond a sub-second
+          render, and `@sparticuz/chromium` exists for exactly this.
+
+
+          **It need not be all at once.** The renderer is the natural first
+          candidate: it is stateless, bursty, and the only piece where
+          serverless has a genuine technical advantage rather than a preference.
+          Moving it alone would answer most of the learning question at a
+          fraction of the risk, and leave the database where it is.
+
+
+          Postgres is the piece to think hardest about - it is the one with
+          state, and the one where a migration is a migration rather than a
+          redeploy.
+        id: 01a07812-0838-740e-910a-4147c9743ce4
+        created_at: 2026-09-06T18:54:02.808Z
+        updated_at: 2026-09-06T18:54:02.808Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
@@ -9335,6 +10202,63 @@ projects:
             id: 01a06e66-32cf-768c-a871-712c3be8f1ad
             at: 2026-09-04T21:49:46.575Z
             actor: claude
+          - body: >-
+              **The timeline half shipped (2026-09-05), and the reuse worked
+              out.** `NoteHandles` became `editing/ObjectHandles`, taking a
+              rectangle in its container's pixels rather than a note, so one
+              component serves the roll's notes and the arrangement's clips.
+              Callers keep what an edge drag *means*: resize a note, trim a
+              clip.
+
+
+              Two deliberate differences for clips. **No move grip** - it exists
+              to get a fingertip off a 12px note whose pitch you are watching,
+              and a 34px block that only moves in time has neither problem.
+              **Trimming needed a model change**: `resizePlacement` gained
+              `startBeat`, since a left trim moves start, offset and length
+              together and splitting it would cost an undo step per drag frame.
+
+
+              Still open: the empty-range -> Create clip / Paste menu, and
+              multi-select.
+            audience: user
+            id: 01a06f02-1bba-736f-8b99-8977759c385b
+            at: 2026-09-05T00:40:04.283Z
+            actor: claude
+          - body: >-
+              **Multi-select is NOT built and is the next thing here**
+              (2026-09-05). Confirmed with Alden while stopping for the day.
+              Everything else in this ticket has shipped: the roll's notes, then
+              the timeline's clips.
+
+
+              **Do it in the piano roll first.** That is where the design was
+              settled (long-press to enter the mode, every note outlines itself
+              as the mode indicator, taps toggle membership), and it is where
+              group handles have something to say - trim vs scale only differs
+              musically over notes. The arrangement can follow once the pattern
+              is proven, and should reuse whatever the roll grows, the way
+              `ObjectHandles` was reused.
+
+
+              Also still open, smaller: the empty-range -> Create clip / Paste
+              menu in the timeline.
+            audience: user
+            id: 01a06f03-ef42-705f-bc69-40a4aeff5882
+            at: 2026-09-05T00:42:03.970Z
+            actor: claude
+          - body: "**Bug bash on a phone, 2026-09-06.** Six issues raised from a real PWA
+              session; the touch-editing ones split out as MOBILE-17 (a clip
+              cannot be placed on the timeline at all - the rail uses HTML5 DnD,
+              which touch never fires, and this ticket's empty-range -> Create
+              clip menu is the other missing half) and MOBILE-18 (the drum roll
+              never gets `compact`, so it keeps the toolbar and velocity lane).
+              The rest went to DAW-8.12 through DAW-8.15 plus a bullet on
+              DAW-8.4."
+            audience: user
+            id: 01a077a4-a912-76c8-8191-0a0e44fd4896
+            at: 2026-09-06T16:54:35.026Z
+            actor: claude
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
@@ -9907,3 +10831,98 @@ projects:
         id: 019ff2fd-7927-7031-8a88-128677a25e40
         created_at: 2026-08-11T22:42:05.735Z
         updated_at: 2026-08-11T22:42:05.735Z
+      - ref: MOBILE-17
+        area: MOBILE
+        title: "Bug: a clip cannot be placed on the timeline at all on touch"
+        status: to-do
+        sort_path: "000017"
+        body: >-
+          Raised 2026-09-06 from a phone session: "cannot drag or place a clip
+          onto timeline in mobile mode." Confirmed - there is no route to it,
+          and two independent gaps are why.
+
+
+          **1. Placement is HTML5 drag-and-drop, which touch never fires.**
+          `ClipRail` marks each clip chip `draggable` and writes `dataTransfer`
+          on `dragstart`; `arrangement/Lane.tsx` accepts it in `onDragOver` /
+          `onDrop`. Mobile Safari and Chrome do not synthesise `dragstart` from
+          a touch, so the chip's title ("drag onto the lane to place") describes
+          a gesture that cannot happen. The rest of the app already avoids this
+          - `pointerDrag.ts` is the Pointer Events helper every other draggable
+          thing uses - so the fix is to move clip placement onto the same
+          primitive rather than to add a touch shim beside the DnD path.
+
+
+          **2. The empty-range route was designed but not built.** MOBILE-7
+          settled that in the timeline you drag across empty lane space to
+          define a range, and a kebab on it offers **Create clip** (and
+          **Paste**). That is still open (see MOBILE-7's comment of 2026-09-05),
+          and it is the other half of "place a clip here" on touch.
+
+
+          Either one alone unblocks the user. They answer different intents, so
+          both are wanted eventually: (2) makes a *new* clip in a stated range,
+          (1) places an *existing* one from the rail.
+
+
+          **Do (1) as pointer-drag, and it repays desktop too.** DAW-29 notes
+          React Aria's `useDrag`/`useDrop` as a candidate for exactly this;
+          whether to take it here or hand-roll on `pointerDrag` is the decision
+          to make first. A hand-rolled version needs a drag preview and a drop
+          indicator, which HTML5 DnD gave for free - that is the real cost, and
+          the reason to weigh the library.
+
+
+          Related: DAW-8.6 (library drag-and-drop) has the same shape and should
+          share whatever this grows.
+        id: 01a077a4-3857-7435-9520-b9cae9f38dd6
+        created_at: 2026-09-06T16:54:06.167Z
+        updated_at: 2026-09-06T16:54:06.167Z
+      - ref: MOBILE-18
+        area: MOBILE
+        title: "Bug: the drum roll misses the touch treatment - it still shows the
+          toolbar and velocity lane"
+        status: to-do
+        sort_path: "000018"
+        body: >-
+          Raised 2026-09-06: "drum loops still have velocity lane where they
+          should use the same piano roll touch tools."
+
+
+          **Root cause: `compact` is not forwarded.** `DrumRoll` is `PianoRoll`
+          with kit-mapped rows, but its props do not include `compact`, and
+          `InstrumentEditor` passes `compact={compact}` to the `PianoRoll`
+          branch only (`workbench/InstrumentEditor.tsx:104`) and not to the
+          `DrumRoll` branch (line 91). So on a phone a drum track gets the
+          desktop roll:
+
+
+          - the velocity lane opens by default (`velOpen` defaults to
+          `!compact`), taking 56px of a sheet that MOBILE-6 shares with the
+          pads;
+
+          - the toolbar renders instead of being `hidden={compact}`, so the
+          controls are duplicated rather than published to the shell's kebab.
+
+
+          **Fix is threading one prop**, plus a look for anything else
+          `DrumRoll` drops on the floor from `PianoRoll`'s prop list while there
+          - a pass-through component silently omitting a prop is the kind of
+          thing that happens twice.
+
+
+          Note `velOpen` is a *persisted* boolean under one global key
+          (`web-daw:roll-vel-open`), so `compact` only decides its **initial**
+          value. Anyone who has already opened a drum roll on a phone has the
+          lane pinned open in localStorage, and threading the prop will not
+          close it for them. Worth deciding whether the key should be per-tier
+          (`:compact` suffix) so the phone and the desktop remember separately -
+          which is the more correct answer anyway, since the lane is welcome on
+          one and not the other.
+
+
+          Belongs with MOBILE-7's model: velocity on touch is note fill strength
+          plus the inline row in the note's kebab, not a lane.
+        id: 01a077a4-5bf3-757d-882d-44dd30d72a2a
+        created_at: 2026-09-06T16:54:15.283Z
+        updated_at: 2026-09-06T16:54:15.283Z

@@ -1442,6 +1442,48 @@ test.describe("desktop", () => {
   });
 });
 
+test.describe("phone (arrangement clips)", () => {
+  test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
+
+  /** The timeline, with the seed track's block on screen. */
+  async function openTimeline(page: Page) {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek"); // get the editor sheet out of the arrangement's way
+    await expect(page.getByTestId("placement").first()).toBeVisible();
+  }
+
+  /**
+   * The same answer as the roll's notes, reached by the same component (MOBILE-7): selection is
+   * the substitute for hover, so only the selected clip carries handles and they can be
+   * finger-sized. What differs is what an edge drag *means* - trim, not resize - and that a clip
+   * gets no move grip, being tall enough to grab directly and moving only in time.
+   */
+  test("a selected clip grows finger-sized handles and a kebab", async ({ page }) => {
+    await openTimeline(page);
+    await page.getByTestId("placement").first().tap();
+
+    for (const edge of ["start", "end"] as const) {
+      const box = (await page.getByTestId(`clip-handle-${edge}`).boundingBox())!;
+      expect(box.width, `the ${edge} handle is a touch target`).toBeGreaterThanOrEqual(44);
+      expect(box.height, `the ${edge} handle is a touch target`).toBeGreaterThanOrEqual(44);
+    }
+    await expect(page.getByTestId("clip-actions"), "the kebab is for touch only").toBeVisible();
+    await expect(page.getByTestId("clip-move"), "a clip needs no move grip").toHaveCount(0);
+  });
+
+  test("the kebab deletes the clip", async ({ page }) => {
+    await openTimeline(page);
+    const before = await page.getByTestId("placement").count();
+    await page.getByTestId("placement").first().tap();
+
+    await page.getByTestId("clip-actions").getByRole("button").tap();
+    await page.getByRole("menuitem", { name: "Delete" }).tap();
+
+    await expect(page.getByTestId("placement")).toHaveCount(before - 1);
+  });
+});
+
 test.describe("phone (backgrounding)", () => {
   test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 

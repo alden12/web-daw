@@ -54,7 +54,16 @@ export default defineConfig({
         // cache would be worse than failing: the app already knows what to do with a network
         // it cannot reach, and nothing tells it that a stale 200 is not the truth.
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws$/],
+        /**
+         * Anything on this origin that is **not** a client-side route has to be listed here, or
+         * the worker answers it with the app shell and the real page is never requested. That is
+         * not hypothetical: opening `/mcp-probe/view.html` served the DAW instead, and looked
+         * exactly like a server that had not deployed.
+         *
+         * The trap is that it only happens for people who have the PWA installed, so it is
+         * invisible in a private window and to anyone who has never opened the app.
+         */
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws$/, /^\/mcp/],
         cleanupOutdatedCaches: true,
         // Take over the page that installed us, rather than waiting for the next load. This is
         // not `skipWaiting` and does not affect updates: an updated worker still waits its

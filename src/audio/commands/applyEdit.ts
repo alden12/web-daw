@@ -140,7 +140,11 @@ const APPLY: ApplyMap = {
     }),
   movePlacement: (project, command) => project.movePlacement(command.trackId, command.placementId, command.startBeat),
   resizePlacement: (project, command) =>
-    project.resizePlacement(command.trackId, command.placementId, { offset: command.offset, length: command.length }),
+    project.resizePlacement(command.trackId, command.placementId, {
+      startBeat: command.startBeat,
+      offset: command.offset,
+      length: command.length,
+    }),
   removePlacement: (project, command) => project.removePlacement(command.trackId, command.placementId),
   splitPlacement: (project, command) =>
     project.splitPlacement(command.trackId, command.placementId, command.atBeat, command.newId),

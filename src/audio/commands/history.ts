@@ -52,6 +52,19 @@ export interface CommitSummary {
   time: number;
   auto: boolean;
   entryCount: number;
+  /**
+   * What this version's diff is measured against, which for a **named** version is the previous
+   * *named* one rather than its parent.
+   *
+   * Auto checkpoints are plumbing: they fire on a debounce nobody sees, so which of them happens
+   * to hold a given edit is a matter of how long you paused. Diffing a named version against its
+   * literal parent therefore reports "No detected changes" about edits you certainly made, purely
+   * because a checkpoint landed in between. Measuring from the last thing you *named* is both
+   * stable and what "what changed in this version" means.
+   *
+   * Null at the root, and equal to `parent` for an auto checkpoint (which is its own answer).
+   */
+  diffBase: string | null;
   /** How many feed notes (intent narration) this commit swept in. */
   noteCount: number;
   /** Highest edit seq this commit included - positions it in the activity feed. */
@@ -61,7 +74,15 @@ export interface CommitSummary {
 export interface VersionState {
   branch: string;
   headId: string | null;
-  hasUncommitted: boolean;
+  /**
+   * Whether there is anything worth naming: edits in no commit yet, **or** edits an auto
+   * checkpoint has already swept that no named version claims.
+   *
+   * The second half is the point. Gating Save on "uncommitted" alone means the button greys out
+   * four seconds after you stop editing, which is the debounce firing, and reads as the app
+   * deciding your work does not count.
+   */
+  hasUnnamedChanges: boolean;
 }
 
 export class VersionStore {
@@ -72,6 +93,8 @@ export class VersionStore {
   private readonly repoOverride: ProjectRepository | null;
   private refs: Refs = { head: "main", branches: { main: null } };
   private lastCommittedSeq = -1;
+  /** Whether HEAD is an auto checkpoint, so `getState` can tell "saved" from "merely checkpointed". */
+  private headIsAuto = false;
   /** Delta commits written since the last keyframe (drives keyframe cadence). */
   private commitsSinceKeyframe = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -130,12 +153,14 @@ export class VersionStore {
       this.refs = refs;
       const head = this.headId() ? await this.repo.readCommit(this.headId()!) : null;
       this.lastCommittedSeq = head?.lastSeq ?? -1;
+      this.headIsAuto = head?.auto ?? false;
       this.commitsSinceKeyframe = await this.distanceToKeyframe(this.headId());
     } else {
       // No history yet: reset to a fresh DAG and start from here, rather than
       // retro-committing the restored working log (which has no commits behind it).
       this.refs = { head: "main", branches: { main: null } };
       this.lastCommittedSeq = this.maxSeq();
+      this.headIsAuto = false;
       this.commitsSinceKeyframe = 0;
     }
     this.emit();
@@ -164,9 +189,15 @@ export class VersionStore {
   }
 
   /**
-   * Commit the edits since the last commit + the current snapshot, advancing HEAD.
-   * No-op (returns null) when nothing is uncommitted. `auto` marks a system
-   * checkpoint vs a named version.
+   * Commit the edits since the last commit + the current snapshot, advancing HEAD. `auto` marks a
+   * system checkpoint vs a named version.
+   *
+   * **An auto checkpoint with nothing to record is a no-op; a named version never is.** A version
+   * marks a state you want to be able to come back to, and whether an invisible checkpoint
+   * happened to sweep the edits first has nothing to do with whether you meant to name it. That
+   * asymmetry is the fix for a real bug: the checkpoint debounce is four seconds, so pausing that
+   * long between the last edit and pressing Save used to leave you with no version and nothing
+   * saying why.
    */
   async commit(message?: string, author?: Author, auto = false): Promise<CommitSummary | null> {
     // Remote mode: author a commit marker into the shared log. It gets an authoritative seq + broadcast,
@@ -177,7 +208,10 @@ export class VersionStore {
       return null;
     }
     const entries = this.uncommitted();
-    if (entries.length === 0) return null;
+    if (auto && entries.length === 0) return null;
+    // A named save supersedes the checkpoint that was about to fire, so cancel it rather than
+    // leaving a redundant one queued behind the version.
+    if (this.timer) clearTimeout(this.timer);
     // Sweep in any feed notes posted since the last commit, so the narration is
     // anchored to the version it describes. Notes are not edits (materialize never
     // replays them); they ride alongside the entries purely as history.
@@ -197,8 +231,9 @@ export class VersionStore {
     const commit: Commit = {
       id: `cm-${randomUuid().slice(0, 8)}`,
       parent: this.headId(),
-      author: author ?? entries[entries.length - 1].author,
-      message: message ?? autoMessage(entries),
+      // Both fall back, because a named version can now carry no entries at all to read them off.
+      author: author ?? entries[entries.length - 1]?.author ?? "you",
+      message: message ?? (entries.length ? autoMessage(entries) : "Untitled version"),
       time: Date.now(),
       auto,
       entryCount: entries.length,
@@ -211,10 +246,12 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.headIsAuto = auto;
     this.commitsSinceKeyframe = keyframe ? 0 : this.commitsSinceKeyframe + 1;
     this.editLog.resetCoalescing(); // a commit is a boundary: don't fold later edits into a committed entry
     this.emit();
-    return toSummary(commit);
+    // Resolved against the *parent* chain, since this commit is not in it.
+    return toSummary(commit, auto ? commit.parent : await this.previousNamed(commit.parent));
   }
 
   /**
@@ -261,6 +298,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.headIsAuto = false; // a revert is a deliberate node, not a checkpoint
     this.commitsSinceKeyframe = 0;
     this.editLog.resetCoalescing();
     this.emit();
@@ -302,9 +340,13 @@ export class VersionStore {
         const entryCount = stream.filter(
           (entry) => entry.seq > previousSeq && entry.seq < marker.seq && isCountableEdit(entry),
         ).length;
+        const parent = previousSeq >= 0 ? String(previousSeq) : null;
         summaries.push({
           id: String(marker.seq),
-          parent: previousSeq >= 0 ? String(previousSeq) : null,
+          parent,
+          // Remote history is built from markers only, so a parent already *is* the previous
+          // named version; there are no auto checkpoints in the chain to skip over.
+          diffBase: parent,
           author: marker.author,
           message: (marker.command as { message?: string }).message ?? "Version",
           time: marker.time,
@@ -317,20 +359,33 @@ export class VersionStore {
       }
       return summaries.reverse().slice(0, limit);
     }
-    const summaries: CommitSummary[] = [];
+    const chain: Commit[] = [];
     let id = this.headId();
-    while (id && summaries.length < limit) {
+    while (id && chain.length < limit) {
       const commit = await this.repo.readCommit(id);
       if (!commit) break;
-      summaries.push(toSummary(commit));
+      chain.push(commit);
       id = commit.parent;
     }
-    return summaries;
+    // Newest-first, so a named version's diff base is the next named commit *further down* the
+    // list. Auto checkpoints keep their parent, which is already the right answer for them.
+    return chain.map((commit, index) => {
+      if (commit.auto) return toSummary(commit);
+      const previousNamed = chain.slice(index + 1).find((ancestor) => !ancestor.auto);
+      // No named ancestor (or the chain was cut short by `limit`): fall back to the parent, which
+      // is what this did before and is never wrong, only sometimes less useful.
+      return toSummary(commit, previousNamed?.id ?? commit.parent);
+    });
   }
 
   getState(): VersionState {
-    if (this.isRemote) return { branch: "main", headId: this.remoteHeadId, hasUncommitted: this.remoteHasUncommitted };
-    return { branch: this.refs.head, headId: this.headId(), hasUncommitted: this.uncommitted().length > 0 };
+    if (this.isRemote)
+      return { branch: "main", headId: this.remoteHeadId, hasUnnamedChanges: this.remoteHasUncommitted };
+    return {
+      branch: this.refs.head,
+      headId: this.headId(),
+      hasUnnamedChanges: this.uncommitted().length > 0 || this.headIsAuto,
+    };
   }
 
   subscribe(listener: () => void): () => void {
@@ -368,6 +423,22 @@ export class VersionStore {
     return store.snapshot();
   }
 
+  /**
+   * The nearest ancestor that is a named version, skipping auto checkpoints, falling back to
+   * `from` itself when there is no named one behind it. This is what a named version's diff is
+   * measured against - see `CommitSummary.diffBase` for why.
+   */
+  private async previousNamed(from: string | null): Promise<string | null> {
+    let id = from;
+    while (id) {
+      const commit = await this.repo.readCommit(id);
+      if (!commit) break;
+      if (!commit.auto) return commit.id;
+      id = commit.parent;
+    }
+    return from;
+  }
+
   /** How many delta commits sit between `id` and the nearest keyframe (0 if it is one). */
   private async distanceToKeyframe(id: string | null): Promise<number> {
     let distance = 0;
@@ -402,7 +473,7 @@ function autoMessage(entries: EditEntry[]): string {
   return entries.length === 1 ? desc : `${desc} (+${entries.length - 1} more)`;
 }
 
-function toSummary(commit: Commit): CommitSummary {
+function toSummary(commit: Commit, diffBase: string | null = commit.parent): CommitSummary {
   return {
     id: commit.id,
     parent: commit.parent,
@@ -411,6 +482,7 @@ function toSummary(commit: Commit): CommitSummary {
     time: commit.time,
     auto: commit.auto,
     entryCount: commit.entryCount,
+    diffBase,
     noteCount: commit.notes?.length ?? 0,
     lastSeq: commit.lastSeq,
   };

@@ -4,6 +4,7 @@
  * with its `Lane`. Selection, arm state, and geometry come from the timeline shell
  * as props; these just render and dispatch.
  */
+import type { RefObject } from "react";
 import type { GroupMeta, TrackMeta, Placement } from "../../audio/project/types";
 import type { ProjectStore } from "../../audio/project/projectStore";
 import type { Dispatch } from "../../audio/commands/types";
@@ -192,6 +193,7 @@ export function TrackRow({
   onSelect,
   onMark,
   onHover,
+  scrollRef,
   stickyHeader = true,
 }: {
   meta: TrackMeta;
@@ -216,6 +218,8 @@ export function TrackRow({
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
   onHover: (beat: number | null) => void;
+  /** The timeline's scroller, passed down so a selected clip's kebab can be clamped into view. */
+  scrollRef: RefObject<HTMLElement | null>;
 }) {
   const track = projectStore.getTrack(meta.id);
   return (
@@ -242,6 +246,9 @@ export function TrackRow({
           selection={selection}
           markerBeat={markerBeat}
           dropBeat={dropBeat}
+          headerW={headerW}
+          stickyHeader={stickyHeader}
+          scrollRef={scrollRef}
           onSelect={onSelect}
           onMark={onMark}
           onHover={onHover}
