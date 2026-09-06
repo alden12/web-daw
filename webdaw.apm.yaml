@@ -3152,164 +3152,90 @@ projects:
           views yet"
         status: to-do
         sort_path: "000027"
-        body: >
-          Expose a small set of music-making tools inside the Claude app - a
-          playable instrument, a MIDI score you can hear, a pattern you can
-          nudge - as MCP responses that render custom UI and run the real DSP
-          **on the reader's own device**.
+        body: |
+          Expose a small set of music-making tools inside the Claude app - a playable instrument, a MIDI score you can hear, a pattern you can nudge - as MCP responses that render custom UI and run the real DSP **on the reader's own device**.
 
+          ## Outcome (2026-09-06): parked on a known host bug, not on anything here
 
-          ## Outcome (2026-09-06): parked, and not because of the device
+          **Every device capability this needs was proved to work. The blocker is that `claude-ai` does not render third-party MCP App views, and that is a widely reported bug rather than a mistake in this server.**
 
+          Probed to exhaustion in one session against a real connector on Claude Desktop. The host **declares** `io.modelcontextprotocol/ui` with `mimeTypes: ["text/html;profile=mcp-app"]`, calls `resources/list` repeatedly, and calls **`resources/read` never**. Both delivery conventions were tried:
 
-          **Every device capability this needs was proved to work. The blocker
-          is that `claude-ai` does not render third-party MCP App views yet.**
+          - **Predeclared** (what SEP-1865 specifies): a `ui://` resource plus `_meta.ui.resourceUri` on the tool, emitted under both the short key and the fully-qualified `io.modelcontextprotocol/ui`, mime type exact with the `profile=` suffix. Never fetched.
+          - **Embedded** (MCP-UI's convention, one of the spec's own "alternatives considered"): the resource inside the tool result. Delivered fine - the HTML reached the model as text - and still rendered nothing.
 
+          The decisive detail is that **the page's static markup does not render either.** The view carries a plain `<h1>` and a list of stage lines needing no JavaScript, and the container is blank. Not a CSP question, not a script question, not a callback question: the host allocates a container and does not render into it.
 
-          Probed to exhaustion in one session against a real connector on Claude
-          Desktop, backed by a cloud session. The host **declares**
-          `io.modelcontextprotocol/ui` with `mimeTypes:
-          ["text/html;profile=mcp-app"]`, calls `resources/list` repeatedly, and
-          calls **`resources/read` never**. Both delivery conventions were
-          tried:
+          **None of the individual probes ever ran**, so everything concluded mid-session about callbacks, CSP and `blob:` worklets *inside a widget* is void - there was never a view executing to test any of it. What stands is only what the Artifacts sandbox established.
 
+          ## It is not us: the issue trail
 
-          - **Predeclared** (what SEP-1865 specifies): a `ui://` resource plus
-          `_meta.ui.resourceUri` on the tool. Emitted under both the short key
-          and the fully-qualified `io.modelcontextprotocol/ui`, since MCP
-          namespaces `_meta` by reverse-DNS and the host speaks protocol
-          `2025-11-25` rather than the draft. Mime type exact, `profile=` suffix
-          included. Never fetched.
+          At least eight open reports across three repositories, the oldest from April 2026, none with a maintainer response, a milestone or a timeline. The consistent pattern is that **the same server renders correctly in MCP Inspector and in the SDK's own basic-host harness, and blank in Claude.**
 
-          - **Embedded** (MCP-UI's convention, and one of the spec's own
-          "alternatives considered"): the resource inside the tool result.
-          Delivered fine - the HTML reached the model as text - and still
-          rendered nothing.
+          - [claude-ai-mcp#471](https://github.com/anthropics/claude-ai-mcp/issues/471) - the closest match: custom remote connector, spec-correct server verified by raw JSON-RPC, five conversations, no iframe. **Closed as `duplicate`, not planned**, with no pointer to what it duplicates.
+          - [ext-apps#671](https://github.com/modelcontextprotocol/ext-apps/issues/671) - Desktop and claude.ai, renders fine in the SDK harness. Open since 2026-05-27, no response.
+          - [claude-ai-mcp#165](https://github.com/anthropics/claude-ai-mcp/issues/165) - iframe handshake never initiated, `app.connect()` hangs with zero messages logged. Open since 2026-04-10.
+          - [claude-code#65653](https://github.com/anthropics/claude-code/issues/65653) - "a labelled but completely empty container", the same empty box seen here, against a first-party connector.
+          - Also [ext-apps#615](https://github.com/modelcontextprotocol/ext-apps/issues/615), [ext-apps#482](https://github.com/modelcontextprotocol/ext-apps/issues/482), [claude-ai-mcp#236](https://github.com/anthropics/claude-ai-mcp/issues/236), [claude-ai-mcp#61](https://github.com/anthropics/claude-ai-mcp/issues/61).
 
+          Note a difference worth keeping straight: several reporters **do** see `resources/read` called before the blank iframe. Here it was never called at all. Same wall, slightly earlier.
 
-          The decisive detail is that **the page's static markup does not render
-          either.** The view carries a plain `<h1>` and a list of stage lines
-          needing no JavaScript, and the container is blank. So this is not a
-          CSP question, not a script question and not a callback question: the
-          host allocates a container and does not render the resource into it.
-          Client version string is `0.1.0`, which fits.
+          ## When to come back, and what to watch
 
+          Nothing suggests this is imminent - the oldest report is five months old with no maintainer reply - but the capability is advertised, so it reads as unfinished rather than abandoned. Four signals, cheapest first:
 
-          **None of the individual probes ever ran**, so everything concluded
-          mid-session about callbacks, CSP and `blob:` worklets inside a real
-          widget is void - there was never a view executing to test any of it.
-          What stands is only what the Artifacts sandbox established (below).
+          1. **Any interactive widget rendering in Claude from any connector at all.** The strongest and most passive signal. If a first-party or directory-listed connector shows one, the host runtime works and the question narrows to whether custom connectors are allowlisted - a completely different problem with a different fix.
+          2. **The client version string moves off `0.1.0`.** The probe reports it (`client: {"name":"claude-ai","version":"0.1.0"}`), so a retest reads it for free.
+          3. **A maintainer response or a close on [ext-apps#671](https://github.com/modelcontextprotocol/ext-apps/issues/671) or [claude-ai-mcp#165](https://github.com/anthropics/claude-ai-mcp/issues/165)**, the two canonical trackers.
+          4. **Release notes or connector-directory docs mentioning MCP Apps for custom connectors.**
 
-
-          **Retest when the client version moves.** The probe server is still in
-          the tree behind `/mcp` and deletes in one line (see "The probe"
-          below).
-
+          **The retest is five minutes and needs no new work.** The probe is still in the tree: add `https://web-daw.fly.dev/mcp` as a custom connector, run `run_sandbox_probe`, and read `/mcp-probe/log`. `resources/read` showing a timestamp means the host has started fetching views, and anything appearing on screen means the rest of this ticket is live again.
 
           ## What is genuinely known, and still encouraging
 
-
-          From the Artifacts sandbox, on **Android, iOS and desktop with
-          matching results**:
-
+          From the Artifacts sandbox, on **Android, iOS and desktop with matching results**:
 
           | probe | result |
-
           |---|---|
-
           | Custom DSP loads from `blob:` **and genuinely runs** | pass |
-
           | Offline render with no user gesture | pass |
-
           | localStorage / IndexedDB / persistence across reloads | pass |
-
           | OPFS | pass, except **iOS** |
-
           | Live audible output through a worklet | pass |
+          | Outbound `fetch` | fail (that sandbox has `connect-src 'none'` and no way to declare domains) |
 
-          | Outbound `fetch` | fail (that sandbox has `connect-src 'none'` and
-          no way to declare domains) |
+          "Genuinely runs" is not inferred: a 3-bit crusher rendered offline to exactly 15 distinct levels (k/7 for k in -7..7), which cannot happen unless the processor executed.
 
+          **A widget would persist through IndexedDB, not OPFS.** Cheap, because `BundleStore` is already an interface with `OpfsBundleStore` / `MemoryBundleStore` implementations, so an `IndexedDbBundleStore` slots into an existing seam.
 
-          "Genuinely runs" is not inferred: a 3-bit crusher rendered offline to
-          exactly 15 distinct levels (k/7 for k in -7..7), which cannot happen
-          unless the processor executed.
-
-
-          **A widget would persist through IndexedDB, not OPFS.** Cheap, because
-          `BundleStore` is already an interface with `OpfsBundleStore` /
-          `MemoryBundleStore` implementations, so an `IndexedDbBundleStore`
-          slots into an existing seam.
-
-
-          **The DSP is the small part.** From a production build: `index`
-          (React, all UI, engine) 864K, `Markdown` 316K, `nimbus.worklet` 8K,
-          `wavetable.worklet` 4K. A widget carrying the audio core plus one
-          instrument's controls is plausibly under 200K.
-
+          **The DSP is the small part.** From a production build: `index` (React, all UI, engine) 864K, `Markdown` 316K, `nimbus.worklet` 8K, `wavetable.worklet` 4K. A widget carrying the audio core plus one instrument's controls is plausibly under 200K.
 
           ## Why this shape at all
 
+          1. Spend the existing Claude subscription, not API credits. 2. Work from a phone. 3. No server-side audio rendering.
 
-          1. Spend the existing Claude subscription, not API credits. 2. Work
-          from a phone. 3. No server-side audio rendering.
+          **(1) is a hard constraint that decides the architecture.** No third-party app can spend a Claude subscription; there is no OAuth-for-inference. So the conversation must happen inside an Anthropic client, and the only question is how the DAW becomes something it can call.
 
-
-          **(1) is a hard constraint that decides the architecture.** No
-          third-party app can spend a Claude subscription; there is no
-          OAuth-for-inference. So the conversation must happen inside an
-          Anthropic client, and the only question is how the DAW becomes
-          something it can call.
-
-
-          **The relay is the obvious answer and mobile kills it.** Forwarding
-          tool calls over the existing WebSocket to the user's live browser
-          session satisfies all three on paper, and most of it exists
-          (`mcp/bridge.ts`, `server/api/wsServer.ts`). But a phone backgrounds
-          the DAW the moment you switch to the Claude app, and iOS *freezes* a
-          backgrounded PWA rather than throttling it.
-
+          **The relay is the obvious answer and mobile kills it.** Forwarding tool calls over the existing WebSocket to the user's live browser session satisfies all three on paper, and most of it exists (`mcp/bridge.ts`, `server/api/wsServer.ts`). But a phone backgrounds the DAW the moment you switch to the Claude app, and iOS *freezes* a backgrounded PWA rather than throttling it.
 
           ## Prefer the predeclared shape when this becomes possible
 
-
-          Not merely because it is what the spec asks for. **An embedded view
-          puts its entire HTML source into the model's context on every call**,
-          so a view's markup is read as text by the model and a routine widget
-          pays that on each invocation. `resources/read` keeps view source out
-          of the context window altogether.
-
+          Not merely because it is what the spec asks for. **An embedded view puts its entire HTML source into the model's context on every call**, so a view's markup is read as text by the model and a routine widget pays that on each invocation. `resources/read` keeps view source out of the context window altogether.
 
           ## The live option meanwhile
 
+          **Relay to a desktop session** rather than the phone: Claude app on the phone, relay through Fly, DAW running on a desktop that is awake and foregrounded. Satisfies all three requirements as actually intended, and is mostly built already.
 
-          **Relay to a desktop session** rather than the phone: Claude app on
-          the phone, relay through Fly, DAW running on a desktop that is awake
-          and foregrounded. Satisfies all three requirements as actually
-          intended, and is mostly built already.
-
-
-          **And price the API with an own key.** Fails (1) as written but may be
-          cheap enough that the requirement dissolves - a DAW agent is short
-          tool-calling turns, not long documents. Worth ten minutes with a
-          calculator before building anything.
-
+          **And price the API with an own key.** Fails (1) as written but may be cheap enough that the requirement dissolves - a DAW agent is short tool-calling turns, not long documents. Worth ten minutes with a calculator before building anything.
 
           ## The probe
 
+          `server/api/mcpProbe.ts` + `mcpProbeView.ts`, mounted in one line in `server/api/index.ts`, unauthenticated (the auth middleware gates `/projects` only) and touching no database. Delete all three when this is closed, or keep it dormant to retest a future client.
 
-          `server/api/mcpProbe.ts` + `mcpProbeView.ts`, mounted in one line in
-          `server/api/index.ts`, unauthenticated (the auth middleware gates
-          `/projects` only) and touching no database. Delete all three when this
-          is closed, or keep it dormant to retest a future client.
-
-
-          Diagnostics readable at `/mcp-probe/log`; the view opens standalone at
-          `/mcp-probe/view.html`, where it renders correctly - which is how we
-          know the page itself is sound.
+          Diagnostics readable at `/mcp-probe/log`; the view opens standalone at `/mcp-probe/view.html`, where it renders correctly - which is how we know the page itself is sound.
         id: 01a07741-83a5-7169-acfa-c611e91537c2
         created_at: 2026-09-06T15:06:17.381Z
-        updated_at: 2026-09-06T17:18:02.510Z
+        updated_at: 2026-09-06T17:24:23.886Z
         comments:
           - body: >-
               **Probed on a Pixel 7 Pro in the Claude Android app's own webview
