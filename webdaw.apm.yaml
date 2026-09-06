@@ -3392,13 +3392,14 @@ projects:
           Building a panel he would not use is the worst outcome available - it
           is the most expensive thing on this area's roadmap (key proxy,
           streaming UI, tool loop, prompt upkeep, provider churn) and it
-          competes with a client that is already better at it. Every hour there
-          is an hour not spent on the DAW, while the MCP surface makes the DAW
-          useful from a client someone else maintains.
+          competes with a client that is already better at it.
 
 
-          This supersedes the standing "provider-agnostic key-proxy" direction
-          in the agent design notes, which assumed the panel was coming.
+          This supersedes the standing "provider-agnostic key-proxy" direction,
+          and the context section "The agent: pluggable, not either/or" has been
+          re-pointed to match. The panel is **deferred, not abandoned** - it is
+          still the answer for a general user who opens the app with nothing
+          installed.
 
 
           ## Phase 1: editing tools, no audio
@@ -3438,8 +3439,8 @@ projects:
           ever touching audio.
 
 
-          Note the probe server from AGENT-27 already proves the connector half:
-          a hand-rolled JSON-RPC endpoint at `/mcp` on the existing Hono app,
+          The probe server from AGENT-27 already proves the connector half: a
+          hand-rolled JSON-RPC endpoint at `/mcp` on the existing Hono app,
           unauthenticated because the auth middleware gates `/projects` only.
           Real auth is a phase-1 question, since editing real projects is not a
           probe.
@@ -3456,28 +3457,95 @@ projects:
           `e2e/offline-render.e2e.ts` renders worklet instruments, samplers,
           audio tracks and MIDI devices through `renderProjectOffline` under
           Playwright's headless Chromium, and `__dawAnalyzeMix` covers the
-          analysis chain. That was the AGENT-4.1 spike and it passed.
-          `scripts/generateIcons.ts` separately proves a plain Node script can
-          drive that same Chromium.
+          analysis chain. CI is `ubuntu-latest` with `playwright install
+          --with-deps chromium`, so **headless Chromium on Linux rendering our
+          worklets is already proven on the target OS.**
 
 
           **Measured timings** (six paths, local, 2026-09-06): ~1.2s each
           including page load, and the render-plus-analyse chain 454ms.
           `OfflineAudioContext` renders far faster than realtime, so this is not
-          a compute problem.
+          a compute problem. It also needs **no audio device** - it renders to a
+          buffer, so there is no ALSA or PulseAudio fight. A realtime
+          `AudioContext` would be a different story; we do not need one.
 
 
-          **The cost is packaging, not feasibility.** The API runs
-          `shared-cpu-1x` / 256MB on `node:22-slim`. Chromium fits neither:
-          roughly 300-400MB more image, and 200-500MB of RAM for an instance.
+          **The cost is packaging.** The API runs `shared-cpu-1x` / 256MB on
+          `node:22-slim`. Chromium fits neither: roughly 300-400MB more image,
+          and 200-500MB of RAM.
 
 
-          So **put the renderer in its own Fly app** with its own VM size and
-          `min_machines_running = 0`, waking on demand exactly as the API does.
-          The sync API stays slim, and the failure domains stay apart - a
-          renderer that runs out of memory should not take the project store
-          with it. The larger image costs cold-start latency rather than money,
-          which matters more here than the bill.
+          ### Its own Fly app, not another machine
+
+
+          **Machines within one Fly app share a single image.** Process groups
+          can differ in VM size but not in image, so a second machine in
+          `web-daw` would put Chromium in the image the API boots from and slow
+          its cold start for a dependency it never uses. A separate app
+          (`web-daw-render`) gets its own Dockerfile, VM size and scaling; the
+          API stays slim. Same org means private networking at
+          `web-daw-render.internal`, so nothing is publicly exposed. Apps are
+          free, machines cost, so the split is not more expensive than a second
+          machine would have been - and the failure domains stay apart, which
+          matters: a renderer that exhausts memory should not take the project
+          store with it.
+
+
+          ### The container gotchas, all routine
+
+
+          - **Missing shared libraries** on `node:22-slim` (`libnss3`, `libatk`,
+          `libgbm`, `libasound2`, fonts). Same fix as CI: `playwright install
+          --with-deps chromium`, or base on `mcr.microsoft.com/playwright`.
+
+          - **`/dev/shm` is 64MB in containers**, which crashes Chromium in ways
+          that look random. Launch with `--disable-dev-shm-usage`.
+
+          - **The sandbox needs user namespaces** containers often withhold.
+          `--no-sandbox`, defensible because the only page it loads is ours.
+
+          - **Budget 1GB.** 256MB will not do it.
+
+
+          ### First acceptance check, before any plumbing
+
+
+          CI runs on a full GitHub runner; Fly's `shared-cpu-1x` is a much
+          smaller slice, and **Chromium under memory pressure fails confusingly
+          rather than cleanly**. So the render service's *first* job on boot is
+          to run the existing `__dawRenderProjectSmoke` and log peak plus
+          timing. Pass, and everything downstream is plumbing. Fail, and one
+          deploy has bought the knowledge that it needs a bigger VM - rather
+          than finding out through mysterious behaviour later.
+
+
+          One thing to design around: the render harness is dev/test-only and
+          dead-code-eliminated from production builds, so the service needs its
+          own small entry point that imports `renderOffline` directly rather
+          than reusing the e2e hooks.
+
+
+          ### Serverless was considered
+
+
+          **AWS Lambda can do this** - container-image Lambdas take up to 10GB,
+          memory up to 10GB, a 15-minute ceiling far beyond a sub-second render,
+          and `@sparticuz/chromium` exists for exactly this. Cloudflare's
+          Browser Rendering is a similar option. Cost would be negligible under
+          the free tier.
+
+
+          **Rejected for now on operational grounds, not technical ones.** It
+          means a second cloud, its own IAM and deploy tooling, for one function
+          - against one more `fly.toml` where everything already lives. Cold
+          start is comparable either way (seconds, dominated by launching
+          Chromium, not by the render).
+
+
+          **The real case for serverless is concurrency, not cost.** Fly with
+          `max_machines_running = 1` queues simultaneous renders; Lambda runs
+          them in parallel. Revisit if the public demo (HOST-18) ever produces
+          real concurrent load - with one user it is the wrong trade.
 
 
           ## Not doing
@@ -3486,7 +3554,7 @@ projects:
           The home server. The in-app agent panel, for now.
         id: 01a077fa-a6ce-703a-be02-9d2eae1d98f9
         created_at: 2026-09-06T18:28:30.542Z
-        updated_at: 2026-09-06T18:28:30.542Z
+        updated_at: 2026-09-06T18:40:30.941Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
