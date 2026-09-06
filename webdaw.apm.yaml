@@ -3555,6 +3555,31 @@ projects:
         id: 01a077fa-a6ce-703a-be02-9d2eae1d98f9
         created_at: 2026-09-06T18:28:30.542Z
         updated_at: 2026-09-06T18:40:30.941Z
+        comments:
+          - body: >-
+              **Reference implementation next door:
+              `../ai-project-manager/src/mcp/`** (2026-09-06). It already runs
+              this stack on Fly, so phase 1 copies rather than rediscovers.
+
+
+              - `http.ts` - Streamable HTTP via the SDK's
+              `StreamableHTTPServerTransport`, **stateless**
+              (`sessionIdGenerator: undefined`), so any request lands on any
+              instance with no affinity. Use the SDK; AGENT-27's probe
+              hand-rolled JSON-RPC, right for a probe and wrong for this.
+
+              - `auth.ts` - resource-server pattern: Supabase JWT via `jose`,
+              plus `/.well-known/oauth-protected-resource`. Its shape came from
+              our own `server/api/principal.ts`, so it comes home.
+
+
+              **Settles the phase-1 auth question: a connector takes a URL and
+              OAuth credentials, with nowhere for a hand-written header.** A
+              static bearer reaches Claude Code only.
+            audience: user
+            id: 01a07811-c8e2-7297-a90a-d7b96aedfa1d
+            at: 2026-09-06T18:53:46.594Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -7887,6 +7912,68 @@ projects:
         id: 01a07270-24de-746e-9aa1-a2c184aecd82
         created_at: 2026-09-05T16:39:07.230Z
         updated_at: 2026-09-05T16:50:28.848Z
+      - ref: HOST-19
+        area: HOST
+        title: "Possible future: move the stack to AWS"
+        status: to-do
+        sort_path: "000019"
+        body: >
+          Raised 2026-09-06 while sizing the render service. **Not scheduled,
+          recorded so the trigger is recognisable when it arrives.**
+
+
+          ## The motivation is not cost
+
+
+          Fly is currently effectively free at this usage and the machines
+          auto-stop, so nothing about the bill argues for moving. The reasons
+          are **learning AWS** and **wanting more control over the whole stack**
+          - which are legitimate reasons to move infrastructure, but they are
+          the kind that should be spent deliberately rather than drifted into.
+
+
+          ## The technical trigger, if one comes
+
+
+          **Concurrency.** The Fly app is capped at `max_machines_running = 1`
+          as a cost ceiling, so simultaneous renders queue. Lambda runs them in
+          parallel without being asked. With one user that is irrelevant; if the
+          public demo (HOST-18) ever produces real concurrent load, it stops
+          being irrelevant quickly.
+
+
+          So the honest ordering is: keep an eye on Fly costs and on whether
+          anything ever queues. Either of those turning real is the moment to
+          look, and until then this is a preference rather than a need.
+
+
+          ## What already exists on Fly, and would have to move
+
+
+          - The sync API + WebSocket (`server/api`), Postgres, and the built
+          client, all single-origin on one machine.
+
+          - Whatever AGENT-28 phase 1 adds (hosted MCP).
+
+          - The render service AGENT-28 phase 2 wants, which is the piece with
+          the clearest serverless story: container-image Lambdas take up to
+          10GB, memory to 10GB, a 15-minute ceiling far beyond a sub-second
+          render, and `@sparticuz/chromium` exists for exactly this.
+
+
+          **It need not be all at once.** The renderer is the natural first
+          candidate: it is stateless, bursty, and the only piece where
+          serverless has a genuine technical advantage rather than a preference.
+          Moving it alone would answer most of the learning question at a
+          fraction of the risk, and leave the database where it is.
+
+
+          Postgres is the piece to think hardest about - it is the one with
+          state, and the one where a migration is a migration rather than a
+          redeploy.
+        id: 01a07812-0838-740e-910a-4147c9743ce4
+        created_at: 2026-09-06T18:54:02.808Z
+        updated_at: 2026-09-06T18:54:02.808Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
