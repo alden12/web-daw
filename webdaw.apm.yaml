@@ -3417,6 +3417,30 @@ projects:
             id: 01a0775f-46d7-771c-9b83-ba7f729a8918
             at: 2026-09-06T15:38:47.896Z
             actor: claude
+          - body: >-
+              **Operational findings from the first probe session (2026-09-06),
+              each of which cost a round trip:**
+
+
+              - **Only removing and re-adding the connector picks up server
+              changes.** A tool-list refresh does not, nor does an app restart.
+              Disconnect/reconnect refreshed the tool list but seemingly not the
+              prefetched `ui://` template, which the spec has hosts prefetching.
+
+              - **`structuredContent` can hide `content` from the model.** A
+              result carrying both was reported as only the structured half.
+              Audit the app's own MCP tools for this.
+
+              - **The service worker shadowed `/mcp-probe/*`** with the app
+              shell, so the control page looked undeployed. Invisible unless the
+              PWA is installed. Fixed by adding `/mcp` to
+              `navigateFallbackDenylist`.
+
+              - The view renders in a plain browser tab, so the page is sound.
+            audience: agent
+            id: 01a07794-4354-7219-9e93-1a1e98c56b66
+            at: 2026-09-06T16:36:40.404Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management

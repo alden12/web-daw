@@ -35,6 +35,47 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
+/**
+ * **What the host has actually done, which turned out to be the diagnostic that mattered.**
+ *
+ * Five runs produced no view and no callback, while the tool's own return text updated correctly -
+ * so edits reach the model fine and something upstream of the view is not happening. Guessing from
+ * the outside had cost four deploys, so the server now records what it is asked for.
+ *
+ * The decisive fact is whether the client declares `io.modelcontextprotocol/ui` at `initialize`,
+ * and whether it ever calls `resources/read`. A host that renders MCP Apps must do both. If it
+ * does neither, no amount of fixing the view will help, because nothing is ever fetching it.
+ */
+const hostLog = {
+  clientInfo: null as unknown,
+  clientCapabilities: null as unknown,
+  protocolVersion: null as string | null,
+  methodCounts: {} as Record<string, number>,
+  resourcesReadAt: null as string | null,
+};
+
+/** Whether the client said it can render MCP Apps. The single most informative field here. */
+function declaresUiExtension(): boolean {
+  const capabilities = hostLog.clientCapabilities as { extensions?: Record<string, unknown> } | null;
+  return Boolean(capabilities?.extensions && UI_EXTENSION in capabilities.extensions);
+}
+
+/** A short, readable account of the host's behaviour, returned in the tool result. */
+function hostReport(): string {
+  if (!hostLog.protocolVersion) return "No initialize seen yet on this server instance.";
+  const calls = Object.entries(hostLog.methodCounts)
+    .map(([method, count]) => `${method} x${count}`)
+    .join(", ");
+  return [
+    `protocol: ${hostLog.protocolVersion}`,
+    `client: ${JSON.stringify(hostLog.clientInfo)}`,
+    `declares ${UI_EXTENSION}: ${declaresUiExtension() ? "YES" : "NO"}`,
+    `client capabilities: ${JSON.stringify(hostLog.clientCapabilities)}`,
+    `resources/read ever called: ${hostLog.resourcesReadAt ?? "NEVER"}`,
+    `methods seen: ${calls || "(none)"}`,
+  ].join("\n");
+}
+
 interface JsonRpcResponse {
   jsonrpc: "2.0";
   id: string | number;
@@ -112,19 +153,25 @@ const reportTool = {
 
 /** Method -> result. Notifications return undefined, which is answered with 202 and no body. */
 const handlers: Record<string, (params: Record<string, unknown>, origin: string) => unknown> = {
-  initialize: (params) => ({
-    protocolVersion: (params?.protocolVersion as string) ?? FALLBACK_PROTOCOL,
-    capabilities: {
-      tools: {},
-      resources: {},
-      extensions: { [UI_EXTENSION]: { mimeTypes: [UI_MIME] } },
-    },
-    serverInfo: { name: "webdaw-sandbox-probe", version: "1.0.0" },
-  }),
+  initialize: (params) => {
+    hostLog.protocolVersion = (params?.protocolVersion as string) ?? FALLBACK_PROTOCOL;
+    hostLog.clientInfo = params?.clientInfo ?? null;
+    hostLog.clientCapabilities = params?.capabilities ?? null;
+    return {
+      protocolVersion: (params?.protocolVersion as string) ?? FALLBACK_PROTOCOL,
+      capabilities: {
+        tools: {},
+        resources: {},
+        extensions: { [UI_EXTENSION]: { mimeTypes: [UI_MIME] } },
+      },
+      serverInfo: { name: "webdaw-sandbox-probe", version: "1.0.0" },
+    };
+  },
   ping: () => ({}),
   "tools/list": () => ({ tools: [probeTool, reportTool] }),
   "resources/list": (_params, origin) => ({ resources: [viewResource(origin)] }),
   "resources/read": (params, origin) => {
+    hostLog.resourcesReadAt = new Date().toISOString();
     if (params?.uri !== VIEW_URI) throw new Error(`unknown resource: ${String(params?.uri)}`);
     return { contents: [{ uri: VIEW_URI, mimeType: UI_MIME, text: probeViewHtml(origin) }] };
   },
@@ -157,9 +204,11 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
         {
           type: "text",
           text:
-            "Sandbox probe rendered. It reports its own findings by calling `report_probe_results`, " +
-            "so wait for that before summarising. If it never arrives, that is itself the finding: " +
-            "the view cannot reach the model, and there are no agent ears in this host.",
+            "WHAT THIS HOST HAS ACTUALLY DONE (read this out verbatim; it is the diagnostic):\n\n" +
+            hostReport() +
+            "\n\nIf `declares io.modelcontextprotocol/ui` is NO, this host does not render MCP Apps " +
+            "and nothing about the view can be concluded. If it is YES but `resources/read` was " +
+            "NEVER called, the host advertises the extension but never fetched the view.",
         },
       ],
     };
@@ -199,6 +248,8 @@ export function createMcpProbeApp() {
         c.header("Content-Type", "text/html; charset=utf-8");
         return c.body(probeViewHtml(origin));
       })
+      /** The same account as the tool returns, readable without going through a model. */
+      .get("/mcp-probe/log", (c) => c.text(hostReport()))
       /** A trivial target for the `connectDomains` fetch probe. */
       .get("/mcp-probe/ping", (c) => c.text("pong"))
       /**
@@ -222,6 +273,7 @@ export function createMcpProbeApp() {
         // A batch is legal JSON-RPC; answer each and drop the notifications' empty slots.
         const requests = Array.isArray(body) ? body : [body];
         const responses = requests.flatMap((request): JsonRpcResponse[] => {
+          hostLog.methodCounts[request.method] = (hostLog.methodCounts[request.method] ?? 0) + 1;
           const handler = handlers[request.method];
           // A notification (no id) gets no response whether or not it is understood.
           if (request.id === undefined) return [];
