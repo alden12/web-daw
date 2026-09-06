@@ -7977,7 +7977,7 @@ projects:
       - ref: HOST-20
         area: HOST
         title: An email allowlist, because Google's testing mode does not gate sign-in
-        status: to-do
+        status: review
         sort_path: "000020"
         body: >
           **Google's OAuth "testing mode" test-user list does not restrict who
@@ -8065,7 +8065,7 @@ projects:
           people (HOST-18).
         id: 01a07815-7e56-75f3-81f1-cf8f4f841309
         created_at: 2026-09-06T18:57:49.654Z
-        updated_at: 2026-09-06T18:57:49.654Z
+        updated_at: 2026-09-06T19:13:31.288Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
