@@ -696,53 +696,76 @@ projects:
         **A thin server earns its place even local-first:** to hold/proxy the AI
         API key (never ship it in the client) and for sharing/collab/backup -
         the git "local repo + optional remote" model.
-      "The agent: pluggable, not either/or": >-
+      "The agent: pluggable, not either/or": >
         The MCP tool surface is just a set of tools over the store. What drives
-        them is interchangeable:
+        them is interchangeable. **Revised 2026-09-06: the connector is now the
+        first-class driver, and the in-app panel is deferred rather than "the
+        product". The pluggability below is unchanged - what changed is which
+        plug goes in first.**
 
 
-        - **In-app agent** (AGENT-2) - the Claude API with the same operations
-        exposed as tool-use functions. This makes "agent front and center" real
-        for a general user who just opens the app, no install. Build this; it is
-        the product.
+        - **A host over MCP** (AGENT-1, AGENT-28) - Claude Code, Claude Desktop,
+        the Claude apps. **Build this first.** It gives a capable agent on an
+        existing subscription with no key to proxy, no loop to maintain and no
+        per-token cost, and it is how the author actually works: *"I find I
+        never really use people's in-app agents, I prefer to just use Claude and
+        connect to other people's tools."*
 
-        - **Claude Code / Desktop over MCP** (AGENT-1, today's setup) - keep it.
-        Perfect for the developer/tinkerer audience driving the same tools from
-        a terminal or scripts. It already gives a capable agent on an existing
-        subscription (no per-token API key).
-
-
-        So: own in-app agent **and** the MCP server, sharing one tool/store
-        layer. We do not build a bespoke agent from scratch; we reuse the tools
-        and let the model reason, on the latest models.
+        - **In-app agent** (AGENT-2) - the same operations as tool-use functions
+        against an API key. Still the answer for "agent front and center" for a
+        general user who just opens the app with nothing installed, and worth
+        returning to when there are such users. Deferred, not abandoned.
 
 
-        **Concretely:** the agent **loop runs client-side** - tool calls execute
-        in the browser through the same `dispatch` seam (authored `claude`,
-        coral in the feed) - and **one shared tool catalog** (zod -> JSON
-        Schema) feeds both the MCP server and the panel (AGENT-6 is that
-        consolidation; it is not done yet - the two surfaces declare their tools
-        separately today, though the edit *semantics* are already shared).
+        **Why the order flipped.** The in-app panel is the most expensive thing
+        in this area (key proxy, streaming UI, tool loop, prompt upkeep,
+        provider churn) and it competes with clients that already do it better.
+        Every hour there is an hour not spent on the DAW, while the MCP surface
+        makes the DAW useful from a client someone else maintains. See AGENT-28
+        for the full argument, including why relaying subscription tokens into
+        the app is not an option at all: no third-party app can spend a Claude
+        subscription, so an in-app agent means API credits whatever else is
+        true.
 
 
-        **The thin server is only a key-proxy.** Keep it **provider-agnostic**
-        (an OpenAI-compatible base URL + model, so a free tier or a local model
-        can drive tests; default Claude Sonnet), and keep the key **server-side
-        only** - spend-capped, never `VITE_`-inlined into the client, with auth
-        + rate-limiting before any non-localhost deploy.
+        **The key-proxy plan stands for when the panel returns.** A thin server,
+        **provider-agnostic** (an OpenAI-compatible base URL + model, so a free
+        tier or a local model can drive tests; default Claude Sonnet), key
+        **server-side only** - spend-capped, never `VITE_`-inlined into the
+        client, with auth + rate-limiting before any non-localhost deploy.
+
+
+        **Where the loop runs differs by driver, and that is the real design
+        consequence.** For the in-app panel the loop runs client-side, tool
+        calls executing in the browser through the same `dispatch` seam
+        (authored `claude`, coral in the feed). For a hosted connector there is
+        no browser in the loop at all: edits apply to the **stored** project
+        server-side, and a DAW open anywhere picks them up over the existing
+        WebSocket sync. `VersionStore.materialize()` already proves headless
+        server-side editing works - a DOM-free `ProjectStore` replaying the same
+        `EditCommand` union.
+
+
+        **One shared tool catalog** (zod -> JSON Schema) should feed every
+        driver (AGENT-6 is that consolidation; not done - the surfaces declare
+        their tools separately today, though the edit *semantics* are already
+        shared).
 
 
         **The agent reasons on symbolic data and cannot hear its output.**
         Audio-analysis tools give it "ears" (AGENT-4). Play-an-idea (AGENT-5) is
         the mirror image: notes-in as the prompt, audio-analysis-out as the
         feedback, so the loop becomes play-an-idea -> agent develops it -> you
-        hear it and keep or reject.
+        hear it and keep or reject. Proven to work headlessly under Chromium and
+        measured at well under a second per render (AGENT-28), so a
+        connector-driven agent can have ears too - it just needs its own
+        machine, since Chromium fits neither the API's 256MB nor its slim image.
 
 
         **The genuinely novel surface is the activity feed itself** - a shared,
         two-voice timeline of the *edits* and the agent's *stated intent*, not a
-        chat log. That holds whether the chat lives in Claude Desktop/Code or
-        the embedded panel.
+        chat log. That holds whether the chat lives in a host or an embedded
+        panel, and it is the part that survives the driver changing.
 
 
         **Note the distinct streams.** Agent chat (the reasoning transcript) is
@@ -755,8 +778,10 @@ projects:
 
         Running ideas kept from design sessions: composite tools (coarser verbs
         that bundle several edits, so the model spends fewer round-trips),
-        prompt patterns worth standardising, and giving the LLM ears via
-        offline-render audio analysis (now AGENT-4, in flight).
+        prompt patterns worth standardising, and **widgets** - rendering real
+        playable UI inside a host via MCP Apps (AGENT-27, parked on a host bug,
+        with the decision recorded there to target that spec without adopting
+        its transport internally).
       Collaboration - options and rationale: >-
         Captured so the tradeoffs are on record. The concurrency decision has
         since been **made and largely built** (HOST-1); this section keeps the
@@ -3307,6 +3332,161 @@ projects:
             id: 01a07794-4354-7219-9e93-1a1e98c56b66
             at: 2026-09-06T16:36:40.404Z
             actor: claude
+          - body: >-
+              **Decided 2026-09-06: target the spec, do not adopt its transport
+              internally.**
+
+
+              SEP-1865 is Final, authored jointly across OpenAI and Anthropic,
+              and unifies MCP-UI with the Apps SDK, so it is a safe *target*.
+              The risk is hosts not implementing it, not the spec dying.
+
+
+              The in-app agent panel should **not** render widgets through it.
+              That design solves *untrusted server renders UI inside a host*; in
+              our own panel there is no untrusted party, so it buys an iframe
+              and a message hop per widget for isolation we do not need.
+
+
+              Copy the **boundary**, not the transport: build each widget as a
+              self-contained bundle (data in, events out, no app globals), so it
+              mounts in-app directly and wraps into a `ui://` resource
+              externally. Keep tool-to-view mapping as data, so it projects into
+              `_meta` later.
+            audience: user
+            id: 01a077f2-2034-76f1-8f65-72d693afa5b3
+            at: 2026-09-06T18:19:11.796Z
+            actor: claude
+      - ref: AGENT-28
+        area: AGENT
+        title: Hosted MCP over the stored project, and defer the in-app agent panel
+        status: to-do
+        sort_path: "000028"
+        body: >
+          **Decided 2026-09-06.** Make the DAW something Claude can drive
+          through a connector, rather than building an agent inside the app.
+          Ship it in two phases, and the first needs no audio at all.
+
+
+          ## Why not the in-app panel
+
+
+          Two options were weighed: a home server relaying Claude account tokens
+          into an in-app agent, versus a hosted MCP server called from the
+          Claude apps.
+
+
+          **The first is not available.** No third-party app can spend a Claude
+          subscription - there is no OAuth-for-inference, and subscription
+          tokens are spent through Anthropic's own clients. A machine at home
+          changes nothing about that; it would have to drive a Claude client
+          headlessly to launder subscription inference into the app, which is
+          not what the subscription is for and would break on any client update.
+          The honest version of that option is "API key plus in-app panel",
+          which needs no home server at all, since a proxy on Fly would do.
+
+
+          **And the deciding argument is use, not architecture** (Alden,
+          2026-09-06): *"I find I never really use people's in-app agents, I
+          prefer to just use Claude and connect to other people's tools."*
+          Building a panel he would not use is the worst outcome available - it
+          is the most expensive thing on this area's roadmap (key proxy,
+          streaming UI, tool loop, prompt upkeep, provider churn) and it
+          competes with a client that is already better at it. Every hour there
+          is an hour not spent on the DAW, while the MCP surface makes the DAW
+          useful from a client someone else maintains.
+
+
+          This supersedes the standing "provider-agnostic key-proxy" direction
+          in the agent design notes, which assumed the panel was coming.
+
+
+          ## Phase 1: editing tools, no audio
+
+
+          **Almost every tool is pure data** - create a track, add notes, set
+          params, quantise, split a clip. None of it touches audio. Rendering is
+          needed only for *agent ears*, which is one feature rather than the
+          platform, so it does not belong in the first cut.
+
+
+          **The hard part already exists.** `VersionStore.materialize()` does
+          headless server-side project editing today:
+
+
+          ```ts
+
+          const store = new ProjectStore(false);
+
+          store.load(base.snapshot);
+
+          for (const entry of commit.entries) applyEdit(store, entry.command,
+          entry.author);
+
+          ```
+
+
+          A `ProjectStore` with no DOM, replaying the same `EditCommand` union
+          the MCP tools already speak, inside the API process. So a hosted MCP
+          editing stored projects is not new architecture, it is pointing
+          existing pieces at each other.
+
+
+          **And the composition is the good bit:** Claude edits through the
+          connector, and a DAW open in any browser picks the changes up over the
+          existing WebSocket sync. The agent's edits land live without the agent
+          ever touching audio.
+
+
+          Note the probe server from AGENT-27 already proves the connector half:
+          a hand-rolled JSON-RPC endpoint at `/mcp` on the existing Hono app,
+          unauthenticated because the auth middleware gates `/projects` only.
+          Real auth is a phase-1 question, since editing real projects is not a
+          probe.
+
+
+          ## Phase 2: rendering, and it is not a dead end
+
+
+          Validated 2026-09-06 before committing to this path, because a phase 2
+          that turned out impossible would have made phase 1 a trap.
+
+
+          **It already works, and it already runs on every CI push.**
+          `e2e/offline-render.e2e.ts` renders worklet instruments, samplers,
+          audio tracks and MIDI devices through `renderProjectOffline` under
+          Playwright's headless Chromium, and `__dawAnalyzeMix` covers the
+          analysis chain. That was the AGENT-4.1 spike and it passed.
+          `scripts/generateIcons.ts` separately proves a plain Node script can
+          drive that same Chromium.
+
+
+          **Measured timings** (six paths, local, 2026-09-06): ~1.2s each
+          including page load, and the render-plus-analyse chain 454ms.
+          `OfflineAudioContext` renders far faster than realtime, so this is not
+          a compute problem.
+
+
+          **The cost is packaging, not feasibility.** The API runs
+          `shared-cpu-1x` / 256MB on `node:22-slim`. Chromium fits neither:
+          roughly 300-400MB more image, and 200-500MB of RAM for an instance.
+
+
+          So **put the renderer in its own Fly app** with its own VM size and
+          `min_machines_running = 0`, waking on demand exactly as the API does.
+          The sync API stays slim, and the failure domains stay apart - a
+          renderer that runs out of memory should not take the project store
+          with it. The larger image costs cold-start latency rather than money,
+          which matters more here than the bill.
+
+
+          ## Not doing
+
+
+          The home server. The in-app agent panel, for now.
+        id: 01a077fa-a6ce-703a-be02-9d2eae1d98f9
+        created_at: 2026-09-06T18:28:30.542Z
+        updated_at: 2026-09-06T18:28:30.542Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
