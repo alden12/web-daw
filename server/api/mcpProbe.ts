@@ -189,6 +189,16 @@ export function createMcpProbeApp() {
         c.header("Content-Type", "text/javascript; charset=utf-8");
         return c.body(probeScriptSource(origin));
       })
+      /**
+       * The identical page at a plain URL, openable in an ordinary browser tab. The control: if it
+       * renders here and not in the host, the page is fine and the host is the variable. Without
+       * this, "empty box" cannot be told apart from "my HTML is broken".
+       */
+      .get("/mcp-probe/view.html", (c) => {
+        const origin = publicOrigin(c.req.url, c.req.header("x-forwarded-host"), c.req.header("x-forwarded-proto"));
+        c.header("Content-Type", "text/html; charset=utf-8");
+        return c.body(probeViewHtml(origin));
+      })
       /** A trivial target for the `connectDomains` fetch probe. */
       .get("/mcp-probe/ping", (c) => c.text("pong"))
       /**
