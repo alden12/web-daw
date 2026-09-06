@@ -93,23 +93,29 @@ function publicOrigin(requestUrl: string, forwardedHost?: string, forwardedProto
   return `${forwardedProto ?? url.protocol.replace(":", "")}://${forwardedHost ?? url.host}`;
 }
 
+/**
+ * The whole point of the exercise. The spec's default CSP is `script-src 'self' 'unsafe-inline'`,
+ * which excludes `blob:` - and worklet modules are governed by `script-src`. Declaring this origin
+ * should let the view load its AudioWorklet cross-origin instead, and `connectDomains` should let
+ * it `fetch` here at all.
+ */
+const uiResourceMeta = (origin: string) => ({
+  csp: { connectDomains: [origin], resourceDomains: [origin] },
+  prefersBorder: true,
+});
+
 const viewResource = (origin: string) => ({
   uri: VIEW_URI,
   name: "Sandbox probe",
   description: "Reports what this host's sandbox permits.",
   mimeType: UI_MIME,
-  _meta: {
-    ui: {
-      /**
-       * The whole point of the exercise. The spec's default CSP is `script-src 'self'
-       * 'unsafe-inline'`, which excludes `blob:` - and worklet modules are governed by
-       * `script-src`. Declaring this origin should let the view load its AudioWorklet
-       * cross-origin instead, and `connectDomains` should let it `fetch` here at all.
-       */
-      csp: { connectDomains: [origin], resourceDomains: [origin] },
-      prefersBorder: true,
-    },
-  },
+  /**
+   * Emitted under BOTH `ui` and the fully-qualified extension id. The draft spec writes the short
+   * form, but MCP convention namespaces `_meta` keys by reverse-DNS to avoid collisions, and the
+   * host is speaking protocol 2025-11-25 rather than the draft this was written against. Sending
+   * both costs a few bytes and removes a guess.
+   */
+  _meta: { ui: uiResourceMeta(origin), [UI_EXTENSION]: uiResourceMeta(origin) },
 });
 
 const probeTool = {
@@ -122,7 +128,11 @@ const probeTool = {
   // Nothing is changed anywhere, so a host has no reason to gate this behind approval. Also the
   // signal for whether this host gates app-initiated calls at all.
   annotations: { readOnlyHint: true },
-  _meta: { ui: { resourceUri: VIEW_URI, visibility: ["model", "app"] } },
+  // Both shapes, for the same reason as the resource's metadata above.
+  _meta: {
+    ui: { resourceUri: VIEW_URI, visibility: ["model", "app"] },
+    [UI_EXTENSION]: { resourceUri: VIEW_URI, visibility: ["model", "app"] },
+  },
 };
 
 /**
@@ -148,7 +158,7 @@ const reportTool = {
     additionalProperties: true,
   },
   annotations: { readOnlyHint: true },
-  _meta: { ui: { visibility: ["app"] } },
+  _meta: { ui: { visibility: ["app"] }, [UI_EXTENSION]: { visibility: ["app"] } },
 };
 
 /** Method -> result. Notifications return undefined, which is answered with 202 and no body. */
@@ -168,6 +178,12 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
     };
   },
   ping: () => ({}),
+  /**
+   * Not in the spec, but this host asks for it once per connection. Answering emptily rather than
+   * with "method not found" costs nothing and removes the possibility that an error here is what
+   * stops it going on to fetch the view.
+   */
+  "server/discover": (_params, origin) => ({ resources: [viewResource(origin)], tools: [probeTool, reportTool] }),
   "tools/list": () => ({ tools: [probeTool, reportTool] }),
   "resources/list": (_params, origin) => ({ resources: [viewResource(origin)] }),
   "resources/read": (params, origin) => {
@@ -199,13 +215,16 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
      * Worth carrying back into the app's own MCP tools: a tool whose explanation lives only in
      * `content` may be explaining itself to nobody.
      */
+    const report = hostReport();
     return {
+      // In both halves deliberately: a client given both may surface only the structured one.
+      structuredContent: { hostReport: report },
       content: [
         {
           type: "text",
           text:
             "WHAT THIS HOST HAS ACTUALLY DONE (read this out verbatim; it is the diagnostic):\n\n" +
-            hostReport() +
+            report +
             "\n\nIf `declares io.modelcontextprotocol/ui` is NO, this host does not render MCP Apps " +
             "and nothing about the view can be concluded. If it is YES but `resources/read` was " +
             "NEVER called, the host advertises the extension but never fetched the view.",
