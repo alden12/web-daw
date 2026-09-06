@@ -116,6 +116,9 @@ export const probeViewHtml = (origin: string): string => `<!doctype html>
   <h2>Probes</h2>
   <ol id="probes"></ol>
 
+  <h2>Reporting back</h2>
+  <p class="detail" id="report">…</p>
+
   <button id="again">Run again</button>
 
 <script>
@@ -247,13 +250,13 @@ const PROBES = [
     },
   },
   {
-    name: "ui/update-model-context reaches the model",
-    why: "How a rendered analysis would get back for the model to reason about. Without it there are no agent ears, only a picture.",
+    name: "ui/update-model-context is accepted",
+    why: "One of two ways a rendered analysis might get back to the model. A first run showed the model saw nothing, so this now carries the real findings rather than a placeholder - if it resolves AND the model can quote the results, this channel works.",
     run: async () => {
       await callHost("ui/update-model-context", {
-        content: [{ type: "text", text: "web-daw sandbox probe: DSP and storage results were collected in the view." }],
+        content: [{ type: "text", text: "web-daw sandbox probe findings:\\n" + summarise() }],
       });
-      return "accepted by the host";
+      return "accepted by the host (whether the model can read it is the other half)";
     },
   },
   {
@@ -288,6 +291,7 @@ function renderEnvironment() {
 }
 
 async function runAll() {
+  findings.length = 0;
   const list = document.getElementById("probes");
   list.innerHTML = PROBES.map(
     (probe, index) =>
@@ -305,11 +309,13 @@ async function runAll() {
       detail.textContent = await PROBES[index].run();
       chip.className = "chip pass";
       chip.textContent = "pass";
+      findings.push({ name: PROBES[index].name, ok: true, detail: detail.textContent });
     } catch (error) {
       const pending = error && error.name === "SECOND RUN NEEDED";
       chip.className = pending ? "chip warn" : "chip fail";
       chip.textContent = pending ? "run again" : "fail";
       detail.textContent = (error && error.name ? error.name + ": " : "") + (error && error.message ? error.message : String(error));
+      findings.push({ name: PROBES[index].name, ok: false, detail: detail.textContent });
     }
     notifyHost("ui/notifications/size-changed", {
       width: document.documentElement.scrollWidth,
@@ -318,10 +324,40 @@ async function runAll() {
   }
 }
 
-document.getElementById("again").addEventListener("click", runAll);
+// Findings accumulate here so they can be reported as text, not just painted on a panel that only
+// the person holding the phone can read.
+const findings = [];
+
+function summarise() {
+  return (
+    "host: " + navigator.userAgent + "\\norigin: " + location.origin + "\\n\\n" +
+    findings.map((finding) => (finding.ok ? "PASS  " : "FAIL  ") + finding.name + " -- " + finding.detail).join("\\n")
+  );
+}
+
+/**
+ * Report by *calling a tool*. The first run established that the model sees only the tool result,
+ * so a view that merely renders its findings has not communicated them. This is also the shape a
+ * real analysis would take: render offline, measure, hand the numbers back through a tool call.
+ */
+async function report() {
+  const element = document.getElementById("report");
+  try {
+    await callHost("tools/call", { name: "report_probe_results", arguments: { summary: summarise(), results: findings } }, 8000);
+    element.textContent = "Reported to the model via tools/call. It should be able to quote these results.";
+    element.className = "detail";
+  } catch (error) {
+    element.textContent = "Could not reach the model via tools/call: " + error.message + ". If ui/update-model-context also failed, this host has no path from a view back to the model, and agent ears are impossible here.";
+    element.className = "detail";
+  }
+}
+
+document.getElementById("again").addEventListener("click", () => runAll().then(report));
 
 renderEnvironment();
-handshake().then(runAll);
+handshake()
+  .then(runAll)
+  .then(report);
 </script>
 </body>
 </html>`;

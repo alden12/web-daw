@@ -84,6 +84,32 @@ const probeTool = {
   _meta: { ui: { resourceUri: VIEW_URI, visibility: ["model", "app"] } },
 };
 
+/**
+ * The channel that actually matters for "agent ears", and the reason there are two tools.
+ *
+ * A first run showed the model sees **only the tool result**: the view rendered and ran its
+ * checks, and the model could say nothing about what they found. `ui/update-model-context` is for
+ * context, not results, and appears to be advisory at best. So the view reports by *calling a
+ * tool*, whose result enters the conversation the ordinary way and is therefore something the
+ * model can reason about.
+ *
+ * That is the shape a real analysis would take too: render offline, measure, hand the numbers back
+ * through a tool call. `visibility: ["app"]` keeps it off the model's own tool list, since it is
+ * the view's way of speaking, not something the model should ever decide to call.
+ */
+const reportTool = {
+  name: "report_probe_results",
+  description: "Called by the probe view to report what it found, so the model can read it.",
+  inputSchema: {
+    type: "object",
+    properties: { summary: { type: "string" }, results: { type: "array", items: { type: "object" } } },
+    required: ["summary"],
+    additionalProperties: true,
+  },
+  annotations: { readOnlyHint: true },
+  _meta: { ui: { visibility: ["app"] } },
+};
+
 /** Method -> result. Notifications return undefined, which is answered with 202 and no body. */
 const handlers: Record<string, (params: Record<string, unknown>, origin: string) => unknown> = {
   initialize: (params) => ({
@@ -96,19 +122,32 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
     serverInfo: { name: "webdaw-sandbox-probe", version: "1.0.0" },
   }),
   ping: () => ({}),
-  "tools/list": () => ({ tools: [probeTool] }),
+  "tools/list": () => ({ tools: [probeTool, reportTool] }),
   "resources/list": (_params, origin) => ({ resources: [viewResource(origin)] }),
   "resources/read": (params, origin) => {
     if (params?.uri !== VIEW_URI) throw new Error(`unknown resource: ${String(params?.uri)}`);
     return { contents: [{ uri: VIEW_URI, mimeType: UI_MIME, text: probeViewHtml(origin) }] };
   },
   "tools/call": (params) => {
-    if (params?.name !== "run_sandbox_probe") throw new Error(`unknown tool: ${String(params?.name)}`);
+    const name = params?.name;
+    // The view reporting back. Echoed into the result verbatim, which is what puts it in front of
+    // the model - and whether that happens at all is the thing being measured.
+    if (name === "report_probe_results") {
+      const args = (params?.arguments ?? {}) as { summary?: string; results?: unknown[] };
+      return {
+        content: [{ type: "text", text: `Probe view reported:\n\n${args.summary ?? "(no summary)"}` }],
+        structuredContent: { results: args.results ?? [] },
+      };
+    }
+    if (name !== "run_sandbox_probe") throw new Error(`unknown tool: ${String(name)}`);
     return {
       content: [
         {
           type: "text",
-          text: "Sandbox probe rendered. Read the results in the view; call this a second time to test whether the view's origin survives between invocations.",
+          text:
+            "Sandbox probe rendered. It reports its own findings by calling `report_probe_results`, " +
+            "so wait for that before summarising. If it never arrives, that is itself the finding: " +
+            "the view cannot reach the model, and there are no agent ears in this host.",
         },
       ],
       structuredContent: { renderedAt: new Date().toISOString() },
