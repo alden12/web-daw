@@ -216,7 +216,7 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
     if (params?.uri !== VIEW_URI) throw new Error(`unknown resource: ${String(params?.uri)}`);
     return { contents: [{ uri: VIEW_URI, mimeType: UI_MIME, text: probeViewHtml(origin) }] };
   },
-  "tools/call": (params, origin) => {
+  "tools/call": (params) => {
     const name = params?.name;
     // The view reporting back. Echoed into the result verbatim, which is what puts it in front of
     // the model - and whether that happens at all is the thing being measured.
@@ -242,30 +242,20 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
      */
     const report = hostReport();
     /**
-     * **The view, embedded in the result as well as predeclared.**
+     * **The embedded view was tried and removed.** Sending the resource inside the result is
+     * MCP-UI's convention and one of the spec's "alternatives considered", and it was the last
+     * untried shape. It changed nothing: the host still rendered a blank container.
      *
-     * SEP-1865 says a predeclared `ui://` resource plus `_meta.ui.resourceUri` on the tool is
-     * enough, and the host should then fetch it. This host does not: on a healthy session with the
-     * extension declared and four tool calls served, it called `resources/list` three times and
-     * `resources/read` never.
-     *
-     * MCP-UI, which predates and informed the SEP, uses the other shape the spec's rationale
-     * lists as "alternatives considered": the resource travels **inside** the tool result. That
-     * fits the evidence exactly, because a host reading the view from the result has no reason to
-     * ever call `resources/read`.
-     *
-     * So both are sent. If this renders, the host implements the embedded convention rather than
-     * the predeclared one, and the answer for AGENT-27 is a shape change rather than a dead end.
+     * Removed rather than left in because it is not free. The whole HTML source lands in the
+     * model's context on every call, so a view's markup is read as text by the model, and a
+     * routine widget would pay that on each invocation. Having the host fetch via `resources/read`
+     * keeps view source out of the context window entirely, which is a reason to prefer the
+     * predeclared shape beyond it being what the spec asks for.
      */
-    const embeddedView = {
-      type: "resource",
-      resource: { uri: VIEW_URI, mimeType: UI_MIME, text: probeViewHtml(origin) },
-    };
     return {
       // In both halves deliberately: a client given both may surface only the structured one.
       structuredContent: { hostReport: report },
       content: [
-        embeddedView,
         {
           type: "text",
           text:
