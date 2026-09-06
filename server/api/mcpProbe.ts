@@ -18,7 +18,7 @@
  * Wire up: `Customize -> Connectors -> Add custom connector`, pointing at `<origin>/mcp`.
  */
 import { Hono } from "hono";
-import { PROBE_WORKLET_SOURCE, probeViewHtml } from "./mcpProbeView";
+import { PROBE_WORKLET_SOURCE, probeScriptSource, probeViewHtml } from "./mcpProbeView";
 
 /** The apps extension identifier (SEP-1865, final 2026-01-26). */
 const UI_EXTENSION = "io.modelcontextprotocol/ui";
@@ -182,6 +182,12 @@ export function createMcpProbeApp() {
       .get("/mcp-probe/worklet.js", (c) => {
         c.header("Content-Type", "text/javascript; charset=utf-8");
         return c.body(PROBE_WORKLET_SOURCE);
+      })
+      /** The view's own logic, external so it can run even where inline scripts are forbidden. */
+      .get("/mcp-probe/view.js", (c) => {
+        const origin = publicOrigin(c.req.url, c.req.header("x-forwarded-host"), c.req.header("x-forwarded-proto"));
+        c.header("Content-Type", "text/javascript; charset=utf-8");
+        return c.body(probeScriptSource(origin));
       })
       /** A trivial target for the `connectDomains` fetch probe. */
       .get("/mcp-probe/ping", (c) => c.text("pong"))
