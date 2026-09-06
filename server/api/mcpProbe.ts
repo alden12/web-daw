@@ -135,6 +135,19 @@ export function createMcpProbeApp() {
       })
       /** A trivial target for the `connectDomains` fetch probe. */
       .get("/mcp-probe/ping", (c) => c.text("pong"))
+      /**
+       * **Say "no OAuth here" properly.** A client probes these before connecting, and the honest
+       * answer for an unauthenticated server is 404. Without this the SPA catch-all further down
+       * answers them with `index.html` and a **200**, so the client is handed a page of HTML where
+       * it expected either auth metadata or a refusal - and the resulting failure names nothing.
+       *
+       * The paths take suffixes (RFC 9728 appends the resource path, e.g.
+       * `/.well-known/oauth-protected-resource/mcp`), hence the wildcards.
+       */
+      .get("/.well-known/oauth-protected-resource/*", (c) => c.json({ error: "not-found" }, 404))
+      .get("/.well-known/oauth-protected-resource", (c) => c.json({ error: "not-found" }, 404))
+      .get("/.well-known/oauth-authorization-server/*", (c) => c.json({ error: "not-found" }, 404))
+      .get("/.well-known/oauth-authorization-server", (c) => c.json({ error: "not-found" }, 404))
       .post("/mcp", async (c) => {
         const origin = publicOrigin(c.req.url, c.req.header("x-forwarded-host"), c.req.header("x-forwarded-proto"));
         const body = (await c.req.json().catch(() => null)) as JsonRpcRequest | JsonRpcRequest[] | null;
