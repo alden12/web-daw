@@ -10,6 +10,7 @@ import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, type JWTVerifyG
 import { makeSyncEnv } from "./support/syncEnv";
 import { makeJwtResolver, makeDevResolver, resolveAuthConfig, type AuthConfig } from "../server/api/principal";
 import { users } from "../server/db/schema";
+import { allowEmail } from "../server/db/access";
 
 const ISSUER = "https://test.supabase.co/auth/v1";
 const ALG = "ES256";
@@ -42,10 +43,62 @@ async function authFixture(): Promise<{ jwks: JWTVerifyGetKey; sign: (options?: 
 }
 
 describe("makeJwtResolver", () => {
+  /**
+   * HOST-20. Google's OAuth "testing mode" test-user list gates sensitive scopes rather than
+   * sign-in, so a stranger's token arrives here correctly signed and correctly scoped. These cover
+   * the part that decides whether that is enough. It is not.
+   */
+  describe("the allowlist", () => {
+    it("refuses a valid token from an address nobody invited, and provisions no user", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, sign } = await authFixture();
+      const resolve = makeJwtResolver(db, CONFIG, jwks);
+
+      const token = await sign({ sub: "stranger-1", email: "stranger@example.com" });
+      expect(await resolve(token), "a signed token is not an invitation").toBeNull();
+
+      const rows = await db.select().from(users).where(eq(users.id, "stranger-1"));
+      expect(rows, "and a refusal leaves no row behind").toHaveLength(0);
+    });
+
+    it("refuses a token with no email claim, since a caller we cannot name cannot have been invited", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, sign } = await authFixture();
+      const resolve = makeJwtResolver(db, CONFIG, jwks);
+
+      expect(await resolve(await sign({ sub: "anon-1" }))).toBeNull();
+    });
+
+    it("admits an invited address, case- and whitespace-insensitively", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, sign } = await authFixture();
+      const resolve = makeJwtResolver(db, CONFIG, jwks);
+      await allowEmail(db, "  Dev@Example.COM ", "the owner");
+
+      const principal = await resolve(await sign({ sub: "abc-123", email: "dev@example.com" }));
+      expect(principal).toEqual({ userId: "abc-123", email: "dev@example.com" });
+    });
+
+    it("takes a revocation effect immediately, because nothing is cached", async () => {
+      const { db } = await makeSyncEnv();
+      const { jwks, sign } = await authFixture();
+      const resolve = makeJwtResolver(db, CONFIG, jwks);
+      await allowEmail(db, "dev@example.com");
+
+      const token = await sign({ sub: "abc-123", email: "dev@example.com" });
+      expect(await resolve(token)).toBeTruthy();
+
+      const { revokeEmail } = await import("../server/db/access");
+      await revokeEmail(db, "dev@example.com");
+      expect(await resolve(token), "the same still-valid token now resolves to nothing").toBeNull();
+    });
+  });
+
   it("resolves a valid token to its subject + email and provisions the user", async () => {
     const { db } = await makeSyncEnv();
     const { jwks, sign } = await authFixture();
     const resolve = makeJwtResolver(db, CONFIG, jwks);
+    await allowEmail(db, "dev@example.com"); // a valid token is not an invitation (HOST-20)
 
     const principal = await resolve(await sign({ sub: "abc-123", email: "dev@example.com" }));
     expect(principal).toEqual({ userId: "abc-123", email: "dev@example.com" });
@@ -53,13 +106,6 @@ describe("makeJwtResolver", () => {
     const rows = await db.select().from(users).where(eq(users.id, "abc-123"));
     expect(rows).toHaveLength(1);
     expect(rows[0].email).toBe("dev@example.com");
-  });
-
-  it("resolves a token with no email claim (email is best-effort)", async () => {
-    const { db } = await makeSyncEnv();
-    const { jwks, sign } = await authFixture();
-    const resolve = makeJwtResolver(db, CONFIG, jwks);
-    expect(await resolve(await sign({ sub: "no-email" }))).toEqual({ userId: "no-email" });
   });
 
   it("rejects a token signed by a different key (bad signature)", async () => {

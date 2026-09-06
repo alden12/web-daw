@@ -142,6 +142,29 @@ export const projectMembers = pgTable(
   ],
 );
 
+/**
+ * Who may use this deployment at all (HOST-20), as distinct from `users`, which records who has.
+ * That module answers "which account is this" once someone is already through the door; this one
+ * decides whether the door opens.
+ *
+ * **It exists because Google's OAuth "testing mode" test-user list does not gate sign-in.** It
+ * restricts sensitive scopes, so anyone with a Google account completes the flow and Supabase
+ * vouches for them. Proving you control an address is not the same as being invited, and this table
+ * is the only participant in the chain that knows the difference.
+ *
+ * **A table rather than an environment variable, and the reason is the failure mode.** An allowlist
+ * in config has to decide what *unset* means, and the tempting answer - everyone - fails open on a
+ * fresh deploy or a dropped secret. An empty table means nobody. Editing a row from anywhere is the
+ * convenience; failing closed is the point.
+ */
+export const allowedEmails = pgTable("allowed_emails", {
+  /** Lower-cased on write and on lookup, so the primary key agrees with the query. */
+  email: text("email").primaryKey(),
+  /** Who this is, so a bare list of addresses is still readable in a year. */
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type UserRow = typeof users.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
