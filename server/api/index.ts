@@ -7,7 +7,6 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Server } from "node:http";
 import { createApp } from "./app";
-import { createMcpProbeApp } from "./mcpProbe";
 import { attachWsServer } from "./wsServer";
 import { resolveAuthConfig } from "./principal";
 import { getDb } from "../db/client";
@@ -42,11 +41,6 @@ if (auth) console.log(`[web-daw] auth: verifying JWTs against ${auth.issuer}`);
 // Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
 const verbose = process.env.NODE_ENV !== "production";
 const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose });
-
-// TEMPORARY (AGENT-27): an MCP Apps endpoint at /mcp, so a real Claude host can answer what its
-// sandbox actually permits. Mounted here rather than in createApp because it must sit between the
-// API routes and the static catch-all below, and because it is meant to be deleted in one line.
-app.route("/", createMcpProbeApp());
 
 // Single-origin deploy: this same server serves the built client (dist/) alongside the API and /ws, so
 // there is one URL, no CORS, and same-origin wss. Registered AFTER the API routes, so `/projects/*` (and
