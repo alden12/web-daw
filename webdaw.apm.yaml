@@ -3146,6 +3146,277 @@ projects:
         id: 019fed47-6f4a-719a-9e0a-18b0db4e1f86
         created_at: 2026-08-10T20:05:09.579Z
         updated_at: 2026-08-10T20:05:09.579Z
+      - ref: AGENT-27
+        area: AGENT
+        title: "Audio tools in Claude as MCP widgets: probe it before building anything"
+        status: to-do
+        sort_path: "000027"
+        body: >
+          Expose a small set of music-making tools inside the Claude app - a
+          playable instrument, a MIDI score you can hear, a pattern you can
+          nudge - as MCP responses that render custom UI and run the real DSP
+          **on the reader's own device**.
+
+
+          **Probed 2026-09-06 and it looks feasible.** The device questions
+          expected to kill it did not. The remaining risk is one specific CSP
+          directive, and it has a workaround to test alongside it.
+
+
+          ## Why this shape, and not something simpler
+
+
+          The requirements that forced it (2026-09-05):
+
+
+          1. Spend the existing Claude subscription, not API credits.
+
+          2. Work from a phone, out and about.
+
+          3. No server-side audio rendering, because paying for strangers'
+          compute is the thing being avoided.
+
+
+          **(1) is a hard constraint and it decides the architecture.** There is
+          no way for a third-party app to spend a Claude subscription - no
+          OAuth-for-inference, no session sharing. Subscription tokens are spent
+          by Anthropic's own clients; everything else is the API, billed
+          separately. So the DAW's own agent panel can *never* satisfy (1), and
+          the conversation has to happen inside the Claude app.
+
+
+          **The relay was the obvious answer and mobile kills it.** A remote MCP
+          server forwarding tool calls over the existing WebSocket to the user's
+          live browser session satisfies all three on paper, and most of it is
+          already built (`mcp/bridge.ts`, `server/api/wsServer.ts`). But on a
+          phone the DAW is backgrounded the moment you switch to the Claude app,
+          and iOS *freezes* a backgrounded PWA rather than throttling it. The
+          relay would be talking to a session that is not running.
+
+
+          That leaves the widget: code running in the Claude client itself, on
+          the device.
+
+
+          ## Probe results (2026-09-06)
+
+
+          Run from a diagnostic page in the **Artifacts** sandbox - a cousin of
+          the MCP Apps sandbox, not the same thing. Tested on a Pixel 7 Pro
+          inside the Claude Android app's webview (`Claude/1.260904.19`, `wv`)
+          **and on a laptop, with matching results**, which points at a
+          consistent policy rather than a per-platform accident.
+
+
+          | probe | result |
+
+          |---|---|
+
+          | Secure context, `audioWorklet` present | pass |
+
+          | `addModule()` from a `blob:` URL | **pass** |
+
+          | `addModule()` from a `data:` URL | fail (`AbortError`) |
+
+          | **Custom DSP actually renders offline** | **pass** |
+
+          | Offline render with no user gesture | pass |
+
+          | localStorage / IndexedDB / **OPFS** | pass |
+
+          | Storage persists across reloads | **pass** |
+
+          | Outbound `fetch` to a CDN | fail (`TypeError`) |
+
+          | Live audible output through a worklet | pass, context `running` |
+
+
+          **Custom DSP genuinely runs, not just loads.** `addModule()` resolving
+          would prove only loading, so the probe rendered a sine through a 3-bit
+          crusher and checked the output: 15 distinct levels, exactly k/7 for k
+          in -7..7. That number cannot appear unless the processor executed.
+
+
+          **The frame gets a real origin, not an opaque one**
+          (`https://<id>.frame.claudeusercontent.com`), which is why storage
+          works - including **OPFS, the same model the app already uses**.
+
+
+          ## What the spec settles (SEP-1865, Final, stable 2026-01-26)
+
+
+          Extension id `io.modelcontextprotocol/ui`. Server predeclares a
+          `ui://` resource with mimeType exactly `text/html;profile=mcp-app`; a
+          tool links to it via `_meta.ui.resourceUri`. The view is an MCP client
+          over a postMessage JSON-RPC transport: `ui/initialize`, then the host
+          pushes `ui/notifications/tool-input` and
+          `ui/notifications/tool-result`.
+
+
+          **The callback question is answered.** A view can call `tools/call`,
+          and - more directly useful for "agent ears" -
+          **`ui/update-model-context`**, which pushes content into the model's
+          context for later turns. That is exactly the shape a
+          render-then-analyse loop needs. Consent is *not* mandated by the spec;
+          hosts may gate calls not marked `readOnlyHint: true`, so per-iteration
+          approval friction is a host-specific unknown rather than a certainty.
+
+
+          **Sandbox is mandated as `allow-scripts allow-same-origin`**, so a
+          real origin (and therefore storage) is required by the spec, not
+          merely observed.
+
+
+          ### The new risk, and it is the important one
+
+
+          **The spec's default CSP is `script-src 'self' 'unsafe-inline'` - no
+          `blob:`.** AudioWorklet module loading is governed by `script-src`, so
+          the route that *passed* in Artifacts is the route the MCP Apps default
+          would **block**. This is now the single highest-risk unknown, and it
+          is invisible until tested: stock nodes keep working while every custom
+          device fails.
+
+
+          There is a declared workaround to test in the same sitting. Resources
+          may declare `_meta.ui.csp.connectDomains` and `resourceDomains`, which
+          the host adds to the CSP. So:
+
+
+          - Serve the worklet modules from an owned HTTPS origin and
+          `addModule()` them cross-origin, with that origin in
+          `resourceDomains`.
+
+          - **This also reopens samples.** `connectDomains` means a widget *can*
+          fetch from a declared domain, unlike the Artifacts sandbox where
+          nothing outbound worked. The "samples are impossible" conclusion of
+          2026-09-05 was drawn from the wrong sandbox and should be retested
+          rather than assumed.
+
+
+          ## What it should cover
+
+
+          **Individual instruments and MIDI, not whole projects.** A widget
+          invocation is small and fresh; a project is large and stateful. The
+          natural unit is one playable thing. Synth instruments, MIDI scores and
+          synthesised drums first; samples only if `connectDomains` proves out.
+
+
+          ## Measured, so this part is not guesswork
+
+
+          From a production build (2026-09-06): `index` (React, all UI, engine)
+          864K; `Markdown` (agent panel only) 316K; `nimbus.worklet` 8K;
+          `wavetable.worklet` 4K. **The DSP is the small part** - both worklets
+          are 12K combined. A widget carrying the audio core plus one
+          instrument's controls is plausibly under 200K.
+
+
+          ## Next test: a throwaway MCP Apps server
+
+
+          Everything left is host behaviour, and one small server answers all of
+          it at once.
+
+
+          1. **A public HTTPS MCP endpoint.** Add an `/mcp` route to the
+          existing Hono API on Fly rather than standing anything new up.
+          Unauthenticated on an unguessable path is fine for a probe.
+
+          2. **Declare `ui://webdaw/probe`** (`text/html;profile=mcp-app`) with
+          `_meta.ui.csp.resourceDomains` and `connectDomains` pointing at
+          `web-daw.fly.dev`, plus one tool linking to it via
+          `_meta.ui.resourceUri`.
+
+          3. **Serve the existing probe page as that resource**, plus the
+          `ui/initialize` handshake and three new checks: cross-origin
+          `addModule()` from a declared domain, `fetch` to a declared domain,
+          and whether the origin is the same one as last invocation.
+
+          4. **Add it as a custom connector** (Customize -> Connectors -> Add
+          custom connector; available on Pro and Max).
+
+          5. **Invoke on the phone and the laptop**, then invoke again to test
+          origin stability across calls.
+
+
+          Independent and free: **open the existing probe page on an iPhone.**
+          Android and desktop agreed, but WKWebView is the strictest host this
+          will meet, and it needs no server at all.
+
+
+          ## If it holds up
+
+
+          The engine has to separate cleanly from the UI: a rendering core, the
+          main app UI, and very small per-widget UIs. **That split is worth
+          doing regardless** - it is the layering ARCH-4 wants to enforce and
+          the same discipline as "keep the MCP server DOM-free".
+
+
+          ## Fallbacks
+
+
+          **Relay to a desktop session** rather than the phone: Claude app on
+          the phone, relay through Fly, DAW on a desktop that is awake.
+          Satisfies all three as actually intended, and mostly built.
+
+
+          **Price the API with an own key.** Fails (1) as written but may be
+          cheap enough that the requirement dissolves - a DAW agent is short
+          tool-calling turns, not long documents. Worth ten minutes with a
+          calculator before spending a weekend.
+        id: 01a07741-83a5-7169-acfa-c611e91537c2
+        created_at: 2026-09-06T15:06:17.381Z
+        updated_at: 2026-09-06T15:32:13.927Z
+        comments:
+          - body: >-
+              **Probed on a Pixel 7 Pro in the Claude Android app's own webview
+              (2026-09-06). The sandbox is not the blocker.**
+
+
+              Custom DSP loaded from a `blob:` URL **and genuinely ran**: a
+              3-bit crusher rendered offline to exactly 15 distinct levels (k/7
+              for k in -7..7), which cannot happen unless the processor
+              executed. Offline render needed no gesture, and live audible
+              output through a worklet worked too.
+
+
+              Storage is better than hoped: the frame gets a **real per-artifact
+              origin**, not an opaque one, so localStorage, IndexedDB **and
+              OPFS** all work - the same storage model the app already uses.
+
+
+              Two fails, one irrelevant (`data:` URLs, moot since `blob:` works)
+              and one informative: **no outbound fetch at all**. Samples can
+              never be pulled, only embedded or passed through the host.
+            audience: user
+            id: 01a07750-e27e-74e4-b9aa-0a10d4ae430e
+            at: 2026-09-06T15:23:04.702Z
+            actor: claude
+          - body: >-
+              **iPhone probed 2026-09-06: identical to Android and desktop
+              except OPFS, which failed.** Custom DSP still loaded from `blob:`
+              and rendered correctly, and localStorage, IndexedDB and cross-load
+              persistence all passed - so the critical results hold on WebKit,
+              which is the strictest host this will meet.
+
+
+              Only casualty is `navigator.storage.getDirectory`. Notably
+              localStorage and IndexedDB survive, so this is OPFS specifically
+              rather than storage being partitioned away in a cross-site frame.
+
+
+              **Consequence: a widget must persist through IndexedDB, not
+              OPFS.** That is cheaper than it sounds - `BundleStore` is already
+              an interface with `OpfsBundleStore` / `MemoryBundleStore`
+              implementations, so an `IndexedDbBundleStore` slots into an
+              existing seam rather than forking the storage layer.
+            audience: user
+            id: 01a0775f-46d7-771c-9b83-ba7f729a8918
+            at: 2026-09-06T15:38:47.896Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -7115,6 +7386,158 @@ projects:
         id: 019fd716-70c0-737c-863e-d13aa5ceb908
         created_at: 2026-08-06T12:39:59.936Z
         updated_at: 2026-08-06T12:53:40.587Z
+      - ref: HOST-18
+        area: HOST
+        title: A public demo on GitHub Pages, offline-only and free to run
+        status: in-progress
+        sort_path: "000018"
+        body: >
+          Something to show people without asking them to sign in, and without
+          paying Fly for the compute of strangers poking at it. A static build
+          on `alden12.github.io/web-daw`, no backend at all.
+
+
+          **Assume it is shown on a phone.** The likely use is handing someone a
+          link while out and about, so the touch shell is the primary surface
+          here, not the desktop one. That has already killed one design (see the
+          banner).
+
+
+          ## The mode already exists and is continuously proven
+
+
+          `.env.test` **is** this configuration, and it is committed: blank
+          `VITE_SUPABASE_*` (no login gate, auth is opt-in) and blank
+          `VITE_DAW_API_URL` (projects live in OPFS). All 148 e2e tests run
+          against exactly it on every CI push, and `yarn check:pwa` already
+          proves the built app boots with the network cut. So this is a
+          packaging job, not a feature.
+
+
+          Sharing degrades correctly rather than erroring: `sharingAvailable` is
+          false and the Share panel is never offered.
+
+
+          **No cross-origin isolation needed.** Nothing uses
+          `SharedArrayBuffer`, so `AudioWorklet` runs without the COOP/COEP
+          headers GitHub Pages cannot set. That was the one thing that could
+          have ruled this out.
+
+
+          ## What a base path costs
+
+
+          A project site serves from `/web-daw/`, and Vite currently sets no
+          `base`. Decided against a custom domain (2026-09-05), so the base path
+          is real and four things follow from it:
+
+
+          1. **`base` in `vite.config.ts`**, or everything 404s.
+
+          2. **The manifest's absolute paths.** `manifest.ts` hardcodes `/` for
+          `id`, `start_url`, `scope` and all three icons, and `navigateFallback`
+          is `/index.html`. Wrong under a base, and the failure is silent - the
+          browser simply never offers to install, which is the exact failure
+          that file's doc comment exists to prevent. Whatever is done here must
+          keep the Fly deploy (served from `/`) working.
+
+          3. **`404.html`.** Pages has no SPA fallback, so a deep link 404s on
+          first load. Copy `index.html` to `404.html` at build.
+
+          4. **Project links escape the base.** `projectUrl.ts` writes
+          `/p/<slug>~<id>` with `replaceState` and reads straight from
+          `pathname`. Under `/web-daw/` that rewrites the address bar to
+          `/p/...`, outside the base, so a reload or a shared link lands on
+          GitHub's own 404. This is the only one that needs code rather than
+          config.
+
+
+          Plus a deploy workflow; `.github/workflows/` has only `ci.yml` today.
+
+
+          ## The banner
+
+
+          The demo has to say what it is, because "my work vanished" is the
+          impression this otherwise leaves. Wanted wording, roughly:
+
+
+          > Offline mode, files saved in browser storage. Online coming soon -
+          reach out to the repo owner to join the dev preview.
+
+
+          It should read as **a deliberate mode, not a degraded one** - the app
+          works, the storage is simply local.
+
+
+          **It carries the repo link too.** The demo's most interesting claim is
+          that an agent can play the thing, and that is the one part a static
+          build cannot show, so it should say where to get it:
+          `github.com/alden12/web-daw`, with the gist that driving it over MCP
+          means cloning and running locally.
+
+
+          **Dismissable, and it stays dismissed.** `usePersistentBoolean` is the
+          mechanism (localStorage-backed, same as the roll's settings) rather
+          than `UpdateNotice`'s in-memory `useState`, which comes back on every
+          load. This also settles the phone question: a notice that cannot be
+          closed for good is furniture, and MOBILE-1 is short of rows.
+
+
+          One consequence to handle rather than ignore: **dismissing must not
+          destroy the only explanation of where the files went.** Someone who
+          closes it and returns a month later should still be able to find out -
+          so the same text wants a permanent home in the settings panel, with
+          the banner as the thing that surfaces it once.
+
+
+          Only on the static build, not on Fly. That means it keys off the same
+          "no API configured" fact the storage layer already reads, rather than
+          a new flag.
+
+
+          ### Rejected: hanging the repo link off the MCP status dot
+
+
+          Tried and wrong twice over (2026-09-05). `CenterWorkbench` renders
+          that dot, and **`CenterWorkbench` is only rendered by `DesktopShell`**
+          - the touch shell has no such indicator, which rules it out for the
+          surface this demo is actually shown on. And even on desktop the dot
+          only renders when `mcpStatus === "connected"`, which on a static build
+          never happens. So it is invisible on every device in exactly this
+          deployment. The banner carries the link.
+
+
+          ## Not doing: connecting the Pages build to a local MCP server
+
+
+          Asked (2026-09-05). The bridge opens
+          `ws://localhost:<DEFAULT_WS_PORT>`, and from an `https://` page that
+          is a public-to-local-network connection. The mixed-content spec treats
+          `localhost` as trustworthy so Chrome would likely allow it today, but
+          Private Network Access is actively tightening exactly this, and Safari
+          is stricter still. Worth a five-minute test before believing either
+          way.
+
+
+          It is moot regardless: **the MCP server is spawned by Claude Code over
+          stdio from `.mcp.json`, so anyone who can run it has the repo checked
+          out - and can therefore run `yarn dev` and get a same-origin page with
+          no mixed-content question at all.** The Pages build would be solving a
+          problem its own audience does not have. Hence pointing at the repo
+          instead.
+
+
+          ## Worth deciding separately: what the demo shows
+
+
+          A fresh install seeds one instrument track and one clip, which
+          demonstrates the UI and not the app. A seeded demo project with actual
+          music in it is what makes this worth showing anyone, and it is its own
+          piece of work.
+        id: 01a07270-24de-746e-9aa1-a2c184aecd82
+        created_at: 2026-09-05T16:39:07.230Z
+        updated_at: 2026-09-05T16:50:28.848Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
