@@ -134,12 +134,24 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
     // the model - and whether that happens at all is the thing being measured.
     if (name === "report_probe_results") {
       const args = (params?.arguments ?? {}) as { summary?: string; results?: unknown[] };
+      const summary = args.summary ?? "(no summary)";
+      // Deliberately in BOTH: see the note on `structuredContent` below.
       return {
-        content: [{ type: "text", text: `Probe view reported:\n\n${args.summary ?? "(no summary)"}` }],
-        structuredContent: { results: args.results ?? [] },
+        content: [{ type: "text", text: `Probe view reported:\n\n${summary}` }],
+        structuredContent: { summary, results: args.results ?? [] },
       };
     }
     if (name !== "run_sandbox_probe") throw new Error(`unknown tool: ${String(name)}`);
+    /**
+     * **No `structuredContent` here, and that is the fix for a real mistake.** A run on Claude
+     * Desktop reported the entire tool result as `{"renderedAt":"..."}` - the `content` text was
+     * nowhere in what reached the model. So where a client is given both, it may show the
+     * structured half and drop the prose entirely. Anything the model must read therefore has to
+     * be in `structuredContent`, or `structuredContent` must not be sent at all.
+     *
+     * Worth carrying back into the app's own MCP tools: a tool whose explanation lives only in
+     * `content` may be explaining itself to nobody.
+     */
     return {
       content: [
         {
@@ -150,7 +162,6 @@ const handlers: Record<string, (params: Record<string, unknown>, origin: string)
             "the view cannot reach the model, and there are no agent ears in this host.",
         },
       ],
-      structuredContent: { renderedAt: new Date().toISOString() },
     };
   },
 };
