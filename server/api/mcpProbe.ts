@@ -46,6 +46,9 @@ interface JsonRpcRequest {
  * and whether it ever calls `resources/read`. A host that renders MCP Apps must do both. If it
  * does neither, no amount of fixing the view will help, because nothing is ever fetching it.
  */
+/** When this process started. The counters are in-memory, so this is how to read them honestly. */
+const processStartedAt = Date.now();
+
 const hostLog = {
   clientInfo: null as unknown,
   clientCapabilities: null as unknown,
@@ -62,7 +65,28 @@ function declaresUiExtension(): boolean {
 
 /** A short, readable account of the host's behaviour, returned in the tool result. */
 function hostReport(): string {
-  if (!hostLog.protocolVersion) return "No initialize seen yet on this server instance.";
+  const upSeconds = Math.round((Date.now() - processStartedAt) / 1000);
+  /**
+   * **Say how old the process is, always.** Fly runs this with `auto_stop_machines = "stop"` and
+   * `min_machines_running = 0`, so the single machine (`max_machines_running = 1`, hence never
+   * more than one) halts when idle and cold-starts on the next request. Every stop wipes these
+   * counters, and so does every deploy.
+   *
+   * Without this line, "no initialize seen" reads as "the host never handshook" when it usually
+   * means "this process is twenty seconds old and the host's session predates it". That misreading
+   * cost a round trip and produced a confident diagnosis of multi-instance routing, which cannot
+   * happen here.
+   */
+  const age = `process uptime: ${upSeconds}s (counters reset on every restart and deploy)`;
+  if (!hostLog.protocolVersion) {
+    return [
+      "No initialize seen yet by THIS PROCESS.",
+      age,
+      upSeconds < 120
+        ? "It is young, so this most likely means it cold-started under an existing connection rather than that the host never handshook. Reconnect the connector to force a fresh initialize, then run again."
+        : "It has been up a while, so a host that has not sent initialize is genuinely not handshaking.",
+    ].join("\n");
+  }
   const calls = Object.entries(hostLog.methodCounts)
     .map(([method, count]) => `${method} x${count}`)
     .join(", ");
@@ -73,6 +97,7 @@ function hostReport(): string {
     `client capabilities: ${JSON.stringify(hostLog.clientCapabilities)}`,
     `resources/read ever called: ${hostLog.resourcesReadAt ?? "NEVER"}`,
     `methods seen: ${calls || "(none)"}`,
+    age,
   ].join("\n");
 }
 

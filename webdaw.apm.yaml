@@ -4423,9 +4423,19 @@ projects:
           - **Selected track-header opacity** - a selected track header used a
           translucent tint, letting the lane's clip notes bleed through the
           sticky header column; use an opaque teal-tinted panel colour.
+
+          - **The clip chip's launch button sits off-centre when stopped**
+          (raised 2026-09-06 on a phone). `ClipRail.tsx:169` centres its glyph
+          with `pl-px pb-px` on a plain block - an optical nudge tuned for `▶`,
+          which is visually left-weighted. `■` is symmetric, so the same nudge
+          pushes it off centre in the 16px circle. Give the button `inline-flex
+          items-center justify-center` and apply the nudge to the `▶` glyph only
+          (a span), so the two states centre independently. Worth folding into
+          the button-system work of DAW-29 rather than patching in place, since
+          that is where the icon-in-a-circle pattern is being standardised.
         id: 019fae99-8a07-740b-a6f2-9395641daaec
         created_at: 2026-07-29T15:58:45.767Z
-        updated_at: 2026-07-29T15:58:45.767Z
+        updated_at: 2026-09-06T16:54:28.616Z
       - ref: DAW-8.5
         area: DAW
         title: Master gain and live level meter
@@ -4636,6 +4646,207 @@ projects:
         id: 019fae99-fe7f-73de-9cdc-3321e69e180a
         created_at: 2026-07-29T15:59:15.583Z
         updated_at: 2026-07-29T16:00:37.748Z
+      - ref: DAW-8.12
+        area: DAW
+        title: "Bug: the clip-length handle edits the active clip, not the open one"
+        status: to-do
+        sort_path: "000008.000012"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06 from a phone session: "loop length is not saved on
+          clip (is it setting on wrong clip?)". It is.
+
+
+          **Root cause, and it is one line.** `PianoRoll` threads `clipId`
+          through every note command (`addNotes`, `editNotes`, `removeNotes`),
+          but the ruler's length handle omits it:
+
+
+          ```ts
+
+          // src/ui/PianoRoll.tsx:908
+
+          onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId,
+          lengthBeats: beats })}
+
+          ```
+
+
+          `clipId` is optional on the command (`protocol.ts`), and
+          `ProjectStore.setClipLength` resolves `undefined` through
+          `getClipStore(trackId, undefined)`, which falls back to the track's
+          **active** clip. So editing the length of any clip that is not the
+          active one silently resizes a different clip - and the open clip
+          appears to "not save" because nothing changed on it.
+
+
+          **Fix:** pass `clipId`. Then decide whether `clipId` should stay
+          optional on the command at all: the agent tool
+          (`agent/tools/clips.ts`) always passes one, so the only caller relying
+          on the fallback is the buggy one. Making it required would have caught
+          this at the type level, which is the argument for doing it while here.
+
+
+          The coalesce key already includes the clip
+          (`setClipLength:${trackId}:${clipId ?? ""}`), so history grouping
+          follows the fix for free.
+
+
+          Wants a regression test: open a non-active clip, drag the handle,
+          assert the active clip's length is untouched.
+
+
+          Related but separate: DAW-30 gives a clip's loop region a *start*,
+          which touches the same command.
+        id: 01a077a3-8170-732c-a66c-797a89d85d3d
+        created_at: 2026-09-06T16:53:19.344Z
+        updated_at: 2026-09-06T16:53:19.344Z
+      - ref: DAW-8.13
+        area: DAW
+        title: "Bug: a clip-length drag lands several history entries instead of one"
+        status: to-do
+        sort_path: "000008.000013"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "clip length is committing on drag not just on
+          resolve, leading to lots of commits."
+
+
+          **Cause: coalescing is time-windowed, not gesture-scoped.**
+          `setClipLength` is in `COALESCABLE` (`src/audio/commands/editLog.ts`)
+          with a stable key, but `COALESCE_MS = 400` means successive frames
+          only merge if they arrive within 400ms of each other. A drag that
+          pauses - which a finger dragging a handle on a phone does constantly -
+          crosses the window and starts a fresh checkpoint. A slow ten-second
+          trim can leave a dozen feed entries and a dozen undo steps for one
+          gesture.
+
+
+          **The right shape is the gesture, not a timer.** A pointer drag knows
+          exactly when it begins and ends; the log should too. Options, in
+          preference order:
+
+
+          1. **An explicit gesture scope** - `editLog.beginGesture()` /
+          `endGesture()` (or a `gesture` id on the command) so every command
+          inside one drag coalesces regardless of elapsed time, and the next
+          drag starts a new entry no matter how fast it follows.
+          `pointerDrag.ts` already owns start/end for every draggable thing in
+          the app, so there is one place to put it.
+
+          2. **Dispatch only on release**, keeping the drag itself local state.
+          Cheapest per call site, but it costs the live model update that makes
+          the roll and the arrangement redraw together, and it has to be done
+          again for every draggable.
+
+
+          Option 1 also fixes the same defect everywhere else it exists - it is
+          not specific to clip length. `setParam` knob drags, `movePlacement`,
+          `resizePlacement` and note edits all ride the same 400ms window and
+          all fragment the same way on a slow drag. Worth confirming on a knob
+          before building, since desktop drags are fast enough that this rarely
+          shows.
+
+
+          Note the vocabulary: these are undo checkpoints and feed entries, not
+          *commits* - commits stay user-driven (see apm: "History and
+          versioning"). The user-visible symptom is feed noise and undo taking
+          many presses to walk back one drag.
+        id: 01a077a3-ac78-77d0-ab07-b28aa791198b
+        created_at: 2026-09-06T16:53:30.360Z
+        updated_at: 2026-09-06T16:53:30.360Z
+      - ref: DAW-8.14
+        area: DAW
+        title: Commit markers in the Activity feed carry no time and no way back
+        status: to-do
+        sort_path: "000008.000014"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "commits need a time displayed and ability to go
+          back to that point if possible."
+
+
+          **Both already exist - in the other tab.** `VersionTimeline` renders
+          `timeAgo(commit.time)` ("5m ago", refreshed on a 30s interval) and a
+          "Revert to this version" action calling `versionStore.revertTo`.
+          `ActivityView` merges commits into the feed by `seq` and renders none
+          of it: no timestamp on any row, and a commit marker is inert.
+
+
+          So this is not new machinery, it is the feed reusing what the Versions
+          tab has:
+
+
+          - **Time on commit rows at least.** `CommitSummary.time` is already
+          loaded. Whether *edits* get times too is a separate question: log
+          entries are ordered by `seq`, and stamping every row makes a dense
+          feed noisier. A reasonable middle is a time on commit markers plus a
+          hover title on edits.
+
+          - **Revert from the marker.** Same call the Versions tab makes. It
+          records a new version rather than detaching (git-revert style, see
+          `history.ts`), so it is safe to offer inline.
+
+
+          Consider whether the two tabs should converge instead: the feed
+          already contains commit markers, so the Versions tab is arguably a
+          filtered view of it. Not a call to make inside a bug fix, but worth
+          noting before building the same row twice.
+        id: 01a077a3-daf4-7641-88fc-e55cd8dd690c
+        created_at: 2026-09-06T16:53:42.260Z
+        updated_at: 2026-09-06T16:53:42.260Z
+      - ref: DAW-8.15
+        area: DAW
+        title: "Bug: undo does not survive a page reload, though the machinery says it
+          should"
+        status: to-do
+        sort_path: "000008.000015"
+        parent: DAW-8
+        body: >-
+          Raised 2026-09-06: "maintain undo on page reload would be useful." It
+          was built (DAW-7) - so this is a repair, not a feature.
+
+
+          **The wiring is all present.** `undo.json` has a schema
+          (`project/schema.ts`), a delta-encoded form (`PackedStack`, one base
+          snapshot + each checkpoint's command, `PERSIST_UNDO_DEPTH = 30`), a
+          writer and a reader on `ProjectRepository`, and both load paths call
+          them:
+
+
+          - `persistence.ts:41` - `restoreProject` layers `readUndo()` back on
+          via `editLog.restoreCheckpoints`.
+
+          - `projects/operations.ts:45` - the project-open path does the same,
+          and line 35 writes on close.
+
+          - `attachAutosave`'s keyframe writes `editLog.getCheckpoints()`
+          alongside the snapshot.
+
+
+          **So the bug is in which path a hosted reload actually takes**, and
+          that is the first thing to find out. Candidates, cheapest first:
+
+
+          1. The remote/`ProjectRepository` backend does not persist `undo.json`
+          the way OPFS does, so `readUndo()` returns null on the server-backed
+          path.
+
+          2. Restore runs but `restoreCheckpoints` no-ops - e.g. the base
+          snapshot's schema version moved, or the packed steps fail to replay
+          through `applyEdit`.
+
+          3. Something re-initialises the log after restore, dropping the stacks
+          that were just layered on.
+
+
+          Reproduce first: edit, reload, press undo, and log whether
+          `readUndo()` returned anything. A test that reloads a repository
+          round-trip and asserts one undo step survives is what stops it
+          regressing.
+        id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
+        created_at: 2026-09-06T16:53:50.952Z
+        updated_at: 2026-09-06T16:53:50.952Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing
@@ -9831,6 +10042,18 @@ projects:
             id: 01a06f03-ef42-705f-bc69-40a4aeff5882
             at: 2026-09-05T00:42:03.970Z
             actor: claude
+          - body: "**Bug bash on a phone, 2026-09-06.** Six issues raised from a real PWA
+              session; the touch-editing ones split out as MOBILE-17 (a clip
+              cannot be placed on the timeline at all - the rail uses HTML5 DnD,
+              which touch never fires, and this ticket's empty-range -> Create
+              clip menu is the other missing half) and MOBILE-18 (the drum roll
+              never gets `compact`, so it keeps the toolbar and velocity lane).
+              The rest went to DAW-8.12 through DAW-8.15 plus a bullet on
+              DAW-8.4."
+            audience: user
+            id: 01a077a4-a912-76c8-8191-0a0e44fd4896
+            at: 2026-09-06T16:54:35.026Z
+            actor: claude
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
@@ -10403,3 +10626,98 @@ projects:
         id: 019ff2fd-7927-7031-8a88-128677a25e40
         created_at: 2026-08-11T22:42:05.735Z
         updated_at: 2026-08-11T22:42:05.735Z
+      - ref: MOBILE-17
+        area: MOBILE
+        title: "Bug: a clip cannot be placed on the timeline at all on touch"
+        status: to-do
+        sort_path: "000017"
+        body: >-
+          Raised 2026-09-06 from a phone session: "cannot drag or place a clip
+          onto timeline in mobile mode." Confirmed - there is no route to it,
+          and two independent gaps are why.
+
+
+          **1. Placement is HTML5 drag-and-drop, which touch never fires.**
+          `ClipRail` marks each clip chip `draggable` and writes `dataTransfer`
+          on `dragstart`; `arrangement/Lane.tsx` accepts it in `onDragOver` /
+          `onDrop`. Mobile Safari and Chrome do not synthesise `dragstart` from
+          a touch, so the chip's title ("drag onto the lane to place") describes
+          a gesture that cannot happen. The rest of the app already avoids this
+          - `pointerDrag.ts` is the Pointer Events helper every other draggable
+          thing uses - so the fix is to move clip placement onto the same
+          primitive rather than to add a touch shim beside the DnD path.
+
+
+          **2. The empty-range route was designed but not built.** MOBILE-7
+          settled that in the timeline you drag across empty lane space to
+          define a range, and a kebab on it offers **Create clip** (and
+          **Paste**). That is still open (see MOBILE-7's comment of 2026-09-05),
+          and it is the other half of "place a clip here" on touch.
+
+
+          Either one alone unblocks the user. They answer different intents, so
+          both are wanted eventually: (2) makes a *new* clip in a stated range,
+          (1) places an *existing* one from the rail.
+
+
+          **Do (1) as pointer-drag, and it repays desktop too.** DAW-29 notes
+          React Aria's `useDrag`/`useDrop` as a candidate for exactly this;
+          whether to take it here or hand-roll on `pointerDrag` is the decision
+          to make first. A hand-rolled version needs a drag preview and a drop
+          indicator, which HTML5 DnD gave for free - that is the real cost, and
+          the reason to weigh the library.
+
+
+          Related: DAW-8.6 (library drag-and-drop) has the same shape and should
+          share whatever this grows.
+        id: 01a077a4-3857-7435-9520-b9cae9f38dd6
+        created_at: 2026-09-06T16:54:06.167Z
+        updated_at: 2026-09-06T16:54:06.167Z
+      - ref: MOBILE-18
+        area: MOBILE
+        title: "Bug: the drum roll misses the touch treatment - it still shows the
+          toolbar and velocity lane"
+        status: to-do
+        sort_path: "000018"
+        body: >-
+          Raised 2026-09-06: "drum loops still have velocity lane where they
+          should use the same piano roll touch tools."
+
+
+          **Root cause: `compact` is not forwarded.** `DrumRoll` is `PianoRoll`
+          with kit-mapped rows, but its props do not include `compact`, and
+          `InstrumentEditor` passes `compact={compact}` to the `PianoRoll`
+          branch only (`workbench/InstrumentEditor.tsx:104`) and not to the
+          `DrumRoll` branch (line 91). So on a phone a drum track gets the
+          desktop roll:
+
+
+          - the velocity lane opens by default (`velOpen` defaults to
+          `!compact`), taking 56px of a sheet that MOBILE-6 shares with the
+          pads;
+
+          - the toolbar renders instead of being `hidden={compact}`, so the
+          controls are duplicated rather than published to the shell's kebab.
+
+
+          **Fix is threading one prop**, plus a look for anything else
+          `DrumRoll` drops on the floor from `PianoRoll`'s prop list while there
+          - a pass-through component silently omitting a prop is the kind of
+          thing that happens twice.
+
+
+          Note `velOpen` is a *persisted* boolean under one global key
+          (`web-daw:roll-vel-open`), so `compact` only decides its **initial**
+          value. Anyone who has already opened a drum roll on a phone has the
+          lane pinned open in localStorage, and threading the prop will not
+          close it for them. Worth deciding whether the key should be per-tier
+          (`:compact` suffix) so the phone and the desktop remember separately -
+          which is the more correct answer anyway, since the lane is welcome on
+          one and not the other.
+
+
+          Belongs with MOBILE-7's model: velocity on touch is note fill strength
+          plus the inline row in the note's kebab, not a lane.
+        id: 01a077a4-5bf3-757d-882d-44dd30d72a2a
+        created_at: 2026-09-06T16:54:15.283Z
+        updated_at: 2026-09-06T16:54:15.283Z
