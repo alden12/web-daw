@@ -3214,7 +3214,17 @@ projects:
           3. **A maintainer response or a close on [ext-apps#671](https://github.com/modelcontextprotocol/ext-apps/issues/671) or [claude-ai-mcp#165](https://github.com/anthropics/claude-ai-mcp/issues/165)**, the two canonical trackers.
           4. **Release notes or connector-directory docs mentioning MCP Apps for custom connectors.**
 
-          **The retest is five minutes and needs no new work.** The probe is still in the tree: add `https://web-daw.fly.dev/mcp` as a custom connector, run `run_sandbox_probe`, and read `/mcp-probe/log`. `resources/read` showing a timestamp means the host has started fetching views, and anything appearing on screen means the rest of this ticket is live again.
+          ### The retest, which is a minute of work
+
+          **The probe was removed from the tree once it had answered** (commit `5667a5a`), because `/mcp` and `/mcp-probe/*` took no credentials and woke a scale-to-zero machine - the same category of thing HOST-20 closed. It was not rewritten away, though:
+
+          ```
+          git revert 5667a5a     # restores server/api/mcpProbe.ts, mcpProbeView.ts and the mount
+          ```
+
+          Then deploy, add `https://web-daw.fly.dev/mcp` as a custom connector, run `run_sandbox_probe`, and read `/mcp-probe/log`. **`resources/read` showing a timestamp means the host has started fetching views**, and anything appearing on screen means the rest of this ticket is live again. Remove it again afterwards.
+
+          Two things that will otherwise cost a round trip each: **only removing and re-adding the connector picks up server changes** (a tool-list refresh and an app restart both fail to), and the log's counters reset on every deploy and every cold start, which is why it reports its own uptime.
 
           ## What is genuinely known, and still encouraging
 
@@ -3252,15 +3262,9 @@ projects:
           **Relay to a desktop session** rather than the phone: Claude app on the phone, relay through Fly, DAW running on a desktop that is awake and foregrounded. Satisfies all three requirements as actually intended, and is mostly built already.
 
           **And price the API with an own key.** Fails (1) as written but may be cheap enough that the requirement dissolves - a DAW agent is short tool-calling turns, not long documents. Worth ten minutes with a calculator before building anything.
-
-          ## The probe
-
-          `server/api/mcpProbe.ts` + `mcpProbeView.ts`, mounted in one line in `server/api/index.ts`, unauthenticated (the auth middleware gates `/projects` only) and touching no database. Delete all three when this is closed, or keep it dormant to retest a future client.
-
-          Diagnostics readable at `/mcp-probe/log`; the view opens standalone at `/mcp-probe/view.html`, where it renders correctly - which is how we know the page itself is sound.
         id: 01a07741-83a5-7169-acfa-c611e91537c2
         created_at: 2026-09-06T15:06:17.381Z
-        updated_at: 2026-09-06T17:24:23.886Z
+        updated_at: 2026-09-06T20:34:35.783Z
         comments:
           - body: >-
               **Probed on a Pixel 7 Pro in the Claude Android app's own webview
