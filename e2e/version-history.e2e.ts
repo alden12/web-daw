@@ -104,7 +104,10 @@ test("an edit says whether it is in a named version yet (DAW-8.4)", async ({ pag
   await openActivity(page);
   // Nothing has been named, so the edit is not in a version - regardless of the auto checkpoint
   // that lands a few seconds later, which is plumbing and deliberately not counted.
-  await expect(page.getByTitle("Not saved in a version yet").first()).toBeVisible();
+  const row = page.getByTitle("You · Not saved in a version yet").first();
+  await expect(row).toBeVisible();
+  // Every row carries its own time, not just the commit markers.
+  await expect(row).toContainText("just now");
 
   await page.getByRole("combobox", { name: "Activity view" }).selectOption("versions");
   await page.getByPlaceholder("Name this version…").fill("verse idea");
@@ -112,7 +115,7 @@ test("an edit says whether it is in a named version yet (DAW-8.4)", async ({ pag
   await page.getByRole("combobox", { name: "Activity view" }).selectOption("activity");
 
   // Now it is, and a later edit is not.
-  await expect(page.getByTitle("Saved in a version").first()).toBeVisible();
+  await expect(page.getByTitle("You · Saved in a version").first()).toBeVisible();
   await renameTrack(page, "Lead");
-  await expect(page.getByTitle("Not saved in a version yet").first()).toBeVisible();
+  await expect(page.getByTitle("You · Not saved in a version yet").first()).toBeVisible();
 });
