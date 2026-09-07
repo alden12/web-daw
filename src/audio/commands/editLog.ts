@@ -321,7 +321,17 @@ export class EditLog {
    * stack is discarded.
    */
   restoreCheckpoints(state: UndoState | null): void {
-    const current = state && state.headSeq === this.headSeq ? state : null;
+    const matches = state !== null && state.headSeq === this.headSeq;
+    // Say so rather than silently greying out undo. "Undo did nothing after a reload" is otherwise
+    // indistinguishable from "the stack was never written", and those have opposite fixes.
+    if (state && !matches) {
+      console.warn(
+        `[web-daw] undo: discarding a stack stamped at seq ${state.headSeq}; this log is at ${this.headSeq}. ` +
+          "Undo is unavailable for this load - applying a stack from a different point would roll the " +
+          "project back rather than undo one edit.",
+      );
+    }
+    const current = matches ? state : null;
     this.undoStack = unpackUndo(current?.undo);
     this.redoStack = unpackRedo(current?.redo);
     this.emit();
