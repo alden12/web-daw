@@ -93,6 +93,35 @@ describe("setClipLength", () => {
     expect(far.start + far.length).toBeLessThanOrEqual(8);
   });
 
+  it("names its clip, so the length lands on the roll's clip and not on whatever is active (DAW-8.12)", () => {
+    const { project, log } = setup();
+    const first = project.getTrack("t-1")!.activeClipId!;
+    const second = project.addClip("t-1", { empty: true })!; // adding makes it active
+    expect(project.getTrack("t-1")!.activeClipId).toBe(second.id);
+
+    log.dispatch({ type: "setClipLength", trackId: "t-1", clipId: first, lengthBeats: 8 });
+
+    expect(project.getClipStore("t-1", first)!.getClip().lengthBeats).toBe(8);
+    expect(project.getClipStore("t-1", second.id)!.getClip().lengthBeats).not.toBe(8);
+  });
+
+  it("does nothing at all when the clip is omitted and the active id dangles (DAW-8.12)", () => {
+    // The failure the UI hit. `getClipStore` resolves an omitted clip through `activeClipId` and
+    // stops there, while the editor opens `activeClipId ?? clips[0]` - so an active id pointing at
+    // no clip leaves the roll editing clip A and the command resolving to nothing, silently
+    // (`store?.setLength`). Passing the clip explicitly is what makes that unreachable.
+    const { project, log } = setup();
+    const track = project.getTrack("t-1")!;
+    const only = track.activeClipId!;
+    track.activeClipId = "c-gone";
+
+    log.dispatch({ type: "setClipLength", trackId: "t-1", lengthBeats: 8 });
+    expect(project.getClipStore("t-1", only)!.getClip().lengthBeats).not.toBe(8);
+
+    log.dispatch({ type: "setClipLength", trackId: "t-1", clipId: only, lengthBeats: 8 });
+    expect(project.getClipStore("t-1", only)!.getClip().lengthBeats).toBe(8);
+  });
+
   it("coalesces a clip-length drag into one undo step", () => {
     const { project, log } = setup();
     log.dispatch({ type: "setClipLength", trackId: "t-1", lengthBeats: 12 });

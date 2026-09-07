@@ -166,13 +166,16 @@ export function ClipRail({
                 e.stopPropagation();
                 toggleLaunch(clip.id);
               }}
-              className={`font-mono text-[9px] pl-px pb-px leading-none w-4 h-4 rounded-full border cursor-pointer shrink-0 ${
+              className={`font-mono text-[9px] leading-none w-4 h-4 rounded-full border cursor-pointer shrink-0 inline-flex items-center justify-center ${
                 launchedClipId === clip.id
                   ? "border-you bg-you text-ground"
                   : "border-line text-muted hover:text-you hover:border-you"
               }`}
             >
-              {launchedClipId === clip.id ? "■" : "▶"}
+              {/* The optical nudge belongs to the glyph, not the button (DAW-8.4). `▶` is
+                  left-weighted and needs pushing right to look centred; `■` is symmetric and the
+                  same nudge visibly knocked it off centre in a 16px circle. */}
+              {launchedClipId === clip.id ? "■" : <span className="pl-px pb-px">▶</span>}
             </button>
             <span className="w-1.5 h-1.5 rounded-full" style={authorDotStyle(clip.author, presence)} />
             <InlineRename

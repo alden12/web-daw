@@ -64,3 +64,24 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await page.getByRole("radio", { name: "Pads", exact: true }).click();
   await expect(page.getByRole("button", { name: "Kick step 1", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
+
+test("on a phone the drum roll gets the touch treatment, like any other roll (MOBILE-18)", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+
+  await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
+  await page.getByRole("radio", { name: "Keys", exact: true }).click();
+  await expect(page.getByTestId("piano-grid")).toBeVisible();
+
+  // The velocity lane is the visible half of the desktop treatment (the other is the toolbar),
+  // and its resize separator is the stable handle on it.
+  const velocityLane = page.getByRole("separator", { name: "Resize velocity lane" });
+  await expect(velocityLane).toBeVisible();
+
+  // Narrow to a phone: `compact` reaches the roll through DrumRoll, so the lane closes. It used
+  // not to, because DrumRoll took no `compact` prop at all and the editor only handed one to the
+  // pitched roll - a drum track kept the desktop layout on a 390px screen.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("piano-grid")).toBeVisible();
+  await expect(velocityLane).toBeHidden();
+});

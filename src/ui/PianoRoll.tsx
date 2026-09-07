@@ -44,7 +44,7 @@ import { beginPointerDrag } from "./pointerDrag";
 import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
-import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
+import { beatToX, floorBeat, snapBeat, snapDelta, xToBeat } from "./timeline/timeGrid";
 import { anchorZoomX, anchorZoomY } from "./timeline/anchoredZoom";
 import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
@@ -124,6 +124,12 @@ type Drag =
       edge: "start" | "end";
       ids: string[];
       origin: Map<string, NoteEvent>;
+      /**
+       * The note the snap is measured from (DAW-8.8). One note lands on a grid line and the
+       * rest move by its realised delta; snapping every note to the grid independently would
+       * collapse a chord's internal spacing, which a move should never do.
+       */
+      anchorId: string;
       startBeat: number;
       startPitch: number;
       moved: boolean;
@@ -199,7 +205,14 @@ export function PianoRoll({
   // **Closed by default on touch**, where the roll is sharing a sheet with the pads and 56px
   // is a whole row of them. Velocity is not lost by hiding it: it renders as note fill
   // strength, and editing it per note belongs in the note's own menu on touch (MOBILE-7).
-  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", !compact);
+  //
+  // Remembered per tier (MOBILE-18). `compact` only decides the *initial* value, so one shared
+  // key meant opening the lane on a desktop pinned it open on the phone too, where it is exactly
+  // the thing that does not fit. The two screens want different answers, so they get their own.
+  const [velOpen, setVelOpen] = usePersistentBoolean(
+    compact ? "web-daw:roll-vel-open:compact" : "web-daw:roll-vel-open",
+    !compact,
+  );
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
@@ -486,9 +499,15 @@ export function PianoRoll({
   const onNoteDragMove = (ev: PointerEvent) => {
     const d = drag.current;
     if (!d || (d.kind !== "move" && d.kind !== "resize")) return;
-    const dB = snapB(beatAt(ev.clientX) - d.startBeat);
+    const anchor = d.origin.get(d.anchorId);
+    if (!anchor) return;
+    // How far the pointer has travelled. What gets snapped is the anchor's *destination*, never
+    // this (DAW-8.8): snapping the movement leaves an off-grid note off-grid forever, because
+    // 0.37 plus a snapped 0.5 is 0.87.
+    const moveBeats = beatAt(ev.clientX) - d.startBeat;
     if (d.kind === "move") {
       const dP = pitchAt(ev.clientY) - d.startPitch;
+      const dB = snapDelta(anchor.start, moveBeats, (beat) => clampStart(snapB(beat)));
       if (!d.moved && dB === 0 && dP === 0) return;
       d.moved = true;
       const notes = d.ids.map((id) => {
@@ -498,6 +517,13 @@ export function PianoRoll({
       dispatch({ type: "editNotes", trackId, clipId, notes });
       return;
     }
+    // Same rule for a resize: the edge under the pointer is the thing that lands on the grid.
+    // Clamped here as well as per note, so the anchor cannot drive the selection past a bound.
+    const anchorEnd = anchor.start + anchor.length;
+    const dB =
+      d.edge === "end"
+        ? snapDelta(anchorEnd, moveBeats, (beat) => clamp(snapB(beat), anchor.start + minNoteLength, len))
+        : snapDelta(anchor.start, moveBeats, (beat) => clamp(snapB(beat), 0, anchorEnd - minNoteLength));
     if (!d.moved && dB === 0) return;
     d.moved = true;
     const notes = d.ids.map((id) => {
@@ -514,10 +540,31 @@ export function PianoRoll({
     dispatch({ type: "editNotes", trackId, clipId, notes });
   };
 
-  /** The notes a drag should carry: the selection, or the note being grabbed if it is outside it. */
-  const dragTargets = (ids: Set<string>) => {
+  /**
+   * The notes a drag should carry: the selection, or the note being grabbed if it is outside it.
+   * Also picks the drag's snap anchor - the note under the pointer when a mouse grabbed one, and
+   * otherwise the note at the edge the grip sits on, so what lands on the grid is the thing you
+   * took hold of rather than an arbitrary member of the selection.
+   */
+  const dragTargets = (ids: Set<string>, edge: "start" | "end", grabbed?: NoteEvent) => {
     const picked = clip.notes.filter((note) => ids.has(note.id));
-    return { ids: picked.map((note) => note.id), origin: new Map(picked.map((note) => [note.id, { ...note }])) };
+    const endOf = (note: NoteEvent) => note.start + note.length;
+    const atEdge = picked.reduce(
+      (furthest, note) =>
+        edge === "end"
+          ? endOf(note) > endOf(furthest)
+            ? note
+            : furthest
+          : note.start < furthest.start
+            ? note
+            : furthest,
+      picked[0],
+    );
+    return {
+      ids: picked.map((note) => note.id),
+      origin: new Map(picked.map((note) => [note.id, { ...note }])),
+      anchorId: (grabbed ?? atEdge)?.id ?? "",
+    };
   };
 
   const onNoteDown = (note: NoteEvent, e: React.PointerEvent) => {
@@ -540,7 +587,7 @@ export function PianoRoll({
     drag.current = {
       kind: isEdge ? "resize" : "move",
       edge: "end",
-      ...dragTargets(sel),
+      ...dragTargets(sel, "end", note),
       startBeat: beatAt(e.clientX),
       startPitch: pitchAt(e.clientY),
       moved: false,
@@ -565,7 +612,9 @@ export function PianoRoll({
     drag.current = {
       kind,
       edge,
-      ...dragTargets(selection),
+      // A move grip carries no end, so it snaps the selection's start; a resize grip snaps the
+      // end it is attached to.
+      ...dragTargets(selection, kind === "move" ? "start" : edge),
       startBeat: beatAt(e.clientX),
       startPitch: pitchAt(e.clientY),
       moved: false,
@@ -905,7 +954,10 @@ export function PianoRoll({
               loopEnd={len}
               pxPerBeat={pxPerBeat}
               timeSignature={projectStore?.timeSignature}
-              onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, lengthBeats: beats })}
+              // `clipId` explicitly (DAW-8.12): the command's clip is optional and the store falls
+              // back to the track's *active* clip, so omitting it here resized whichever clip the
+              // rail had selected rather than the one this roll is open on.
+              onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, clipId, lengthBeats: beats })}
             />
 
             <div
