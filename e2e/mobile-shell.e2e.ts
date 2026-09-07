@@ -114,6 +114,31 @@ async function openRoll(page: Page) {
   await setDetent(page, "full");
   await segment(page, "Edit").tap();
   await expect(page.getByTestId("roll-scroll")).toBeVisible();
+  await settleRollScroll(page);
+}
+
+/**
+ * Wait for the roll to stop scrolling itself.
+ *
+ * The roll frames its notes after a resize, coalesced by `FIT_SETTLE_MS` (150ms), and opening the
+ * sheet is a resize. On an unloaded machine that lands long before the test touches anything; under
+ * parallel load it can land *during* a later gesture, which moves the grid out from under the
+ * finger. A drag driven in absolute viewport coordinates then reads a different row than it aimed
+ * at, and the note lands a couple of rows out - a failure that looks like broken drag maths and is
+ * really an unsynchronised test.
+ */
+async function settleRollScroll(page: Page) {
+  const scrollTop = () => page.getByTestId("roll-scroll").evaluate((element) => element.scrollTop);
+  await expect
+    .poll(
+      async () => {
+        const before = await scrollTop();
+        await page.waitForTimeout(200); // longer than FIT_SETTLE_MS, so a pending fit has landed
+        return (await scrollTop()) === before;
+      },
+      { message: "the roll's self-fit settled" },
+    )
+    .toBe(true);
 }
 
 /**

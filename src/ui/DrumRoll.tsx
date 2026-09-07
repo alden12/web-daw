@@ -30,6 +30,7 @@ export function DrumRoll({
   recorder,
   dispatch,
   projectStore,
+  compact,
 }: {
   clipStore: ClipStore;
   params: ParamStore;
@@ -40,6 +41,9 @@ export function DrumRoll({
   recorder: Recorder;
   dispatch: Dispatch;
   projectStore?: ProjectStore;
+  /** Touch layout, forwarded verbatim to the roll (MOBILE-18). A drum track is a roll like any
+   *  other, so it gets the same treatment; the prop was simply never threaded through. */
+  compact?: boolean;
 }) {
   const pads = usePads(params);
   const rows = useMemo<RollRows>(() => {
@@ -79,6 +83,7 @@ export function DrumRoll({
       dispatch={dispatch}
       projectStore={projectStore}
       rows={rows}
+      compact={compact}
     />
   );
 }

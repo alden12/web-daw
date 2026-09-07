@@ -99,6 +99,7 @@ export function InstrumentEditor({
             recorder={recorder}
             dispatch={dispatch}
             projectStore={projectStore}
+            compact={compact}
           />
         ) : (
           <PianoRoll

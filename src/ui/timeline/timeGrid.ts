@@ -22,6 +22,23 @@ export const snapBeat = (beat: number, division: number = GRID): number => Math.
 /** Floor a beat to its grid cell start (used when adding a note in a clicked cell). */
 export const floorBeat = (beat: number, division: number = GRID): number => Math.floor(beat / division) * division;
 
+/**
+ * How far a dragged selection should actually move: **snap the destination, not the movement**
+ * (DAW-8.8).
+ *
+ * The obvious version, `place(pointerMovement)`, is wrong in a way that only shows on content
+ * that did not start on the grid. It preserves the anchor's remainder forever - a note recorded
+ * at 0.37 dragged by a snapped 0.5 lands on 0.87, and no amount of dragging ever gets it onto a
+ * line. Snapping where the anchor is *going* fixes the onset on the first drag.
+ *
+ * `anchor` is the edge being dragged (a note's start for a move, the end under the pointer for a
+ * resize), and `place` is snap plus whatever clamping that edge is subject to. Returns a delta
+ * rather than a position because the rest of the selection moves by the same amount, which is
+ * what keeps a chord's internal spacing intact.
+ */
+export const snapDelta = (anchor: number, movement: number, place: (beat: number) => number): number =>
+  place(anchor + movement) - anchor;
+
 export interface BeatTick {
   beat: number;
   /** True at the start of a bar (gets a heavier line + a bar-number label). */
