@@ -9,9 +9,14 @@ projects:
       every edit is an authored event in one log, so history, versioning and an
       AI co-author fall out rather than being bolted on.
     next:
-      - MOBILE-7
-      - DAW-31
-      - DAW-33
+      - DAW-8.12
+      - MOBILE-18
+      - DAW-8.4
+      - DAW-8.14
+      - DAW-8.15
+      - MOBILE-17
+      - DAW-8.8
+      - DAW-8.13
     id: 019fadff-8808-7358-b599-5f4175bd287f
     created_at: 2026-07-29T13:10:32.712Z
     updated_at: 2026-07-29T13:34:58.278Z
@@ -4547,38 +4552,53 @@ projects:
         sort_path: "000008.000004"
         parent: DAW-8
         body: >-
-          - **Clip delete always available** - show the × even on the last clip;
-          deleting the last one replaces it with a fresh empty clip (ids minted
-          in the UI, so replay stays deterministic).
+          Audited against the code 2026-09-07. Three bullets had already
+          shipped, one is in review on slice-113, and two remain.
+
+
+          ## Shipped (verified, no work left)
+
+
+          - ~~**Clip delete always available**~~ - `ClipRail` now hides the
+          delete only for an audio track's last clip (which has no empty-clip
+          fallback); an instrument's last clip offers "Clear clip (replaces it
+          with a fresh empty one)".
+
+          - ~~**Selected track-header opacity**~~ - `arrangement/rows.tsx` uses
+          an opaque `color-mix(in oklab, var(--color-you) 12%,
+          var(--color-panel))`, so lane content no longer bleeds through the
+          sticky header.
+
+          - ~~**Remove the instrument family chip**~~ - no `family` chip remains
+          in the library views.
+
+          - ~~**The clip chip's launch button sits off-centre when stopped**~~
+          (raised 2026-09-06 on a phone) - **in review on slice-113.** The
+          button now centres with `inline-flex items-center justify-center` and
+          the optical nudge moved onto the `▶` glyph's own span, so the
+          left-weighted play arrow still reads as centred while the symmetric
+          `■` is no longer pushed off by a nudge that was never meant for it.
+          Left as a local fix rather than folded into DAW-29.3: the button
+          system is square (`w-6` upward, `rounded-md`) and this is a 16px
+          filled circle inside a chip, so adopting `IconButton` here would
+          change the rail's look rather than tidy it.
+
+
+          ## Still open
+
 
           - **Feed: committed vs uncommitted styling** - drop the separate
-          "autosaved" marker; render committed entries as normal white text and
-          uncommitted ones greyed/italic, "saved" on hover (compare entry seq to
-          the latest commit's `lastSeq`).
+          "autosaved" marker (still rendered in `ActivityView.tsx`) and render
+          committed entries as normal text, uncommitted ones greyed/italic,
+          "saved" on hover (compare entry seq to the latest commit's `lastSeq`).
 
           - **Feed: group same-device edits** - collapse consecutive param edits
-          on one instrument/effect into a single grouped row to save space
-          (display-only; distinct from edit coalescing).
-
-          - **Remove the instrument family chip** in the library (added, then
-          judged unnecessary).
-
-          - **Selected track-header opacity** - a selected track header used a
-          translucent tint, letting the lane's clip notes bleed through the
-          sticky header column; use an opaque teal-tinted panel colour.
-
-          - **The clip chip's launch button sits off-centre when stopped**
-          (raised 2026-09-06 on a phone). `ClipRail.tsx:169` centres its glyph
-          with `pl-px pb-px` on a plain block - an optical nudge tuned for `▶`,
-          which is visually left-weighted. `■` is symmetric, so the same nudge
-          pushes it off centre in the 16px circle. Give the button `inline-flex
-          items-center justify-center` and apply the nudge to the `▶` glyph only
-          (a span), so the two states centre independently. Worth folding into
-          the button-system work of DAW-29 rather than patching in place, since
-          that is where the icon-in-a-circle pattern is being standardised.
+          on one instrument/effect into a single grouped row. Display-only;
+          distinct from edit coalescing, and distinct again from the gesture
+          scoping in DAW-8.13.
         id: 019fae99-8a07-740b-a6f2-9395641daaec
         created_at: 2026-07-29T15:58:45.767Z
-        updated_at: 2026-09-06T16:54:28.616Z
+        updated_at: 2026-09-07T22:22:00.687Z
       - ref: DAW-8.5
         area: DAW
         title: Master gain and live level meter
@@ -4642,64 +4662,115 @@ projects:
           wants a right-click menu *and* a tap-reachable equivalent.
 
 
-          - **Drag placements between tracks.** Today `movePlacement` only
-          changes `startBeat`, so a placed clip can move along its lane but not
-          onto another track. Extend it (or add a cross-track move) so a MIDI /
-          audio placement drags onto any same-kind track's lane, mirroring the
-          existing rail-drop copy path.
+          Audited against the code 2026-09-07.
 
-          - **Split from a lane context menu.** Splitting is double-click-only
-          today. Add a "Split here" item to a lane's right-click (and touch
-          three-dots) menu, acting at the lane's selection marker. This needs
-          **clicking a track to also drop the selection marker on it** (today a
-          click only selects the track), so the marker is where the split lands.
+
+          ## Shipped
+
+
+          - ~~**Clip start / loop-start handle.**~~ `Lane.beginPlacementDrag(p,
+          "start")` now trims a placement's left edge, moving `startBeat`,
+          `offset` and `length` in one `resizePlacement` command (which is why
+          `startBeat` lives on that command). A placement's offset is draggable
+          from the UI.
+
+
+          ## Still open
+
+
+          - **Drag placements between tracks.** `movePlacement` still only
+          carries `startBeat` (`protocol.ts`, `projectStore.ts:1114`), so a
+          placed clip moves along its lane but not onto another track. Extend it
+          (or add a cross-track move) so a MIDI / audio placement drags onto any
+          same-kind track's lane, mirroring the existing rail-drop copy path.
+
+          - **Split from a lane context menu.** Splitting is still
+          double-click-only (`Lane.onBlockDouble`). Add a "Split here" item to a
+          lane's right-click and touch kebab menus, acting at the lane's
+          selection marker. Needs **clicking a track to also drop the selection
+          marker on it**, so the marker is where the split lands.
 
           - **Clip layering / stacking (promote the overlap).** Overlapping
           placements on one lane already "just work"; make it an intended
-          feature - MIDI / audio clips may stack on the same track, drawn
-          **semi-transparent** so lower clips / notes / audio read through.
-          Needs: a **replace-vs-stack prompt on clip drop**; **multi-select of
-          tracks** (shift-click, plus a multi-select mode in the
-          timeline-options menu for touch); and a **merge / combine-tracks**
-          action (right-click / three-dots) that flattens the selected tracks'
-          clips into one.
+          feature, drawn semi-transparent so lower clips read through. Needs a
+          replace-vs-stack prompt on clip drop, multi-select of tracks, and a
+          merge / combine-tracks action.
 
-          - **Draw-to-length note creation.** A press-drag on the piano roll
-          should place a note and set its length in one gesture (today a click
-          adds a fixed-length note).
+          - **Draw-to-length note creation.** A tap on the roll still adds a
+          note of `lastLen.current`, and a drag becomes a marquee instead
+          (`PianoRoll` `onGridDown`). A press-drag on empty grid should place a
+          note and set its length in one gesture. Note this competes with the
+          marquee for the same gesture, so the two need separating (modifier, or
+          drag direction, or marquee only from a non-note-row region) before
+          building.
 
-          - **Clip start / loop-start handle.** The roll has an end / length
-          handle but no clip-start handle, so a placement's `offset` (where the
-          clip starts) can't be moved off 0 from the UI. Add a start handle so
-          the clip's start point is draggable.
+          - **Don't auto-place a blank clip.** `ProjectStore.addTrack` still
+          seeds `placements: [{ id: 'p-<trackId>', ... }]` alongside the pool
+          clip. Creating a track should leave the timeline empty and let the
+          user place the clip intentionally. Careful: the seed placement id is
+          derived from the track id on purpose (the MCP mirror agrees ids across
+          the seam), so removing it touches that contract.
 
-          - **Don't auto-place a blank clip.** Creating a track / instrument
-          should not drop an empty clip on the timeline; the pool clip exists,
-          and the user drags it onto a lane intentionally.
-
-          - **Context menus on clips + tracks.** Both the timeline and the panel
-          give clips and tracks a right-click context menu, plus a **persistent
-          three-dots (⋮) affordance** (not hover-only) so the same actions are
-          reachable by touch.
+          - **Context menus on clips + tracks.** Partly there: track and group
+          headers have persistent kebab `Menu`s (`arrangement/rows.tsx`), and a
+          selected placement has a kebab via `ObjectHandles`, but that one is
+          deliberately **touch-only** (`[@media(pointer:coarse)]`, MOBILE-7).
+          Still missing: any right-click context menu at all, and a
+          desktop-visible affordance on placements and clips.
         id: 019fae99-c678-7413-ab61-d8e0e20b515f
         created_at: 2026-07-29T15:59:01.240Z
-        updated_at: 2026-07-29T16:00:36.515Z
+        updated_at: 2026-09-07T21:53:57.530Z
       - ref: DAW-8.8
         area: DAW
         title: "Bug: note-drag snapping off-grid"
-        status: to-do
+        status: review
         sort_path: "000008.000008"
         parent: DAW-8
         body: >-
-          Dragging a note in the piano roll doesn't always land its start on a
-          grid line - the onset can end up off-grid. The snap should apply to
-          the note onset consistently.
+          Dragging a note in the piano roll does not always land its start on a
+          grid line, so the onset can end up off-grid.
 
 
-          Audit the `snapBeat` / drag-origin math in the roll.
+          **Root cause found 2026-09-07: the snap is applied to the movement,
+          not to the destination.** `onNoteDragMove` (`src/ui/PianoRoll.tsx`,
+          the `move` branch) computes
+
+
+          ```ts
+
+          const dB = snapB(beatAt(ev.clientX) - d.startBeat);
+
+          // ...
+
+          start: clampStart(original.start + dB)
+
+          ```
+
+
+          so it snaps the *delta* and adds it to the original start. A note
+          whose start is already off-grid keeps its off-grid remainder forever:
+          snapping a 0.37 note by a snapped delta of 0.5 gives 0.87, never 0.5.
+          Recorded notes and notes created while snap was off are exactly the
+          ones that start off-grid, which is why this looks intermittent.
+
+
+          **Fix:** snap the resulting onset rather than the delta. With a
+          multi-note selection, snap the anchor note (the one under the pointer)
+          to the grid and move the rest by the anchor's realised delta, so
+          relative spacing inside the selection is preserved. Snapping every
+          note independently would collapse a chord's internal offsets, which is
+          not what a move should do.
+
+
+          The `resize` branch of the same function wants checking for the same
+          shape while here.
+
+
+          Regression test: a note at 0.37, snap on, dragged one beat, lands on a
+          grid line.
         id: 019fae99-cdd3-76c8-a361-19a24b469702
         created_at: 2026-07-29T15:59:03.123Z
-        updated_at: 2026-07-29T15:59:03.123Z
+        updated_at: 2026-09-07T22:21:47.126Z
       - ref: DAW-8.9
         area: DAW
         title: "Bug: clip playhead ignores arrangement position"
@@ -4792,58 +4863,71 @@ projects:
       - ref: DAW-8.12
         area: DAW
         title: "Bug: the clip-length handle edits the active clip, not the open one"
-        status: to-do
+        status: review
         sort_path: "000008.000012"
         parent: DAW-8
         body: >-
           Raised 2026-09-06 from a phone session: "loop length is not saved on
-          clip (is it setting on wrong clip?)". It is.
+          clip (is it setting on wrong clip?)".
 
 
-          **Root cause, and it is one line.** `PianoRoll` threads `clipId`
-          through every note command (`addNotes`, `editNotes`, `removeNotes`),
-          but the ruler's length handle omits it:
+          **Fixed on slice-113.** `PianoRoll` threaded `clipId` through every
+          note command (`addNotes`, `editNotes`, `removeNotes`) but not through
+          the ruler's length handle, which dispatched `setClipLength` with no
+          clip at all. It now names the clip it is open on.
 
 
-          ```ts
-
-          // src/ui/PianoRoll.tsx:908
-
-          onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId,
-          lengthBeats: beats })}
-
-          ```
+          ## The mechanism, corrected 2026-09-07
 
 
-          `clipId` is optional on the command (`protocol.ts`), and
-          `ProjectStore.setClipLength` resolves `undefined` through
-          `getClipStore(trackId, undefined)`, which falls back to the track's
-          **active** clip. So editing the length of any clip that is not the
-          active one silently resizes a different clip - and the open clip
-          appears to "not save" because nothing changed on it.
+          The original guess here was "it resizes a *different* clip". It
+          cannot: `InstrumentEditor` always opens the roll on the active clip,
+          so there is no state where the roll shows one clip and the rail has
+          another selected.
 
 
-          **Fix:** pass `clipId`. Then decide whether `clipId` should stay
-          optional on the command at all: the agent tool
-          (`agent/tools/clips.ts`) always passes one, so the only caller relying
-          on the fallback is the buggy one. Making it required would have caught
-          this at the type level, which is the argument for doing it while here.
+          What actually happens is worse, because it is silent. The two sides
+          resolve a missing clip differently:
 
 
-          The coalesce key already includes the clip
-          (`setClipLength:${trackId}:${clipId ?? ""}`), so history grouping
-          follows the fix for free.
+          - `InstrumentEditor` opens `activeClipId ?? track.clips[0]`.
+
+          - `ProjectStore.getClipStore` resolves `clipId ?? activeClipId` and
+          stops, with no `clips[0]` fallback.
 
 
-          Wants a regression test: open a non-active clip, drag the handle,
-          assert the active clip's length is untouched.
+          So whenever `activeClipId` points at no clip in the pool, the roll is
+          editing clip A while the command resolves to `undefined`, and
+          `store?.setLength(...)` **does nothing without complaint**. The clip's
+          length appears not to save, which is exactly what was reported.
 
 
-          Related but separate: DAW-30 gives a clip's loop region a *start*,
-          which touches the same command.
+          Passing `clipId` makes that unreachable from the roll, since the
+          editor's clip is by construction one that exists.
+
+
+          **Left alone deliberately, and worth a decision later:** the two
+          fallbacks still disagree, and `setClipLength` still no-ops silently
+          for any other caller that omits the clip. Making `getClipStore` fall
+          back to `clips[0]` the way the editor does would close it, but it
+          changes behaviour for the MCP and agent tools, which pass an optional
+          clip on purpose ("defaults to the selected track / active clip"). Not
+          something to change inside a bug fix.
+
+
+          **Not doing:** making `clipId` required on the command. The ticket
+          previously argued for it on the grounds that the agent tool always
+          passes one. It does not - `agent/tools/clips.ts` and `mcpServer.ts`
+          both take an *optional* clip and lean on the active-clip default,
+          which is a documented affordance. Required would break it.
+
+
+          Covered by two tests in `test/clipEditing.test.ts`: that a named clip
+          is the one resized, and that an omitted clip with a dangling active id
+          changes nothing.
         id: 01a077a3-8170-732c-a66c-797a89d85d3d
         created_at: 2026-09-06T16:53:19.344Z
-        updated_at: 2026-09-06T16:53:19.344Z
+        updated_at: 2026-09-07T22:21:44.918Z
       - ref: DAW-8.13
         area: DAW
         title: "Bug: a clip-length drag lands several history entries instead of one"
@@ -4947,49 +5031,55 @@ projects:
         parent: DAW-8
         body: >-
           Raised 2026-09-06: "maintain undo on page reload would be useful." It
-          was built (DAW-7) - so this is a repair, not a feature.
+          was built (DAW-7), so this is a repair, not a feature.
 
 
-          **The wiring is all present.** `undo.json` has a schema
-          (`project/schema.ts`), a delta-encoded form (`PackedStack`, one base
-          snapshot + each checkpoint's command, `PERSIST_UNDO_DEPTH = 30`), a
-          writer and a reader on `ProjectRepository`, and both load paths call
-          them:
+          **Root cause found 2026-09-07, and it is none of the three candidates
+          this ticket previously guessed at.** The backend is fine,
+          `restoreCheckpoints` is fine, nothing re-initialises the log. The
+          problem is the write cadence: **`writeUndo` almost never runs.**
 
 
-          - `persistence.ts:41` - `restoreProject` layers `readUndo()` back on
-          via `editLog.restoreCheckpoints`.
-
-          - `projects/operations.ts:45` - the project-open path does the same,
-          and line 35 writes on close.
-
-          - `attachAutosave`'s keyframe writes `editLog.getCheckpoints()`
-          alongside the snapshot.
+          It is called from exactly one place in the autosave path, `keyframe()`
+          (`persistence.ts:69`), and `tick()` gates keyframes on:
 
 
-          **So the bug is in which path a hosted reload actually takes**, and
-          that is the first thing to find out. Candidates, cheapest first:
+          ```ts
+
+          const needKeyframe =
+            keyframeSeq < 0 || undoRedoPending || highWaterSeq(entries, notes) - keyframeSeq >= KEYFRAME_EDIT_INTERVAL;
+          ```
 
 
-          1. The remote/`ProjectRepository` backend does not persist `undo.json`
-          the way OPFS does, so `readUndo()` returns null on the server-backed
-          path.
-
-          2. Restore runs but `restoreCheckpoints` no-ops - e.g. the base
-          snapshot's schema version moved, or the packed steps fail to replay
-          through `applyEdit`.
-
-          3. Something re-initialises the log after restore, dropping the stacks
-          that were just layered on.
+          `KEYFRAME_EDIT_INTERVAL` is 100. So after the first-ever save every
+          ordinary edit takes the `appendEdits` branch, and `undo.json` is never
+          rewritten. `flush()` on pagehide (`persistence.ts:95`) deliberately
+          writes only the delta plus a meta touch, so closing the tab does not
+          help either.
 
 
-          Reproduce first: edit, reload, press undo, and log whether
-          `readUndo()` returned anything. A test that reloads a repository
-          round-trip and asserts one undo step survives is what stops it
-          regressing.
+          The file on disk therefore holds the stack as of the last keyframe,
+          which for a normal session is the very first save, when the stack was
+          empty. Reload restores that faithfully, and it contains nothing. The
+          machinery is not broken; it is being asked to persist a value that was
+          already stale.
+
+
+          **Fix:** add `writeUndo` to `flush()`, so a tab close or a background
+          carries the stack. Consider a slower idle cadence on top so a crash
+          keeps something, but note the cost before choosing one: `undo.json` is
+          a full `ProjectData` base snapshot plus up to 30 commands, so it is
+          the most expensive thing in the bundle and must not ride the 300ms
+          append debounce, especially over the network.
+
+
+          Wants the test the original ticket asked for: a repository round-trip
+          that edits, flushes, reloads, and asserts one undo step survives. That
+          is what stops the cadence regressing the next time the keyframe rules
+          are tuned.
         id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
         created_at: 2026-09-06T16:53:50.952Z
-        updated_at: 2026-09-06T16:53:50.952Z
+        updated_at: 2026-09-07T21:52:50.375Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing
@@ -10930,8 +11020,8 @@ projects:
         sort_path: "000017"
         body: >-
           Raised 2026-09-06 from a phone session: "cannot drag or place a clip
-          onto timeline in mobile mode." Confirmed - there is no route to it,
-          and two independent gaps are why.
+          onto timeline in mobile mode." Confirmed, and two independent gaps are
+          why.
 
 
           **1. Placement is HTML5 drag-and-drop, which touch never fires.**
@@ -10939,42 +11029,77 @@ projects:
           on `dragstart`; `arrangement/Lane.tsx` accepts it in `onDragOver` /
           `onDrop`. Mobile Safari and Chrome do not synthesise `dragstart` from
           a touch, so the chip's title ("drag onto the lane to place") describes
-          a gesture that cannot happen. The rest of the app already avoids this
-          - `pointerDrag.ts` is the Pointer Events helper every other draggable
-          thing uses - so the fix is to move clip placement onto the same
-          primitive rather than to add a touch shim beside the DnD path.
+          a gesture that cannot happen.
 
 
           **2. The empty-range route was designed but not built.** MOBILE-7
           settled that in the timeline you drag across empty lane space to
           define a range, and a kebab on it offers **Create clip** (and
-          **Paste**). That is still open (see MOBILE-7's comment of 2026-09-05),
-          and it is the other half of "place a clip here" on touch.
+          **Paste**).
 
 
-          Either one alone unblocks the user. They answer different intents, so
-          both are wanted eventually: (2) makes a *new* clip in a stated range,
-          (1) places an *existing* one from the rail.
+          ## Decided 2026-09-07: take the menu route, not drag-and-drop
 
 
-          **Do (1) as pointer-drag, and it repays desktop too.** DAW-29 notes
-          React Aria's `useDrag`/`useDrop` as a candidate for exactly this;
-          whether to take it here or hand-roll on `pointerDrag` is the decision
-          to make first. A hand-rolled version needs a drag preview and a drop
-          indicator, which HTML5 DnD gave for free - that is the real cost, and
-          the reason to weigh the library.
+          Rebuilding placement on pointer events is 1 to 2 days, because a
+          hand-rolled version owes a drag preview and a drop indicator that
+          HTML5 DnD gave for free. It is also not what this bug needs, because
+          **the placement machinery already works on touch. Only the trigger is
+          missing.**
 
 
-          Related: DAW-8.6 (library drag-and-drop) has the same shape and should
-          share whatever this grows.
+          - A no-move press on empty lane space already drops a paste marker at
+          that beat (`Lane.tsx` `onLaneDown`, the `!moved` branch, calling
+          `onMark`).
+
+          - Paste already places a clip at that marker
+          (`ArrangementTimeline.tsx`, `startBeat = marker.beat`).
+
+          - The beat maths, the `addPlacement` dispatch and the selection
+          follow-up are all pointer-driven already.
+
+
+          The only reason a phone cannot place a clip is that the trigger is
+          Cmd+V.
+
+
+          **So: tap the chip you want (which already selects it, and the rail
+          shows which is active), tap the lane, and get a menu at the marker
+          offering "Place <clip> here", "Paste", and "Create clip".** No arming
+          mode, no drag preview, no dependency. `Menu.tsx` exists, the marker
+          exists, the dispatch exists; the work is extracting `Lane.onDrop`'s
+          body into a `placeClipAt(startBeat)` (it is already cleanly separable)
+          and rendering a menu where the marker renders today. **Roughly half a
+          day, including MOBILE-7's Create clip item in the same menu.**
+
+
+          Rejected: tap-to-arm-then-tap-to-place. Same cost, but it adds an
+          invisible mode, and an armed state you cannot see produces placements
+          you did not mean.
+
+
+          **This is not a shim.** It is MOBILE-7's own design, so the work
+          counts either way, and real drag-and-drop later becomes an additive
+          desktop nicety rather than a prerequisite.
+
+
+          **What stays open:** DAW-8.6 (library drag-and-drop) still wants a
+          real DnD layer, and that is where the library-versus-hand-roll
+          decision (React Aria's `useDrag`/`useDrop`, noted in DAW-29) properly
+          belongs. It should not gate this fix.
+
+
+          Note that dragging an *existing* placement around already works on
+          touch, since `beginPlacementDrag` is pointer events. HTML5 DnD is
+          load-bearing only for placing from the rail.
         id: 01a077a4-3857-7435-9520-b9cae9f38dd6
         created_at: 2026-09-06T16:54:06.167Z
-        updated_at: 2026-09-06T16:54:06.167Z
+        updated_at: 2026-09-07T21:53:14.417Z
       - ref: MOBILE-18
         area: MOBILE
         title: "Bug: the drum roll misses the touch treatment - it still shows the
           toolbar and velocity lane"
-        status: to-do
+        status: review
         sort_path: "000018"
         body: >-
           Raised 2026-09-06: "drum loops still have velocity lane where they
@@ -11017,4 +11142,4 @@ projects:
           plus the inline row in the note's kebab, not a lane.
         id: 01a077a4-5bf3-757d-882d-44dd30d72a2a
         created_at: 2026-09-06T16:54:15.283Z
-        updated_at: 2026-09-06T16:54:15.283Z
+        updated_at: 2026-09-07T22:21:48.865Z
