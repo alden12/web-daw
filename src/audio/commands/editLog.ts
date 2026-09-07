@@ -52,6 +52,17 @@ export interface PackedStack {
 export interface UndoState {
   undo: PackedStack;
   redo: PackedStack;
+  /**
+   * The log's high-water seq when these stacks were written, so a reload can tell whether they
+   * still describe the history it just restored (DAW-8.15).
+   *
+   * **A stale stack is far worse than no stack**, because a checkpoint holds a whole-project
+   * snapshot rather than an inverse operation: undoing against one from earlier in the session
+   * does not undo the last edit, it throws the project back to that older state and drops
+   * everything since. An empty stack merely greys out undo. So the two are compared on load and a
+   * mismatch discards, which turns "silently lost my work" into "undo is unavailable".
+   */
+  headSeq: number;
 }
 
 const COALESCE_MS = 400;
@@ -287,18 +298,32 @@ export class EditLog {
     return this.entries;
   }
 
+  /** The highest seq this log has issued, or -1 when it has issued none. Stamped on the persisted
+   *  stacks so a later load can tell whether they still match this history. */
+  get headSeq(): number {
+    return this.seq - 1;
+  }
+
   /** The undo/redo stacks for persistence, bounded then delta-encoded (one base snapshot each). */
   getCheckpoints(): UndoState {
     return {
       undo: packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH)),
       redo: packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH)),
+      headSeq: this.headSeq,
     };
   }
 
-  /** Restore persisted undo/redo stacks (after restore()), rebuilding snapshots by replay. */
+  /**
+   * Restore persisted undo/redo stacks (after `restore()`), rebuilding snapshots by replay.
+   *
+   * **Restores only stacks that match the log we just restored** (see `UndoState.headSeq`). Call
+   * this after `restore()`, never before, or the comparison is against an empty log and every
+   * stack is discarded.
+   */
   restoreCheckpoints(state: UndoState | null): void {
-    this.undoStack = unpackUndo(state?.undo);
-    this.redoStack = unpackRedo(state?.redo);
+    const current = state && state.headSeq === this.headSeq ? state : null;
+    this.undoStack = unpackUndo(current?.undo);
+    this.redoStack = unpackRedo(current?.redo);
     this.emit();
   }
 

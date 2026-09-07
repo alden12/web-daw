@@ -58,7 +58,7 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
   const targetRepo = () => repo ?? getRepository();
   let appendTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Write the working snapshot as a keyframe + append the stream delta (edits + notes) + persist undo.
+  // Write the working snapshot as a keyframe + append the stream delta (edits + notes).
   // The keyframe is written FIRST so its snapshot already reflects any undo/redo - the appended entries
   // (<= headSeq) then only feed history, and a crash between the two can't resurrect an undone edit.
   const keyframe = async (active: ProjectRepository) => {
@@ -66,7 +66,6 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     const notes = editLog.getNotes();
     await active.writeKeyframe(project.snapshot(), highWaterSeq(entries, notes));
     await active.appendEdits(entries, notes);
-    await active.writeUndo(editLog.getCheckpoints());
   };
 
   const tick = async () => {
@@ -85,6 +84,21 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     // (edits + feed notes) - notes ride the delta now, so they persist without waiting for a keyframe.
     if (needKeyframe) await keyframe(active);
     else await active.appendEdits(entries, notes);
+    /**
+     * Undo rides every tick, NOT the keyframe (DAW-8.15). It used to be written only inside
+     * `keyframe()`, and keyframes need 100 edits - so after the first save `undo.json` was never
+     * rewritten, and a reload restored the stack as it stood at the first save. That is not a
+     * dormant undo button: a checkpoint holds a whole-project snapshot, so pressing undo threw the
+     * project back to that old state.
+     *
+     * It has to be here rather than in `flush()`, even though pagehide is when a stack is most
+     * likely to be lost. The unload payload is kept deliberately small because a big write there
+     * is not reliably delivered, and this is the largest thing in the bundle (a full ProjectData
+     * base plus up to 30 commands). Writing per tick instead means the stored stack trails the log
+     * by at most one debounce, and the `headSeq` guard makes even that safe: a stack that does not
+     * match the restored log is discarded rather than applied.
+     */
+    await active.writeUndo(editLog.getCheckpoints());
   };
 
   // Flush on page-hide: send whatever the debounce is still holding (an in-progress edit burst never
@@ -99,6 +113,12 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     if (!active) return;
     void active.appendEdits(editLog.getEntries(), editLog.getNotes());
     void active.touchMeta();
+    // Undo goes last, deliberately. It is the biggest write here and the one the browser is most
+    // likely to drop, and it must not crowd out the delta above, which carries actual work. Unlike
+    // the keyframe - left out of this payload because replay can rebuild it - a lost undo stack
+    // cannot be reconstructed, so it is worth attempting even at best-effort odds. If it does not
+    // land, `headSeq` sees the mismatch on the next load and discards rather than misapplies.
+    void active.writeUndo(editLog.getCheckpoints());
   };
 
   const schedule = () => {
