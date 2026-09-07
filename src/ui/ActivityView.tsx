@@ -163,7 +163,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   key={entry.seq}
                   className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2"
                   style={{ borderLeftColor: authorHex(entry.author, presence) }}
-                  title={saved ? "Saved in a version" : "Not saved in a version yet"}
+                  title={`${label(entry.author)} · ${saved ? "Saved in a version" : "Not saved in a version yet"}`}
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -176,7 +176,10 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   >
                     {editLog.describe(entry)}
                   </span>
-                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{label(entry.author)}</span>
+                  {/* Time rather than the author's name, because the row already says who twice in
+                      colour (the dot and the left border) and said when nowhere. The name moves to
+                      the title, which is what ClipRail does with the same pair. */}
+                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{timeAgo(entry.time, now)}</span>
                 </li>
               );
             })}

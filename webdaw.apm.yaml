@@ -5080,6 +5080,100 @@ projects:
         id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
         created_at: 2026-09-06T16:53:50.952Z
         updated_at: 2026-09-07T21:52:50.375Z
+      - ref: DAW-8.16
+        area: DAW
+        title: Revert to a point in the activity feed, not just to a version
+        status: to-do
+        sort_path: "000008.000016"
+        parent: DAW-8
+        body: >-
+          Asked 2026-09-07, after DAW-8.14 put "Revert to this version" on the
+          feed's commit markers: could an ordinary edit row offer the same
+          thing, so you can go back to a *moment* rather than to a version
+          someone remembered to name?
+
+
+          **Feasible, and cheaper than it looks, because the checkpoints are
+          already there.**
+
+
+          ## The expensive version, and why not to build it
+
+
+          Reverting exactly to seq N means reconstructing the project at N:
+          nearest keyframe, then replay forward through `applyEdit`. The
+          machinery exists (it is how the server rebuilds HEAD from a keyframe
+          plus a delta tail).
+
+
+          It breaks on **undo and redo**. Those entries are in the log but are
+          not forward-replayable - `persistence.ts` already knows this and
+          forces a fresh keyframe whenever a tail carries one. So exact revert
+          would be correct until the moment a session contains an undo, which is
+          most sessions, and wrong in a way nobody would notice until they
+          needed it.
+
+
+          ## The cheap version
+
+
+          `VersionStore` auto-checkpoints 4 seconds after editing stops
+          (`CHECKPOINT_DEBOUNCE_MS`), so the DAG already holds a near-continuous
+          history, and every `CommitSummary` carries `lastSeq`.
+
+
+          So "revert to here" on an edit row is: find the earliest commit whose
+          `lastSeq >= entry.seq`, and call the existing `revertTo` on it. No new
+          replay, no new storage, no new failure mode - it is the same call the
+          marker makes, with the commit chosen for you.
+
+
+          **It is accurate to within one burst of editing** (up to ~4s of edits,
+          whatever landed in that checkpoint). Worth saying in the UI rather
+          than hiding: "Revert to around here" is honest and still useful, where
+          a precise-looking control that is quietly approximate is not.
+
+
+          DAW-8.4's autosave markers were hidden from the feed in slice-114
+          because they were noise. They stay hidden here; they are the anchor,
+          not the affordance.
+
+
+          ## Edges
+
+
+          - **Edits newer than the last checkpoint have no target** for up to 4
+          seconds. Either disable the action until one lands, or commit first.
+          Disabling is simpler and self-healing.
+
+          - **Reuse the expand-then-confirm interaction** from the commit
+          marker. This is a much bigger hammer than undo, sitting in a dense
+          scrolling list, and a mis-tap should not throw away twenty minutes. It
+          is non-destructive (a revert records a new version rather than
+          erasing), which is the safety net, not the excuse.
+
+          - **A coalesced row is one gesture, not one moment.** A drag's entry
+          holds the *final* state of that drag and its `time` is the last
+          frame's, so "revert to this row" means after the whole gesture. Fine,
+          and worth a comment so nobody later tries to make it mean the first
+          frame.
+
+
+          ## Worth it?
+
+
+          Undo already covers "take back the last few things" linearly and
+          within the session. This covers "put it back to how it was before
+          lunch", which is the thing undo cannot do after a reload or 30 edits.
+          That is a real gap, and the implementation is small enough that it
+          does not need to earn much.
+
+
+          Roughly half a day. Depends on nothing; DAW-8.14 shipped the
+          interaction it should copy.
+        id: 01a07e11-9ca9-741a-acc5-ccca00e4f096
+        created_at: 2026-09-07T22:51:18.569Z
+        updated_at: 2026-09-07T22:51:18.569Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing
