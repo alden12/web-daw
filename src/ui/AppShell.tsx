@@ -16,7 +16,7 @@ import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
 import { Recorder } from "../audio/recording/recorder";
 import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
-import { attachAutosave } from "../audio/persistence";
+import { attachAutosave, attachUndoPersistence } from "../audio/persistence";
 import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operations";
 import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
 import {
@@ -223,6 +223,7 @@ export function AppShell() {
   useEffect(() => {
     let active = true;
     let disposePersistence = () => {};
+    let disposeUndo = () => {};
     let disposeCheckpoints = () => {};
     // Best-effort: keep the offline cache + write-queue from being evicted under storage pressure.
     void requestPersistentStorage();
@@ -285,6 +286,12 @@ export function AppShell() {
         } else {
           disposePersistence = attachAutosave(projectStore, editLog);
         }
+        // Both modes, deliberately (DAW-8.15). The project itself is saved by whichever branch ran
+        // above - autosave locally, the shared session when hosted - but the undo stacks belong to
+        // neither, and used to ride the local keyframe. That left a hosted session never writing
+        // them at all, so undo after a reload there was working from whatever a project switch last
+        // happened to leave behind.
+        disposeUndo = attachUndoPersistence(editLog);
         disposeCheckpoints = versionStore.attach();
       })
       .catch((error) => console.warn("[web-daw] project load failed:", error))
@@ -294,6 +301,7 @@ export function AppShell() {
     return () => {
       active = false;
       disposePersistence();
+      disposeUndo();
       disposeCheckpoints();
     };
   }, [projectStore, editLog, versionStore]);

@@ -43,7 +43,10 @@ test("an edit can be undone after a reload", async ({ page }) => {
 
   await renameTrack(page, "Zeta");
 
-  await page.waitForTimeout(500); // let the debounced save + undo persist flush
+  // Longer than UNDO_PERSIST_MS (1500), which is the slowest of the two debounces: the project
+  // saves on a 300ms tick, the undo stacks on an idle 1.5s so they do not put a full snapshot on
+  // the wire per burst. Reloading sooner is allowed to lose the stack, by design.
+  await page.waitForTimeout(1800);
   await page.reload();
   await dismissStart(page);
   await expect(arr(page).getByText("Zeta", { exact: true })).toBeVisible(); // persisted
@@ -65,7 +68,7 @@ test("undo after a reload takes back the LAST edit, not one from the first save"
   await page.waitForTimeout(400);
   await renameTrack(page, "Gamma");
 
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1800); // > UNDO_PERSIST_MS
   await page.reload();
   await dismissStart(page);
   await expect(arr(page).getByText("Gamma", { exact: true })).toBeVisible();
