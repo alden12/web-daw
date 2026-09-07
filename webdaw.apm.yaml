@@ -4552,8 +4552,8 @@ projects:
         sort_path: "000008.000004"
         parent: DAW-8
         body: >-
-          Audited against the code 2026-09-07. Three bullets had already
-          shipped, one is in review on slice-113, and two remain.
+          Audited against the code 2026-09-07. Four bullets shipped, one in
+          review on slice-113, one in review on slice-114, one left.
 
 
           ## Shipped (verified, no work left)
@@ -4574,23 +4574,22 @@ projects:
 
           - ~~**The clip chip's launch button sits off-centre when stopped**~~
           (raised 2026-09-06 on a phone) - **in review on slice-113.** The
-          button now centres with `inline-flex items-center justify-center` and
-          the optical nudge moved onto the `▶` glyph's own span, so the
-          left-weighted play arrow still reads as centred while the symmetric
-          `■` is no longer pushed off by a nudge that was never meant for it.
-          Left as a local fix rather than folded into DAW-29.3: the button
-          system is square (`w-6` upward, `rounded-md`) and this is a 16px
-          filled circle inside a chip, so adopting `IconButton` here would
-          change the rail's look rather than tidy it.
+          button centres with `inline-flex items-center justify-center` and the
+          optical nudge moved onto the `▶` glyph's own span. Left local rather
+          than folded into DAW-29.3: the button system is square from `w-6` up,
+          and this is a 16px filled circle inside a chip.
 
+          - ~~**Feed: committed vs uncommitted styling**~~ - **in review on
+          slice-114.** The separate "autosaved" marker is gone (only named
+          versions render as markers), and each edit row now carries the state
+          itself: `text-ink` when it is in a named version, `text-muted` when it
+          is not, with "Saved in a version" / "Not saved in a version yet" on
+          hover.
+
+            **Two changes of mind worth recording.** First, the comparison is against the latest **named** version, not the latest commit as this ticket originally proposed. An auto checkpoint lands 4s after you stop editing (`CHECKPOINT_DEBOUNCE_MS`), so counting those greys a row for four seconds and then never again: a distinction that flickers and answers a question nobody asked. Against named versions it marks exactly the edits the Save button would capture, which is the boundary `hasUnnamedChanges` already uses. Second, italics were dropped from the uncommitted state, because undo/redo rows already use them. Colour now means "is it in a version" and italics mean "was it an undo", so the two read independently instead of colliding.
 
           ## Still open
 
-
-          - **Feed: committed vs uncommitted styling** - drop the separate
-          "autosaved" marker (still rendered in `ActivityView.tsx`) and render
-          committed entries as normal text, uncommitted ones greyed/italic,
-          "saved" on hover (compare entry seq to the latest commit's `lastSeq`).
 
           - **Feed: group same-device edits** - collapse consecutive param edits
           on one instrument/effect into a single grouped row. Display-only;
@@ -4598,7 +4597,7 @@ projects:
           scoping in DAW-8.13.
         id: 019fae99-8a07-740b-a6f2-9395641daaec
         created_at: 2026-07-29T15:58:45.767Z
-        updated_at: 2026-09-07T22:22:00.687Z
+        updated_at: 2026-09-07T22:42:55.171Z
       - ref: DAW-8.5
         area: DAW
         title: Master gain and live level meter
@@ -4985,7 +4984,7 @@ projects:
       - ref: DAW-8.14
         area: DAW
         title: Commit markers in the Activity feed carry no time and no way back
-        status: to-do
+        status: review
         sort_path: "000008.000014"
         parent: DAW-8
         body: >-
@@ -4993,35 +4992,36 @@ projects:
           back to that point if possible."
 
 
-          **Both already exist - in the other tab.** `VersionTimeline` renders
-          `timeAgo(commit.time)` ("5m ago", refreshed on a 30s interval) and a
-          "Revert to this version" action calling `versionStore.revertTo`.
-          `ActivityView` merges commits into the feed by `seq` and renders none
-          of it: no timestamp on any row, and a commit marker is inert.
+          **Done on slice-114.** Both already existed in the Versions tab; this
+          is the feed reusing them rather than new machinery.
 
 
-          So this is not new machinery, it is the feed reusing what the Versions
-          tab has:
+          - **Time.** `timeAgo` and its 30s ticker moved out of
+          `VersionTimeline` into `ui/timeAgo.ts` (as `timeAgo` + a `useNow`
+          hook) and both tabs now share them. The feed had no times purely
+          because the code was not reachable from it.
+
+          - **Revert.** The marker is now a button that expands to offer "Revert
+          to this version", calling the same `versionStore.revertTo` the
+          Versions tab does. It expands rather than reverting on the press: a
+          marker is a thin row in a scrolling list, and a revert you triggered
+          by accident is the wrong thing to make easy. It records a new version
+          rather than detaching, so it is safe to offer inline.
 
 
-          - **Time on commit rows at least.** `CommitSummary.time` is already
-          loaded. Whether *edits* get times too is a separate question: log
-          entries are ordered by `seq`, and stamping every row makes a dense
-          feed noisier. A reasonable middle is a time on commit markers plus a
-          hover title on edits.
-
-          - **Revert from the marker.** Same call the Versions tab makes. It
-          records a new version rather than detaching (git-revert style, see
-          `history.ts`), so it is safe to offer inline.
+          **The "should the two tabs converge?" question is still open and
+          deliberately untouched.** The feed contains the named commits, so the
+          Versions tab is arguably a filtered view of it. Worth deciding before
+          either row grows again, but not inside a bug fix.
 
 
-          Consider whether the two tabs should converge instead: the feed
-          already contains commit markers, so the Versions tab is arguably a
-          filtered view of it. Not a call to make inside a bug fix, but worth
-          noting before building the same row twice.
+          Note the marker set changed with DAW-8.4's feed work in the same
+          slice: only **named** versions render as markers now. Autosave
+          checkpoints no longer do, and what they were there to say is carried
+          by the edit rows themselves.
         id: 01a077a3-daf4-7641-88fc-e55cd8dd690c
         created_at: 2026-09-06T16:53:42.260Z
-        updated_at: 2026-09-06T16:53:42.260Z
+        updated_at: 2026-09-07T22:42:41.800Z
       - ref: DAW-8.15
         area: DAW
         title: "Bug: undo does not survive a page reload, though the machinery says it
@@ -5080,6 +5080,100 @@ projects:
         id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
         created_at: 2026-09-06T16:53:50.952Z
         updated_at: 2026-09-07T21:52:50.375Z
+      - ref: DAW-8.16
+        area: DAW
+        title: Revert to a point in the activity feed, not just to a version
+        status: to-do
+        sort_path: "000008.000016"
+        parent: DAW-8
+        body: >-
+          Asked 2026-09-07, after DAW-8.14 put "Revert to this version" on the
+          feed's commit markers: could an ordinary edit row offer the same
+          thing, so you can go back to a *moment* rather than to a version
+          someone remembered to name?
+
+
+          **Feasible, and cheaper than it looks, because the checkpoints are
+          already there.**
+
+
+          ## The expensive version, and why not to build it
+
+
+          Reverting exactly to seq N means reconstructing the project at N:
+          nearest keyframe, then replay forward through `applyEdit`. The
+          machinery exists (it is how the server rebuilds HEAD from a keyframe
+          plus a delta tail).
+
+
+          It breaks on **undo and redo**. Those entries are in the log but are
+          not forward-replayable - `persistence.ts` already knows this and
+          forces a fresh keyframe whenever a tail carries one. So exact revert
+          would be correct until the moment a session contains an undo, which is
+          most sessions, and wrong in a way nobody would notice until they
+          needed it.
+
+
+          ## The cheap version
+
+
+          `VersionStore` auto-checkpoints 4 seconds after editing stops
+          (`CHECKPOINT_DEBOUNCE_MS`), so the DAG already holds a near-continuous
+          history, and every `CommitSummary` carries `lastSeq`.
+
+
+          So "revert to here" on an edit row is: find the earliest commit whose
+          `lastSeq >= entry.seq`, and call the existing `revertTo` on it. No new
+          replay, no new storage, no new failure mode - it is the same call the
+          marker makes, with the commit chosen for you.
+
+
+          **It is accurate to within one burst of editing** (up to ~4s of edits,
+          whatever landed in that checkpoint). Worth saying in the UI rather
+          than hiding: "Revert to around here" is honest and still useful, where
+          a precise-looking control that is quietly approximate is not.
+
+
+          DAW-8.4's autosave markers were hidden from the feed in slice-114
+          because they were noise. They stay hidden here; they are the anchor,
+          not the affordance.
+
+
+          ## Edges
+
+
+          - **Edits newer than the last checkpoint have no target** for up to 4
+          seconds. Either disable the action until one lands, or commit first.
+          Disabling is simpler and self-healing.
+
+          - **Reuse the expand-then-confirm interaction** from the commit
+          marker. This is a much bigger hammer than undo, sitting in a dense
+          scrolling list, and a mis-tap should not throw away twenty minutes. It
+          is non-destructive (a revert records a new version rather than
+          erasing), which is the safety net, not the excuse.
+
+          - **A coalesced row is one gesture, not one moment.** A drag's entry
+          holds the *final* state of that drag and its `time` is the last
+          frame's, so "revert to this row" means after the whole gesture. Fine,
+          and worth a comment so nobody later tries to make it mean the first
+          frame.
+
+
+          ## Worth it?
+
+
+          Undo already covers "take back the last few things" linearly and
+          within the session. This covers "put it back to how it was before
+          lunch", which is the thing undo cannot do after a reload or 30 edits.
+          That is a real gap, and the implementation is small enough that it
+          does not need to earn much.
+
+
+          Roughly half a day. Depends on nothing; DAW-8.14 shipped the
+          interaction it should copy.
+        id: 01a07e11-9ca9-741a-acc5-ccca00e4f096
+        created_at: 2026-09-07T22:51:18.569Z
+        updated_at: 2026-09-07T22:51:18.569Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing

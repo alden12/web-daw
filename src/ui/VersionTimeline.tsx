@@ -10,16 +10,7 @@ import type { EditLog, FeedNote } from "../audio/commands/editLog";
 import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { authorBorderStyle, authorDotStyle } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
-
-function timeAgo(ms: number, now: number): string {
-  const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 45) return "just now";
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
+import { timeAgo, useNow } from "./timeAgo";
 
 export function VersionTimeline({ versionStore, editLog }: { versionStore: VersionStore; editLog: EditLog }) {
   const presence = useAuthorPresence();
@@ -29,13 +20,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
   const [openId, setOpenId] = useState<string | null>(null);
   const [diff, setDiff] = useState<string[] | null>(null);
   const [notes, setNotes] = useState<FeedNote[] | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  // Keep relative times fresh without calling Date.now() during render.
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
   useEffect(() => {
     let alive = true;
