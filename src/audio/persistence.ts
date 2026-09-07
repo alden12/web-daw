@@ -84,21 +84,6 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     // (edits + feed notes) - notes ride the delta now, so they persist without waiting for a keyframe.
     if (needKeyframe) await keyframe(active);
     else await active.appendEdits(entries, notes);
-    /**
-     * Undo rides every tick, NOT the keyframe (DAW-8.15). It used to be written only inside
-     * `keyframe()`, and keyframes need 100 edits - so after the first save `undo.json` was never
-     * rewritten, and a reload restored the stack as it stood at the first save. That is not a
-     * dormant undo button: a checkpoint holds a whole-project snapshot, so pressing undo threw the
-     * project back to that old state.
-     *
-     * It has to be here rather than in `flush()`, even though pagehide is when a stack is most
-     * likely to be lost. The unload payload is kept deliberately small because a big write there
-     * is not reliably delivered, and this is the largest thing in the bundle (a full ProjectData
-     * base plus up to 30 commands). Writing per tick instead means the stored stack trails the log
-     * by at most one debounce, and the `headSeq` guard makes even that safe: a stack that does not
-     * match the restored log is discarded rather than applied.
-     */
-    await active.writeUndo(editLog.getCheckpoints());
   };
 
   // Flush on page-hide: send whatever the debounce is still holding (an in-progress edit burst never
@@ -113,12 +98,6 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     if (!active) return;
     void active.appendEdits(editLog.getEntries(), editLog.getNotes());
     void active.touchMeta();
-    // Undo goes last, deliberately. It is the biggest write here and the one the browser is most
-    // likely to drop, and it must not crowd out the delta above, which carries actual work. Unlike
-    // the keyframe - left out of this payload because replay can rebuild it - a lost undo stack
-    // cannot be reconstructed, so it is worth attempting even at best-effort odds. If it does not
-    // land, `headSeq` sees the mismatch on the next load and discards rather than misapplies.
-    void active.writeUndo(editLog.getCheckpoints());
   };
 
   const schedule = () => {
@@ -165,6 +144,75 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     if (appendTimer) clearTimeout(appendTimer);
     for (const unsub of trackUnsubs) unsub();
     unsubStructure();
+    unsubLog();
+    if (hasDom) {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+    }
+  };
+}
+
+/**
+ * Persist the undo/redo stacks, so undo survives a reload (DAW-8.15).
+ *
+ * **Its own attachment, because it is the one thing both persistence modes need.** Local projects
+ * are saved by `attachAutosave`; a hosted project is saved by the `SharedSession` instead, and
+ * `attachAutosave` is deliberately not attached there (the authority owns the log and the
+ * keyframes). Undo fell in the gap: it was written inside the autosave keyframe, so hosted
+ * sessions never wrote it at all, and local ones wrote it once per 100 edits. Both restored a
+ * stack from far in the past, and a checkpoint is a whole-project snapshot, so undoing against one
+ * threw the project back to that older state rather than taking back the last edit.
+ *
+ * **Idle-debounced rather than written per edit**, which is what lets it be correct AND cheap. The
+ * stacks are the largest thing in the bundle (a full `ProjectData` base plus up to 30 commands),
+ * so writing them on the 300ms append debounce would put ~50KB on the wire per editing burst. And
+ * a slow cadence costs nothing here, because `headSeq` only rejects a stack that trails the log:
+ * to lose undo you have to reload within a second and a half of your last edit, having spent that
+ * time neither editing nor pausing. What the guard cannot forgive is a cadence that never catches
+ * up when you stop, which is exactly what keyframing every 100 edits was.
+ */
+const UNDO_PERSIST_MS = 1500;
+
+export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository): () => void {
+  // Resolved per write, not captured: a project switch replaces the repository, and a captured one
+  // would write this project's stacks into the previous project's bundle.
+  const targetRepo = () => repo ?? getRepository();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const write = () => {
+    const active = targetRepo();
+    if (!active) return;
+    // Failures are the caller's business to notice, not this timer's to crash on: a stack that did
+    // not land is caught by `headSeq` on the next load and discarded rather than misapplied.
+    void active.writeUndo(editLog.getCheckpoints()).catch(() => {});
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(write, UNDO_PERSIST_MS);
+  };
+
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    write();
+  };
+
+  const unsubLog = editLog.subscribe(schedule);
+
+  // Page-hide is when a pending stack is most likely to be lost, so spend the debounce early there.
+  // Best-effort during unload, like the autosave flush beside it.
+  const onHide = () => {
+    if (document.visibilityState === "hidden") flush();
+  };
+  const hasDom = typeof document !== "undefined" && typeof window !== "undefined";
+  if (hasDom) {
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer);
     unsubLog();
     if (hasDom) {
       document.removeEventListener("visibilitychange", onHide);

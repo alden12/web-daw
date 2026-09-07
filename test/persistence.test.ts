@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
-import { attachAutosave, restoreProject } from "../src/audio/persistence";
+import { attachAutosave, attachUndoPersistence, restoreProject } from "../src/audio/persistence";
 import { ProjectRepository } from "../src/audio/projectRepository";
 import { MemoryBundleStore } from "../src/audio/bundleStore";
 import type { ProjectData } from "../src/audio/project/types";
@@ -342,11 +342,15 @@ describe("project + edit-log persistence", () => {
     const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
+    // Two attachments, as the shell does: the project is saved by one, the undo stacks by the
+    // other, because a hosted session replaces the first and still needs the second (DAW-8.15).
     const dispose = attachAutosave(project, log, repo);
+    const disposeUndo = attachUndoPersistence(log, repo);
 
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
     log.dispatch({ type: "setTempo", bpm: 132 });
     await vi.runAllTimersAsync(); // save project + log + undo state
+    disposeUndo();
     dispose();
     vi.useRealTimers();
 
@@ -367,6 +371,7 @@ describe("project + edit-log persistence", () => {
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     const dispose = attachAutosave(project, log, repo);
+    const disposeUndo = attachUndoPersistence(log, repo);
 
     // The reported bug needed edits on BOTH sides of a keyframe, which is why every earlier test
     // missed it: the first save always keyframes (`keyframeSeq < 0`), and that was the one branch
@@ -378,6 +383,7 @@ describe("project + edit-log persistence", () => {
     await vi.runAllTimersAsync();
     log.dispatch({ type: "setTempo", bpm: 132 });
     await vi.runAllTimersAsync();
+    disposeUndo();
     dispose();
     vi.useRealTimers();
 

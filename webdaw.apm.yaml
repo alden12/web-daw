@@ -8499,6 +8499,95 @@ projects:
         id: 01a07815-7e56-75f3-81f1-cf8f4f841309
         created_at: 2026-09-06T18:57:49.654Z
         updated_at: 2026-09-06T19:13:31.288Z
+      - ref: HOST-21
+        area: HOST
+        title: "Bug: hosted mode refetches the entire edit log on every edit"
+        status: to-do
+        sort_path: "000021"
+        body: >-
+          Spotted 2026-09-08 in the network tab of a local hosted session: **20
+          to 30 `GET /projects/default/edits?since=-1` per edit gesture, each
+          returning ~2000 entries.** On a project with 4400 edits that is tens
+          of megabytes of traffic for one note drag.
+
+
+          ## Cause
+
+
+          `VersionStore.history()` takes a `limit`, and in the remote branch
+          ignores it for the fetch:
+
+
+          ```ts
+
+          if (this.isRemote) {
+            const stream = await this.repo.readEditStream(-1);   // the WHOLE log, unbounded
+            ...
+            for (const marker of stream.filter(isMarker)) {
+              const entryCount = stream.filter(...).length;      // and O(markers x entries) over it
+            }
+            return summaries.reverse().slice(0, limit);          // the limit applies only to the result
+          }
+
+          ```
+
+
+          Remote history is derived from version markers in the log rather than
+          from a commit DAG, so it reads the log to find them. Nothing caches
+          it, and nothing bounds it.
+
+
+          ## Why it fires so often
+
+
+          `history()` is called from a subscription, not from a user action:
+
+
+          - `ActivityView` refetches on every `versionStore` emit.
+
+          - `VersionTimeline` refetches on every `versionStore` **and** every
+          `editLog` emit.
+
+
+          `editLog.emit()` fires per dispatch, and a note drag dispatches per
+          frame - which is where 20-30 identical full-log fetches for one
+          gesture comes from. DAW-8.13's gesture scoping will reduce the
+          dispatch count, but it is not the fix: one full-log fetch per edit is
+          already wrong.
+
+
+          ## Directions, cheapest first
+
+
+          1. **Ask the server for markers, not for the log.** The `edits` table
+          has a `kind` column; a `?kind=marker` filter (or a dedicated versions
+          route) turns a 2000-row response into a handful of rows and deletes
+          the client-side scan with it. This is the real fix.
+
+          2. **Bound the fetch.** `readEditStream(-1, N)` for some window,
+          accepting that very old versions fall off the list. Cheap, and wrong
+          at the edges.
+
+          3. **Cache and invalidate on marker arrival.** `onLogAdvanced()`
+          already fires when the authoritative log moves, so history could
+          refresh from there rather than from every edit-log emit. Worth doing
+          regardless of 1, since it also stops the *local* path re-deriving on
+          every keystroke.
+
+          4. **Debounce the subscribers.** Papers over it; do it only alongside
+          one of the above.
+
+
+          Also worth checking `entryCount`: it is an O(n) scan per marker over
+          the full stream, so even a cached fetch stays quadratic in markers.
+
+
+          Not caused by the activity-feed work in slice-114 (that added no
+          fetches), but it is most visible with the Activity panel open, which
+          is where that work lives.
+        id: 01a07e42-c77d-778c-b07b-d23fe39dddf8
+        created_at: 2026-09-07T23:45:00.797Z
+        updated_at: 2026-09-07T23:45:00.797Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
