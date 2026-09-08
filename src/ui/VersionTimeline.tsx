@@ -24,15 +24,20 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
 
   useEffect(() => {
     let alive = true;
-    const refresh = () => {
+    const refreshAll = () => {
       setHasUnnamedChanges(versionStore.getState().hasUnnamedChanges);
       void versionStore.history().then((commits) => {
         if (alive) setCommits(commits);
       });
     };
-    refresh();
-    const unsubV = versionStore.subscribe(refresh);
-    const unsubE = editLog.subscribe(refresh);
+    // An edit changes only the "unsaved changes" flag, and that read is synchronous. The commit list
+    // cannot change without the version store emitting, so re-reading it here as well meant a
+    // history walk on every frame of a drag - a full fetch of the authoritative log per frame, in
+    // remote mode (HOST-21).
+    const refreshUnnamed = () => setHasUnnamedChanges(versionStore.getState().hasUnnamedChanges);
+    refreshAll();
+    const unsubV = versionStore.subscribe(refreshAll);
+    const unsubE = editLog.subscribe(refreshUnnamed);
     return () => {
       alive = false;
       unsubV();

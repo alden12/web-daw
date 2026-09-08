@@ -443,11 +443,37 @@ describe("VersionStore (remote / server-authoritative history)", () => {
     expect(await vs.diff("0", "1")).toContain("Tempo 90 -> 140 BPM");
   });
 
-  it("notifies subscribers when the log advances", async () => {
+  it("notifies subscribers once per burst of log activity, not once per edit (HOST-21)", async () => {
     const { vs } = await remoteSetup([entry(0, track("t-0"))]);
     let fired = 0;
     vs.subscribe(() => (fired += 1));
-    await vs.onLogAdvanced();
+
+    // `SharedSession` calls this per confirmed edit, and a note drag confirms per frame. The refresh
+    // is trailing-debounced, so a burst costs one re-derivation at the end of it.
+    vi.useFakeTimers();
+    vs.onLogAdvanced();
+    vs.onLogAdvanced();
+    vs.onLogAdvanced();
+    expect(fired).toBe(0);
+    await vi.runAllTimersAsync();
     expect(fired).toBe(1);
+  });
+
+  it("re-derives history from the log it holds, and only asks for what came after it (HOST-21)", async () => {
+    const { vs, repo } = await remoteSetup([entry(0, track("t-0")), entry(1, commit("v1"))]);
+    const reads = vi.spyOn(repo, "readEditStream");
+
+    // Listing history used to refetch the whole log every time, from `history()` itself and again
+    // from the `onLogAdvanced` behind each emit. Two full responses of thousands of entries for a
+    // list of two versions.
+    expect(await vs.history()).toHaveLength(1);
+    expect(await vs.history()).toHaveLength(1);
+    expect(reads).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    vs.onLogAdvanced();
+    await vi.runAllTimersAsync();
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(reads).toHaveBeenLastCalledWith(1); // the seq we already hold, not -1
   });
 });

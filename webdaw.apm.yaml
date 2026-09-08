@@ -8603,7 +8603,7 @@ projects:
       - ref: HOST-21
         area: HOST
         title: "Bug: hosted mode refetches the entire edit log on every edit"
-        status: to-do
+        status: review
         sort_path: "000021"
         body: >-
           Spotted 2026-09-08 in the network tab of a local hosted session: **20
@@ -8688,7 +8688,7 @@ projects:
           is where that work lives.
         id: 01a07e42-c77d-778c-b07b-d23fe39dddf8
         created_at: 2026-09-07T23:45:00.797Z
-        updated_at: 2026-09-07T23:45:00.797Z
+        updated_at: 2026-09-08T16:22:19.699Z
       - ref: INST-1
         area: INST
         title: Built-in instruments
