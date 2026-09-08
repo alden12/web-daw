@@ -24,6 +24,13 @@ import { randomUuid } from "../randomUuid";
 const CHECKPOINT_DEBOUNCE_MS = 4000;
 
 /**
+ * Remote mode: how long to let the authoritative log settle before re-deriving history from it
+ * (HOST-21). Trailing, so a gesture of any length costs one refresh at the end of it rather than one
+ * per confirmed edit - a note drag confirms per frame.
+ */
+const REMOTE_REFRESH_DEBOUNCE_MS = 400;
+
+/**
  * Keyframe cadence: store a full snapshot at most every Nth commit; the commits
  * between are deltas that replay forward from it. Bounds both per-commit size and
  * the replay length needed to reconstruct any commit (see apm: "History and versioning").
@@ -37,6 +44,52 @@ const isMarker = (entry: EditEntry): boolean => MARKER_TYPES.has(entry.command.t
 /** A real, forward edit that counts toward a version's change tally (not a marker, not a feed note). */
 const isCountableEdit = (entry: EditEntry): boolean =>
   (entry.kind === undefined || entry.kind === "edit") && !MARKER_TYPES.has(entry.command.type);
+
+/**
+ * Derive the remote version list from the authoritative log: every `commit` / `loadSnapshot` marker
+ * is a version, and the countable edits between two markers are the later one's change tally.
+ * Oldest first, alongside the derived HEAD and whether anything countable trails the last marker.
+ *
+ * One pass over the log rather than a scan of it per marker, which was quadratic in a stream that
+ * routinely holds thousands of entries.
+ */
+function deriveRemoteHistory(stream: EditEntry[]): {
+  summaries: CommitSummary[];
+  headId: string | null;
+  hasUncommitted: boolean;
+} {
+  const summaries: CommitSummary[] = [];
+  let previousSeq = -1;
+  let countSinceMarker = 0;
+  for (const entry of stream) {
+    if (!isMarker(entry)) {
+      if (isCountableEdit(entry)) countSinceMarker++;
+      continue;
+    }
+    const parent = previousSeq >= 0 ? String(previousSeq) : null;
+    summaries.push({
+      id: String(entry.seq),
+      parent,
+      // Remote history is built from markers only, so a parent already *is* the previous named
+      // version; there are no auto checkpoints in the chain to skip over.
+      diffBase: parent,
+      author: entry.author,
+      message: (entry.command as { message?: string }).message ?? "Version",
+      time: entry.time,
+      auto: false,
+      entryCount: countSinceMarker,
+      noteCount: 0,
+      lastSeq: entry.seq,
+    });
+    previousSeq = entry.seq;
+    countSinceMarker = 0;
+  }
+  return {
+    summaries,
+    headId: previousSeq >= 0 ? String(previousSeq) : null,
+    hasUncommitted: countSinceMarker > 0,
+  };
+}
 
 /** The remote sink the remote-mode `VersionStore` authors commits through (a `SharedSession`). */
 export interface RemoteCommitSink {
@@ -110,6 +163,27 @@ export class VersionStore {
   /** Cached derived state for the synchronous `getState()` (recomputed by `onLogAdvanced`). */
   private remoteHeadId: string | null = null;
   private remoteHasUncommitted = false;
+  /**
+   * Our copy of the authoritative log in remote mode, oldest first, and the seq we hold it through.
+   *
+   * **Kept, not refetched** (HOST-21). Deriving history means scanning the log for version markers,
+   * and this used to pull the whole log per derivation - from `onLogAdvanced` on every confirmed
+   * edit, and again from each `history()` the resulting emit provoked. A note drag confirms per
+   * frame, so a single gesture cost dozens of full-log responses of thousands of entries each.
+   * The log is append-only, so holding it and asking only for `seq > remoteStreamThrough` is both
+   * correct and nearly free.
+   *
+   * It also outlives server-side compaction, which prunes old fine-grained edits and keeps the
+   * markers. Entries we already counted stay counted, so a version's `entryCount` no longer shrinks
+   * out from under it once the log behind it is pruned.
+   */
+  private remoteStream: EditEntry[] = [];
+  private remoteStreamThrough = -1;
+  private remoteSynced = false;
+  private remoteRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private remoteSyncInFlight: Promise<void> | null = null;
+  /** Bumped whenever the held log is dropped, so a read still in flight knows to discard itself. */
+  private remoteGeneration = 0;
 
   constructor(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository) {
     this.project = project;
@@ -125,19 +199,67 @@ export class VersionStore {
    *  log. Pass null to return to the local file-DAG. Seeds the derived state. Call on (re)connect. */
   setRemote(sink: RemoteCommitSink | null): void {
     this.remoteSink = sink;
-    if (sink) void this.onLogAdvanced();
+    this.resetRemoteStream();
+    if (sink) void this.refreshRemote();
   }
 
-  /** The authoritative log advanced (a confirmed edit/commit/revert): recompute derived HEAD +
-   *  uncommitted flags and notify listeners so the history UI re-reads. Wired to `SharedSession`. */
-  async onLogAdvanced(): Promise<void> {
+  /** Drop the held log (a different project, or a different backend, is a different log). */
+  private resetRemoteStream(): void {
+    this.remoteGeneration += 1; // orphan any read still in flight against the old log
+    this.remoteSyncInFlight = null;
+    this.remoteStream = [];
+    this.remoteStreamThrough = -1;
+    this.remoteSynced = false;
+  }
+
+  /**
+   * The authoritative log advanced (a confirmed edit/commit/revert). Wired to `SharedSession`, which
+   * fires it per confirmed edit, so it only *schedules* the refresh; see REMOTE_REFRESH_DEBOUNCE_MS.
+   */
+  onLogAdvanced(): void {
     if (!this.isRemote) return;
-    const stream = await this.repo.readEditStream(-1);
-    const markers = stream.filter(isMarker);
-    this.remoteHeadId = markers.length > 0 ? String(markers[markers.length - 1].seq) : null;
-    const lastMarkerSeq = markers.length > 0 ? markers[markers.length - 1].seq : -1;
-    this.remoteHasUncommitted = stream.some((entry) => entry.seq > lastMarkerSeq && isCountableEdit(entry));
+    if (this.remoteRefreshTimer) clearTimeout(this.remoteRefreshTimer);
+    this.remoteRefreshTimer = setTimeout(() => {
+      this.remoteRefreshTimer = null;
+      void this.refreshRemote();
+    }, REMOTE_REFRESH_DEBOUNCE_MS);
+  }
+
+  /** Pull whatever the log gained since we last looked, then re-derive the cached state from it. */
+  private async refreshRemote(): Promise<void> {
+    if (!this.isRemote) return;
+    await this.syncRemoteStream();
+    const derived = deriveRemoteHistory(this.remoteStream);
+    this.remoteHeadId = derived.headId;
+    this.remoteHasUncommitted = derived.hasUncommitted;
     this.emit();
+  }
+
+  /**
+   * Append the entries after the ones we hold. One bounded request, whatever the log's size.
+   *
+   * Coalesced, because `setRemote` starts a sync and the first `history()` can arrive while it is
+   * still in flight: two reads from the same `remoteStreamThrough` would append the same entries
+   * twice and double the version list. A sync that starts mid-burst can miss the newest entries,
+   * which is harmless - `onLogAdvanced` is trailing-debounced, so another refresh always follows.
+   */
+  private syncRemoteStream(): Promise<void> {
+    this.remoteSyncInFlight ??= this.pullRemoteStream();
+    return this.remoteSyncInFlight;
+  }
+
+  private async pullRemoteStream(): Promise<void> {
+    const generation = this.remoteGeneration;
+    try {
+      const fresh = await this.repo.readEditStream(this.remoteStreamThrough);
+      if (generation !== this.remoteGeneration) return; // a project switch overtook this read
+      this.remoteSynced = true;
+      if (fresh.length === 0) return;
+      this.remoteStream = this.remoteStream.concat(fresh);
+      this.remoteStreamThrough = fresh[fresh.length - 1].seq;
+    } finally {
+      if (generation === this.remoteGeneration) this.remoteSyncInFlight = null;
+    }
   }
 
   private get repo(): ProjectRepository {
@@ -147,7 +269,11 @@ export class VersionStore {
   /** Load refs + HEAD from the bundle. Call after the project is restored. */
   async load(): Promise<void> {
     // Remote mode derives history from the log (no refs.json); just (re)seed the cached derived state.
-    if (this.isRemote) return this.onLogAdvanced();
+    // Reloading is how a project switch arrives here, and the held log belongs to the old project.
+    if (this.isRemote) {
+      this.resetRemoteStream();
+      return this.refreshRemote();
+    }
     const refs = await this.repo.readRefs();
     if (refs) {
       this.refs = refs;
@@ -175,7 +301,12 @@ export class VersionStore {
    *  auto-checkpoint: commits are explicit user actions and the authority owns keyframes, so this is a
    *  no-op (the history UI refreshes via `onLogAdvanced`, driven by the sync session). */
   attach(): () => void {
-    if (this.isRemote) return () => {};
+    if (this.isRemote) {
+      return () => {
+        if (this.remoteRefreshTimer) clearTimeout(this.remoteRefreshTimer);
+        this.remoteRefreshTimer = null;
+      };
+    }
     const unsub = this.editLog.subscribe(() => this.schedule());
     return () => {
       unsub();
@@ -333,31 +464,10 @@ export class VersionStore {
     // Remote: scan the authoritative log for version markers, newest first. Each marker's authoritative
     // seq is its id; `entryCount` is the real edits between it and the previous marker.
     if (this.isRemote) {
-      const stream = await this.repo.readEditStream(-1);
-      const summaries: CommitSummary[] = [];
-      let previousSeq = -1;
-      for (const marker of stream.filter(isMarker)) {
-        const entryCount = stream.filter(
-          (entry) => entry.seq > previousSeq && entry.seq < marker.seq && isCountableEdit(entry),
-        ).length;
-        const parent = previousSeq >= 0 ? String(previousSeq) : null;
-        summaries.push({
-          id: String(marker.seq),
-          parent,
-          // Remote history is built from markers only, so a parent already *is* the previous
-          // named version; there are no auto checkpoints in the chain to skip over.
-          diffBase: parent,
-          author: marker.author,
-          message: (marker.command as { message?: string }).message ?? "Version",
-          time: marker.time,
-          auto: false,
-          entryCount,
-          noteCount: 0,
-          lastSeq: marker.seq,
-        });
-        previousSeq = marker.seq;
-      }
-      return summaries.reverse().slice(0, limit);
+      // Derived from the log we hold, not from a fresh fetch of it (HOST-21). Only the first call
+      // before any refresh has to go to the network.
+      if (!this.remoteSynced) await this.syncRemoteStream();
+      return deriveRemoteHistory(this.remoteStream).summaries.reverse().slice(0, limit);
     }
     const chain: Commit[] = [];
     let id = this.headId();
