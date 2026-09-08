@@ -9,14 +9,14 @@ projects:
       every edit is an authored event in one log, so history, versioning and an
       AI co-author fall out rather than being bolted on.
     next:
-      - DAW-8.12
-      - MOBILE-18
-      - DAW-8.4
-      - DAW-8.14
       - DAW-8.15
-      - MOBILE-17
-      - DAW-8.8
       - DAW-8.13
+      - MOBILE-17
+      - DAW-8.17
+      - DAW-8.16
+      - DAW-8.10
+      - HOST-16
+      - DAW-8.9
     id: 019fadff-8808-7358-b599-5f4175bd287f
     created_at: 2026-07-29T13:10:32.712Z
     updated_at: 2026-07-29T13:34:58.278Z
@@ -4548,12 +4548,12 @@ projects:
       - ref: DAW-8.4
         area: DAW
         title: Small UI polish batch
-        status: to-do
+        status: review
         sort_path: "000008.000004"
         parent: DAW-8
         body: >-
-          Audited against the code 2026-09-07. Four bullets shipped, one in
-          review on slice-113, one in review on slice-114, one left.
+          Audited against the code 2026-09-07. Every bullet is now either
+          shipped, in review, or moved somewhere it fits better.
 
 
           ## Shipped (verified, no work left)
@@ -4572,32 +4572,36 @@ projects:
           - ~~**Remove the instrument family chip**~~ - no `family` chip remains
           in the library views.
 
-          - ~~**The clip chip's launch button sits off-centre when stopped**~~
-          (raised 2026-09-06 on a phone) - **in review on slice-113.** The
-          button centres with `inline-flex items-center justify-center` and the
-          optical nudge moved onto the `▶` glyph's own span. Left local rather
-          than folded into DAW-29.3: the button system is square from `w-6` up,
-          and this is a 16px filled circle inside a chip.
 
-          - ~~**Feed: committed vs uncommitted styling**~~ - **in review on
-          slice-114.** The separate "autosaved" marker is gone (only named
-          versions render as markers), and each edit row now carries the state
-          itself: `text-ink` when it is in a named version, `text-muted` when it
-          is not, with "Saved in a version" / "Not saved in a version yet" on
-          hover.
+          ## In review
+
+
+          - ~~**The clip chip's launch button sits off-centre when stopped**~~
+          (raised 2026-09-06 on a phone) - **slice-113.** The button centres
+          with `inline-flex items-center justify-center` and the optical nudge
+          moved onto the `▶` glyph's own span. Left local rather than folded
+          into DAW-29.3: the button system is square from `w-6` up, and this is
+          a 16px filled circle inside a chip.
+
+          - ~~**Feed: committed vs uncommitted styling**~~ - **slice-114.** The
+          separate "autosaved" marker is gone (only named versions render as
+          markers), and each edit row carries the state itself: `text-ink` when
+          it is in a named version, `text-muted` when it is not, with the reason
+          on hover.
 
             **Two changes of mind worth recording.** First, the comparison is against the latest **named** version, not the latest commit as this ticket originally proposed. An auto checkpoint lands 4s after you stop editing (`CHECKPOINT_DEBOUNCE_MS`), so counting those greys a row for four seconds and then never again: a distinction that flickers and answers a question nobody asked. Against named versions it marks exactly the edits the Save button would capture, which is the boundary `hasUnnamedChanges` already uses. Second, italics were dropped from the uncommitted state, because undo/redo rows already use them. Colour now means "is it in a version" and italics mean "was it an undo", so the two read independently instead of colliding.
 
-          ## Still open
+          ## Moved
 
 
-          - **Feed: group same-device edits** - collapse consecutive param edits
-          on one instrument/effect into a single grouped row. Display-only;
-          distinct from edit coalescing, and distinct again from the gesture
-          scoping in DAW-8.13.
+          - **Feed: group same-device edits** -> **DAW-8.17**. Asked for again
+          on 2026-09-08 in a wider form (any run of related edits, not just
+          param edits on one device, and expandable to see the individual ones),
+          where it pairs with the feed's missing paging. It outgrew a bullet in
+          a polish batch.
         id: 019fae99-8a07-740b-a6f2-9395641daaec
         created_at: 2026-07-29T15:58:45.767Z
-        updated_at: 2026-09-07T22:42:55.171Z
+        updated_at: 2026-09-07T23:13:52.703Z
       - ref: DAW-8.5
         area: DAW
         title: Master gain and live level meter
@@ -4853,12 +4857,29 @@ projects:
         parent: DAW-8
         deps:
           - DAW-7
-        body: The feed already caps the rendered list at 100; for very long sessions,
-          **virtualize / paginate** the history (and consider truncating or
-          chunking the persisted log) so it stays smooth.
+          - DAW-8.17
+        body: >-
+          The feed renders at most 120 items (`ActivityView`'s `.slice(0, 120)`
+          after merging) and commits are capped at `history(200)`. For very long
+          sessions, **virtualize** the list and consider truncating or chunking
+          the persisted log.
+
+
+          **DAW-8.17 comes first and takes the cheap half.** Grouping
+          consecutive edits into one expandable row means the same window covers
+          far more history, and a "Show older" that raises the cap is an hour of
+          work against a day for virtualization. Once both have landed, what is
+          left here is the case grouping cannot fix: a feed with thousands of
+          *distinct* groups, where the cost is the DOM rather than the reading.
+
+
+          So this is deliberately not next. Revisit when the feed actually feels
+          slow, which grouping should push a long way out. The persisted-log
+          question (does `log.json` grow without bound?) is separate from
+          rendering and worth answering on its own terms.
         id: 019fae99-fe7f-73de-9cdc-3321e69e180a
         created_at: 2026-07-29T15:59:15.583Z
-        updated_at: 2026-07-29T16:00:37.748Z
+        updated_at: 2026-09-07T23:14:02.055Z
       - ref: DAW-8.12
         area: DAW
         title: "Bug: the clip-length handle edits the active clip, not the open one"
@@ -5026,7 +5047,7 @@ projects:
         area: DAW
         title: "Bug: undo does not survive a page reload, though the machinery says it
           should"
-        status: to-do
+        status: review
         sort_path: "000008.000015"
         parent: DAW-8
         body: >-
@@ -5058,28 +5079,119 @@ projects:
           help either.
 
 
-          The file on disk therefore holds the stack as of the last keyframe,
-          which for a normal session is the very first save, when the stack was
-          empty. Reload restores that faithfully, and it contains nothing. The
-          machinery is not broken; it is being asked to persist a value that was
-          already stale.
+          ## Confirmed on the deployed build, and it is not a no-op - it is a
+          rollback
 
 
-          **Fix:** add `writeUndo` to `flush()`, so a tab close or a background
-          carries the stack. Consider a slower idle cadence on top so a crash
-          keeps something, but note the cost before choosing one: `undo.json` is
-          a full `ProjectData` base snapshot plus up to 30 commands, so it is
-          the most expensive thing in the bundle and must not ride the 300ms
-          append debounce, especially over the network.
+          Reported 2026-09-07 from the hosted app: edit some notes, reload,
+          press undo, and the feed says **"Undid: Renamed project to Alden"** -
+          a rename from much earlier in the session, not the last edit.
 
 
-          Wants the test the original ticket asked for: a repository round-trip
-          that edits, flushes, reloads, and asserts one undo step survives. That
-          is what stops the cadence regressing the next time the keyframe rules
-          are tuned.
+          That is the smoking gun, and it says the restored stack is **stale
+          rather than empty**. `undo.json` still holds the stack as it stood at
+          the last keyframe, which for that session was around the rename. So
+          undo pops that old checkpoint and runs `project.load(cp.snap)` - and a
+          checkpoint's snapshot is the **whole project** as it was before that
+          command.
+
+
+          **So pressing undo after a reload does not fail to undo the last edit.
+          It throws the project back to an old snapshot**, discarding everything
+          done since. Recoverable (redo restores it, and the commit DAG has the
+          versions), but it is a data-shaped failure, not a dead button. Until
+          this is fixed, undo immediately after a reload is unsafe.
+
+
+          `undoRedoPending` then forces a keyframe, so the rolled-back state is
+          what gets persisted.
+
+
+          ## Why the test did not catch it
+
+
+          `e2e/undo-reload.e2e.ts` makes **one** edit and reloads. One edit
+          means `keyframeSeq < 0`, which is the one branch that always
+          keyframes, so `writeUndo` runs and undo works. The test only ever
+          exercises the case that was never broken.
+
+
+          The regression test therefore has to make **several** edits, or reload
+          twice, before asserting - otherwise it will keep passing through the
+          next version of this bug.
+
+
+          ## Where undo.json actually lives (asked 2026-09-08)
+
+
+          **Not a local file in a deployment.** It is an ordinary bundle entry,
+          so hosted it goes through `RemoteBundleStore` to `PUT
+          /projects/:id/files/undo.json`, is shape-checked server-side by
+          `validateBundleFile` against `undoStateSchema`, and lands as jsonb in
+          the `files` table keyed `(projectId, path)`. `CachedBundleStore` keeps
+          a local mirror for offline. OPFS-only mode is the sole case where it
+          is genuinely local.
+
+
+          So **cross-device undo is already architecturally available** and does
+          not need building - it is the same write-cadence bug stopping it, not
+          the storage location. Fixing the cadence gets it for free.
+
+
+          With one caveat worth stating rather than discovering: the stack is
+          per **project**, not per user, and its checkpoints are whole-project
+          snapshots. Two people (or two devices) editing the same project share
+          one stack, and `EditLog` already treats undo as local-best-effort in a
+          shared session (undo/redo deliberately do not forward to peers). The
+          `headSeq` stamp below resolves this cleanly by accident: a device
+          whose head has moved past the stored stack simply drops it, so
+          cross-device undo works when you are the only one editing and disables
+          itself when you are not.
+
+
+          ## Security
+
+
+          Writing `undo.json` needs write access to the project (`writeFile`
+          gates owner-or-member), the same authority as writing `project.json`,
+          so it grants nothing new. The server validates its shape with zod
+          before it reaches the DB, and `limitBody` caps the payload.
+
+
+          **The one real gap is on read.** `ProjectRepository.readUndo` does
+          `JSON.parse(raw) as UndoState` - a bare cast, no validation - and the
+          result is fed to `store.load(packed.base)` and replayed through
+          `applyEdit`. The schema already exists and is already wired to this
+          path for writes; the reader just never uses it. The hosted path is
+          covered by the server check, but the OPFS path and the cached mirror
+          are not, and "a project snapshot we are about to load" is exactly the
+          payload that should not be taken on trust. Cheap to close, and in
+          scope here.
+
+
+          ## Fix
+
+
+          1. Add `writeUndo` to `flush()`, so a tab close or a background
+          carries the stack. A slower idle cadence on top is worth considering
+          for crash safety, but note the cost first: `undo.json` is a full
+          `ProjectData` base snapshot plus up to 30 commands, the most expensive
+          thing in the bundle, so it must not ride the 300ms append debounce -
+          especially over the network.
+
+          2. Stamp `undo.json` with the head seq and drop the stack on load when
+          it does not match. **A stale stack is strictly worse than none**: an
+          empty one disables undo, a stale one offers a button that silently
+          rolls back. This guard alone would have turned the reported bug into a
+          harmless no-op, and it is what makes multi-device safe.
+
+          3. Validate on read with `undoStateSchema`, per the repo's
+          zod-at-the-boundary rule.
+
+          4. Rewrite the e2e to make several edits before reloading.
         id: 01a077a3-fce8-77fb-84d5-0ae0f35b7c86
         created_at: 2026-09-06T16:53:50.952Z
-        updated_at: 2026-09-07T21:52:50.375Z
+        updated_at: 2026-09-07T23:23:17.870Z
       - ref: DAW-8.16
         area: DAW
         title: Revert to a point in the activity feed, not just to a version
@@ -5174,6 +5286,139 @@ projects:
         id: 01a07e11-9ca9-741a-acc5-ccca00e4f096
         created_at: 2026-09-07T22:51:18.569Z
         updated_at: 2026-09-07T22:51:18.569Z
+      - ref: DAW-8.17
+        area: DAW
+        title: Group consecutive edits in the feed, and load older on demand
+        status: to-do
+        sort_path: "000008.000017"
+        parent: DAW-8
+        body: >-
+          Asked 2026-09-08: "if we edit 10 notes in a single clip in a row,
+          those should appear as a single entry which we could expand to see
+          each edit. That seems like it would capture the essence of what a user
+          thinks of as a single change."
+
+
+          Supersedes DAW-8.4's "group same-device edits" bullet, which asked for
+          the same thing but only for param edits on one device.
+
+
+          ## This is display grouping, and that is the whole point
+
+
+          Keep it distinct from the two things it will be confused with:
+
+
+          - **Coalescing** (`editLog`, the 400ms window, and DAW-8.13's gesture
+          scoping) merges edits into **one entry** and the individual edits stop
+          existing. It is a model change.
+
+          - **This** leaves the log untouched and renders consecutive related
+          entries as one **expandable** row.
+
+
+          The user asked to expand and see each edit, which settles it: the
+          entries must still be there. That also means the two compose rather
+          than compete - DAW-8.13 reduces how many entries a drag produces, and
+          this collapses what is left across gestures.
+
+
+          ## Grouping rule
+
+
+          A **coarser** key than `coalesceKey`: that one identifies an edit
+          *target* precisely (down to the exact note ids, so a changed selection
+          starts a new entry), which is right for coalescing and too fine here.
+          Ten separate note edits in one clip should group, and under
+          `coalesceKey` they each get their own key.
+
+
+          Declare it as a command-type -> key map, per the repo's dispatch
+          convention, e.g. `editNotes`/`addNotes`/`removeNotes` ->
+          `notes:<trackId>:<clipId>`, `setParam` -> `param:<trackId>:<paramId>`.
+          Commands with no entry in the map never group.
+
+
+          **A run breaks on all of:**
+
+
+          - a different key, or a different author (your edits must not fold
+          into Claude's)
+
+          - a commit marker between them (a version boundary is a real event,
+          and DAW-8.4's saved/unsaved styling could not render one state for a
+          half-saved group anyway)
+
+          - an undo or redo entry (a different `kind`, and a different thing to
+          say)
+
+          - a large time gap - ten notes over an hour is not one change. A
+          threshold in the low minutes, tuned by feel.
+
+
+          Write it as a pure `groupFeedItems(items) -> FeedGroup[]` so the rule
+          is unit-testable without a browser; the current merge already happens
+          in a `useMemo` in `ActivityView`.
+
+
+          ## The row
+
+
+          Collapsed: the group's summary plus a count ("Edited 10 notes on Track
+          2"), the newest time, and a disclosure. Expanded: the individual
+          entries with their own times. `describe.ts` gives per-command labels
+          already; a group needs a per-type *plural* label beside them rather
+          than "10 x <last entry's label>".
+
+
+          Reuse the disclosure pattern from the commit marker (slice-114) rather
+          than inventing a second one.
+
+
+          ## Paging, which this half-solves
+
+
+          The feed has **no paging at all** today: `ActivityView` does
+          `.slice(0, 120)` after merging, so older entries are simply
+          unreachable from the feed (they are still in the log, and commits are
+          still in the Versions tab).
+
+
+          Grouping is the cheap half of the fix - ten rows becoming one means
+          the same window covers far more history. Two consequences:
+
+
+          - the cap has to apply to **groups**, after merging, not to raw
+          entries before it;
+
+          - with grouping in, a hard cap plus a **"Show older"** that raises the
+          window is enough. That is an hour of work and honest about what it
+          does, where virtualization is a day and only pays once rows are in the
+          thousands.
+
+
+          So this ticket takes grouping + "Show older", and DAW-8.11 keeps true
+          virtualization and persisted-log truncation for when the feed actually
+          feels slow. Grouping should reduce how soon that is.
+
+
+          ## Interactions
+
+
+          - **DAW-8.16** (revert to a point in the feed): a group's revert
+          target is its newest entry. Worth doing after this, so the action
+          lands on a row that means "this change" rather than "this frame of a
+          drag".
+
+          - **DAW-8.4** saved/unsaved styling: falls out, since a group never
+          straddles a commit.
+
+
+          Roughly a day: the grouping function and its tests, the expandable
+          row, and "Show older".
+        id: 01a07e25-e5e5-72dc-922f-ee5bd2d07f41
+        created_at: 2026-09-07T23:13:28.037Z
+        updated_at: 2026-09-07T23:13:28.037Z
       - ref: DAW-9
         area: DAW
         title: Group/track selection + group-FX editing
@@ -6745,6 +6990,107 @@ projects:
         id: 01a06ecd-b049-7317-8dac-f7377ec56b04
         created_at: 2026-09-04T23:42:48.905Z
         updated_at: 2026-09-05T00:09:38.049Z
+      - ref: DAW-34
+        area: DAW
+        title: Persist undo without a snapshot, so the depth can go past ~100
+        status: to-do
+        sort_path: "000034"
+        body: >
+          Two ceilings currently cap undo depth at `MAX_DEPTH = 100`, and both
+          come from checkpoints being
+
+          whole-project snapshots rather than invertible operations.
+
+
+          **In memory.** An undo checkpoint holds a full `ProjectData` copy,
+          which is exactly what makes undo
+
+          instant. 100 of them is ~8MB for a mid-size project (measured
+          79KB/snapshot at 8 tracks + 512
+
+          notes); a 500-deep stack would be ~40MB for that project and worse for
+          a real one. So the depth is
+
+          bounded by RAM, not by policy.
+
+
+          **On disk.** `undo.json` is delta-encoded (one base snapshot per stack
+          + a command per checkpoint),
+
+          so the steps are cheap but the two base snapshots are not, and they
+          scale with the project rather
+
+          than with the depth. `PERSIST_UNDO_MAX_BYTES` (2MB) now trims redo and
+          then gives up rather than
+
+          writing a file the server's 8MB JSON cap would reject, which is honest
+          but means a big enough
+
+          project gets no undo across a reload.
+
+
+          **The fix both ceilings want is the same one the project document
+          already uses: keyframe + replay.**
+
+          Store the base as an anchor rather than a snapshot, and rebuild it by
+          replaying the edit log forward
+
+          from the nearest keyframe. `ProjectRepository.load` already does
+          exactly this for `project.json`.
+
+          The file then holds only commands and is tiny, and the in-memory stack
+          can hold anchors + commands
+
+          with a small snapshot cache for the top few, which is what lifts the
+          RAM ceiling.
+
+
+          **The blocker is anchoring, and it is the same trap DAW-8.15 fell
+          into.** The natural anchor is a
+
+          `seq`, but the client's edit-log counter and the authority's are
+          different numbering spaces: a
+
+          coalesced gesture is one client entry and many forwarded edits at the
+          server, so a client-side seq
+
+          does not address a position in the log that comes back on reload.
+          Worse, the server's log is
+
+          fine-grained, so reconstructing checkpoint *boundaries* from it would
+          give one undo step per drag
+
+          frame instead of one per gesture. Any design here has to carry gesture
+          boundaries explicitly (mark
+
+          the first forwarded edit of a gesture, or have the authority coalesce
+          on the same rule as the
+
+          client) before a replay-based anchor is usable.
+
+
+          Worth doing alongside HOST-21, which needs the server to serve bounded
+          slices of the log rather than
+
+          the whole thing, and which would supply the same log-addressing the
+          anchor needs.
+        id: 01a07e69-c501-7593-89fc-4b3736d3a6d0
+        created_at: 2026-09-08T00:27:36.065Z
+        updated_at: 2026-09-08T00:27:36.065Z
+        comments:
+          - body: "The wider version of this, raised by Alden: make undo *granular* by
+              giving each command an inverse, instead of anchoring snapshots at
+              all. Capturing an edit's old value is tiny next to a whole
+              `ProjectData`, so the log entry the feed already stores becomes
+              enough to undo by itself. That converges three tickets on one
+              mechanism: undo (this), DAW-8.16 revert-to-a-point, and DAW-8.17
+              feed grouping, which needs the same gesture boundaries. Cost is an
+              `invert()` per command type across the ~40 in the union, plus
+              boundaries on the server log. A slice, not a patch."
+            audience: user
+            id: 01a07e6c-6a96-767e-bbb8-8b5d53dd645b
+            at: 2026-09-08T00:30:29.526Z
+            actor: claude
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -8254,6 +8600,95 @@ projects:
         id: 01a07815-7e56-75f3-81f1-cf8f4f841309
         created_at: 2026-09-06T18:57:49.654Z
         updated_at: 2026-09-06T19:13:31.288Z
+      - ref: HOST-21
+        area: HOST
+        title: "Bug: hosted mode refetches the entire edit log on every edit"
+        status: to-do
+        sort_path: "000021"
+        body: >-
+          Spotted 2026-09-08 in the network tab of a local hosted session: **20
+          to 30 `GET /projects/default/edits?since=-1` per edit gesture, each
+          returning ~2000 entries.** On a project with 4400 edits that is tens
+          of megabytes of traffic for one note drag.
+
+
+          ## Cause
+
+
+          `VersionStore.history()` takes a `limit`, and in the remote branch
+          ignores it for the fetch:
+
+
+          ```ts
+
+          if (this.isRemote) {
+            const stream = await this.repo.readEditStream(-1);   // the WHOLE log, unbounded
+            ...
+            for (const marker of stream.filter(isMarker)) {
+              const entryCount = stream.filter(...).length;      // and O(markers x entries) over it
+            }
+            return summaries.reverse().slice(0, limit);          // the limit applies only to the result
+          }
+
+          ```
+
+
+          Remote history is derived from version markers in the log rather than
+          from a commit DAG, so it reads the log to find them. Nothing caches
+          it, and nothing bounds it.
+
+
+          ## Why it fires so often
+
+
+          `history()` is called from a subscription, not from a user action:
+
+
+          - `ActivityView` refetches on every `versionStore` emit.
+
+          - `VersionTimeline` refetches on every `versionStore` **and** every
+          `editLog` emit.
+
+
+          `editLog.emit()` fires per dispatch, and a note drag dispatches per
+          frame - which is where 20-30 identical full-log fetches for one
+          gesture comes from. DAW-8.13's gesture scoping will reduce the
+          dispatch count, but it is not the fix: one full-log fetch per edit is
+          already wrong.
+
+
+          ## Directions, cheapest first
+
+
+          1. **Ask the server for markers, not for the log.** The `edits` table
+          has a `kind` column; a `?kind=marker` filter (or a dedicated versions
+          route) turns a 2000-row response into a handful of rows and deletes
+          the client-side scan with it. This is the real fix.
+
+          2. **Bound the fetch.** `readEditStream(-1, N)` for some window,
+          accepting that very old versions fall off the list. Cheap, and wrong
+          at the edges.
+
+          3. **Cache and invalidate on marker arrival.** `onLogAdvanced()`
+          already fires when the authoritative log moves, so history could
+          refresh from there rather than from every edit-log emit. Worth doing
+          regardless of 1, since it also stops the *local* path re-deriving on
+          every keystroke.
+
+          4. **Debounce the subscribers.** Papers over it; do it only alongside
+          one of the above.
+
+
+          Also worth checking `entryCount`: it is an O(n) scan per marker over
+          the full stream, so even a cached fetch stays quadratic in markers.
+
+
+          Not caused by the activity-feed work in slice-114 (that added no
+          fetches), but it is most visible with the Activity panel open, which
+          is where that work lives.
+        id: 01a07e42-c77d-778c-b07b-d23fe39dddf8
+        created_at: 2026-09-07T23:45:00.797Z
+        updated_at: 2026-09-07T23:45:00.797Z
       - ref: INST-1
         area: INST
         title: Built-in instruments

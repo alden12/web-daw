@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
-import { attachAutosave, restoreProject } from "../src/audio/persistence";
+import { attachAutosave, attachUndoPersistence, restoreProject } from "../src/audio/persistence";
 import { ProjectRepository } from "../src/audio/projectRepository";
 import { MemoryBundleStore } from "../src/audio/bundleStore";
 import type { ProjectData } from "../src/audio/project/types";
@@ -342,11 +342,15 @@ describe("project + edit-log persistence", () => {
     const repo = new ProjectRepository(new MemoryBundleStore());
     const project = new ProjectStore(false);
     const log = new EditLog(project);
+    // Two attachments, as the shell does: the project is saved by one, the undo stacks by the
+    // other, because a hosted session replaces the first and still needs the second (DAW-8.15).
     const dispose = attachAutosave(project, log, repo);
+    const disposeUndo = attachUndoPersistence(log, repo);
 
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
     log.dispatch({ type: "setTempo", bpm: 132 });
     await vi.runAllTimersAsync(); // save project + log + undo state
+    disposeUndo();
     dispose();
     vi.useRealTimers();
 
@@ -359,6 +363,141 @@ describe("project + edit-log persistence", () => {
     expect(project2.tempo).toBe(132);
     log2.undo();
     expect(project2.tempo).toBe(120); // back to before the tempo edit
+  });
+
+  it("keeps the persisted stack current after the first keyframe, not frozen at it (DAW-8.15)", async () => {
+    vi.useFakeTimers();
+    const repo = new ProjectRepository(new MemoryBundleStore());
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+    const disposeUndo = attachUndoPersistence(log, repo);
+
+    // The reported bug needed edits on BOTH sides of a keyframe, which is why every earlier test
+    // missed it: the first save always keyframes (`keyframeSeq < 0`), and that was the one branch
+    // that wrote undo.json. A test that makes one edit and reloads only ever exercises it.
+    log.dispatch({ type: "renameProject", name: "Alden" });
+    await vi.runAllTimersAsync();
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    await vi.runAllTimersAsync();
+    log.dispatch({ type: "setTempo", bpm: 132 });
+    await vi.runAllTimersAsync();
+    disposeUndo();
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, repo);
+
+    expect(log2.getState().canUndo).toBe(true);
+    log2.undo();
+
+    // Undo takes back the LAST edit. Before the fix the stored stack was still the one from the
+    // first save, so this reverted to the project as it stood then: the tempo change AND the track
+    // gone, and the rename undone instead. A checkpoint is a whole-project snapshot, so a stale
+    // stack does not undo the wrong edit - it discards everything since.
+    expect(project2.tempo).toBe(120);
+    expect(project2.name).toBe("Alden");
+    expect(project2.getTracks()).toHaveLength(1);
+  });
+
+  it("discards a persisted stack that no longer matches the project it is loaded beside (DAW-8.15)", async () => {
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    log.dispatch({ type: "renameProject", name: "Alden" });
+    log.dispatch({ type: "setTempo", bpm: 132 });
+    const stale = log.getCheckpoints();
+
+    // The log moves on without the stack being rewritten, which is exactly the state a dropped
+    // write leaves behind.
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+
+    const project2 = new ProjectStore(false);
+    project2.load(project.snapshot());
+    const log2 = new EditLog(project2);
+    log2.restore(log.getEntries(), log.getNotes());
+    log2.restoreCheckpoints(stale);
+
+    // Undo is unavailable rather than wrong. Applying `stale` would have loaded the snapshot from
+    // before the tempo edit, silently taking the new track with it.
+    expect(log2.getState().canUndo).toBe(false);
+    expect(project2.getTracks()).toHaveLength(1);
+  });
+
+  it("keeps a persisted stack when the log's seqs drifted but the project state matches (DAW-8.15)", () => {
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    log.dispatch({ type: "renameProject", name: "Alden" });
+    log.dispatch({ type: "setTempo", bpm: 132 });
+    const packed = log.getCheckpoints();
+
+    // A hosted session numbers the same history differently from the client that authored it: a
+    // coalesced gesture is one local entry but many forwarded edits at the authority, so the log
+    // reloaded over HTTP runs ahead of the counter the stack was written beside. Stamping the seq
+    // made undo permanently unavailable in a shared session; the project state does not drift.
+    const renumbered = log.getEntries().map((entry, index) => ({ ...entry, seq: index * 7 + 100 }));
+
+    const project2 = new ProjectStore(false);
+    project2.load(project.snapshot());
+    const log2 = new EditLog(project2);
+    log2.restore(renumbered, log.getNotes());
+    log2.restoreCheckpoints(packed);
+
+    expect(log2.getState().canUndo).toBe(true);
+    log2.undo();
+    expect(project2.tempo).toBe(120);
+    expect(project2.name).toBe("Alden");
+  });
+
+  it("gives up on persisting undo rather than writing a file too big to land (DAW-8.15)", () => {
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    expect(log.getCheckpoints().undo.base).toBeTruthy();
+
+    // A project whose snapshot alone is past the budget. Nothing we can trim brings it under, so the
+    // choice is an unwritable file (rejected by the server's JSON cap, undo silently gone) or an
+    // honest empty stack. The state stamp still goes out, so the load path takes the empty one.
+    const notes = Array.from({ length: 40_000 }, (_note, index) => ({
+      id: `n-${index}`,
+      pitch: 60,
+      start: index * 0.25,
+      length: 0.25,
+      velocity: 0.8,
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    log.dispatch({
+      type: "addNoteClip",
+      trackId: "t-1",
+      id: "c-1",
+      placementId: "p-1",
+      notes,
+      lengthBeats: 10_000,
+      startBeat: 0,
+    });
+    log.dispatch({ type: "setTempo", bpm: 132 });
+
+    const packed = log.getCheckpoints();
+    expect(packed.undo.base).toBeNull();
+    expect(packed.redo.base).toBeNull();
+    expect(packed.state).toBeTruthy();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("treats an unreadable or out-of-shape undo.json as absent (DAW-8.15)", async () => {
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+
+    await store.writeText("undo.json", "{ not json at all");
+    expect(await repo.readUndo()).toBeNull();
+
+    // Right shape for an older build, wrong shape for this one: no state stamp, so it cannot be
+    // verified against the project and is not worth trusting with a `project.load`.
+    await store.writeText("undo.json", JSON.stringify({ undo: { base: null, steps: [] }, redo: null }));
+    expect(await repo.readUndo()).toBeNull();
   });
 
   it("delta-encoded undo/redo reproduces exact states through a reload", () => {
@@ -388,6 +527,10 @@ describe("project + edit-log persistence", () => {
     const project2 = new ProjectStore(false);
     project2.load(src.project.snapshot()); // working state, as project.json would carry it
     const log2 = new EditLog(project2);
+    // In the same order the real load paths use: the project and log first, then the stacks layered
+    // on. The order matters now that a stack is only accepted when its stamp matches the loaded
+    // project state (DAW-8.15); layering it on an empty project would compare against nothing.
+    log2.restore(src.log.getEntries(), src.log.getNotes());
     log2.restoreCheckpoints(packed);
 
     expect(project2.snapshot()).toEqual(ref.project.snapshot());

@@ -58,7 +58,7 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
   const targetRepo = () => repo ?? getRepository();
   let appendTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Write the working snapshot as a keyframe + append the stream delta (edits + notes) + persist undo.
+  // Write the working snapshot as a keyframe + append the stream delta (edits + notes).
   // The keyframe is written FIRST so its snapshot already reflects any undo/redo - the appended entries
   // (<= headSeq) then only feed history, and a crash between the two can't resurrect an undone edit.
   const keyframe = async (active: ProjectRepository) => {
@@ -66,7 +66,6 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     const notes = editLog.getNotes();
     await active.writeKeyframe(project.snapshot(), highWaterSeq(entries, notes));
     await active.appendEdits(entries, notes);
-    await active.writeUndo(editLog.getCheckpoints());
   };
 
   const tick = async () => {
@@ -145,6 +144,75 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     if (appendTimer) clearTimeout(appendTimer);
     for (const unsub of trackUnsubs) unsub();
     unsubStructure();
+    unsubLog();
+    if (hasDom) {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+    }
+  };
+}
+
+/**
+ * Persist the undo/redo stacks, so undo survives a reload (DAW-8.15).
+ *
+ * **Its own attachment, because it is the one thing both persistence modes need.** Local projects
+ * are saved by `attachAutosave`; a hosted project is saved by the `SharedSession` instead, and
+ * `attachAutosave` is deliberately not attached there (the authority owns the log and the
+ * keyframes). Undo fell in the gap: it was written inside the autosave keyframe, so hosted
+ * sessions never wrote it at all, and local ones wrote it once per 100 edits. Both restored a
+ * stack from far in the past, and a checkpoint is a whole-project snapshot, so undoing against one
+ * threw the project back to that older state rather than taking back the last edit.
+ *
+ * **Idle-debounced rather than written per edit**, which is what lets it be correct AND cheap. The
+ * stacks are the largest thing in the bundle (a full `ProjectData` base plus up to 30 commands),
+ * so writing them on the 300ms append debounce would put ~50KB on the wire per editing burst. And
+ * a slow cadence costs nothing here, because the stack's state stamp only rejects a stack that
+ * trails the project: to lose undo you have to reload within a second and a half of your last edit,
+ * having spent that time neither editing nor pausing. What the guard cannot forgive is a cadence
+ * that never catches up when you stop, which is exactly what keyframing every 100 edits was.
+ */
+const UNDO_PERSIST_MS = 1500;
+
+export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository): () => void {
+  // Resolved per write, not captured: a project switch replaces the repository, and a captured one
+  // would write this project's stacks into the previous project's bundle.
+  const targetRepo = () => repo ?? getRepository();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const write = () => {
+    const active = targetRepo();
+    if (!active) return;
+    // Failures are the caller's business to notice, not this timer's to crash on: a stack that did
+    // not land is caught by its state stamp on the next load and discarded rather than misapplied.
+    void active.writeUndo(editLog.getCheckpoints()).catch(() => {});
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(write, UNDO_PERSIST_MS);
+  };
+
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    write();
+  };
+
+  const unsubLog = editLog.subscribe(schedule);
+
+  // Page-hide is when a pending stack is most likely to be lost, so spend the debounce early there.
+  // Best-effort during unload, like the autosave flush beside it.
+  const onHide = () => {
+    if (document.visibilityState === "hidden") flush();
+  };
+  const hasDom = typeof document !== "undefined" && typeof window !== "undefined";
+  if (hasDom) {
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer);
     unsubLog();
     if (hasDom) {
       document.removeEventListener("visibilitychange", onHide);

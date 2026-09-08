@@ -13,6 +13,7 @@
  * In-memory for this slice; persisting the log is the next step (the entry type
  * is serializable by construction).
  */
+import { fingerprintProject } from "../project/fingerprint";
 import { ProjectStore } from "../project/projectStore";
 import type { ProjectData } from "../project/types";
 import { applyEdit } from "./applyEdit";
@@ -52,12 +53,49 @@ export interface PackedStack {
 export interface UndoState {
   undo: PackedStack;
   redo: PackedStack;
+  /**
+   * A fingerprint of the project state these stacks were captured against, so a reload can tell
+   * whether they still apply to the project it just restored (DAW-8.15).
+   *
+   * **A stale stack is far worse than no stack**, because a checkpoint holds a whole-project
+   * snapshot rather than an inverse operation: undoing against one from earlier in the session
+   * does not undo the last edit, it throws the project back to that older state and drops
+   * everything since. An empty stack merely greys out undo. So the two are compared on load and a
+   * mismatch discards, which turns "silently lost my work" into "undo is unavailable".
+   *
+   * The state, not the log's high-water `seq`, because the two edit-log counters in a hosted
+   * session are different numbering spaces: a coalesced gesture is one local entry but many
+   * forwarded edits at the authority, so the client's counter runs permanently behind the log it
+   * reloads. See `fingerprintProject`.
+   */
+  state: string;
 }
 
 const COALESCE_MS = 400;
+/**
+ * How many checkpoints each in-memory stack holds. **This is the expensive one**: an in-memory
+ * checkpoint is a full `ProjectData` snapshot (that is what makes undo instant), so the ceiling is
+ * roughly this many copies of the project in RAM. Deeper history is what the version timeline is
+ * for; undo is the recent-gesture buffer.
+ */
 const MAX_DEPTH = 100;
-/** How many checkpoints to persist per stack (delta-encoded: one base snapshot + commands). */
-const PERSIST_UNDO_DEPTH = 30;
+/**
+ * How many checkpoints to persist per stack. Matched to `MAX_DEPTH` deliberately: persisting fewer
+ * than we hold silently shortened undo across a reload (30 of your 100 steps), and the persisted
+ * form is delta-encoded to one base snapshot plus a command each, so the extra steps are cheap.
+ * `PERSIST_UNDO_MAX_BYTES` is what actually bounds the file.
+ */
+const PERSIST_UNDO_DEPTH = MAX_DEPTH;
+/**
+ * Byte budget for `undo.json`. The steps are small; the two base snapshots are not, and they scale
+ * with the project rather than with anything we cap here - so a big enough project would push the
+ * file past the server's 8MB JSON limit, have the write rejected, and lose undo across a reload
+ * with no explanation. Over budget we drop the redo stack (which costs one base snapshot and is the
+ * less valuable half after a reload), then give up rather than write something that cannot land.
+ */
+const PERSIST_UNDO_MAX_BYTES = 2_000_000;
+/** An absent stack in packed form. */
+const EMPTY_STACK: PackedStack = { base: null, steps: [] };
 const COALESCABLE = new Set<EditCommand["type"]>([
   "setParam",
   "setEffectParam",
@@ -289,16 +327,45 @@ export class EditLog {
 
   /** The undo/redo stacks for persistence, bounded then delta-encoded (one base snapshot each). */
   getCheckpoints(): UndoState {
-    return {
-      undo: packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH)),
-      redo: packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH)),
-    };
+    const state = fingerprintProject(this.project.snapshot());
+    const undo = packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH));
+    const redo = packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH));
+    // Both stacks, then undo alone, then neither: see PERSIST_UNDO_MAX_BYTES.
+    const candidates: UndoState[] = [
+      { undo, redo, state },
+      { undo, redo: EMPTY_STACK, state },
+    ];
+    const affordable = candidates.find((candidate) => withinUndoBudget(candidate));
+    if (affordable) return affordable;
+    console.warn(
+      `[web-daw] undo: this project's snapshot is too large to persist undo state (over ` +
+        `${PERSIST_UNDO_MAX_BYTES} bytes). Undo works in this session but will not survive a reload.`,
+    );
+    return { undo: EMPTY_STACK, redo: EMPTY_STACK, state };
   }
 
-  /** Restore persisted undo/redo stacks (after restore()), rebuilding snapshots by replay. */
-  restoreCheckpoints(state: UndoState | null): void {
-    this.undoStack = unpackUndo(state?.undo);
-    this.redoStack = unpackRedo(state?.redo);
+  /**
+   * Restore persisted undo/redo stacks, rebuilding snapshots by replay.
+   *
+   * **Restores only stacks captured against the project state we just loaded** (see
+   * `UndoState.state`). Call this after the project has been loaded, never before, or the
+   * comparison is against an empty project and every stack is discarded.
+   */
+  restoreCheckpoints(stored: UndoState | null): void {
+    const current = fingerprintProject(this.project.snapshot());
+    const matches = stored !== null && stored.state === current;
+    // Say so rather than silently greying out undo. "Undo did nothing after a reload" is otherwise
+    // indistinguishable from "the stack was never written", and those have opposite fixes.
+    if (stored && !matches) {
+      console.warn(
+        `[web-daw] undo: discarding a stack captured against project state ${stored.state}; this ` +
+          `project is at ${current}. Undo is unavailable for this load - applying a stack from a ` +
+          "different state would roll the project back rather than undo one edit.",
+      );
+    }
+    const accepted = matches ? stored : null;
+    this.undoStack = unpackUndo(accepted?.undo);
+    this.redoStack = unpackRedo(accepted?.redo);
     this.emit();
   }
 
@@ -366,6 +433,13 @@ function packRedo(stack: Checkpoint[]): PackedStack {
     steps: stack.map((checkpoint) => ({ command: checkpoint.command, author: checkpoint.author })),
   };
 }
+
+/**
+ * Does this packed state fit the persistence budget? Measured on the serialized length rather than
+ * true UTF-8 bytes: the payload is ids, numbers and enum strings apart from user-entered names, so
+ * the two agree to well inside the margin a budget like this needs.
+ */
+const withinUndoBudget = (state: UndoState): boolean => JSON.stringify(state).length <= PERSIST_UNDO_MAX_BYTES;
 
 /** Rebuild an undo stack from packed form (base snapshot + forward-replayed steps). */
 function unpackUndo(packed: PackedStack | null | undefined): Checkpoint[] {
