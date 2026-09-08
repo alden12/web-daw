@@ -290,12 +290,12 @@ export const undoStateSchema = z.object({
   undo: packedStackSchema,
   redo: packedStackSchema,
   /**
-   * Required, so an `undo.json` written before this existed fails validation and is discarded on
-   * load (DAW-8.15). That is the intended outcome rather than a migration to write: the file holds
+   * Required, so an `undo.json` written by an older build fails validation and is discarded on load
+   * (DAW-8.15). That is the intended outcome rather than a migration to write: the file holds
    * session-scoped undo state, never user work, and one reload with undo unavailable is exactly
    * what an unverifiable stack should cost.
    */
-  headSeq: z.number(),
+  state: z.string(),
 });
 
 /* -------------------------------------------------------------------------- */

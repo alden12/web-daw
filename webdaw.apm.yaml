@@ -6990,6 +6990,107 @@ projects:
         id: 01a06ecd-b049-7317-8dac-f7377ec56b04
         created_at: 2026-09-04T23:42:48.905Z
         updated_at: 2026-09-05T00:09:38.049Z
+      - ref: DAW-34
+        area: DAW
+        title: Persist undo without a snapshot, so the depth can go past ~100
+        status: to-do
+        sort_path: "000034"
+        body: >
+          Two ceilings currently cap undo depth at `MAX_DEPTH = 100`, and both
+          come from checkpoints being
+
+          whole-project snapshots rather than invertible operations.
+
+
+          **In memory.** An undo checkpoint holds a full `ProjectData` copy,
+          which is exactly what makes undo
+
+          instant. 100 of them is ~8MB for a mid-size project (measured
+          79KB/snapshot at 8 tracks + 512
+
+          notes); a 500-deep stack would be ~40MB for that project and worse for
+          a real one. So the depth is
+
+          bounded by RAM, not by policy.
+
+
+          **On disk.** `undo.json` is delta-encoded (one base snapshot per stack
+          + a command per checkpoint),
+
+          so the steps are cheap but the two base snapshots are not, and they
+          scale with the project rather
+
+          than with the depth. `PERSIST_UNDO_MAX_BYTES` (2MB) now trims redo and
+          then gives up rather than
+
+          writing a file the server's 8MB JSON cap would reject, which is honest
+          but means a big enough
+
+          project gets no undo across a reload.
+
+
+          **The fix both ceilings want is the same one the project document
+          already uses: keyframe + replay.**
+
+          Store the base as an anchor rather than a snapshot, and rebuild it by
+          replaying the edit log forward
+
+          from the nearest keyframe. `ProjectRepository.load` already does
+          exactly this for `project.json`.
+
+          The file then holds only commands and is tiny, and the in-memory stack
+          can hold anchors + commands
+
+          with a small snapshot cache for the top few, which is what lifts the
+          RAM ceiling.
+
+
+          **The blocker is anchoring, and it is the same trap DAW-8.15 fell
+          into.** The natural anchor is a
+
+          `seq`, but the client's edit-log counter and the authority's are
+          different numbering spaces: a
+
+          coalesced gesture is one client entry and many forwarded edits at the
+          server, so a client-side seq
+
+          does not address a position in the log that comes back on reload.
+          Worse, the server's log is
+
+          fine-grained, so reconstructing checkpoint *boundaries* from it would
+          give one undo step per drag
+
+          frame instead of one per gesture. Any design here has to carry gesture
+          boundaries explicitly (mark
+
+          the first forwarded edit of a gesture, or have the authority coalesce
+          on the same rule as the
+
+          client) before a replay-based anchor is usable.
+
+
+          Worth doing alongside HOST-21, which needs the server to serve bounded
+          slices of the log rather than
+
+          the whole thing, and which would supply the same log-addressing the
+          anchor needs.
+        id: 01a07e69-c501-7593-89fc-4b3736d3a6d0
+        created_at: 2026-09-08T00:27:36.065Z
+        updated_at: 2026-09-08T00:27:36.065Z
+        comments:
+          - body: "The wider version of this, raised by Alden: make undo *granular* by
+              giving each command an inverse, instead of anchoring snapshots at
+              all. Capturing an edit's old value is tiny next to a whole
+              `ProjectData`, so the log entry the feed already stores becomes
+              enough to undo by itself. That converges three tickets on one
+              mechanism: undo (this), DAW-8.16 revert-to-a-point, and DAW-8.17
+              feed grouping, which needs the same gesture boundaries. Cost is an
+              `invert()` per command type across the ~40 in the union, plus
+              boundaries on the server log. A slice, not a patch."
+            audience: user
+            id: 01a07e6c-6a96-767e-bbb8-8b5d53dd645b
+            at: 2026-09-08T00:30:29.526Z
+            actor: claude
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
