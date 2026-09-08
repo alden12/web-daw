@@ -166,10 +166,10 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
  * **Idle-debounced rather than written per edit**, which is what lets it be correct AND cheap. The
  * stacks are the largest thing in the bundle (a full `ProjectData` base plus up to 30 commands),
  * so writing them on the 300ms append debounce would put ~50KB on the wire per editing burst. And
- * a slow cadence costs nothing here, because `headSeq` only rejects a stack that trails the log:
- * to lose undo you have to reload within a second and a half of your last edit, having spent that
- * time neither editing nor pausing. What the guard cannot forgive is a cadence that never catches
- * up when you stop, which is exactly what keyframing every 100 edits was.
+ * a slow cadence costs nothing here, because the stack's state stamp only rejects a stack that
+ * trails the project: to lose undo you have to reload within a second and a half of your last edit,
+ * having spent that time neither editing nor pausing. What the guard cannot forgive is a cadence
+ * that never catches up when you stop, which is exactly what keyframing every 100 edits was.
  */
 const UNDO_PERSIST_MS = 1500;
 
@@ -183,7 +183,7 @@ export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository
     const active = targetRepo();
     if (!active) return;
     // Failures are the caller's business to notice, not this timer's to crash on: a stack that did
-    // not land is caught by `headSeq` on the next load and discarded rather than misapplied.
+    // not land is caught by its state stamp on the next load and discarded rather than misapplied.
     void active.writeUndo(editLog.getCheckpoints()).catch(() => {});
   };
 
