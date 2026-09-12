@@ -51,6 +51,7 @@ import type { PatchValues } from "../params/types";
 import { randomUuid } from "../randomUuid";
 import type {
   ProjectData,
+  TrackData,
   TrackMeta,
   GroupMeta,
   AudioClipData,
@@ -802,6 +803,23 @@ export class ProjectStore {
     this.emit();
   }
 
+  /**
+   * Put a removed track back, at the index it came from, with its clips, notes, devices and
+   * parameters. The inverse of `removeTrack` (DAW-34), and the reason `hydrateTrack` exists.
+   *
+   * `selected` restores the selection, because `removeTrack` moves it to a neighbour when the track
+   * it removes is the selected one, and there is no edit command for selecting a track.
+   */
+  restoreTrack(stored: TrackData, atIndex: number, selected?: boolean): void {
+    if (this.getTrack(stored.id)) return;
+    const track = this.hydrateTrack(stored, this.lengthBeats);
+    // Same invariant `load` enforces: a track must belong to a real group, or it is unreachable.
+    if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;
+    this.tracks.splice(clamp(atIndex, 0, this.tracks.length), 0, track);
+    if (selected) this.selectedTrackId = track.id;
+    this.emit();
+  }
+
   removeTrack(id: string): void {
     const idx = this.tracks.findIndex((track) => track.id === id);
     if (idx === -1) return;
@@ -1456,6 +1474,62 @@ export class ProjectStore {
     this.emit();
   }
 
+  /**
+   * Build a live `Track` from its persisted form. Extracted from `load` so a single track can be
+   * rebuilt on its own, which is what `restoreTrack` (the inverse of `removeTrack`) needs - DAW-34.
+   *
+   * `reuse` is the same-id track from before a load, if any: reusing its `ParamStore` and device
+   * instances keeps the engine's per-track bindings live, where replacing them would orphan the
+   * bound instrument. Pass nothing when there is no prior track, as a restore has none.
+   */
+  private hydrateTrack(stored: TrackData, projLen: number, reuse?: Track): Track {
+    const base = {
+      id: stored.id,
+      name: stored.name,
+      parentId: stored.parentId,
+      muted: stored.muted ?? false,
+      solo: stored.solo ?? false,
+      volume: stored.volume ?? 0.8,
+    };
+    if (stored.kind === "audio") {
+      const pool = audioClipPool(stored);
+      const launchedClipId =
+        stored.launchedClipId && pool.clips.some((clip) => clip.id === stored.launchedClipId)
+          ? stored.launchedClipId
+          : null;
+      return { ...base, kind: "audio", effects: loadEffectInstances(stored.effects), ...pool, launchedClipId };
+    }
+    // Instrument track: the sound (params + effects) is track-level; the clip
+    // pool + placements come from the stored clips/placements.
+    const sound = instrumentSound(stored);
+    const { clips, activeClipId, placements } = noteClipPool(stored, projLen, {
+      clipId: () => this.nextClipId(),
+      placementId: () => this.nextPlacementId(),
+    });
+    // Reuse the prior track's ParamStore + effect instances by id so the engine's
+    // per-track bindings stay live across the load (clips are not engine-bound).
+    const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
+    const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
+    params.load(sound.params);
+    const launchedClipId =
+      stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;
+    const track: InstrumentTrack = {
+      ...base,
+      kind: "instrument",
+      instrumentType: stored.instrumentType,
+      params,
+      effects: reused?.effects ?? [],
+      midiDevices: reused?.midiDevices ?? [],
+      clips,
+      activeClipId,
+      placements,
+      launchedClipId,
+    };
+    this.loadEffectsInPlace(track, sound.effects);
+    this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
+    return track;
+  }
+
   load(data: ProjectData): void {
     // Register the project's custom device schemas first, so tracks resolve them below.
     this.syncCustomDevices(data);
@@ -1475,54 +1549,7 @@ export class ProjectStore {
     // valid across load (undo/redo) - replacing a ParamStore would orphan the
     // bound instrument. Stores are mutated in place below.
     const prev = new Map(this.tracks.map((track) => [track.id, track] as const));
-    this.tracks = (data.tracks ?? []).map((stored): Track => {
-      const base = {
-        id: stored.id,
-        name: stored.name,
-        parentId: stored.parentId,
-        muted: stored.muted ?? false,
-        solo: stored.solo ?? false,
-        volume: stored.volume ?? 0.8,
-      };
-      if (stored.kind === "audio") {
-        const pool = audioClipPool(stored);
-        const launchedClipId =
-          stored.launchedClipId && pool.clips.some((clip) => clip.id === stored.launchedClipId)
-            ? stored.launchedClipId
-            : null;
-        return { ...base, kind: "audio", effects: loadEffectInstances(stored.effects), ...pool, launchedClipId };
-      }
-      // Instrument track: the sound (params + effects) is track-level; the clip
-      // pool + placements come from the stored clips/placements.
-      const sound = instrumentSound(stored);
-      const { clips, activeClipId, placements } = noteClipPool(stored, projLen, {
-        clipId: () => this.nextClipId(),
-        placementId: () => this.nextPlacementId(),
-      });
-      // Reuse the prior track's ParamStore + effect instances by id so the engine's
-      // per-track bindings stay live across the load (clips are not engine-bound).
-      const reuse = prev.get(stored.id);
-      const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
-      const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
-      params.load(sound.params);
-      const launchedClipId =
-        stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;
-      const track: InstrumentTrack = {
-        ...base,
-        kind: "instrument",
-        instrumentType: stored.instrumentType,
-        params,
-        effects: reused?.effects ?? [],
-        midiDevices: reused?.midiDevices ?? [],
-        clips,
-        activeClipId,
-        placements,
-        launchedClipId,
-      };
-      this.loadEffectsInPlace(track, sound.effects);
-      this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
-      return track;
-    });
+    this.tracks = (data.tracks ?? []).map((stored) => this.hydrateTrack(stored, projLen, prev.get(stored.id)));
     // Invariant: every track must belong to a real group; file any orphan into main.
     for (const track of this.tracks) {
       if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;

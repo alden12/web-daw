@@ -23,6 +23,7 @@ import type {
   MidiDeviceData,
   InstrumentTrackData,
   AudioTrackData,
+  TrackData,
   TimeSignature,
 } from "./types";
 import type { Track, Group, NoteClip, EffectInstance, EffectHost, MidiDeviceInstance } from "./projectStore";
@@ -68,6 +69,55 @@ export interface TransportState {
   customEffects?: GraphEffectDef[];
 }
 
+/**
+ * Read one runtime track into its plain, serializable form. Extracted from `snapshotProject` so a
+ * single track can be captured on its own, which is what `removeTrack`'s inverse carries (DAW-34) -
+ * and so there is exactly one definition of what a persisted track is.
+ */
+export function snapshotTrack(track: Track): TrackData {
+  const base = {
+    id: track.id,
+    name: track.name,
+    parentId: track.parentId,
+    muted: track.muted,
+    solo: track.solo,
+    volume: track.volume,
+  };
+  const arrangement = {
+    activeClipId: track.activeClipId,
+    placements: track.placements.map((placement) => ({ ...placement })),
+    launchedClipId: track.launchedClipId,
+  };
+  if (track.kind === "audio") {
+    return {
+      ...base,
+      kind: "audio" as const,
+      effects: snapshotEffects(track),
+      clips: track.clips.map((clip) => ({ ...clip })),
+      ...arrangement,
+    };
+  }
+  return {
+    ...base,
+    kind: "instrument" as const,
+    instrumentType: track.instrumentType,
+    params: track.params.snapshot(),
+    effects: snapshotEffects(track),
+    midiDevices: snapshotMidiDevices(track.midiDevices),
+    clips: track.clips.map((clip) => {
+      const data = clip.store.snapshot();
+      return {
+        id: clip.id,
+        name: clip.name,
+        author: clip.author,
+        notes: data.notes.map((note) => ({ ...note })),
+        lengthBeats: data.lengthBeats,
+      };
+    }),
+    ...arrangement,
+  };
+}
+
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
 export function snapshotProject(tracks: Track[], groups: Group[], transport: TransportState): ProjectData {
   return {
@@ -82,49 +132,7 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
       volume: group.volume,
       effects: snapshotEffects(group),
     })),
-    tracks: tracks.map((track) => {
-      const base = {
-        id: track.id,
-        name: track.name,
-        parentId: track.parentId,
-        muted: track.muted,
-        solo: track.solo,
-        volume: track.volume,
-      };
-      const arrangement = {
-        activeClipId: track.activeClipId,
-        placements: track.placements.map((placement) => ({ ...placement })),
-        launchedClipId: track.launchedClipId,
-      };
-      if (track.kind === "audio") {
-        return {
-          ...base,
-          kind: "audio" as const,
-          effects: snapshotEffects(track),
-          clips: track.clips.map((clip) => ({ ...clip })),
-          ...arrangement,
-        };
-      }
-      return {
-        ...base,
-        kind: "instrument" as const,
-        instrumentType: track.instrumentType,
-        params: track.params.snapshot(),
-        effects: snapshotEffects(track),
-        midiDevices: snapshotMidiDevices(track.midiDevices),
-        clips: track.clips.map((clip) => {
-          const data = clip.store.snapshot();
-          return {
-            id: clip.id,
-            name: clip.name,
-            author: clip.author,
-            notes: data.notes.map((note) => ({ ...note })),
-            lengthBeats: data.lengthBeats,
-          };
-        }),
-        ...arrangement,
-      };
-    }),
+    tracks: tracks.map(snapshotTrack),
     tempoBpm: transport.tempoBpm,
     lengthBeats: transport.lengthBeats,
     loopStart: transport.loopStartBeats,

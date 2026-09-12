@@ -332,7 +332,9 @@ export class EditLog {
   private checkpoint(command: EditCommand, author: Author): Checkpoint {
     const inverse = invert(this.project, command);
     if (!inverse) return { snap: this.project.snapshot(), command, author };
-    return { inverse, authors: authorshipBefore(this.project, command), command, author };
+    // The inverse's own keys count too: restoring a removed effect re-stamps parameters that had no
+    // author before the edit, and those have to be cleared again on undo.
+    return { inverse, authors: authorshipBefore(this.project, [command, ...inverse]), command, author };
   }
 
   /**

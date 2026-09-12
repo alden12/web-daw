@@ -37,6 +37,28 @@ import { ProjectStore } from "../src/audio/project/projectStore";
  * Not a general escape hatch. A command that *overwrites* what an intervening edit wrote is a real
  * conflict and stays in the test, which is what `undoConflictKeys` exists to catch.
  */
+/**
+ * Container removals, excluded from BOTH positions below for a KNOWN GAP rather than a legitimate
+ * behaviour. Unlike `CAPTURES_STATE`, this one is a bug waiting to be fixed - DAW-34's
+ * containment-keys section - and each entry should come out as it is closed.
+ *
+ * A track's contents are keyed by their own ids (`effect:fx-1`, `note:n-1`), not scoped to the
+ * track, so no `track:` prefix reaches them. `conflictKeys` also strips the enclosing `track:` stamp
+ * from every non-container command, which is right for "two people editing different things in one
+ * track" and wrong when one of them removes the track. That leaves four ways for the gate to miss:
+ *
+ *  - undo an edit to something inside a track that has since been removed (`bypassEffect`, then
+ *    `removeTrack`);
+ *  - undo the removal after an edit aimed at something inside it (`removeTrack`, then `renameClip`);
+ *  - the same for something CREATED inside it after the removal (`removeTrack`, then `addEffect`),
+ *    where the new id did not exist at capture time and so cannot be named by either side;
+ *  - and the stamps for all of the above outlive the track they belonged to, with or without undo.
+ *
+ * `restoreTrack` already closes the half it can, by naming the contents it carries, which is what
+ * makes `undoConflictKeys` see them. The rest needs the key spelling to express containment.
+ */
+const CONTAINMENT_GAP = new Set<EditCommand["type"]>(["removeTrack"]);
+
 const CAPTURES_STATE = new Set<EditCommand["type"]>([
   "addClip",
   "pasteClip",
@@ -273,6 +295,32 @@ const SAMPLES: { [K in InvertibleType]: Sample<K> } = {
     setup: [{ type: "addCustomEffect", def: CUSTOM_EFFECT }],
     command: { type: "removeCustomEffect", deviceType: CUSTOM_EFFECT.type },
   },
+
+  // Removed from the MIDDLE of the chain, with a non-default parameter and a bypass set, so the
+  // inverse has to restore the slot and the state rather than just re-adding the device.
+  removeEffect: {
+    setup: [
+      { type: "addEffect", hostId: "t-1", effectType: "delay", id: "fx-2" },
+      { type: "setEffectParam", hostId: "t-1", effectId: "fx-1", id: "tremolo.rate", value: 7 },
+      { type: "bypassEffect", hostId: "t-1", effectId: "fx-1", bypassed: true },
+    ],
+    command: { type: "removeEffect", hostId: "t-1", effectId: "fx-1" },
+  },
+  removeMidiDevice: {
+    setup: [
+      { type: "addMidiDevice", trackId: "t-1", deviceType: "arpeggiator", id: "md-2" },
+      { type: "setMidiDeviceParam", trackId: "t-1", deviceId: "md-1", id: "level", value: 0.3 },
+      { type: "bypassMidiDevice", trackId: "t-1", deviceId: "md-1", bypassed: true },
+    ],
+    command: { type: "removeMidiDevice", trackId: "t-1", deviceId: "md-1" },
+  },
+
+  // t-1 is the first of three tracks and carries a note, an effect and a MIDI device, so this
+  // exercises the slot, the clip pool and both device chains at once.
+  removeTrack: {
+    setup: [{ type: "setParam", trackId: "t-1", id: "filter.cutoff", value: 2200 }],
+    command: { type: "removeTrack", trackId: "t-1" },
+  },
 };
 
 /**
@@ -452,12 +500,14 @@ describe("invert", () => {
           : value;
 
     const commands = invertibleTypes().map((type) => (SAMPLES[type] as Sample<InvertibleType>).command);
-    const pairs = commands.flatMap((first) =>
-      commands
-        .filter((second) => second.type !== first.type)
-        .filter((second) => !CAPTURES_STATE.has(second.type))
-        .map((second) => [first, second] as const),
-    );
+    const pairs = commands
+      .filter((first) => !CONTAINMENT_GAP.has(first.type))
+      .flatMap((first) =>
+        commands
+          .filter((second) => second.type !== first.type)
+          .filter((second) => !CAPTURES_STATE.has(second.type) && !CONTAINMENT_GAP.has(second.type))
+          .map((second) => [first, second] as const),
+      );
     let checked = 0;
 
     for (const [first, second] of pairs) {
@@ -469,7 +519,7 @@ describe("invert", () => {
       // through are claims we have to honour.
       if (keysOverlap(undoConflictKeys(first, inverse), conflictKeys(second))) continue;
       checked++;
-      const authors = authorshipBefore(outOfOrder, first);
+      const authors = authorshipBefore(outOfOrder, [first, ...inverse]);
       applyEdit(outOfOrder, first, "you");
       applyEdit(outOfOrder, second, "you");
       for (const command of inverse) applyEdit(outOfOrder, command, "you");

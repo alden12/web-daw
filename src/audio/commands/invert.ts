@@ -23,6 +23,7 @@
  * its sample command together - the sample table is a mapped type, so a missing sample is a compile
  * error.
  */
+import { snapshotTrack } from "../project/projectSerialization";
 import type { ClipAuthor } from "../project/schema";
 import type { AudioClipData } from "../project/types";
 import type { Group, ProjectStore, Track } from "../project/projectStore";
@@ -379,6 +380,69 @@ const INVERT = {
     return def ? [{ type: "addCustomEffect", def }] : [];
   },
 
+  // The first removal that no existing command can undo: a track is its clips, notes, devices,
+  // parameters, placements and its slot in the list, and nothing in the vocabulary says "put all of
+  // that back". Hence `restoreTrack`, carrying the persisted track rather than a recipe for
+  // rebuilding one - the only form that survives the trip to the authority and back.
+  removeTrack: (project, command) => {
+    const index = project.getTracks().findIndex((track) => track.id === command.trackId);
+    if (index < 0) return [];
+    return [
+      {
+        type: "restoreTrack",
+        track: snapshotTrack(project.getTracks()[index]),
+        atIndex: index,
+        selected: project.selectedId === command.trackId,
+      },
+    ];
+  },
+
+  // A device chain entry restores out of existing commands, so neither of these needs a new
+  // `restore*` type: recreate it by id, put its parameter values back, restore its bypass, and move
+  // it to the slot it came from. `addEffect` appends, so the move is what makes a middle-of-chain
+  // removal come back in place.
+  removeEffect: (project, command) => {
+    const host = project.getTrack(command.hostId) ?? project.getGroup(command.hostId);
+    const index = host?.effects.findIndex((effect) => effect.id === command.effectId) ?? -1;
+    const effect = index >= 0 ? host!.effects[index] : undefined;
+    if (!effect) return [];
+    return [
+      { type: "addEffect", hostId: command.hostId, effectType: effect.type, id: effect.id },
+      ...Object.entries(effect.params.snapshot()).map(
+        ([id, value]): EditCommand => ({
+          type: "setEffectParam",
+          hostId: command.hostId,
+          effectId: effect.id,
+          id,
+          value,
+        }),
+      ),
+      { type: "bypassEffect", hostId: command.hostId, effectId: effect.id, bypassed: effect.bypassed },
+      { type: "moveEffect", hostId: command.hostId, effectId: effect.id, toIndex: index },
+    ];
+  },
+  removeMidiDevice: (project, command) => {
+    const track = project.getTrack(command.trackId);
+    const devices = track?.kind === "instrument" ? track.midiDevices : [];
+    const index = devices.findIndex((device) => device.id === command.deviceId);
+    const device = index >= 0 ? devices[index] : undefined;
+    if (!device) return [];
+    return [
+      { type: "addMidiDevice", trackId: command.trackId, deviceType: device.type, id: device.id },
+      ...Object.entries(device.params.snapshot()).map(
+        ([id, value]): EditCommand => ({
+          type: "setMidiDeviceParam",
+          trackId: command.trackId,
+          deviceId: device.id,
+          id,
+          value,
+        }),
+      ),
+      { type: "bypassMidiDevice", trackId: command.trackId, deviceId: device.id, bypassed: device.bypassed },
+      { type: "moveMidiDevice", trackId: command.trackId, deviceId: device.id, toIndex: index },
+    ];
+  },
+
   // `putNote` is insert-or-replace, so whether this created a note or overwrote one decides the
   // inverse. The same reasoning covers `addNotes`/`editNotes` in stage 3, per note.
   addNote: (project, command) => {
@@ -411,24 +475,32 @@ export type InvertibleType = keyof typeof INVERT;
 /** Those types at runtime, for tests and diagnostics. */
 export const invertibleTypes = (): InvertibleType[] => Object.keys(INVERT) as InvertibleType[];
 
+/** The authorship keys `applyEdit` stamps for one command: its touched and removed keys, plus the
+ *  clip a note edit implies. Mirrors `applyEdit`, so the two must be changed together. A `prefix:`
+ *  entry expands to the stamped keys under it, since that is what `dropAuthors` clears. */
+function stampedKeys(project: ProjectStore, command: EditCommand): string[] {
+  const effect = authorshipEffect(command);
+  const noteTarget = noteEditClipTarget(command);
+  const noteClipId = noteTarget ? (noteTarget.clipId ?? project.getTrack(noteTarget.trackId)?.activeClipId) : undefined;
+  const entries = [...(effect.touched ?? []), ...(effect.removed ?? []), ...(noteClipId ? [clipKey(noteClipId)] : [])];
+  return entries.flatMap((entry) => (entry.endsWith(":") ? project.authorKeysUnder(entry) : [entry]));
+}
+
 /**
- * The authorship `applyEdit` is about to stamp over, captured before the command runs.
+ * The authorship an undo is about to disturb, captured before the command runs.
  *
  * A snapshot checkpoint restored authorship along with everything else; an inverse checkpoint has to
  * carry it, or undo would re-attribute the object to whoever pressed undo. Alden's call: the stamp
  * names whoever authored the value you can actually see, so taking an edit back takes its stamp back
  * too.
  *
- * The key set mirrors what `applyEdit` stamps - the command's touched and removed keys, plus the
- * clip a note edit implies - so the two must be changed together. A `prefix:` entry is expanded to
- * the stamped keys under it, since that is what `dropAuthors` will clear.
+ * **Pass the inverse commands as well as the command itself.** Restoring a removed effect re-sets
+ * each of its parameters, which stamps `effectParam:` keys that never existed before the edit - so
+ * capturing only the command's own keys leaves those behind and the project is not what it was. A
+ * key with no author is recorded as null and restored by dropping the stamp.
  */
-export function authorshipBefore(project: ProjectStore, command: EditCommand): PriorAuthors {
-  const effect = authorshipEffect(command);
-  const noteTarget = noteEditClipTarget(command);
-  const noteClipId = noteTarget ? (noteTarget.clipId ?? project.getTrack(noteTarget.trackId)?.activeClipId) : undefined;
-  const entries = [...(effect.touched ?? []), ...(effect.removed ?? []), ...(noteClipId ? [clipKey(noteClipId)] : [])];
-  const keys = entries.flatMap((entry) => (entry.endsWith(":") ? project.authorKeysUnder(entry) : [entry]));
+export function authorshipBefore(project: ProjectStore, commands: EditCommand[]): PriorAuthors {
+  const keys = commands.flatMap((command) => stampedKeys(project, command));
   return Object.fromEntries(keys.map((key) => [key, project.authorOf(key) ?? null]));
 }
 

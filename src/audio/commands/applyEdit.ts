@@ -52,6 +52,9 @@ const APPLY: ApplyMap = {
   // edit (load the carried state), so replay + sync need no special-casing; self-anchoring on replay.
   loadSnapshot: (project, command) => project.load(command.project),
   removeTrack: (project, command) => project.removeTrack(command.trackId),
+  // The inverse of removeTrack (DAW-34). Self-contained: the command carries the whole track, so
+  // replay needs nothing but the command, same as every other edit.
+  restoreTrack: (project, command) => project.restoreTrack(command.track, command.atIndex, command.selected),
   setTrack: (project, command) => {
     if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);
     if (command.solo !== undefined) project.setSolo(command.trackId, command.solo);
