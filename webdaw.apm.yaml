@@ -7804,38 +7804,36 @@ projects:
         status: to-do
         sort_path: "000034.000001"
         parent: DAW-34
+        deps:
+          - DAW-36
         body: >
           Deleting a container does not flag edits to the things inside it.
           Predicted in DAW-34's design and
 
           then found four separate ways by the property test in
-          `test/invert.test.ts`, which is why it is now
+          `test/invert.test.ts`, which is why it is its
 
-          its own item: it blocks the undo gate (DAW-34 stage 4) and it is
-          already a live bug without undo.
+          own item: it blocks the undo gate (DAW-34 stage 4) and it is already a
+          live bug without undo.
 
 
           ## The root cause
 
 
-          Two things, and both have to change:
+          Two things:
 
 
           1. **Contents are keyed by their own ids.** `effect:fx-1`, `note:n-1`,
           `clip:c-1`, `placement:p-1`.
              Nothing in those keys says which track or clip they belong to, so no `track:<id>:` prefix reaches
              them. `removeTrack` can only drop `track:`, `param:<id>:`, `effectParam:<id>:` and
-             `midiDeviceParam:<id>:`, which are the track-scoped spellings.
-          2. **`conflictKeys` strips the enclosing `track:`/`group:` stamp**
-          from every non-container command.
-             That is deliberate and right for "two people editing different things in one track", and wrong
-             when one of them removes the track.
+             `midiDeviceParam:<id>:`, the track-scoped spellings.
+          2. **`conflictKeys` discards the enclosing `track:`/`group:` stamp**
+          on every non-container command.
+             That is right for "two people editing different things in one track" and wrong when one of them
+             removes the track.
 
           ## The four ways it shows
-
-
-          Each is a real pair the gate waves through, or a stamp that outlives
-          its object:
 
 
           - **Undo an edit to something inside a track since removed.**
@@ -7843,9 +7841,9 @@ projects:
             `removeTrack`. The inverse re-stamps `effect:fx-1` on a track that is gone.
           - **Undo the removal after an edit aimed inside it.** `removeTrack`,
           then `renameClip` on its clip.
-            The rename no-ops against the missing track, and the restore brings back the old name, so the
+            The rename no-ops against the missing track and the restore brings back the old name, so the
             rename is silently lost.
-          - **The same for something created inside it afterwards.**
+          - **The same for something CREATED inside it afterwards.**
           `removeTrack`, then `addEffect` on that
             host. The new id did not exist when the removal was captured, so neither side can name it.
           - **Stamps outlive the object, with or without undo.** `removeTrack`
@@ -7858,71 +7856,134 @@ projects:
           `removeClip` (which cascades to the placements referencing it).
 
 
-          ## What is already done
+          ## The fix: use the container key, do not discard it
 
 
-          `restoreTrack` closes the half it can, using the mechanism DAW-34
+          An earlier draft of this item proposed re-spelling the contained keys
+          hierarchically
+
+          (`note:<clipId>:<noteId>` and so on) so the existing prefix rule would
+          do containment. **Do not do
+
+          that.** Two problems, and the second is disqualifying:
+
+
+          - The authorship record is keyed by these strings and is persisted,
+          and the last-editor tint reads
+            them, so a re-spelling is a document format change needing a migration.
+          - **`authorshipEffect` cannot build a hierarchical note key.** It is a
+          pure function of the command,
+            and `addNote` / `removeNote` / `editNotes` take `clipId` as *optional*, defaulting to the track's
+            active clip. In the common case there is no clip id to put in the key. That needs either project
+            access or command normalisation (DAW-36) first, so "just re-spell the keys" hides a second slice.
+
+          The cheaper fix needs no format change, no migration and no project
+          access. **The container key
+
+          already exists**: `authorshipEffect` stamps `track:<id>` on nearly
+          every command that touches
+
+          anything in that track, and `conflictKeys` throws it away. Keep it in
+          its own bucket instead, with a
+
+          narrower rule:
+
+
+          ```
+
+          conflictKeys(command) -> { leaves, insideOf, destroys }
+
+          ```
+
+
+          - `leaves` - what it targets (`note:n-1`, `effect:fx-1`). Today's
+          keys, unchanged.
+
+          - `insideOf` - the container it lives in (`track:t-1`). Today's
+          discarded stamp.
+
+          - `destroys` - the container it removes outright.
+
+
+          **Two commands conflict when their leaves overlap, or when one
+          destroys a container the other is
+
+          inside.**
+
+
+          | case | caught by |
+
+          |---|---|
+
+          | `bypassEffect` then `removeTrack` | destroys `track:t-1` meets
+          insideOf `track:t-1` |
+
+          | `removeTrack` then `renameClip` | same, other direction |
+
+          | `removeTrack` then `addEffect` | same, and the new id never has to
+          be named |
+
+          | two note edits, same track | leaves differ, neither destroys - no
+          conflict, as today |
+
+
+          The third row is the one a re-spelling cannot do at all: an object
+          created after the capture has an
+
+          id nobody could have named in advance. Comparing *membership* rather
+          than contents handles it.
+
+
+          **`destroys` must stay narrow.** `moveTrack` and `setTrack` target the
+          container too but destroy
+
+          nothing, so an edit inside the track stays safely undoable. Only
+          `removeTrack`, `removeGroup` and
+
+          `removeClip` belong in that bucket.
+
+
+          ## What this does not cover
+
+
+          Clip-level containment - `removeClip` against a note edit in that clip
+          - needs the clip named on the
+
+          note commands, which is the optional-`clipId` problem again. That is
+          **DAW-36** (normalise commands
+
+          at dispatch), worth doing on its own merits and a prerequisite for
+          closing this half.
+
+
+          ## Already done
+
+
+          `restoreTrack` closes the part it can, using the mechanism DAW-34
           describes: it carries the persisted
 
-          track, so it can *name* the contents it brings back, and
-          `undoConflictKeys` reads containment
+          track, so it *names* the contents it brings back, and
+          `undoConflictKeys` reads containment straight
 
-          straight out of the inverse. That covers the undo direction wherever
-          an inverse exists.
+          out of the inverse. That covers the undo direction wherever an inverse
+          exists. It cannot cover
 
+          `conflictKeys(removeTrack)` alone, which reconnect conflict detection
+          uses and which has no inverse
 
-          It cannot cover the forward direction (`conflictKeys(removeTrack)` on
-          its own, which reconnect
-
-          conflict detection uses and which has no inverse to consult), nor
-          anything created after the capture.
+          to consult.
 
 
-          ## The fix
+          ## Acceptance
 
 
-          Re-spell the contained keys so containment is a prefix, which is what
-          the existing `pairConflicts`
+          `CONTAINMENT_GAP` in `test/invert.test.ts` names the excluded commands
+          and spells out all four cases.
 
-          prefix rule already understands:
-
-
-          - `note:<clipId>:<noteId>` instead of `note:<noteId>`
-
-          - `clip:<trackId>:<clipId>`, `placement:<trackId>:<placementId>`
-
-          - `effect:<hostId>:<effectId>`, `midiDevice:<trackId>:<deviceId>`
-
-
-          Then `removeTrack` drops `clip:<id>:`, `placement:<id>:`,
-          `effect:<id>:`, `midiDevice:<id>:` and the
-
-          existing param prefixes, and a contained edit clashes with its
-          container's removal by prefix, in both
-
-          directions and including ids that did not exist at capture time.
-
-
-          **Cost.** These keys are the last-editor tint's keys as well
-          (`authorship.ts` is shared), so the UI
-
-          reads them too, and a re-spelling is a document format change:
-          existing `authorship` records carry
-
-          the old spellings. Forward-only migration via `documentMigration.ts`,
-          or accept that old stamps drop
-
-          (the tint is decorative, so losing it on one load is survivable - but
-          decide deliberately).
-
-
-          **Check it with the test that found it.** `CONTAINMENT_GAP` in
-          `test/invert.test.ts` names the
-
-          excluded commands; emptying that set is the acceptance criterion.
+          Emptying that set is the criterion.
         id: 01a0979f-c85e-70ab-8700-090720773fe7
         created_at: 2026-09-12T21:57:06.270Z
-        updated_at: 2026-09-12T21:57:06.270Z
+        updated_at: 2026-09-12T22:07:33.542Z
       - ref: DAW-35
         area: DAW
         title: An audio clip does not follow a tempo change, it truncates or repeats
@@ -8041,6 +8102,104 @@ projects:
         id: 01a0978b-3a72-750c-92a4-ae2c53beaaee
         created_at: 2026-09-12T21:34:39.218Z
         updated_at: 2026-09-12T21:43:56.945Z
+      - ref: DAW-36
+        area: DAW
+        title: Normalise a command at dispatch, so the log never says "the active clip"
+        status: to-do
+        sort_path: "000036"
+        body: >
+          `addNote`, `addNotes`, `editNotes`, `removeNote`, `removeNotes`,
+          `clearClip` and `setClipLength` all
+
+          take `clipId` as **optional**, defaulting to the track's active clip.
+          `applyEdit` resolves it at apply
+
+          time (`clipId ?? track.activeClipId`). Convenient for the UI and for
+          MCP, and wrong to persist.
+
+
+          ## Why it matters
+
+
+          **The logged command is ambiguous.** An entry that says "add this note
+          to whichever clip is active"
+
+          means whatever the active clip happened to be. Replay only reproduces
+          it because the active clip is
+
+          itself derived deterministically from the same log - so the guarantee
+          holds by luck of ordering
+
+          rather than by the command saying what it did. Anything that reorders,
+          excludes or re-bases an entry
+
+          breaks it silently: revert-to-a-point (DAW-8.16), an offline queue
+          flushed after peer edits, and any
+
+          future history editing.
+
+
+          **It blocks containment keys.** `authorshipEffect` is a pure function
+          of the command, so with no clip
+
+          id it cannot key a note by the clip that holds it - which is exactly
+          what DAW-34.1 needs to make
+
+          `removeClip` clash with an edit to a note inside it.
+
+
+          **The inverse already has to do this.** `invert.ts` pins the resolved
+          clip id in every note inverse
+
+          (`targetClipId`), because the active clip can move before an undo. So
+          half the codebase already
+
+          treats the unresolved form as unsafe to store; this makes it
+          consistent.
+
+
+          ## The change
+
+
+          Resolve in `EditLog.dispatch`, before `applyEdit` and before the entry
+          is appended, so the command
+
+          that is applied, logged, forwarded to the authority and mirrored
+          offline is the same self-contained
+
+          one. A command-type to normaliser map, per the repo's dispatch
+          convention; types with no entry pass
+
+          through.
+
+
+          Keep the optional field in the *type*: the UI and the MCP boundary
+          should go on omitting it, because
+
+          "the clip I have open" is the right thing for a caller to say. What
+          changes is that it stops being
+
+          optional by the time it is durable.
+
+
+          ## Notes
+
+
+          - `coalesceKey` and `conflictKeys` see the normalised command, which
+          makes both sharper for free.
+
+          - Pre-existing log entries keep the unresolved form. They replay as
+          they do today (the resolution is
+            still in `applyEdit`), so no migration - but the `?? activeClipId` fallback in `applyEdit` has to
+            stay for them, and should carry a comment saying it is there for old entries rather than for new
+            dispatches.
+          - Worth auditing for other ambient defaults while in there. `addClip`
+          forking "the active clip" and
+            `addPlacement` defaulting its length from the clip are the same shape of problem, and both already
+            show up in `DERIVED_FROM` in `src/audio/sync/conflict.ts`.
+        id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
+        created_at: 2026-09-12T22:07:28.726Z
+        updated_at: 2026-09-12T22:07:28.726Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
