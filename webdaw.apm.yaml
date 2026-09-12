@@ -7798,6 +7798,131 @@ projects:
             id: 01a07e6c-6a96-767e-bbb8-8b5d53dd645b
             at: 2026-09-08T00:30:29.526Z
             actor: claude
+      - ref: DAW-34.1
+        area: DAW
+        title: "Containment: an object's key does not say what contains it"
+        status: to-do
+        sort_path: "000034.000001"
+        parent: DAW-34
+        body: >
+          Deleting a container does not flag edits to the things inside it.
+          Predicted in DAW-34's design and
+
+          then found four separate ways by the property test in
+          `test/invert.test.ts`, which is why it is now
+
+          its own item: it blocks the undo gate (DAW-34 stage 4) and it is
+          already a live bug without undo.
+
+
+          ## The root cause
+
+
+          Two things, and both have to change:
+
+
+          1. **Contents are keyed by their own ids.** `effect:fx-1`, `note:n-1`,
+          `clip:c-1`, `placement:p-1`.
+             Nothing in those keys says which track or clip they belong to, so no `track:<id>:` prefix reaches
+             them. `removeTrack` can only drop `track:`, `param:<id>:`, `effectParam:<id>:` and
+             `midiDeviceParam:<id>:`, which are the track-scoped spellings.
+          2. **`conflictKeys` strips the enclosing `track:`/`group:` stamp**
+          from every non-container command.
+             That is deliberate and right for "two people editing different things in one track", and wrong
+             when one of them removes the track.
+
+          ## The four ways it shows
+
+
+          Each is a real pair the gate waves through, or a stamp that outlives
+          its object:
+
+
+          - **Undo an edit to something inside a track since removed.**
+          `bypassEffect` on `fx-1`, then
+            `removeTrack`. The inverse re-stamps `effect:fx-1` on a track that is gone.
+          - **Undo the removal after an edit aimed inside it.** `removeTrack`,
+          then `renameClip` on its clip.
+            The rename no-ops against the missing track, and the restore brings back the old name, so the
+            rename is silently lost.
+          - **The same for something created inside it afterwards.**
+          `removeTrack`, then `addEffect` on that
+            host. The new id did not exist when the removal was captured, so neither side can name it.
+          - **Stamps outlive the object, with or without undo.** `removeTrack`
+          left `midiDeviceParam:` behind
+            until this was found; the by-id keys (`effect:`, `note:`, `clip:`, `placement:`) still do.
+
+          The same applies to `removeGroup` (which cascades to every descendant
+          group *and* their tracks) and
+
+          `removeClip` (which cascades to the placements referencing it).
+
+
+          ## What is already done
+
+
+          `restoreTrack` closes the half it can, using the mechanism DAW-34
+          describes: it carries the persisted
+
+          track, so it can *name* the contents it brings back, and
+          `undoConflictKeys` reads containment
+
+          straight out of the inverse. That covers the undo direction wherever
+          an inverse exists.
+
+
+          It cannot cover the forward direction (`conflictKeys(removeTrack)` on
+          its own, which reconnect
+
+          conflict detection uses and which has no inverse to consult), nor
+          anything created after the capture.
+
+
+          ## The fix
+
+
+          Re-spell the contained keys so containment is a prefix, which is what
+          the existing `pairConflicts`
+
+          prefix rule already understands:
+
+
+          - `note:<clipId>:<noteId>` instead of `note:<noteId>`
+
+          - `clip:<trackId>:<clipId>`, `placement:<trackId>:<placementId>`
+
+          - `effect:<hostId>:<effectId>`, `midiDevice:<trackId>:<deviceId>`
+
+
+          Then `removeTrack` drops `clip:<id>:`, `placement:<id>:`,
+          `effect:<id>:`, `midiDevice:<id>:` and the
+
+          existing param prefixes, and a contained edit clashes with its
+          container's removal by prefix, in both
+
+          directions and including ids that did not exist at capture time.
+
+
+          **Cost.** These keys are the last-editor tint's keys as well
+          (`authorship.ts` is shared), so the UI
+
+          reads them too, and a re-spelling is a document format change:
+          existing `authorship` records carry
+
+          the old spellings. Forward-only migration via `documentMigration.ts`,
+          or accept that old stamps drop
+
+          (the tint is decorative, so losing it on one load is survivable - but
+          decide deliberately).
+
+
+          **Check it with the test that found it.** `CONTAINMENT_GAP` in
+          `test/invert.test.ts` names the
+
+          excluded commands; emptying that set is the acceptance criterion.
+        id: 01a0979f-c85e-70ab-8700-090720773fe7
+        created_at: 2026-09-12T21:57:06.270Z
+        updated_at: 2026-09-12T21:57:06.270Z
       - ref: DAW-35
         area: DAW
         title: An audio clip does not follow a tempo change, it truncates or repeats
