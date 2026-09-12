@@ -851,8 +851,29 @@ export class ProjectStore {
   setTempo(bpm: number): void {
     const next = clamp(bpm, MIN_BPM, MAX_BPM);
     if (next === this.tempoBpm) return;
+    const ratio = next / this.tempoBpm;
     this.tempoBpm = next;
+    this.rescaleAudioPlacements(ratio);
     this.emit();
+  }
+
+  /**
+   * Audio does not follow the tempo - there is no warp yet (INST-7) - so an audio placement's length
+   * in BEATS is really a fixed duration in seconds wearing beats. Rescale those lengths when the
+   * tempo changes, or the same audio is truncated at a faster tempo and repeats at a slower one, in
+   * silence (DAW-35). Note clips need none of this: their lengths are musical to begin with.
+   *
+   * Scaled by the ratio rather than recomputed from `durationSec`, so a placement the user trimmed
+   * stays trimmed. It is the same seconds of audio either way, which is the whole idea.
+   *
+   * This makes `setTempo` destructive, so its inverse restores these lengths explicitly rather than
+   * trusting the scale to reverse exactly (see `invert.ts`).
+   */
+  private rescaleAudioPlacements(ratio: number): void {
+    for (const track of this.tracks) {
+      if (track.kind !== "audio") continue;
+      for (const placement of track.placements) placement.length = Math.max(GRID, placement.length * ratio);
+    }
   }
 
   /** Set the project time signature. Numerator clamps to a whole beats-per-bar; omitted or invalid

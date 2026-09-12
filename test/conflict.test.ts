@@ -25,7 +25,9 @@ describe("conflictKeys", () => {
     expect(conflictKeys(rename("t-1"))).toEqual(["track:t-1"]);
   });
   it("keys project-level commands by facet", () => {
-    expect(conflictKeys({ type: "setTempo", bpm: 120 })).toEqual(["project:tempo"]);
+    // A tempo change also rewrites audio placement lengths (DAW-35), so it carries the coarse
+    // `placement:` prefix alongside its own facet.
+    expect(conflictKeys({ type: "setTempo", bpm: 120 })).toEqual(["project:tempo", "placement:"]);
     expect(conflictKeys({ type: "renameProject", name: "x" })).toEqual(["project:name"]);
   });
 });

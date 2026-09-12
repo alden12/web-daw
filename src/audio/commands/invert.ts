@@ -51,6 +51,22 @@ const currentFields = <Target, Key extends keyof Target & string>(
     fields.filter((field) => command[field] !== undefined).map((field) => [field, current[field]]),
   ) as Partial<Pick<Target, Key>>;
 
+/** Restore each audio placement to the length it has right now (see the `setTempo` inverter). */
+const audioPlacementLengths = (project: ProjectStore): EditCommand[] =>
+  project
+    .getTracks()
+    .filter((track) => track.kind === "audio")
+    .flatMap((track) =>
+      track.placements.map(
+        (placement): EditCommand => ({
+          type: "resizePlacement",
+          trackId: track.id,
+          placementId: placement.id,
+          length: placement.length,
+        }),
+      ),
+    );
+
 /** The inverse of a track-creating command: nothing if the id is taken (the store hands back the
  *  existing track and changes nothing), otherwise remove what it is about to create. */
 const createdTrack = (project: ProjectStore, id: string): EditCommand[] =>
@@ -105,7 +121,11 @@ type InvertMap = { [K in EditCommand["type"]]: Inverter<K> };
  */
 const INVERT = {
   renameProject: (project) => [{ type: "renameProject", name: project.name }],
-  setTempo: (project) => [{ type: "setTempo", bpm: project.tempo }],
+  // Tempo first, then the lengths: `setTempo` rescales every audio placement (DAW-35), so undoing
+  // it has to put those back. Restored explicitly rather than left to the reverse scale, which is
+  // only approximately its own inverse in floating point and not at all once a length hits the
+  // minimum. Empty for a project with no audio, which is most of them.
+  setTempo: (project) => [{ type: "setTempo", bpm: project.tempo }, ...audioPlacementLengths(project)],
   setTimeSignature: (project) => [
     {
       type: "setTimeSignature",

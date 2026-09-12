@@ -7801,7 +7801,7 @@ projects:
       - ref: DAW-35
         area: DAW
         title: An audio clip does not follow a tempo change, it truncates or repeats
-        status: to-do
+        status: in-progress
         sort_path: "000035"
         deps:
           - INST-7
@@ -7821,8 +7821,8 @@ projects:
           `naturalBeats(durationSec) = secondsToBeats(durationSec, tempoBpm)`
           (`ProjectStore.naturalBeats`).
 
-          `setTempo` changes the tempo and nothing else, so that length stays as
-          it was.
+          `setTempo` changed the tempo and nothing else, so that length stayed
+          as it was.
 
 
           Playback does not stretch. The scheduler re-tiles the audio region
@@ -7835,9 +7835,9 @@ projects:
           4 beats):
 
 
-          - **Tempo up to 240.** The audio now spans 8 beats in a 4-beat
-          placement: you hear the first half,
-            then silence.
+          - **Tempo up to 240.** The audio spans 8 beats in a 4-beat placement:
+          you hear the first half, then
+            silence.
           - **Tempo down to 60.** It spans 2 beats in a 4-beat placement: it
           plays twice.
 
@@ -7846,69 +7846,76 @@ projects:
           it. No dialog, no warning.
 
 
-          ## Why it is filed now
+          ## Why it was filed
 
 
           Found while building the undo gate (DAW-34). An out-of-order undo of a
-          tempo change reaches exactly
+          tempo change reached exactly
 
           this state, which raised the question of whether the gate should
           refuse such an undo. It should not,
 
-          and that is the point: the undo is not doing anything a drag of the
-          tempo slider does not already do.
+          and that was the point: the undo was not doing anything a drag of the
+          tempo slider did not already
 
-          The bug is here, not there.
-
-
-          ## The fix needs INST-7
+          do. The bug was here, not there.
 
 
-          Doing this properly means the audio follows the tempo, which is
-          time-stretch (pitch-invariant speed
-
-          change), which is INST-7. Until that lands there is no correct
-          behaviour available: we cannot change
-
-          an audio clip's speed at all, so something has to give.
+          ## Shipped: the interim behaviour (warp off)
 
 
-          Worth deciding even before INST-7, because the current answer was
-          never chosen:
+          Alden's call, done now rather than waiting on INST-7. `setTempo`
+          rescales every audio placement's
+
+          length by the tempo ratio, so the audio keeps the same duration **in
+          seconds** and its block resizes
+
+          on the timeline. Note clips are untouched: their lengths are musical
+          to begin with.
 
 
-          - **Keep the beat length, tile/truncate.** What happens today.
-          Musically wrong, and silent.
+          **Scaled by the ratio, not recomputed from `durationSec`**, so a
+          placement the user trimmed stays
 
-          - **Keep the seconds, recompute the beat length on tempo change.** The
-          clip stays intact and its
-            block resizes on the timeline. Honest about what the audio is, and arguably what a user expects
-            from a DAW without warp enabled. Cheap: walk audio placements on `setTempo`.
-          - **Warp it** (INST-7): the real answer, once we can.
+          trimmed. It is the same seconds of audio either way, and a recompute
+          would silently undo the trim.
 
 
-          Option two is a small change that removes a silent failure, and it
-          composes with INST-7 later as the
-
-          "warp off" behaviour. Note it interacts with undo: recomputing lengths
-          inside `setTempo` makes that
-
-          command destructive, so its inverse would have to restore the
-          placement lengths it changed, and its
-
-          conflict keys would widen accordingly.
+          Three consequences, all handled:
 
 
-          ## Related
+          - **`setTempo` is now destructive.** Its inverse (DAW-34) restores
+          each audio placement's length
+            explicitly with a `resizePlacement`, rather than trusting the reverse scale, which is only
+            approximately its own inverse in floating point and not at all once a length hits `GRID`. Empty for
+            a project with no audio, which is most of them.
+          - **Its conflict keys widened** to `["project:tempo", "placement:"]`.
+          The prefix is coarser than the
+            truth (it clashes with instrument placements, which a tempo change never touches) but the command
+            carries no way to tell them apart, and a tempo change is rare enough that erring wide costs little.
+            The undo gate needs none of this: `undoConflictKeys` reads the exact placement ids out of the
+            inverse.
+          - **No migration.** Existing projects keep whatever lengths they have;
+          the rescale applies from the
+            next tempo change onward, which is the correct forward behaviour.
+
+          This composes with INST-7 rather than being thrown away: it is what
+          "warp off" should do.
 
 
-          `DERIVED_FROM` in `src/audio/sync/conflict.ts` carries the note that
-          audio placement length is
+          ## Still open: the real fix
 
-          tempo-derived.
+
+          INST-7 (audio pitch and time) is time-stretch, which is what lets an
+          audio clip actually follow the
+
+          tempo with its musical position intact. Then a clip gets a warp
+          toggle, and the behaviour above
+
+          becomes the off position.
         id: 01a0978b-3a72-750c-92a4-ae2c53beaaee
         created_at: 2026-09-12T21:34:39.218Z
-        updated_at: 2026-09-12T21:34:39.218Z
+        updated_at: 2026-09-12T21:43:56.945Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority

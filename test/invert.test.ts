@@ -371,6 +371,33 @@ describe("invert", () => {
   });
 
   /**
+   * A tempo change rescales audio placements, because audio does not follow the tempo yet (DAW-35).
+   * The length is in beats but means a duration in seconds, so the seconds are what must survive.
+   */
+  it("a tempo change keeps an audio placement the same length in seconds, and undo puts it back", () => {
+    const { project, log } = seeded();
+    const lengthOf = (placementId: string) =>
+      project
+        .getTracks()
+        .find((track) => track.id === "at-1")
+        ?.placements.find((p) => p.id === placementId)?.length ?? 0;
+
+    // Trimmed by hand first, so this also proves the rescale is a ratio and not a recompute from
+    // `durationSec` - a recompute would silently undo the user's trim.
+    log.dispatch({ type: "resizePlacement", trackId: "at-1", placementId: "ap-1", length: 3 });
+    log.resetCoalescing();
+    const secondsBefore = 3 / (project.tempo / 60);
+
+    log.dispatch({ type: "setTempo", bpm: 240 });
+    expect(lengthOf("ap-1") / (project.tempo / 60)).toBeCloseTo(secondsBefore, 10);
+    expect(lengthOf("ap-1")).not.toBe(3);
+
+    log.undo();
+    expect(project.tempo).toBe(120);
+    expect(lengthOf("ap-1")).toBe(3); // exactly, not approximately: the inverse restores it outright
+  });
+
+  /**
    * An inverse checkpoint applies commands rather than restoring a snapshot, and `applyEdit` stamps
    * authorship as it goes - so without the captured `authors` an undo would re-attribute the object
    * to whoever undid it. The per-sample tests above cannot catch a missing capture because they are

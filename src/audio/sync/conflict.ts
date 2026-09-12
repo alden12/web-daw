@@ -68,20 +68,25 @@ const DERIVED_FROM: Partial<{
 };
 
 /** Project-wide commands, each keyed by the facet it changes (so same-facet edits clash, cross-facet don't). */
-const PROJECT_KEYS: Partial<Record<EditCommand["type"], string>> = {
-  renameProject: "project:name",
-  setTempo: "project:tempo",
-  setGroove: "project:groove",
-  setLength: "project:length",
-  setLoopStart: "project:loopStart",
+const PROJECT_KEYS: Partial<Record<EditCommand["type"], string[]>> = {
+  renameProject: ["project:name"],
+  // `setTempo` also rewrites every audio placement's length (DAW-35), so it is not only a project
+  // facet. The `placement:` prefix is coarser than the truth - it clashes with instrument placements
+  // too, which a tempo change never touches - but the command carries no way to tell them apart, and
+  // a tempo change is rare enough that erring wide costs little. The undo gate needs none of this:
+  // `undoConflictKeys` reads the exact placement ids out of the inverse.
+  setTempo: ["project:tempo", "placement:"],
+  setGroove: ["project:groove"],
+  setLength: ["project:length"],
+  setLoopStart: ["project:loopStart"],
 };
 
 const unique = (keys: string[]): string[] => [...new Set(keys)];
 
 /** The leaf keys a command targets, for conflict comparison (see the module note). */
 export function conflictKeys(command: EditCommand): string[] {
-  const projectKey = PROJECT_KEYS[command.type];
-  if (projectKey) return [projectKey];
+  const projectKeys = PROJECT_KEYS[command.type];
+  if (projectKeys) return projectKeys;
   const effect = authorshipEffect(command);
   const derive = DERIVED_FROM[command.type] as ((command: EditCommand) => string[]) | undefined;
   const derived = derive ? derive(command) : [];
