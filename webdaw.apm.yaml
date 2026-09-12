@@ -7798,6 +7798,22 @@ projects:
             id: 01a07e6c-6a96-767e-bbb8-8b5d53dd645b
             at: 2026-09-08T00:30:29.526Z
             actor: claude
+          - body: "**Stage 5 constraint, found 2026-09-12.** Once `inverse` moves onto
+              `EditEntry` it is pruned with its row. `pruneFloor = headSeq -
+              SNAPSHOT_WINDOW` keeps 2000 edits; undo holds 100 *checkpoints*,
+              but `dispatch` forwards every dispatch, so one drag gesture is
+              ~120 authority rows. 100 draggy gestures is ~12k rows against a
+              2000 window, and the oldest undo steps would point at deleted
+              rows. Harmless today (`undo.json` holds no seqs). Fix: coalesce
+              before forwarding, so the authority gets one edit per gesture.
+              That also closes the client/authority seq divergence behind
+              DAW-8.15 and cuts sync traffic, and is close to DAW-8.13.
+              Alternatives: tie the prune floor to the undo horizon (lets a
+              client pin server storage), or degrade undo depth silently."
+            audience: user
+            id: 01a097b8-70da-764d-bbc1-5f214489c5c9
+            at: 2026-09-12T22:24:02.266Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"
