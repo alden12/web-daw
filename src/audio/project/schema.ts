@@ -282,8 +282,19 @@ export const commitSchema = z.object({
 });
 
 const packedStackSchema = z.object({
+  // Null once every checkpoint in the stack carries its own inverse: there is then nothing to
+  // replay a snapshot from, which is the whole point of DAW-34.
   base: projectDataSchema.nullable(),
-  steps: z.array(z.object({ command: editCommandSchema, author: authorSchema })),
+  steps: z.array(
+    z.object({
+      command: editCommandSchema,
+      author: authorSchema,
+      /** The commands that undo `command`; absent for a checkpoint that still uses a snapshot. */
+      inverse: z.array(editCommandSchema).optional(),
+      /** The authorship those commands restore (null = the key had no author). Travels with them. */
+      authors: z.record(z.string(), authorSchema.nullable()).optional(),
+    }),
+  ),
 });
 
 export const undoStateSchema = z.object({

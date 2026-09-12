@@ -5,10 +5,12 @@
  * the keystone artifact (it drives the activity feed now and, next slice, the
  * on-disk file format and history); undo/redo is a consumer built on top.
  *
- * Undo uses whole-project snapshot checkpoints (every store already has
- * snapshot()/load(), and load() rebuilds child stores + re-emits, so the UI and
- * the MCP mirror stay in sync). Rapid edits to the same target (a knob drag,
- * repeated nudges) coalesce into one checkpoint and one log entry.
+ * A checkpoint is either a command's *inverse* (cheap, and the direction DAW-34 is taking undo) or a
+ * whole-project snapshot, for the command types `invert` cannot reverse yet. Snapshots work because
+ * every store has snapshot()/load(), and load() rebuilds child stores + re-emits, so the UI and the
+ * MCP mirror stay in sync; they are simply large. Coverage lands command-by-command and both stacks
+ * hold a mix meanwhile. Rapid edits to the same target (a knob drag, repeated nudges) coalesce into
+ * one checkpoint and one log entry.
  *
  * In-memory for this slice; persisting the log is the next step (the entry type
  * is serializable by construction).
@@ -17,24 +19,55 @@ import { fingerprintProject } from "../project/fingerprint";
 import { ProjectStore } from "../project/projectStore";
 import type { ProjectData } from "../project/types";
 import { applyEdit } from "./applyEdit";
+import { authorshipBefore, invert, restoreAuthorship, type PriorAuthors } from "./invert";
 import { describeCommand, type DescribeContext } from "./describe";
 import type { Author, EditCommand, EditEntry } from "./types";
 
-/**
- * An undo/redo checkpoint: the project state to restore, plus the command that
- * the checkpoint brackets - so undo/redo can describe what they reverted/reapplied
- * in the activity feed.
- */
-export interface Checkpoint {
-  snap: ProjectData;
+/** What every checkpoint carries: the command it brackets, so undo/redo can describe what they
+ *  reverted/reapplied in the activity feed, and who authored it. */
+interface CheckpointBase {
   command: EditCommand;
   author: Author;
 }
 
-/** One step in a packed stack: the command a checkpoint brackets. */
+/**
+ * The original checkpoint: a whole-project snapshot to restore. Instant, never wrong, and
+ * expensive - see `MAX_DEPTH`. The fallback for any command type `invert` cannot reverse yet.
+ */
+export interface SnapshotCheckpoint extends CheckpointBase {
+  snap: ProjectData;
+}
+
+/**
+ * The cheap checkpoint (DAW-34): the commands that reverse `command`, captured before it was
+ * applied. Undo applies them in order; redo re-applies `command` itself. Direction-free, so it
+ * moves between the undo and redo stacks unchanged.
+ */
+export interface InverseCheckpoint extends CheckpointBase {
+  inverse: EditCommand[];
+  /**
+   * The authorship the command stamped over. A snapshot restores authorship with everything else,
+   * so an inverse has to carry it or undo would re-attribute the object to whoever undid it.
+   */
+  authors: PriorAuthors;
+}
+
+/**
+ * A checkpoint is one or the other, so inverse coverage can land command-by-command with the
+ * snapshot path carrying whatever is not converted yet (DAW-34). Both stacks hold a mix.
+ */
+export type Checkpoint = SnapshotCheckpoint | InverseCheckpoint;
+
+export const isSnapshotCheckpoint = (checkpoint: Checkpoint): checkpoint is SnapshotCheckpoint => "snap" in checkpoint;
+
+/** One step in a packed stack: the command a checkpoint brackets, plus its inverse if it had one. */
 interface PackedStep {
   command: EditCommand;
   author: Author;
+  /** Present for an `InverseCheckpoint`; absent for a snapshot one (whose state is replayed). */
+  inverse?: EditCommand[];
+  /** The authorship that inverse restores; travels with it. */
+  authors?: PriorAuthors;
 }
 
 /**
@@ -57,11 +90,13 @@ export interface UndoState {
    * A fingerprint of the project state these stacks were captured against, so a reload can tell
    * whether they still apply to the project it just restored (DAW-8.15).
    *
-   * **A stale stack is far worse than no stack**, because a checkpoint holds a whole-project
-   * snapshot rather than an inverse operation: undoing against one from earlier in the session
-   * does not undo the last edit, it throws the project back to that older state and drops
-   * everything since. An empty stack merely greys out undo. So the two are compared on load and a
-   * mismatch discards, which turns "silently lost my work" into "undo is unavailable".
+   * **A stale stack is far worse than no stack** wherever a checkpoint is still a whole-project
+   * snapshot: undoing against one from earlier in the session does not undo the last edit, it
+   * throws the project back to that older state and drops everything since. An empty stack merely
+   * greys out undo. So the two are compared on load and a mismatch discards, which turns "silently
+   * lost my work" into "undo is unavailable". An all-inverse stack will be able to do better than
+   * discard (refuse the entries that conflict, keep the rest - DAW-34), which is exactly the
+   * per-entry failure a snapshot cannot express.
    *
    * The state, not the log's high-water `seq`, because the two edit-log counters in a hosted
    * session are different numbering spaces: a coalesced gesture is one local entry but many
@@ -73,10 +108,11 @@ export interface UndoState {
 
 const COALESCE_MS = 400;
 /**
- * How many checkpoints each in-memory stack holds. **This is the expensive one**: an in-memory
- * checkpoint is a full `ProjectData` snapshot (that is what makes undo instant), so the ceiling is
- * roughly this many copies of the project in RAM. Deeper history is what the version timeline is
- * for; undo is the recent-gesture buffer.
+ * How many checkpoints each in-memory stack holds. **This is the expensive one** while checkpoints
+ * are still snapshots: one holds a full `ProjectData` copy, so the ceiling is roughly this many
+ * copies of the project in RAM. It can rise once every command type has an inverse (DAW-34) and a
+ * checkpoint costs an old value instead. Deeper history is what the version timeline is for; undo is
+ * the recent-gesture buffer.
  */
 const MAX_DEPTH = 100;
 /**
@@ -219,7 +255,7 @@ export class EditLog {
       const top = this.undoStack[this.undoStack.length - 1];
       if (top) top.command = command; // describe the gesture by its latest state
     } else {
-      this.undoStack.push({ snap: this.project.snapshot(), command, author });
+      this.undoStack.push(this.checkpoint(command, author));
       if (this.undoStack.length > MAX_DEPTH) this.undoStack.shift();
       this.redoStack = [];
       applyEdit(this.project, command, author);
@@ -255,8 +291,8 @@ export class EditLog {
   undo = (): void => {
     const cp = this.undoStack.pop();
     if (!cp) return;
-    this.redoStack.push({ snap: this.project.snapshot(), command: cp.command, author: cp.author });
-    this.project.load(cp.snap);
+    this.redoStack.push(this.flip(cp));
+    this.rewind(cp);
     // Record the undo in the activity feed (append-only; the feed is a reflog,
     // authored by whoever pressed undo - the local user).
     this.entries.push({
@@ -274,8 +310,8 @@ export class EditLog {
   redo = (): void => {
     const cp = this.redoStack.pop();
     if (!cp) return;
-    this.undoStack.push({ snap: this.project.snapshot(), command: cp.command, author: cp.author });
-    this.project.load(cp.snap);
+    this.undoStack.push(this.flip(cp));
+    this.replay(cp);
     this.entries.push({
       seq: this.seq++,
       command: cp.command,
@@ -287,6 +323,44 @@ export class EditLog {
     this.lastKey = null;
     this.emit();
   };
+
+  /**
+   * A checkpoint for an about-to-be-applied command. Must be called BEFORE `applyEdit`, while the
+   * project still holds the pre-edit state: that is what `invert` reads, and what a snapshot copies.
+   * An inverse when we have one, a whole-project snapshot when we do not (DAW-34).
+   */
+  private checkpoint(command: EditCommand, author: Author): Checkpoint {
+    const inverse = invert(this.project, command);
+    if (!inverse) return { snap: this.project.snapshot(), command, author };
+    return { inverse, authors: authorshipBefore(this.project, command), command, author };
+  }
+
+  /**
+   * The copy of a checkpoint to push onto the opposite stack. A snapshot checkpoint's `snap` means
+   * "the state on the other side of this command", which is the live state right now, so it is
+   * re-stamped. An inverse checkpoint is direction-free and crosses over unchanged.
+   */
+  private flip(checkpoint: Checkpoint): Checkpoint {
+    return isSnapshotCheckpoint(checkpoint) ? { ...checkpoint, snap: this.project.snapshot() } : checkpoint;
+  }
+
+  /** Move the project back to before `checkpoint.command`: load its snapshot, or apply its inverse. */
+  private rewind(checkpoint: Checkpoint): void {
+    if (isSnapshotCheckpoint(checkpoint)) {
+      this.project.load(checkpoint.snap);
+      return;
+    }
+    for (const command of checkpoint.inverse) applyEdit(this.project, command, checkpoint.author);
+    // After, not before: applying the inverse re-stamps the keys it touches, so the captured
+    // authorship has to be the last word.
+    restoreAuthorship(this.project, checkpoint.authors);
+  }
+
+  /** Move the project forward past `checkpoint.command` again: load its snapshot, or re-apply it. */
+  private replay(checkpoint: Checkpoint): void {
+    if (isSnapshotCheckpoint(checkpoint)) this.project.load(checkpoint.snap);
+    else applyEdit(this.project, checkpoint.command, checkpoint.author);
+  }
 
   /** Break the coalesce chain so the next edit starts a fresh entry. Called at a
    *  boundary (e.g. after a commit) so post-commit edits never fold into a
@@ -327,9 +401,10 @@ export class EditLog {
 
   /** The undo/redo stacks for persistence, bounded then delta-encoded (one base snapshot each). */
   getCheckpoints(): UndoState {
-    const state = fingerprintProject(this.project.snapshot());
-    const undo = packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH));
-    const redo = packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH));
+    const live = this.project.snapshot();
+    const state = fingerprintProject(live);
+    const undo = packUndo(this.undoStack.slice(-PERSIST_UNDO_DEPTH), live);
+    const redo = packRedo(this.redoStack.slice(-PERSIST_UNDO_DEPTH), live);
     // Both stacks, then undo alone, then neither: see PERSIST_UNDO_MAX_BYTES.
     const candidates: UndoState[] = [
       { undo, redo, state },
@@ -409,29 +484,72 @@ export class EditLog {
 
 // ---- delta-encoding of the persisted undo/redo stacks ----
 //
-// A checkpoint's snapshot is the live state at push time, and the live state is
-// always `applyEdit(previousCheckpoint.snapshot, previousCheckpoint.command)`. So a
-// stack is fully reconstructable from one base snapshot + each checkpoint's command.
-// The two stacks chain in opposite directions: an undo checkpoint's snapshot is the
-// state *before* its command (chains forward from the bottom), a redo checkpoint's is
-// the state *after* its command (chains forward from the top) - hence two encoders.
+// A snapshot checkpoint's state is the live state at push time, and the live state is always
+// `applyEdit(previousCheckpoint.snapshot, previousCheckpoint.command)`. So a stack of them is fully
+// reconstructable from one base snapshot + each checkpoint's command. The two stacks chain in
+// opposite directions: an undo checkpoint's snapshot is the state *before* its command (chains
+// forward from the bottom), a redo checkpoint's is the state *after* its command (chains forward
+// from the top) - hence two encoders.
+//
+// An inverse checkpoint (DAW-34) needs none of that: its inverse commands ARE the persisted form, so
+// it stores itself. A stack is a mix during the migration, and the base snapshot it still needs
+// shrinks out of existence on its own once every command type has an inverse - at which point this
+// whole section goes away with `undo.json`.
 
-/** Pack an undo stack: anchor at the bottom snapshot; steps replay forward up it. */
-function packUndo(stack: Checkpoint[]): PackedStack {
-  if (stack.length === 0) return { base: null, steps: [] };
-  return {
-    base: stack[0].snap,
-    steps: stack.map((checkpoint) => ({ command: checkpoint.command, author: checkpoint.author })),
-  };
+/** The step form of a checkpoint: its command, plus its inverse when it had one. */
+const packStep = (checkpoint: Checkpoint): PackedStep =>
+  isSnapshotCheckpoint(checkpoint)
+    ? { command: checkpoint.command, author: checkpoint.author }
+    : {
+        command: checkpoint.command,
+        author: checkpoint.author,
+        inverse: checkpoint.inverse,
+        authors: checkpoint.authors,
+      };
+
+/** Does this stack still contain a checkpoint whose state has to be replayed from a base snapshot? */
+const needsBase = (stack: Checkpoint[]): boolean => stack.some(isSnapshotCheckpoint);
+
+/**
+ * The project state at the bottom of an undo stack, walked down from the live state: a snapshot
+ * checkpoint's own `snap` where there is one, applying the inverse where there is not. Reduces to
+ * `stack[0].snap` for an all-snapshot stack (the pre-DAW-34 case), and is never called for an
+ * all-inverse one.
+ */
+function undoBase(stack: Checkpoint[], live: ProjectData): ProjectData {
+  const store = new ProjectStore(false);
+  store.load(live);
+  for (let index = stack.length - 1; index >= 0; index--) {
+    const checkpoint = stack[index];
+    if (isSnapshotCheckpoint(checkpoint)) store.load(checkpoint.snap);
+    else for (const command of checkpoint.inverse) applyEdit(store, command, checkpoint.author);
+  }
+  return store.snapshot();
 }
 
-/** Pack a redo stack: anchor at the top snapshot; steps replay forward back down it. */
-function packRedo(stack: Checkpoint[]): PackedStack {
-  if (stack.length === 0) return { base: null, steps: [] };
-  return {
-    base: stack[stack.length - 1].snap,
-    steps: stack.map((checkpoint) => ({ command: checkpoint.command, author: checkpoint.author })),
-  };
+/**
+ * The project state at the top of a redo stack: the state *after* the next-to-be-redone command.
+ * The live project sits immediately before it, so one forward apply gets there.
+ */
+function redoBase(stack: Checkpoint[], live: ProjectData): ProjectData {
+  const top = stack[stack.length - 1];
+  if (isSnapshotCheckpoint(top)) return top.snap;
+  const store = new ProjectStore(false);
+  store.load(live);
+  applyEdit(store, top.command, top.author);
+  return store.snapshot();
+}
+
+/** Pack an undo stack: anchor at the bottom state; steps replay forward up it. */
+function packUndo(stack: Checkpoint[], live: ProjectData): PackedStack {
+  if (stack.length === 0) return EMPTY_STACK;
+  return { base: needsBase(stack) ? undoBase(stack, live) : null, steps: stack.map(packStep) };
+}
+
+/** Pack a redo stack: anchor at the top state; steps replay forward back down it. */
+function packRedo(stack: Checkpoint[], live: ProjectData): PackedStack {
+  if (stack.length === 0) return EMPTY_STACK;
+  return { base: needsBase(stack) ? redoBase(stack, live) : null, steps: stack.map(packStep) };
 }
 
 /**
@@ -443,38 +561,57 @@ const withinUndoBudget = (state: UndoState): boolean => JSON.stringify(state).le
 
 /** Rebuild an undo stack from packed form (base snapshot + forward-replayed steps). */
 function unpackUndo(packed: PackedStack | null | undefined): Checkpoint[] {
-  if (!packed?.base) return [];
-  const store = new ProjectStore(false);
-  store.load(packed.base);
+  const steps = packed?.steps ?? [];
+  const base = packed?.base ?? null;
+  if (steps.length === 0) return [];
+  const store = base ? new ProjectStore(false) : null;
+  if (store && base) store.load(base);
+  let snapshot: ProjectData | null = base;
   const checkpoints: Checkpoint[] = [];
-  let snapshot: ProjectData = packed.base;
-  packed.steps.forEach((step, index) => {
-    checkpoints.push({ snap: snapshot, command: step.command, author: step.author });
-    if (index < packed.steps.length - 1) {
+  for (const [index, step] of steps.entries()) {
+    if (step.inverse)
+      checkpoints.push({
+        inverse: step.inverse,
+        authors: step.authors ?? {},
+        command: step.command,
+        author: step.author,
+      });
+    else if (snapshot) checkpoints.push({ snap: snapshot, command: step.command, author: step.author });
+    // A snapshot step with no base to replay from: our own packer never writes that, so this is a
+    // hand-edited or truncated file. Drop the stack rather than restore a half of it.
+    else return [];
+    if (store && index < steps.length - 1) {
       applyEdit(store, step.command, step.author); // advance to the next checkpoint's snapshot
       snapshot = store.snapshot();
     }
-  });
+  }
   return checkpoints;
 }
 
 /** Rebuild a redo stack from packed form (top snapshot + steps replayed back down it). */
 function unpackRedo(packed: PackedStack | null | undefined): Checkpoint[] {
-  if (!packed?.base) return [];
-  const count = packed.steps.length;
-  const store = new ProjectStore(false);
-  store.load(packed.base);
-  const checkpoints: Checkpoint[] = new Array(count);
-  let snapshot: ProjectData = packed.base;
-  checkpoints[count - 1] = {
-    snap: snapshot,
-    command: packed.steps[count - 1].command,
-    author: packed.steps[count - 1].author,
-  };
-  for (let index = count - 2; index >= 0; index--) {
-    applyEdit(store, packed.steps[index].command, packed.steps[index].author); // step one checkpoint earlier
-    snapshot = store.snapshot();
-    checkpoints[index] = { snap: snapshot, command: packed.steps[index].command, author: packed.steps[index].author };
+  const steps = packed?.steps ?? [];
+  const base = packed?.base ?? null;
+  if (steps.length === 0) return [];
+  const store = base ? new ProjectStore(false) : null;
+  if (store && base) store.load(base);
+  let snapshot: ProjectData | null = base;
+  const checkpoints: Checkpoint[] = new Array(steps.length);
+  for (let index = steps.length - 1; index >= 0; index--) {
+    const step = steps[index];
+    if (store && index < steps.length - 1) {
+      applyEdit(store, step.command, step.author); // step one checkpoint earlier
+      snapshot = store.snapshot();
+    }
+    if (step.inverse)
+      checkpoints[index] = {
+        inverse: step.inverse,
+        authors: step.authors ?? {},
+        command: step.command,
+        author: step.author,
+      };
+    else if (snapshot) checkpoints[index] = { snap: snapshot, command: step.command, author: step.author };
+    else return [];
   }
   return checkpoints;
 }

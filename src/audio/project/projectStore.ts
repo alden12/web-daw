@@ -1334,6 +1334,12 @@ export class ProjectStore {
     return this.authorship[key];
   }
 
+  /** Every stamped key under a `prefix:` (the same prefix form `dropAuthors` accepts). An inverse
+   *  captures these before a command clears them, so undo can put the stamps back (DAW-34). */
+  authorKeysUnder(prefix: string): string[] {
+    return Object.keys(this.authorship).filter((key) => key.startsWith(prefix));
+  }
+
   /** Record who last edited an object key. Emits only when the author actually changes, so the
    *  last-editor tint refreshes the instant a new voice takes over (e.g. a human grabbing an
    *  agent-set knob) without a full rebuild on every re-stamp of the same author (a knob drag
