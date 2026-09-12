@@ -13,12 +13,52 @@
 import { describe, it, expect } from "vitest";
 import { applyEdit } from "../src/audio/commands/applyEdit";
 import { EditLog } from "../src/audio/commands/editLog";
-import { invert, invertibleTypes, type InvertibleType } from "../src/audio/commands/invert";
+import {
+  authorshipBefore,
+  invert,
+  invertibleTypes,
+  restoreAuthorship,
+  type InvertibleType,
+} from "../src/audio/commands/invert";
 import type { EditCommand } from "../src/audio/commands/types";
+import type { GraphEffectDef, GraphInstrumentDef } from "../src/audio/graph/types";
 import { paramKey } from "../src/audio/commands/authorship";
-import { conflictKeys, keysOverlap } from "../src/audio/sync/conflict";
+import { conflictKeys, keysOverlap, undoConflictKeys } from "../src/audio/sync/conflict";
 import { fingerprintProject } from "../src/audio/project/fingerprint";
 import { ProjectStore } from "../src/audio/project/projectStore";
+
+/**
+ * Commands that COPY existing state into a new object. They are excluded from the second position in
+ * the out-of-order test below, because "equals a world where `first` never happened" is the wrong
+ * standard for them: a fork captures the clip as it stood, and undoing an earlier edit rightly does
+ * not reach into a copy someone has already taken. Nothing is lost either way, which is the property
+ * the gate actually has to protect.
+ *
+ * Not a general escape hatch. A command that *overwrites* what an intervening edit wrote is a real
+ * conflict and stays in the test, which is what `undoConflictKeys` exists to catch.
+ */
+const CAPTURES_STATE = new Set<EditCommand["type"]>(["addClip", "pasteClip", "createTrackFromPatch"]);
+
+/** A minimal custom instrument and effect, as data - enough for the add/remove pair to round trip. */
+const CUSTOM_INSTRUMENT: GraphInstrumentDef = {
+  type: "ci-invert",
+  label: "Invert Synth",
+  schema: [{ id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 }],
+  voice: { nodes: [{ id: "osc", kind: "osc", waveform: "sawtooth" }], connections: [["osc", "amp"]] },
+};
+
+const CUSTOM_EFFECT: GraphEffectDef = {
+  type: "ce-invert",
+  label: "Invert Effect",
+  schema: [{ id: "mix", label: "Mix", kind: "number", min: 0, max: 1, default: 0.5 }],
+  graph: {
+    nodes: [{ id: "gain", kind: "gain", gain: 0.5 }],
+    connections: [
+      ["in", "gain"],
+      ["gain", "wet"],
+    ],
+  },
+};
 
 /**
  * One command per invertible type, with the edits needed to put the project somewhere non-default
@@ -122,6 +162,107 @@ const SAMPLES: { [K in InvertibleType]: Sample<K> } = {
       { type: "launchClip", trackId: "at-1", clipId: "ac-1" },
     ],
     command: { type: "stopAllClips" },
+  },
+
+  // --- creation. Fresh ids throughout: a taken id is a separate case, tested below. ---
+  // Named explicitly, like every creating sample here. An omitted name is filled in from the current
+  // track count, so the command's effect would depend on what else exists - which is fine in the app
+  // (the name was chosen in that world and undoing someone else's track does not rename yours) but
+  // makes a sample that cannot be compared against "never happened".
+  createTrack: {
+    setup: [],
+    command: { type: "createTrack", instrumentType: "subtractive", id: "t-new", name: "New Lead" },
+  },
+  createTrackFromPatch: {
+    setup: [],
+    command: {
+      type: "createTrackFromPatch",
+      id: "t-patch",
+      name: "Patched",
+      instrumentType: "subtractive",
+      params: { "filter.cutoff": 900 },
+      effects: [{ id: "fx-new", type: "reverb", params: { "reverb.decay": 3 } }],
+    },
+  },
+  createAudioTrack: { setup: [], command: { type: "createAudioTrack", id: "at-new", name: "Room" } },
+  addAudioTrack: {
+    setup: [],
+    command: {
+      type: "addAudioTrack",
+      id: "at-new2",
+      fileId: "file-2",
+      name: "Gtr",
+      durationSec: 3,
+      startBeat: 0,
+      gain: 0.7,
+    },
+  },
+  createGroup: { setup: [], command: { type: "createGroup", id: "g-new", name: "Bus" } },
+  addEffect: { setup: [], command: { type: "addEffect", hostId: "t-1", effectType: "reverb", id: "fx-new" } },
+  addMidiDevice: {
+    setup: [],
+    command: { type: "addMidiDevice", trackId: "t-1", deviceType: "arpeggiator", id: "md-new" },
+  },
+  addClip: { setup: [], command: { type: "addClip", trackId: "t-1", id: "c-new", name: "B" } },
+  pasteClip: {
+    setup: [],
+    command: {
+      type: "pasteClip",
+      trackId: "t-1",
+      id: "c-paste",
+      content: { kind: "instrument", name: "Copy", lengthBeats: 8, notes: [] },
+    },
+  },
+  addPlacement: {
+    setup: [],
+    command: { type: "addPlacement", trackId: "t-1", id: "p-new", clipId: "c-t-1", startBeat: 24, length: 4 },
+  },
+  addSample: {
+    setup: [],
+    command: { type: "addSample", id: "s-new", name: "Kick.wav", contentHash: "hash-1" },
+  },
+  addCustomInstrument: { setup: [], command: { type: "addCustomInstrument", def: CUSTOM_INSTRUMENT } },
+  addCustomEffect: { setup: [], command: { type: "addCustomEffect", def: CUSTOM_EFFECT } },
+
+  // --- removal whose inverse is an existing add ---
+  addNote: {
+    setup: [],
+    command: {
+      type: "addNote",
+      trackId: "t-1",
+      clipId: "c-t-1",
+      note: { id: "n-new", pitch: 67, start: 2, length: 1, velocity: 0.6 },
+    },
+  },
+  removeNote: { setup: [], command: { type: "removeNote", trackId: "t-1", clipId: "c-t-1", id: "n-1" } },
+  removeNotes: {
+    setup: [
+      {
+        type: "addNotes",
+        trackId: "t-1",
+        clipId: "c-t-1",
+        notes: [{ id: "n-2", pitch: 64, start: 1, length: 1, velocity: 0.5 }],
+      },
+    ],
+    command: { type: "removeNotes", trackId: "t-1", clipId: "c-t-1", ids: ["n-1", "n-2"] },
+  },
+  // A second placement, not the seeded one: `load` heals a note track with no placements by making
+  // one, so a project whose track has zero placements does not survive a reload to compare against.
+  removePlacement: {
+    setup: [{ type: "addPlacement", trackId: "t-1", id: "p-extra", clipId: "c-t-1", startBeat: 32, length: 4 }],
+    command: { type: "removePlacement", trackId: "t-1", placementId: "p-extra" },
+  },
+  removeSample: {
+    setup: [{ type: "addSample", id: "s-1", name: "Snare.wav", contentHash: "hash-2", source: "upload" }],
+    command: { type: "removeSample", id: "s-1" },
+  },
+  removeCustomInstrument: {
+    setup: [{ type: "addCustomInstrument", def: CUSTOM_INSTRUMENT }],
+    command: { type: "removeCustomInstrument", deviceType: CUSTOM_INSTRUMENT.type },
+  },
+  removeCustomEffect: {
+    setup: [{ type: "addCustomEffect", def: CUSTOM_EFFECT }],
+    command: { type: "removeCustomEffect", deviceType: CUSTOM_EFFECT.type },
   },
 };
 
@@ -248,15 +389,19 @@ describe("invert", () => {
 
   /**
    * The gate that makes out-of-order and author-scoped undo safe (DAW-34) trusts `conflictKeys`:
-   * non-overlapping keys are taken to mean the two edits commute. Assert that for real, on the pairs
-   * we have samples for, so the gate rests on a tested claim rather than an assumed one.
+   * non-overlapping keys are taken as a licence to apply an inverse out of order. Assert the claim
+   * the gate actually rests on, which is narrower than "the two commands commute": taking `first`
+   * back after `second` has landed must give the same project as never having done `first` at all.
    *
-   * Compared on a *canonical* snapshot rather than `fingerprintProject`, because commutativity is a
-   * claim about state and the fingerprint is deliberately byte-exact. `applyEdit` stamps the
-   * authorship record as it goes, so two orders insert the same keys in a different order, which
-   * `JSON.stringify` faithfully reproduces as two different strings for one identical project.
+   * The difference matters. `createTrack` then `createAudioTrack` genuinely does not commute (the
+   * track list is ordered), but undoing the first is still exact, because its inverse removes by id
+   * and does not care what else arrived. Testing forward commutativity would have failed that pair
+   * and pushed us to key it as a conflict for no reason.
+   *
+   * Compared on a *canonical* snapshot: `applyEdit` writes the authorship record as it goes, and
+   * key order there is not part of the project's meaning.
    */
-  it("commands with non-overlapping conflict keys commute", () => {
+  it("an inverse still undoes its command after a disjoint edit lands on top", () => {
     /** JSON with object keys sorted, so insertion order stops counting as a difference. Array order
      *  is left alone: a track list and a note list mean something in order. */
     const canonical = (value: unknown): unknown =>
@@ -274,19 +419,34 @@ describe("invert", () => {
     const pairs = commands.flatMap((first) =>
       commands
         .filter((second) => second.type !== first.type)
-        .filter((second) => !keysOverlap(conflictKeys(first), conflictKeys(second)))
+        .filter((second) => !CAPTURES_STATE.has(second.type))
         .map((second) => [first, second] as const),
     );
-    expect(pairs.length).toBeGreaterThan(0);
+    let checked = 0;
 
     for (const [first, second] of pairs) {
-      const forward = seeded().project;
-      applyEdit(forward, first, "you");
-      applyEdit(forward, second, "you");
-      const swapped = seeded().project;
-      applyEdit(swapped, second, "you");
-      applyEdit(swapped, first, "you");
-      expect(canonical(swapped.snapshot()), `${first.type} vs ${second.type}`).toEqual(canonical(forward.snapshot()));
+      // Do `first`, let `second` land on top, then take `first` back the way `EditLog.rewind` does.
+      const { project: outOfOrder } = seeded();
+      const inverse = invert(outOfOrder, first);
+      if (inverse === null) continue; // declined an inverse, so it takes a snapshot and the gate never sees it
+      // The gate's own question, asked with the gate's own key function: only pairs it would let
+      // through are claims we have to honour.
+      if (keysOverlap(undoConflictKeys(first, inverse), conflictKeys(second))) continue;
+      checked++;
+      const authors = authorshipBefore(outOfOrder, first);
+      applyEdit(outOfOrder, first, "you");
+      applyEdit(outOfOrder, second, "you");
+      for (const command of inverse) applyEdit(outOfOrder, command, "you");
+      restoreAuthorship(outOfOrder, authors);
+
+      // What the project would be if `first` had never happened.
+      const { project: never } = seeded();
+      applyEdit(never, second, "you");
+
+      expect(canonical(outOfOrder.snapshot()), `${first.type} then ${second.type}`).toEqual(
+        canonical(never.snapshot()),
+      );
     }
+    expect(checked).toBeGreaterThan(0);
   });
 });

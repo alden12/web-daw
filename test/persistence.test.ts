@@ -455,7 +455,9 @@ describe("project + edit-log persistence", () => {
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    expect(log.getCheckpoints().undo.base).toBeTruthy();
+    // A normal stack persists its steps. `base` is no longer the discriminator: an all-inverse stack
+    // carries no base snapshot at all (DAW-34), so "gave up" now shows as no steps, below.
+    expect(log.getCheckpoints().undo.steps).toHaveLength(1);
 
     // A project whose snapshot alone is past the budget. Nothing we can trim brings it under, so the
     // choice is an unwritable file (rejected by the server's JSON cap, undo silently gone) or an
@@ -480,8 +482,8 @@ describe("project + edit-log persistence", () => {
     log.dispatch({ type: "setTempo", bpm: 132 });
 
     const packed = log.getCheckpoints();
-    expect(packed.undo.base).toBeNull();
-    expect(packed.redo.base).toBeNull();
+    expect(packed.undo.steps).toHaveLength(0);
+    expect(packed.redo.steps).toHaveLength(0);
     expect(packed.state).toBeTruthy();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -520,8 +522,10 @@ describe("project + edit-log persistence", () => {
     src.log.undo();
     src.log.undo();
     const packed = src.log.getCheckpoints();
-    // The base snapshot is the bottom of the undo chain, not one-per-checkpoint.
-    expect(packed.undo.base).toBeTruthy();
+    // Every command here can be inverted, so the stack needs no base snapshot at all - which is the
+    // size win DAW-34 is after. A stack still holding a snapshot checkpoint anchors on one base at
+    // the bottom of the chain, never one per checkpoint.
+    expect(packed.undo.base).toBeNull();
     expect(packed.undo.steps.length).toBeGreaterThan(1);
 
     const project2 = new ProjectStore(false);

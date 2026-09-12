@@ -67,6 +67,10 @@ const { min: MIN_BPM, max: MAX_BPM } = TEMPO_BPM_RANGE;
 // and the schema's validation can't drift. The guard narrows a number to the denominator union.
 const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>
   (TIME_SIGNATURE_DENOMINATORS as readonly number[]).includes(value);
+/** A record with its keys in sorted order, so serializing it is deterministic. */
+const sortedByKey = <Value>(record: Record<string, Value>): Record<string, Value> =>
+  Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
+
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
@@ -1323,7 +1327,12 @@ export class ProjectStore {
       grooveId: this.grooveId,
       grooveAmount: this.grooveAmount,
       samples: this.samples,
-      authorship: this.authorship,
+      // Key-sorted, so the document is canonical. The record is keyed by object id and written in
+      // whatever order edits happened, so removing and re-adding an object (exactly what an undo by
+      // inverse does) reorders the keys without changing the project. `fingerprintProject` is a
+      // stringify, so that reordering would otherwise read as "a different project" and discard a
+      // perfectly good undo stack (DAW-34). Sorting also hands out a copy rather than the live map.
+      authorship: sortedByKey(this.authorship),
       customInstruments: this.customInstrumentDefs,
       customEffects: this.customEffectDefs,
     });

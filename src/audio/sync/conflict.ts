@@ -31,6 +31,44 @@ const CONTAINER_TARGETS = new Set<EditCommand["type"]>([
   "moveGroup",
 ]);
 
+/**
+ * Commands that *read* shared state to compute what they write, and so do not commute with a change
+ * to it even though they touch different objects. Creating a clip is the whole family: a note clip
+ * is seeded at the project length, an audio clip's length is stored in beats but derived from its
+ * duration in seconds at the current tempo (`ProjectStore.naturalBeats`), and a forked clip copies
+ * whichever clip is currently active. Placing audio at 120bpm and then changing the tempo is not the
+ * same edit as doing it the other way round.
+ *
+ * Without these the two sides have disjoint keys and read as commuting, which they do not. The undo
+ * gate (DAW-34) treats disjoint keys as a licence to apply an inverse out of order, so a missing
+ * entry here is a wrong undo rather than a refused one. Both entries below were found by the
+ * commutativity property test in `test/invert.test.ts`, not by reading the code.
+ *
+ * Conservative on purpose: `addPlacement` with an explicit `length` never reads the tempo, and
+ * `addClip` forking an existing clip never reads the project length, but keying them anyway costs
+ * only a refused undo where keying them wrongly costs a corrupted one.
+ */
+const trackClipPool = (command: { trackId: string }): string[] => [`clips:${command.trackId}`];
+
+const DERIVED_FROM: Partial<{
+  [K in EditCommand["type"]]: (command: Extract<EditCommand, { type: K }>) => string[];
+}> = {
+  // Audio clip length is derived from its duration in seconds at the current tempo.
+  addAudioTrack: () => ["project:tempo"],
+  addAudioClip: (command) => ["project:tempo", ...trackClipPool(command)],
+  addPlacement: (command) => ["project:tempo", ...trackClipPool(command)],
+  // A new note clip is seeded at the project length.
+  createTrack: () => ["project:length"],
+  createTrackFromPatch: () => ["project:length"],
+  // ...and `addClip` also forks the track's ACTIVE clip, a per-track pointer that the other clip
+  // commands move. Keying the pool rather than the pointed-at clip keeps this a pure function of
+  // the command, which is what every caller of `conflictKeys` expects.
+  addClip: (command) => ["project:length", ...trackClipPool(command)],
+  pasteClip: trackClipPool,
+  removeClip: trackClipPool,
+  addNoteClip: trackClipPool,
+};
+
 /** Project-wide commands, each keyed by the facet it changes (so same-facet edits clash, cross-facet don't). */
 const PROJECT_KEYS: Partial<Record<EditCommand["type"], string>> = {
   renameProject: "project:name",
@@ -47,10 +85,30 @@ export function conflictKeys(command: EditCommand): string[] {
   const projectKey = PROJECT_KEYS[command.type];
   if (projectKey) return [projectKey];
   const effect = authorshipEffect(command);
-  const keys = [...(effect.touched ?? []), ...(effect.removed ?? [])];
+  const derive = DERIVED_FROM[command.type] as ((command: EditCommand) => string[]) | undefined;
+  const derived = derive ? derive(command) : [];
+  const keys = [...(effect.touched ?? []), ...(effect.removed ?? []), ...derived];
   if (CONTAINER_TARGETS.has(command.type)) return unique(keys);
   // Drop the enclosing container stamp; keep only the finer keys (note/param/effect/clip/placement).
   return unique(keys.filter((key) => !key.startsWith("track:") && !key.startsWith("group:")));
+}
+
+/**
+ * The keys an *undo* of `command` touches: the command's own, plus every key its inverse commands
+ * write. Wider than `conflictKeys` alone, and it has to be.
+ *
+ * `setLength` re-clamps the loop start, so its inverse is `[setLength(old), setLoopStart(old)]` -
+ * which means undoing a length change out of order would silently overwrite a loop-start edit that
+ * landed in between, even though the two commands have disjoint keys. The same goes for any
+ * destructive command whose inverse restores the things it cascaded away.
+ *
+ * Taking the union from the inverse itself rather than from a hand-maintained table is what keeps
+ * this correct as inverters are added: a new inverse that writes more automatically conflicts with
+ * more. Used by the undo gate (DAW-34); reconnect conflict detection has no inverse to consult and
+ * stays on `conflictKeys`.
+ */
+export function undoConflictKeys(command: EditCommand, inverse: EditCommand[]): string[] {
+  return unique([...conflictKeys(command), ...inverse.flatMap((step) => conflictKeys(step))]);
 }
 
 /** A key ending in ":" is a prefix that clears everything under it (e.g. `param:t1:` on removeTrack). */

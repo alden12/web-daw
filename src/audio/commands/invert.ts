@@ -51,6 +51,19 @@ const currentFields = <Target, Key extends keyof Target & string>(
     fields.filter((field) => command[field] !== undefined).map((field) => [field, current[field]]),
   ) as Partial<Pick<Target, Key>>;
 
+/** The inverse of a track-creating command: nothing if the id is taken (the store hands back the
+ *  existing track and changes nothing), otherwise remove what it is about to create. */
+const createdTrack = (project: ProjectStore, id: string): EditCommand[] =>
+  project.getTrack(id) ? [] : [{ type: "removeTrack", trackId: id }];
+
+/** The inverse of a clip-creating command. Null when the id is taken, because the store mints a
+ *  fresh one and we cannot know it before the command runs. */
+const createdClip = (project: ProjectStore, trackId: string, id: string): EditCommand[] | null => {
+  const track = project.getTrack(trackId);
+  if (!track) return [];
+  return track.clips.some((clip) => clip.id === id) ? null : [{ type: "removeClip", trackId, clipId: id }];
+};
+
 /** Which clip a command targets: its explicit id, or the track's active one (the same default `applyEdit`
  *  resolves). The inverse pins the resolved id, because the active clip can move before an undo. */
 const targetClipId = (project: ProjectStore, trackId: string, clipId?: string): string | undefined =>
@@ -237,6 +250,125 @@ const INVERT = {
     const unsettable = Object.keys(patch).some((field) => patch[field as keyof typeof patch] === undefined);
     if (unsettable) return null;
     return [{ type: "setAudioClip", trackId: command.trackId, clipId, patch }];
+  },
+
+  // --- creation: the inverse removes what the command created ---------------
+  //
+  // Two traps here, both about the id, and both silent if you just remove by `command.id`.
+  //
+  // Some `add*` store methods return the EXISTING object when the id is already taken, so the
+  // command changes nothing - and removing by that id would delete something this edit did not
+  // create. Those invert to an empty list.
+  //
+  // Others quietly mint a FRESH id instead of colliding (`addClip`, `pasteClip`, `addPlacement`),
+  // so the created id is not knowable before the command runs. Those return null and fall back to
+  // a snapshot, which is rare: it needs a caller to reuse a live id.
+  createTrack: (project, command) => createdTrack(project, command.id),
+  createTrackFromPatch: (project, command) => createdTrack(project, command.id),
+  createAudioTrack: (project, command) => createdTrack(project, command.id),
+  addAudioTrack: (project, command) => createdTrack(project, command.id),
+  createGroup: (project, command) =>
+    project.getGroup(command.id) ? [] : [{ type: "removeGroup", groupId: command.id }],
+  addEffect: (project, command) =>
+    project.getEffect(command.hostId, command.id)
+      ? []
+      : [{ type: "removeEffect", hostId: command.hostId, effectId: command.id }],
+  addMidiDevice: (project, command) =>
+    project.getMidiDevice(command.trackId, command.id)
+      ? []
+      : [{ type: "removeMidiDevice", trackId: command.trackId, deviceId: command.id }],
+  addClip: (project, command) => createdClip(project, command.trackId, command.id),
+  pasteClip: (project, command) => createdClip(project, command.trackId, command.id),
+  addPlacement: (project, command) => {
+    const track = project.getTrack(command.trackId);
+    if (!track) return [];
+    if (track.placements.some((placement) => placement.id === command.id)) return null; // fresh id
+    return [{ type: "removePlacement", trackId: command.trackId, placementId: command.id }];
+  },
+  addSample: (project, command) =>
+    project.getSamples().some((sample) => sample.id === command.id) ? [] : [{ type: "removeSample", id: command.id }],
+  // Adding a custom device REPLACES any def of the same type, so the inverse puts the old one back
+  // rather than removing a device the project was already using.
+  addCustomInstrument: (project, command) => {
+    const replaced = project.customInstruments.find((def) => def.type === command.def.type);
+    return replaced
+      ? [{ type: "addCustomInstrument", def: replaced }]
+      : [{ type: "removeCustomInstrument", deviceType: command.def.type }];
+  },
+  addCustomEffect: (project, command) => {
+    const replaced = project.customEffects.find((def) => def.type === command.def.type);
+    return replaced
+      ? [{ type: "addCustomEffect", def: replaced }]
+      : [{ type: "removeCustomEffect", deviceType: command.def.type }];
+  },
+
+  // --- removal that an existing command can put back ------------------------
+  // These need no new `restore*` type: the add side of the pair already carries everything the
+  // removed object was. The container removals (track, group, clip, effect, MIDI device) do not,
+  // and are stage 2b's second half.
+  removeNote: (project, command) => {
+    const clipId = targetClipId(project, command.trackId, command.clipId);
+    const note = project
+      .getClipStore(command.trackId, clipId)
+      ?.getClip()
+      .notes.find((note) => note.id === command.id);
+    return note ? [{ type: "addNote", trackId: command.trackId, clipId, note: { ...note } }] : [];
+  },
+  removeNotes: (project, command) => {
+    const clipId = targetClipId(project, command.trackId, command.clipId);
+    const notes = project.getClipStore(command.trackId, clipId)?.getClip().notes ?? [];
+    const removed = notes.filter((note) => command.ids.includes(note.id)).map((note) => ({ ...note }));
+    return removed.length > 0 ? [{ type: "addNotes", trackId: command.trackId, clipId, notes: removed }] : [];
+  },
+  removePlacement: (project, command) => {
+    const placement = project
+      .getTrack(command.trackId)
+      ?.placements.find((placement) => placement.id === command.placementId);
+    if (!placement) return [];
+    return [
+      {
+        type: "addPlacement",
+        trackId: command.trackId,
+        id: placement.id,
+        clipId: placement.clipId,
+        startBeat: placement.startBeat,
+        offset: placement.offset,
+        length: placement.length,
+      },
+    ];
+  },
+  removeSample: (project, command) => {
+    const sample = project.getSamples().find((sample) => sample.id === command.id);
+    if (!sample) return [];
+    return [
+      {
+        type: "addSample",
+        id: sample.id,
+        name: sample.name,
+        contentHash: sample.contentHash,
+        source: sample.source,
+      },
+    ];
+  },
+  removeCustomInstrument: (project, command) => {
+    const def = project.customInstruments.find((def) => def.type === command.deviceType);
+    return def ? [{ type: "addCustomInstrument", def }] : [];
+  },
+  removeCustomEffect: (project, command) => {
+    const def = project.customEffects.find((def) => def.type === command.deviceType);
+    return def ? [{ type: "addCustomEffect", def }] : [];
+  },
+
+  // `putNote` is insert-or-replace, so whether this created a note or overwrote one decides the
+  // inverse. The same reasoning covers `addNotes`/`editNotes` in stage 3, per note.
+  addNote: (project, command) => {
+    const clipId = targetClipId(project, command.trackId, command.clipId);
+    const store = project.getClipStore(command.trackId, clipId);
+    if (!store) return [];
+    const replaced = store.getClip().notes.find((note) => note.id === command.note.id);
+    return replaced
+      ? [{ type: "addNote", trackId: command.trackId, clipId, note: { ...replaced } }]
+      : [{ type: "removeNote", trackId: command.trackId, clipId, id: command.note.id }];
   },
 
   // --- clip launching -------------------------------------------------------
