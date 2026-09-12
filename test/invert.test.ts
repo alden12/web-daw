@@ -37,7 +37,16 @@ import { ProjectStore } from "../src/audio/project/projectStore";
  * Not a general escape hatch. A command that *overwrites* what an intervening edit wrote is a real
  * conflict and stays in the test, which is what `undoConflictKeys` exists to catch.
  */
-const CAPTURES_STATE = new Set<EditCommand["type"]>(["addClip", "pasteClip", "createTrackFromPatch"]);
+const CAPTURES_STATE = new Set<EditCommand["type"]>([
+  "addClip",
+  "pasteClip",
+  "createTrackFromPatch",
+  // These bake a beat length computed from the tempo of the moment. Same reasoning: undoing an
+  // earlier tempo change does not reach back into a length already chosen (DAW-35).
+  "addAudioTrack",
+  "addAudioClip",
+  "addPlacement",
+]);
 
 /** A minimal custom instrument and effect, as data - enough for the add/remove pair to round trip. */
 const CUSTOM_INSTRUMENT: GraphInstrumentDef = {

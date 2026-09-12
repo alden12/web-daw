@@ -33,30 +33,26 @@ const CONTAINER_TARGETS = new Set<EditCommand["type"]>([
 
 /**
  * Commands that *read* shared state to compute what they write, and so do not commute with a change
- * to it even though they touch different objects. Creating a clip is the whole family: a note clip
- * is seeded at the project length, an audio clip's length is stored in beats but derived from its
- * duration in seconds at the current tempo (`ProjectStore.naturalBeats`), and a forked clip copies
- * whichever clip is currently active. Placing audio at 120bpm and then changing the tempo is not the
- * same edit as doing it the other way round.
+ * to it even though they touch different objects: a note clip is seeded at the project length, and a
+ * forked clip copies whichever clip is currently active. The undo gate (DAW-34) treats disjoint keys
+ * as a licence to apply an inverse out of order, so a missing entry here is a wrong undo rather than
+ * a refused one. Found by the property test in `test/invert.test.ts`, not by reading the code.
  *
- * Without these the two sides have disjoint keys and read as commuting, which they do not. The undo
- * gate (DAW-34) treats disjoint keys as a licence to apply an inverse out of order, so a missing
- * entry here is a wrong undo rather than a refused one. Both entries below were found by the
- * commutativity property test in `test/invert.test.ts`, not by reading the code.
+ * **Audio placement length is also tempo-derived and is deliberately NOT keyed on `project:tempo`.**
+ * The length is baked at placement time and `setTempo` never recomputes it, so changing the tempo
+ * already truncates or repeats the audio (DAW-35). An out-of-order undo of a tempo change reaches
+ * the same state, and refusing it would protect nothing while making `setTempo` clash with every
+ * audio-clip creation in the project. When DAW-35 makes `setTempo` recompute those lengths it
+ * becomes a destructive command, and the key belongs on `setTempo` rather than here.
  *
- * Conservative on purpose: `addPlacement` with an explicit `length` never reads the tempo, and
- * `addClip` forking an existing clip never reads the project length, but keying them anyway costs
- * only a refused undo where keying them wrongly costs a corrupted one.
+ * Conservative where it is cheap: `addClip` forking an existing clip never reads the project length,
+ * but keying it anyway costs a refused undo where missing it costs a corrupted one.
  */
 const trackClipPool = (command: { trackId: string }): string[] => [`clips:${command.trackId}`];
 
 const DERIVED_FROM: Partial<{
   [K in EditCommand["type"]]: (command: Extract<EditCommand, { type: K }>) => string[];
 }> = {
-  // Audio clip length is derived from its duration in seconds at the current tempo.
-  addAudioTrack: () => ["project:tempo"],
-  addAudioClip: (command) => ["project:tempo", ...trackClipPool(command)],
-  addPlacement: (command) => ["project:tempo", ...trackClipPool(command)],
   // A new note clip is seeded at the project length.
   createTrack: () => ["project:length"],
   createTrackFromPatch: () => ["project:length"],
@@ -64,6 +60,8 @@ const DERIVED_FROM: Partial<{
   // commands move. Keying the pool rather than the pointed-at clip keeps this a pure function of
   // the command, which is what every caller of `conflictKeys` expects.
   addClip: (command) => ["project:length", ...trackClipPool(command)],
+  addAudioClip: trackClipPool,
+  addPlacement: trackClipPool,
   pasteClip: trackClipPool,
   removeClip: trackClipPool,
   addNoteClip: trackClipPool,

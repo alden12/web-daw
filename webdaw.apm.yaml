@@ -7798,6 +7798,117 @@ projects:
             id: 01a07e6c-6a96-767e-bbb8-8b5d53dd645b
             at: 2026-09-08T00:30:29.526Z
             actor: claude
+      - ref: DAW-35
+        area: DAW
+        title: An audio clip does not follow a tempo change, it truncates or repeats
+        status: to-do
+        sort_path: "000035"
+        deps:
+          - INST-7
+        body: >
+          Change the project tempo in a session with audio on the timeline and
+          the audio does not follow. It is
+
+          cut short or it repeats, silently.
+
+
+          ## What happens
+
+
+          An audio placement's `length` is in **beats**, computed once when the
+          clip is placed:
+
+          `naturalBeats(durationSec) = secondsToBeats(durationSec, tempoBpm)`
+          (`ProjectStore.naturalBeats`).
+
+          `setTempo` changes the tempo and nothing else, so that length stays as
+          it was.
+
+
+          Playback does not stretch. The scheduler re-tiles the audio region
+          across the placement at natural
+
+          rate, stepping every `clipBeats = regionSec * bpm / 60`
+          (`scheduler.ts`, mirrored in
+
+          `renderOffline.ts`). So for a 2-second clip placed at 120bpm (baked as
+          4 beats):
+
+
+          - **Tempo up to 240.** The audio now spans 8 beats in a 4-beat
+          placement: you hear the first half,
+            then silence.
+          - **Tempo down to 60.** It spans 2 beats in a 4-beat placement: it
+          plays twice.
+
+
+          The block keeps the width it had; what changes is the content inside
+          it. No dialog, no warning.
+
+
+          ## Why it is filed now
+
+
+          Found while building the undo gate (DAW-34). An out-of-order undo of a
+          tempo change reaches exactly
+
+          this state, which raised the question of whether the gate should
+          refuse such an undo. It should not,
+
+          and that is the point: the undo is not doing anything a drag of the
+          tempo slider does not already do.
+
+          The bug is here, not there.
+
+
+          ## The fix needs INST-7
+
+
+          Doing this properly means the audio follows the tempo, which is
+          time-stretch (pitch-invariant speed
+
+          change), which is INST-7. Until that lands there is no correct
+          behaviour available: we cannot change
+
+          an audio clip's speed at all, so something has to give.
+
+
+          Worth deciding even before INST-7, because the current answer was
+          never chosen:
+
+
+          - **Keep the beat length, tile/truncate.** What happens today.
+          Musically wrong, and silent.
+
+          - **Keep the seconds, recompute the beat length on tempo change.** The
+          clip stays intact and its
+            block resizes on the timeline. Honest about what the audio is, and arguably what a user expects
+            from a DAW without warp enabled. Cheap: walk audio placements on `setTempo`.
+          - **Warp it** (INST-7): the real answer, once we can.
+
+
+          Option two is a small change that removes a silent failure, and it
+          composes with INST-7 later as the
+
+          "warp off" behaviour. Note it interacts with undo: recomputing lengths
+          inside `setTempo` makes that
+
+          command destructive, so its inverse would have to restore the
+          placement lengths it changed, and its
+
+          conflict keys would widen accordingly.
+
+
+          ## Related
+
+
+          `DERIVED_FROM` in `src/audio/sync/conflict.ts` carries the note that
+          audio placement length is
+
+          tempo-derived.
+        id: 01a0978b-3a72-750c-92a4-ae2c53beaaee
+        created_at: 2026-09-12T21:34:39.218Z
+        updated_at: 2026-09-12T21:34:39.218Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
