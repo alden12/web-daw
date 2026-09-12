@@ -8165,58 +8165,94 @@ projects:
         updated_at: 2026-09-12T21:43:56.945Z
       - ref: DAW-36
         area: DAW
-        title: Normalise a command at dispatch, so the log never says "the active clip"
+        title: Commands must carry what they need, not read it from ambient state
         status: to-do
         sort_path: "000036"
         body: >
-          `addNote`, `addNotes`, `editNotes`, `removeNote`, `removeNotes`,
-          `clearClip` and `setClipLength` all
+          Several commands take a default from whatever the project happens to
+          look like when they are applied,
 
-          take `clipId` as **optional**, defaulting to the track's active clip.
-          `applyEdit` resolves it at apply
+          instead of carrying the value. That makes `applyEdit` a function of
+          more than `(state, command)`, and
 
-          time (`clipId ?? track.activeClipId`). Convenient for the UI and for
-          MCP, and wrong to persist.
+          a logged entry ambiguous about what it actually did.
 
 
           ## Why it matters
 
 
-          **The logged command is ambiguous.** An entry that says "add this note
-          to whichever clip is active"
+          **Replay only works by luck of ordering.** An entry saying "add this
+          note to whichever clip is active"
 
-          means whatever the active clip happened to be. Replay only reproduces
-          it because the active clip is
+          reproduces correctly today because the active clip is itself derived
+          from the same log in the same
 
-          itself derived deterministically from the same log - so the guarantee
-          holds by luck of ordering
+          order. Anything that reorders, excludes or re-bases an entry breaks it
+          silently: revert-to-a-point
 
-          rather than by the command saying what it did. Anything that reorders,
-          excludes or re-bases an entry
-
-          breaks it silently: revert-to-a-point (DAW-8.16), an offline queue
-          flushed after peer edits, and any
-
-          future history editing.
+          (DAW-8.16), an offline queue flushed after peer edits, and the rebuild
+          path DAW-34 stage 4 may use.
 
 
-          **It blocks containment keys.** `authorshipEffect` is a pure function
-          of the command, so with no clip
+          **It blocks containment keys.** `authorshipEffect` is pure on the
+          command, so with no clip id it
 
-          id it cannot key a note by the clip that holds it - which is exactly
-          what DAW-34.1 needs to make
+          cannot key a note by the clip holding it - which is what DAW-34.1
+          needs to make `removeClip` clash
 
-          `removeClip` clash with an edit to a note inside it.
+          with an edit to a note inside it.
 
 
           **The inverse already has to do this.** `invert.ts` pins the resolved
           clip id in every note inverse
 
-          (`targetClipId`), because the active clip can move before an undo. So
-          half the codebase already
+          (`targetClipId`), because the active clip can move before an undo.
+          Half the codebase already treats
 
-          treats the unresolved form as unsafe to store; this makes it
-          consistent.
+          the unresolved form as unsafe to store.
+
+
+          **It is also why some commands do not commute.** Every entry in
+          `DERIVED_FROM`
+
+          (`src/audio/sync/conflict.ts`) exists because a command reads shared
+          state to compute what it writes.
+
+          Fix the reads and those entries go away.
+
+
+          ## The audit
+
+
+          Found while building DAW-34. Expect more; this is the known set.
+
+
+          | command | ambient read | fix |
+
+          |---|---|---|
+
+          | `addNote`, `addNotes`, `editNotes`, `removeNote`, `removeNotes`,
+          `clearClip`, `setClipLength` | `clipId` defaults to the track's active
+          clip | resolve at dispatch |
+
+          | `createTrack` | default name from the track count (`Subtractive 3`
+          vs `Subtractive 2` depending on what else exists) | caller passes
+          `name` |
+
+          | `addClip` | default name from the pool; seed length from the project
+          length; forks the ACTIVE clip | pass `name`, `lengthBeats`,
+          `fromClipId` - all already optional fields |
+
+          | `addPlacement` | `length` defaults to the clip's natural length,
+          which for audio is tempo-derived | pass `length` |
+
+          | `addAudioTrack`, `addAudioClip` | placement length from
+          `durationSec` at the current tempo | pass `length` |
+
+          | `addClip`, `pasteClip`, `addPlacement` | mint a FRESH id when the
+          given id collides, so the created id is unknowable in advance | reject
+          rather than rename (they already decline an inverse for this, see
+          `invert.ts`) |
 
 
           ## The change
@@ -8234,33 +8270,44 @@ projects:
           through.
 
 
-          Keep the optional field in the *type*: the UI and the MCP boundary
-          should go on omitting it, because
+          **Keep the optional fields in the type.** The UI and the MCP boundary
+          should go on omitting them,
 
-          "the clip I have open" is the right thing for a caller to say. What
-          changes is that it stops being
+          because "the clip I have open" is the right thing for a caller to say.
+          What changes is that it stops
 
-          optional by the time it is durable.
+          being optional by the time it is durable.
 
 
           ## Notes
 
 
           - `coalesceKey` and `conflictKeys` see the normalised command, which
-          makes both sharper for free.
+          sharpens both for free.
 
-          - Pre-existing log entries keep the unresolved form. They replay as
-          they do today (the resolution is
-            still in `applyEdit`), so no migration - but the `?? activeClipId` fallback in `applyEdit` has to
-            stay for them, and should carry a comment saying it is there for old entries rather than for new
-            dispatches.
-          - Worth auditing for other ambient defaults while in there. `addClip`
-          forking "the active clip" and
-            `addPlacement` defaulting its length from the clip are the same shape of problem, and both already
-            show up in `DERIVED_FROM` in `src/audio/sync/conflict.ts`.
+          - Pre-existing log entries keep the unresolved form and replay as they
+          do today, so no migration -
+            but the `?? activeClipId` fallback in `applyEdit` has to stay for them, with a comment saying it is
+            there for old entries rather than for new dispatches.
+          - Timestamps and authors are not part of this: they are metadata, not
+          state the command computes
+            from.
+
+          ## Who needs it
+
+
+          - **DAW-34.1** (containment keys) cannot key a note by its clip
+          without it.
+
+          - **DAW-34 stage 4**, if the rebuild path lands: replay-minus-one is
+          only exact if replay is.
+
+          - **DAW-8.16** (revert to a point) and offline reconnect already
+          depend on it and currently get away
+            with it.
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
-        updated_at: 2026-09-12T22:07:28.726Z
+        updated_at: 2026-09-12T22:48:16.821Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
