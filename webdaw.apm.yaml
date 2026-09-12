@@ -7859,6 +7859,20 @@ projects:
             id: 01a097b8-70da-764d-bbc1-5f214489c5c9
             at: 2026-09-12T22:24:02.266Z
             actor: claude
+          - body: "**Parked mid-stage-2b, 2026-09-12.** DAW-37 holds an open decision that
+              changes how much of this item is worth building: undo by inverse
+              (as designed here), by append-only tombstone + rebuild, or a
+              hybrid. Two objections I had raised against the rebuild turned out
+              to be wrong - an ordered tombstone leaves pinned commits true, and
+              a rebuild measures at 4ms typical / 24ms on a large project,
+              against the full `project.load()` undo already does every press.
+              Stages 1, 2a and 2b-so-far are useful under every option. The
+              remaining 12 inverters, DAW-34.1 and the stage-4 gate are not.
+              Alden is thinking it over."
+            audience: user
+            id: 01a097e7-d6a4-7465-8d85-83feb4db6326
+            at: 2026-09-12T23:15:48.516Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"
@@ -8308,6 +8322,236 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-12T22:48:16.821Z
+      - ref: DAW-37
+        area: DAW
+        title: "Decide: undo by inverse, by tombstone rebuild, or both"
+        status: planning
+        sort_path: "000037"
+        deps:
+          - DAW-36
+        body: >
+          Raised 2026-09-12 while building DAW-34 stage 2b, with 47 of 59
+          inverters written. Parked
+
+          deliberately: Alden wants to think it over. Nothing is blocked -
+          stages 1 and 2a/2b are useful under
+
+          every option - but the remaining 12 inverters, DAW-34.1 and the
+          stage-4 gate are only worth building
+
+          under some of them.
+
+
+          ## The two models
+
+
+          To take back edit `eₖ` from a log `e₁ … eₙ`:
+
+
+          - **Inverse**: apply `inv(eₖ)` at the head. Result is `inv(eₖ) ∘ eₙ ∘
+          … ∘ e₁`.
+
+          - **Tombstone rebuild**: append an entry saying "ignore `eₖ`", rebuild
+          from a keyframe below `eₖ`
+            and replay everything except it. Result is `eₙ ∘ … ∘ eₖ₊₁ ∘ eₖ₋₁ ∘ … ∘ e₁`.
+
+          **These are equal exactly when `eₖ` commutes with everything after
+          it.** That is not a coincidence:
+
+          it is why DAW-34's commutativity gate is the right object. The gate is
+          precisely the test for "does
+
+          the cheap model agree with the expensive one here".
+
+
+          Where they differ, the rebuild is the better answer. Rename to "Bass",
+          then to "Lead", then undo the
+
+          first: the inverse writes the old name back over "Lead"; the rebuild
+          correctly leaves it as "Lead".
+
+          The gate refuses that case rather than getting it right.
+
+
+          ## Two objections that turned out to be wrong
+
+
+          Recorded so they are not re-raised.
+
+
+          **"It rewrites history, so pinned commits stop being true."** No.
+          Alden's proposal was never to delete
+
+          a row: the tombstone is itself an ordered entry, so replaying to seq N
+          only honours tombstones at or
+
+          below N. A commit pinned at 4550 is unaffected by a tombstone at 4600.
+          Append-only survives.
+
+
+          **"A rebuild is too slow for Ctrl-Z."** Measured 2026-09-12, and no:
+
+
+          | | 8 tracks / 512 notes (51KB) | 24 tracks / 12k notes (1.1MB) |
+
+          |---|---|---|
+
+          | `JSON.parse(keyframe)` | 0.25ms | 5.1ms |
+
+          | `load(keyframe)` - **what undo does today** | 0.48ms | 9.6ms |
+
+          | load + replay 100 | 0.69ms | 9.9ms |
+
+          | load + replay 500 | 1.4ms | 11.9ms |
+
+          | load + replay 2000 (the whole window) | 4.3ms | 23.7ms |
+
+
+          The third row is the point: the snapshot model already does a full
+          `project.load()` on every undo
+
+          press and feels instant. Replaying the entire retention window on top
+          adds under 4ms normally and
+
+          ~14ms on a large project. Roughly one frame.
+
+
+          ## The real costs of the rebuild model
+
+
+          - **We keep only one keyframe.** `project.json` is a single
+          overwritten path, so the only snapshot is
+            *newer* than the edit you want to exclude, and you cannot rebuild without one from before it.
+            Commit markers are pinned separately but land wherever the user happened to save. So this needs
+            **periodic retained keyframes**, perhaps one per 500 edits inside the window: a few MB per project
+            against the ~400KB the window itself costs. This is the genuine hidden cost and it is storage, not
+            compute.
+          - **Every peer and the authority rebuild** on each tombstone, at the
+          cost above. Fine for a rare
+            operation.
+          - **Replay must be deterministic**, which is DAW-36. Not required by
+          the inverse model.
+
+          - **You cannot tombstone below the retention window**, so undo depth
+          is bounded by it either way.
+
+
+          ## Offline
+
+
+          Three cases, and the machinery already exists for all of them:
+
+
+          - **Never sent**: drop it from `pending`. It never happened as far as
+          anyone else is concerned.
+
+          - **Sent, not acked**: tombstone addressed by **`opId`**, which the
+          room already maps to an assigned
+            seq (it keeps that map so a resent edit re-echoes instead of double-applying). A no-op if the edit
+            never lands.
+          - **Confirmed**: tombstone by seq.
+
+
+          Redo of a dropped pending op needs nothing from the server: dispatch
+          it again and it gets a fresh
+
+          `opId`. The local redo stack holds the command, as it does today.
+
+
+          This closes what was the last clear advantage of inverses.
+
+
+          ## Comparison
+
+
+          | | Inverses (current plan) | Tombstone + rebuild | Hybrid |
+
+          |---|---|---|---|
+
+          | Per-command code | 59 inverters | none | 59, but only the easy ones
+          matter |
+
+          | Can be silently wrong | yes, needs the harness | no, correct by
+          construction | only on the fast path |
+
+          | Out-of-order undo | only where the gate allows | exact and free |
+          exact, via the slow path |
+
+          | Author-scoped undo | needs the gate | trivial | trivial |
+
+          | Undo latency | sub-ms | 4ms typical, 24ms large | sub-ms usually, a
+          frame when conflicted |
+
+          | Cost to peers + authority | one appended command | everyone rebuilds
+          | rebuild only when conflicted |
+
+          | Storage | an inverse per row | tiny rows, but periodic keyframes |
+          both |
+
+          | Offline, unsent edit | inverse exists before it leaves | tombstone
+          by `opId` | either |
+
+          | Needs deterministic replay | no | yes (DAW-36) | yes, for the slow
+          path |
+
+          | Conflict machinery | `undoConflictKeys`, `DERIVED_FROM`, DAW-34.1 |
+          none | "is this mine and on top?" |
+
+          | Of the work done, survives | all | the harness, the determinism work
+          | all |
+
+          | Still to build | 12 hard inverters, DAW-34.1, the gate, stage 5 |
+          tombstone type, replay honouring it, retained keyframes, DAW-36 | 12
+          inverters or fewer, rebuild path, DAW-36 |
+
+
+          ## The hybrid, which is where the discussion landed
+
+
+          - **Your own edit, on top of the log** -> inverse. Instant, local,
+          **no gate at all**.
+
+          - **Anything else** -> rebuild and append the result.
+
+
+          Its appeal is not that it splits the difference. It is that the fast
+          path stops having to be correct
+
+          in the hard cases, which is what lets the gate, `DERIVED_FROM` and
+          most of DAW-34.1 go away. The
+
+          expensive path is only reached when the cheap one genuinely cannot
+          answer, which in a solo session is
+
+          never.
+
+
+          One refinement worth considering: the rebuild result can enter the log
+          as a `loadSnapshot`, which
+
+          already exists and is what revert uses, rather than as a tombstone
+          honoured by replay. That keeps
+
+          replay logic untouched at the cost of a project-sized row per
+          conflicted undo (and those are exempt
+
+          from pruning). Tombstones are cheaper per row but every reader of the
+          log has to honour them.
+
+
+          ## What to decide
+
+
+          1. Inverse-only, rebuild-only, or hybrid.
+
+          2. If rebuild features at all: periodic retained keyframes, and how
+          many.
+
+          3. If hybrid: does the rebuild result enter the log as a tombstone or
+          as a `loadSnapshot`.
+        id: 01a097e7-ba54-7111-a3bb-acd0d6172555
+        created_at: 2026-09-12T23:15:41.268Z
+        updated_at: 2026-09-12T23:15:41.268Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
