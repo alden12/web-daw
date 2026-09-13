@@ -11,7 +11,7 @@
 import type { ServerToBrowser } from "../mcp/protocol";
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
-import type { ProjectData, TrackData } from "../project/types";
+import type { ProjectData } from "../project/types";
 
 // Who authored an edit. `"claude"` = the MCP / Claude Code driver; `"agent"` = the built-in in-app
 // agent (model-agnostic) - two reserved AI voices. `"you"` is the default solo user; any other value is
@@ -127,20 +127,6 @@ export type LocalEdit =
       source?: string;
     }
   | { type: "removeSample"; id: string }
-  | {
-      // The inverse of `removeTrack` (DAW-34): put the track back, whole, where it was. Carries the
-      // persisted track rather than a recipe, because that is the only form that survives the trip
-      // to the authority and back - which is also what lets an undo be replayed by a peer.
-      //
-      // Browser-only (no MCP message): an agent removes and creates tracks, it does not need to
-      // resurrect one. It is still an `EditCommand`, so the authority replays it like any other.
-      type: "restoreTrack";
-      track: TrackData;
-      /** Where in the track list it was, so a middle removal does not come back at the end. */
-      atIndex: number;
-      /** It was the selected track. `removeTrack` moves the selection to a neighbour. */
-      selected?: boolean;
-    }
   | {
       // Rename the project. The name is project state (in project.json), so a rename syncs across a
       // shared session and rides undo/redo + history like any edit; meta.json keeps a copy as the

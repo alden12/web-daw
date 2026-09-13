@@ -803,23 +803,6 @@ export class ProjectStore {
     this.emit();
   }
 
-  /**
-   * Put a removed track back, at the index it came from, with its clips, notes, devices and
-   * parameters. The inverse of `removeTrack` (DAW-34), and the reason `hydrateTrack` exists.
-   *
-   * `selected` restores the selection, because `removeTrack` moves it to a neighbour when the track
-   * it removes is the selected one, and there is no edit command for selecting a track.
-   */
-  restoreTrack(stored: TrackData, atIndex: number, selected?: boolean): void {
-    if (this.getTrack(stored.id)) return;
-    const track = this.hydrateTrack(stored, this.lengthBeats);
-    // Same invariant `load` enforces: a track must belong to a real group, or it is unreachable.
-    if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;
-    this.tracks.splice(clamp(atIndex, 0, this.tracks.length), 0, track);
-    if (selected) this.selectedTrackId = track.id;
-    this.emit();
-  }
-
   removeTrack(id: string): void {
     const idx = this.tracks.findIndex((track) => track.id === id);
     if (idx === -1) return;
@@ -1476,11 +1459,11 @@ export class ProjectStore {
 
   /**
    * Build a live `Track` from its persisted form. Extracted from `load` so a single track can be
-   * rebuilt on its own, which is what `restoreTrack` (the inverse of `removeTrack`) needs - DAW-34.
+   * rebuilt on its own.
    *
    * `reuse` is the same-id track from before a load, if any: reusing its `ParamStore` and device
    * instances keeps the engine's per-track bindings live, where replacing them would orphan the
-   * bound instrument. Pass nothing when there is no prior track, as a restore has none.
+   * bound instrument. Pass nothing when there is no prior track.
    */
   private hydrateTrack(stored: TrackData, projLen: number, reuse?: Track): Track {
     const base = {

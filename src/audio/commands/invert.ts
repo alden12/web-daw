@@ -23,7 +23,6 @@
  * its sample command together - the sample table is a mapped type, so a missing sample is a compile
  * error.
  */
-import { snapshotTrack } from "../project/projectSerialization";
 import type { ClipAuthor } from "../project/schema";
 import type { AudioClipData } from "../project/types";
 import type { Group, ProjectStore, Track } from "../project/projectStore";
@@ -380,22 +379,12 @@ const INVERT = {
     return def ? [{ type: "addCustomEffect", def }] : [];
   },
 
-  // The first removal that no existing command can undo: a track is its clips, notes, devices,
-  // parameters, placements and its slot in the list, and nothing in the vocabulary says "put all of
-  // that back". Hence `restoreTrack`, carrying the persisted track rather than a recipe for
-  // rebuilding one - the only form that survives the trip to the authority and back.
-  removeTrack: (project, command) => {
-    const index = project.getTracks().findIndex((track) => track.id === command.trackId);
-    if (index < 0) return [];
-    return [
-      {
-        type: "restoreTrack",
-        track: snapshotTrack(project.getTracks()[index]),
-        atIndex: index,
-        selected: project.selectedId === command.trackId,
-      },
-    ];
-  },
+  // `removeTrack` is deliberately NOT here. A track is its clips, notes, devices, parameters,
+  // placements and its slot in the list, and nothing in the vocabulary says "put all of that back",
+  // so inverting it needed a new `restoreTrack` command - which means a new entry type in the
+  // SHARED edit log, replayed by the authority and persisted forever. Too much format commitment for
+  // a mechanism the rebuild path (DAW-34 stage C) replaces. Removing a track falls back to a
+  // snapshot checkpoint until then.
 
   // A device chain entry restores out of existing commands, so neither of these needs a new
   // `restore*` type: recreate it by id, put its parameter values back, restore its bypass, and move

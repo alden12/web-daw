@@ -21,7 +21,6 @@ const CONTAINER_TARGETS = new Set<EditCommand["type"]>([
   "createAudioTrack",
   "addAudioTrack",
   "removeTrack",
-  "restoreTrack",
   "setTrack",
   "moveTrack",
   "setInstrument",

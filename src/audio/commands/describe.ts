@@ -45,7 +45,6 @@ const DESCRIBE: DescribeMap = {
   commit: (command) => `Saved version: ${command.message}`,
   loadSnapshot: (command) => command.message,
   removeTrack: () => "Removed track",
-  restoreTrack: (command) => `Restored ${command.track.name}`,
   setTrack: (command, ctx) => {
     const name = on(ctx, command.trackId, "");
     if (command.name !== undefined) return `Renamed track to ${command.name}`;

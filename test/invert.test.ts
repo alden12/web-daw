@@ -38,26 +38,14 @@ import { ProjectStore } from "../src/audio/project/projectStore";
  * conflict and stays in the test, which is what `undoConflictKeys` exists to catch.
  */
 /**
- * Container removals, excluded from BOTH positions below for a KNOWN GAP rather than a legitimate
- * behaviour. Unlike `CAPTURES_STATE`, this one is a bug waiting to be fixed - DAW-34's
- * containment-keys section - and each entry should come out as it is closed.
+ * There was a `CONTAINMENT_GAP` exclusion here, for the one container removal the gate could not
+ * reason about. `removeTrack` was the only command in it, and it is no longer inverted (see
+ * `invert.ts`), so there is nothing left to exclude.
  *
- * A track's contents are keyed by their own ids (`effect:fx-1`, `note:n-1`), not scoped to the
- * track, so no `track:` prefix reaches them. `conflictKeys` also strips the enclosing `track:` stamp
- * from every non-container command, which is right for "two people editing different things in one
- * track" and wrong when one of them removes the track. That leaves four ways for the gate to miss:
- *
- *  - undo an edit to something inside a track that has since been removed (`bypassEffect`, then
- *    `removeTrack`);
- *  - undo the removal after an edit aimed at something inside it (`removeTrack`, then `renameClip`);
- *  - the same for something CREATED inside it after the removal (`removeTrack`, then `addEffect`),
- *    where the new id did not exist at capture time and so cannot be named by either side;
- *  - and the stamps for all of the above outlive the track they belonged to, with or without undo.
- *
- * `restoreTrack` already closes the half it can, by naming the contents it carries, which is what
- * makes `undoConflictKeys` see them. The rest needs the key spelling to express containment.
+ * The gap itself is still real, and still open as DAW-34.1: a track's contents are keyed by their
+ * own ids (`effect:fx-1`, `note:n-1`), not scoped to the track, so no `track:` prefix reaches them,
+ * and their authorship stamps outlive the track with or without undo.
  */
-const CONTAINMENT_GAP = new Set<EditCommand["type"]>(["removeTrack"]);
 
 const CAPTURES_STATE = new Set<EditCommand["type"]>([
   "addClip",
@@ -314,13 +302,6 @@ const SAMPLES: { [K in InvertibleType]: Sample<K> } = {
     ],
     command: { type: "removeMidiDevice", trackId: "t-1", deviceId: "md-1" },
   },
-
-  // t-1 is the first of three tracks and carries a note, an effect and a MIDI device, so this
-  // exercises the slot, the clip pool and both device chains at once.
-  removeTrack: {
-    setup: [{ type: "setParam", trackId: "t-1", id: "filter.cutoff", value: 2200 }],
-    command: { type: "removeTrack", trackId: "t-1" },
-  },
 };
 
 /**
@@ -500,14 +481,12 @@ describe("invert", () => {
           : value;
 
     const commands = invertibleTypes().map((type) => (SAMPLES[type] as Sample<InvertibleType>).command);
-    const pairs = commands
-      .filter((first) => !CONTAINMENT_GAP.has(first.type))
-      .flatMap((first) =>
-        commands
-          .filter((second) => second.type !== first.type)
-          .filter((second) => !CAPTURES_STATE.has(second.type) && !CONTAINMENT_GAP.has(second.type))
-          .map((second) => [first, second] as const),
-      );
+    const pairs = commands.flatMap((first) =>
+      commands
+        .filter((second) => second.type !== first.type)
+        .filter((second) => !CAPTURES_STATE.has(second.type))
+        .map((second) => [first, second] as const),
+    );
     let checked = 0;
 
     for (const [first, second] of pairs) {

@@ -9,26 +9,9 @@
  * The key builders are exported so the UI reads authorship with the same keys this writes -
  * one spelling of `track:<id>` / `note:<id>` / `param:<trackId>:<id>`, never a duplicated string.
  */
-import type { TrackData } from "../project/types";
 import type { EditCommand } from "./types";
 
 export const trackKey = (id: string): string => `track:${id}`;
-
-/** Every authorship key for the things INSIDE a track: its clips and their notes, its arrangement
- *  placements, and both device chains. Used by `restoreTrack`, which is the one command that knows
- *  what a track contained. */
-function trackContentsKeys(track: TrackData): string[] {
-  const clipKeys = (track.clips ?? []).flatMap((clip) => [
-    clipKey(clip.id),
-    ...("notes" in clip ? clip.notes.map((note) => noteKey(note.id)) : []),
-  ]);
-  return [
-    ...clipKeys,
-    ...(track.placements ?? []).map((placement) => placementKey(placement.id)),
-    ...(track.effects ?? []).map((effect) => effectKey(effect.id)),
-    ...(track.kind === "instrument" ? (track.midiDevices ?? []).map((device) => midiDeviceKey(device.id)) : []),
-  ];
-}
 export const noteKey = (id: string): string => `note:${id}`;
 export const paramKey = (trackId: string, id: string): string => `param:${trackId}:${id}`;
 export const effectKey = (id: string): string => `effect:${id}`;
@@ -66,16 +49,10 @@ const EFFECTS: EffectMap = {
   }),
   createAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
   addAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
-  // A restored track names everything it brings back, which is the point of carrying the track data
-  // rather than a recipe (DAW-34). `removeTrack` cannot do this - its contents are keyed by their own
-  // ids, which no `track:` prefix reaches - so the inverse is where containment becomes expressible,
-  // and `undoConflictKeys` reads it straight out of there.
-  restoreTrack: (command) => ({ touched: [trackKey(command.track.id), ...trackContentsKeys(command.track)] }),
   // The `midiDeviceParam:` prefix was missing, which left stamps behind on a track that no longer
   // existed. Still incomplete: the things inside a track that are NOT keyed by track id (its
   // effects, MIDI devices, clips, notes and placements) cannot be reached by a prefix, so their
-  // stamps still outlive it. See DAW-34's containment-keys section - the fix is for a destructive
-  // command's capture to name what it destroyed, which `restoreTrack` already carries.
+  // stamps still outlive it. Tracked as DAW-34.1.
   removeTrack: (command) => ({
     removed: [
       trackKey(command.trackId),
