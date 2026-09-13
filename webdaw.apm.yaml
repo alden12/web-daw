@@ -7119,7 +7119,7 @@ projects:
         updated_at: 2026-09-05T00:09:38.049Z
       - ref: DAW-34
         area: DAW
-        title: "Undo: rebuild for correctness, inverses as an optional fast path"
+        title: Undo by rebuilding history, not by whole-project snapshot
         status: in-progress
         sort_path: "000034"
         body: >
@@ -7132,126 +7132,147 @@ projects:
           button (DAW-8.15).
 
 
-          The replacement, settled 2026-09-13 (see DAW-37 for how the decision
+          The replacement, settled 2026-09-13 (DAW-37 records how the decision
           was reached):
 
 
-          - **Rebuilding the project from a keyframe, excluding the undone edit,
-          is the correctness backbone.**
-            It cannot be wrong, it handles out-of-order and author-scoped undo exactly, and it needs no
-            per-command code.
-          - **An inverse is an optional fast path**, kept only where it is cheap
-          to write and cheap to keep
-            correct.
+          **Rebuild the project from a keyframe, excluding the undone edit.** It
+          cannot be wrong, it handles
 
-          ## The rule for which commands get an inverse
+          out-of-order and author-scoped undo exactly, and it needs no
+          per-command code.
 
 
-          **Keep an inverter when its output is bounded by the command's own
-          shape** - a scalar read off the
+          **One path, not two.** An earlier version of this plan kept inverses
+          as a fast path for cheap
 
-          store, or a handful of ids and notes the command already names.
-          `setParam` reads the old cutoff;
+          commands. Alden's call, and the better one: two paths means every "why
+          did undo do that?" starts with
 
-          `setTrack` reads the old volume. They do not care what else exists in
-          the project, so nothing
+          "which path did it take?", and that is a permanent cost to save a few
+          milliseconds nobody has
 
-          downstream can break them, and they cover the overwhelming majority of
-          actual undo presses: knob
+          measured a problem with. Adding an inverter later is contained - one
+          entry in a map, one sample in the
 
-          tweaks, moves, renames, mutes.
-
-
-          **Do not write one when it has to copy a subtree.** `restoreTrack` has
-          to know everything a track
-
-          contains, so it breaks every time a track gains a field. `editNotes`
-          needs per-note prior state *and*
-
-          whether each note existed. `addNoteClip` has to capture what
-          `replaceRegion` destroyed. These are
-
-          rare presses and high maintenance, which is exactly what the rebuild
-          is for.
+          harness - where removing a half-used system is not, so start without.
 
 
-          **No new command types.** The need for a `restore*` type is the signal
-          that a command is on the wrong
-
-          side of the line.
+          ## What settled it
 
 
-          Second reason to keep the cheap half, unrelated to speed: an inverse
-          holds the **old value**, which
-
-          is what the activity feed wants. "Cutoff 0.35 -> 0.82" rather than
-          "Set cutoff 0.82" (DAW-8.17).
-
-
-          ## Why not inverses everywhere
-
-
-          Measured 2026-09-12: a rebuild from a keyframe replaying ~250 edits is
-          about **1ms on a normal
+          Measured 2026-09-12: a rebuild from a keyframe replaying ~250 edits
+          costs about **1ms on a normal
 
           project and 11ms on a large one**, both inside a frame, against a
-          `project.load()` that the old
+          `project.load()` that the snapshot
 
-          snapshot path already performed on every press. The speed difference
-          between the two paths is real
-
-          but small, and would not on its own justify maintaining 59 inverters
-          and the machinery needed to make
-
-          them safe out of order.
+          path already performed on every press.
 
 
-          ## Done, and still worth having
+          | | 8 tracks / 512 notes (51KB) | 24 tracks / 12k notes (1.1MB) |
+
+          |---|---|---|
+
+          | `JSON.parse(keyframe)` | 0.25ms | 5.1ms |
+
+          | `load(keyframe)` - what the snapshot path does every press | 0.48ms
+          | 9.6ms |
+
+          | load + replay 500 | 1.4ms | 11.9ms |
+
+          | load + replay 2000 (the whole window) | 4.3ms | 23.7ms |
 
 
-          - **`invert.ts` and the `Checkpoint` union.** 47 command types
-          inverted; the readers stay.
-
-          - **`test/invert.test.ts`.** Apply, undo, byte-identical; redo,
-          byte-identical; the same through a
-            serialize/reload. It has found three live bugs unrelated to undo and should keep running against
-            whatever inverters survive.
-          - **The authorship capture.** An inverse applies a command and
-          `applyEdit` re-stamps, so a checkpoint
-            carries the authorship it overwrote and restores it after. The stamp names whoever authored the
-            value you can see.
-          - **Canonical authorship ordering**, so a remove-and-re-add does not
-          read as a different project.
-
-          - **Two extractions** worth keeping on their own merits:
-          `hydrateTrack` out of `ProjectStore.load`
-            and `snapshotTrack` out of `snapshotProject`.
-
-          ## To undo before merging
+          ## The one thing that could reopen inverses
 
 
-          **`restoreTrack` must come back out** (commit `a86a7e9`), and before
-          this branch merges rather than
+          **Mobile.** Those numbers are a laptop. A mid-range phone could be
+          50-100ms per rebuild, which *is*
 
-          after. It is the only thing growing the shared command union, the
-          authority replays it, and under the
+          perceptible on a held Ctrl-Z. Measure there before deciding: if it
+          bites, the answer is inverters for
 
-          rebuild fallback it earns nothing. Once it has shipped, a
-          `restoreTrack` entry can exist in a real log
-
-          forever and removing it becomes a format concern. The `hydrateTrack` /
-          `snapshotTrack` extractions
-
-          stay.
+          the hot setters only (`setParam`, `setTrack`, `movePlacement`), not a
+          general system.
 
 
-          `removeEffect` and `removeMidiDevice` stay: they compose out of
-          existing commands (add, set each
+          Not a reason on its own: the activity feed showing "0.35 -> 0.82"
+          rather than "Set cutoff 0.82". That
 
-          param, bypass, move to index) with no union growth and no payload
-          blob. Borderline, but on the right
+          is a display need for a handful of setters, best served by a `prev`
+          field on those entries.
 
-          side of the line.
+
+          ## The state of `invert.ts`: frozen, not deleted
+
+
+          47 command types are inverted on `slice-117-undo-by-inverse`, tested
+          and green. Leave them.
+
+
+          Removing them now is real surgery (they interleave with several
+          independent fixes on the branch, so
+
+          it is not a `git revert`) and gains nothing until the rebuild path
+          exists to replace them. The branch
+
+          as it stands is strictly better than `main`: undo uses far less memory
+          and survives a reload more
+
+          reliably.
+
+
+          So: **stop extending it, delete it at stage D** when the rebuild takes
+          over. Nothing about shipping it
+
+          meanwhile constrains us - the `inverse`, `authors` and
+          checkpoint-union fields live in `undo.json`,
+
+          which is local-only and already discarded on a fingerprint mismatch.
+
+
+          ## Before this branch merges
+
+
+          **Revert `restoreTrack` (commit `a86a7e9`).** The one genuinely
+          time-sensitive item, and the only part
+
+          of this work that enters the *shared* edit log rather than local undo
+          state. The authority replays it
+
+          and it persists forever, so once it ships, removing it becomes a
+          format-migration problem. Free to
+
+          remove while unmerged.
+
+
+          Keep from that commit: the `hydrateTrack` / `snapshotTrack`
+          extractions (good on their own merits, and
+
+          they chip away at an oversized file) and the `midiDeviceParam:`
+          authorship-leak fix.
+
+
+          ## Worth having regardless of the undo model
+
+
+          Landed on this branch, none of it dependent on inverses:
+
+
+          - **Canonical authorship ordering.** The record was written in edit
+          order, so removing and re-adding
+            an object reordered its keys without changing the project, and `fingerprintProject` read that as a
+            different project. The snapshot now sorts it.
+          - **`test/invert.test.ts`.** It has found three live bugs unrelated to
+          undo. Its sample table (a valid
+            command per type) is reusable: point the assertions at the rebuild path at stage C and it tests
+            "apply, rebuild without it, byte-identical" for free.
+          - **`DERIVED_FROM` and the conflict-key fixes** in
+          `src/audio/sync/conflict.ts`, which make *reconnect*
+            conflict detection correct and are unrelated to undo.
+          - **DAW-35**, audio keeping its length in seconds across a tempo
+          change.
 
 
           ## The plan
@@ -7267,54 +7288,47 @@ projects:
 
 
           **B. Retained keyframes.** `project.json` is one overwritten path, so
-          the only snapshot is *newer*
+          the only snapshot is *newer* than
 
-          than the edit you want to exclude. Keep a keyframe every few hundred
-          edits inside the retention
+          the edit you want to exclude. Keep a keyframe every few hundred edits
+          inside the retention window,
 
-          window, server-side and in the OPFS mirror so offline can rebuild too.
-          This is the real new cost and
+          server-side and in the OPFS mirror so offline can rebuild too. The
+          real new cost, and it is storage: a
 
-          it is storage: a few MB per project against the ~400KB the edit window
-          itself costs. Decide the
-
-          interval here.
+          few MB per project against the ~400KB the edit window itself costs.
+          Decide the interval here.
 
 
           **C. The rebuild path.** `rebuild(excluding)`: load the nearest
-          keyframe below the lowest excluded
+          keyframe below the lowest excluded seq,
 
-          seq, replay forward skipping the excluded entries. Prove it with the
-          existing property harness -
+          replay forward skipping the excluded entries. Prove it with the
+          existing harness - apply a command,
 
-          apply a command, rebuild without it, byte-identical - which is the
-          same assertion the inverters
+          rebuild without it, byte-identical - which is the assertion the
+          inverters already pass, so the two are
 
-          already pass, so the two paths are checked against each other for
-          free.
-
-
-          **D. Switch the fallback, then delete the snapshot machinery.** A
-          checkpoint becomes
-
-          `{ seq, inverse? }`: inverse if it has one and it is yours on top of
-          the log, rebuild otherwise. No
-
-          `ProjectData` in a checkpoint at all, so `packUndo`/`unpackUndo`,
-          `undoBase`/`redoBase`,
-
-          `PERSIST_UNDO_MAX_BYTES` and `MAX_DEPTH` all go, `undo.json` is
-          retired, a 500-deep stack is free, and
-
-          undo works from another device because the log is shared.
-          `undoConflictKeys` becomes dead here too.
+          checked against each other during the changeover.
 
 
-          **E. Multiplayer.** The tombstone entry (append-only, and itself
+          **D. Switch over, then delete.** A checkpoint becomes `{ seq }`.
+          `packUndo`/`unpackUndo`,
+
+          `undoBase`/`redoBase`, `PERSIST_UNDO_MAX_BYTES`, `MAX_DEPTH`,
+          `undoConflictKeys` and `invert.ts` all
+
+          go; `undo.json` is retired. A 500-deep stack is then free, and undo
+          works from another device because
+
+          the log is shared.
+
+
+          **E. Multiplayer.** The tombstone entry - append-only and itself
           ordered, so replaying to a seq only
 
-          honours tombstones at or below it - past commits stay true). Undo and
-          redo forward to peers.
+          honours tombstones at or below it, and past commits stay true. Undo
+          and redo forward to peers.
 
           Author-scoped undo. Offline: an unsent edit is dropped from `pending`,
           a sent-but-unacked one is
@@ -7328,14 +7342,16 @@ projects:
 
           - **The commutativity gate.** It existed to make an inverse safe out
           of order; the rebuild does that
-            properly. Non-LIFO goes to the rebuild, so the only test left is "is this mine and on top?".
-          - **DAW-34.1 as a blocker.** It stays open as a real authorship-leak
-          bug (stamps outliving the objects
-            they belong to) but nothing waits on it.
-          - **`restore*` command types**, per the rule above.
+            properly. The only test left is "is this mine and on top?".
+          - **DAW-34.1 as a blocker.** Still open as a real authorship-leak bug
+          (stamps outliving their objects)
+            but nothing waits on it.
+          - **`restore*` command types.** Needing one was the signal a command
+          was the wrong side of a line that
+            no longer exists.
         id: 01a07e69-c501-7593-89fc-4b3736d3a6d0
         created_at: 2026-09-08T00:27:36.065Z
-        updated_at: 2026-09-12T23:27:28.285Z
+        updated_at: 2026-09-13T12:37:51.697Z
         comments:
           - body: "The wider version of this, raised by Alden: make undo *granular* by
               giving each command an inverse, instead of anchoring snapshots at
