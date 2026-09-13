@@ -50,8 +50,75 @@ describe("normalizeCommand", () => {
 
   it("only claims the types it actually resolves", () => {
     expect(normalizedTypes().sort()).toEqual(
-      ["addNote", "addNotes", "clearClip", "editNotes", "removeNote", "removeNotes", "setClipLength"].sort(),
+      [
+        "addNote",
+        "addNotes",
+        "editNotes",
+        "removeNote",
+        "removeNotes",
+        "clearClip",
+        "setClipLength",
+        "createTrack",
+        "createTrackFromPatch",
+        "createAudioTrack",
+        "addAudioTrack",
+        "addClip",
+        "addPlacement",
+      ].sort(),
     );
+  });
+
+  it("pins the name a new track would have taken from the track count", () => {
+    const { project, log } = seeded();
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-2" });
+
+    const entry = log.getEntries().at(-1);
+    expect(entry?.command).toMatchObject({ type: "createTrack", name: project.getTrack("t-2")?.name });
+    expect(entry?.command).toHaveProperty("name", expect.stringMatching(/ 2$/));
+  });
+
+  it("pins the clip a new clip forks, and the length it starts at", () => {
+    const { log } = seeded();
+    log.dispatch({ type: "addClip", trackId: "t-1", id: "c-3" });
+
+    // c-2 was active, so that is what it forked - not "whatever is active at replay time".
+    expect(log.getEntries().at(-1)?.command).toMatchObject({
+      type: "addClip",
+      fromClipId: "c-2",
+      name: "C",
+      lengthBeats: expect.any(Number),
+    });
+  });
+
+  it("pins the clip and length a placement got", () => {
+    const { log } = seeded();
+    log.dispatch({ type: "addPlacement", trackId: "t-1", id: "p-2", startBeat: 8 });
+
+    expect(log.getEntries().at(-1)?.command).toMatchObject({
+      type: "addPlacement",
+      clipId: "c-2",
+      length: expect.any(Number),
+    });
+  });
+
+  // An empty clip seeds its length from the PROJECT length, so a later setLength used to change what
+  // a replayed addClip produced.
+  it("a forked-empty clip keeps the length the project had at the time", () => {
+    const { log } = seeded();
+    log.dispatch({ type: "setLength", lengthBeats: 32 });
+    log.dispatch({ type: "addClip", trackId: "t-1", id: "c-3", empty: true });
+    log.dispatch({ type: "setLength", lengthBeats: 128 });
+
+    const replayed = new ProjectStore(false);
+    for (const entry of log.getEntries()) applyEdit(replayed, entry.command, entry.author);
+    expect(replayed.getClipStore("t-1", "c-3")?.getClip().lengthBeats).toBe(32);
+  });
+
+  it("refuses a colliding id rather than renaming it to one nobody can predict", () => {
+    const { project, log } = seeded();
+    log.dispatch({ type: "addClip", trackId: "t-1", id: "c-2", empty: true });
+
+    expect(project.getTrack("t-1")?.clips.map((clip) => clip.id)).toEqual(["c-t-1", "c-2"]);
   });
 
   // The point of the whole exercise: a logged entry replays to the same place after the active clip
@@ -65,7 +132,12 @@ describe("normalizeCommand", () => {
     const replayed = new ProjectStore(false);
     for (const entry of log.getEntries()) applyEdit(replayed, entry.command, entry.author);
 
-    expect(replayed.getClipStore("t-1", "c-2")?.getClip().notes.map((n) => n.id)).toEqual(["n-1"]);
+    expect(
+      replayed
+        .getClipStore("t-1", "c-2")
+        ?.getClip()
+        .notes.map((n) => n.id),
+    ).toEqual(["n-1"]);
     expect(replayed.getClipStore("t-1", "c-3")?.getClip().notes).toHaveLength(0);
   });
 

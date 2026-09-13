@@ -41,6 +41,14 @@ const pinActiveClip = <Command extends { trackId: string; clipId?: string }>(
   return activeClipId ? { ...command, clipId: activeClipId } : command;
 };
 
+/** A default that resolved to nothing (an unknown track, a clip that is not there) leaves the field
+ *  as it was: the command is a no-op in `applyEdit` either way, and a guess would be worse. */
+const pin = <Command, Field extends keyof Command>(
+  command: Command,
+  field: Field,
+  value: Command[Field] | undefined,
+): Command => (command[field] !== undefined || value === undefined ? command : { ...command, [field]: value });
+
 const NORMALIZE = {
   addNote: pinActiveClip,
   addNotes: pinActiveClip,
@@ -49,6 +57,26 @@ const NORMALIZE = {
   removeNotes: pinActiveClip,
   clearClip: pinActiveClip,
   setClipLength: pinActiveClip,
+
+  // Creation defaults. A name counts what already exists, and a clip's seed follows the track's
+  // active clip and the project length, so all of them move between a dispatch and a replay.
+  createTrack: (project, command) => pin(command, "name", project.defaultTrackName(command.instrumentType)),
+  createTrackFromPatch: (project, command) => pin(command, "name", project.defaultTrackName(command.instrumentType)),
+  createAudioTrack: (project, command) => pin(command, "name", project.defaultAudioTrackName()),
+  addAudioTrack: (project, command) => pin(command, "name", project.defaultAudioTrackName()),
+  addClip: (project, command) => {
+    const seed = project.clipSeed(command.trackId, command);
+    const named = pin(command, "name", project.defaultClipName(command.trackId));
+    const forked = command.empty ? named : pin(named, "fromClipId", seed?.fromClipId);
+    return pin(forked, "lengthBeats", seed?.lengthBeats);
+  },
+  addPlacement: (project, command) => {
+    // An audio track with nothing in its pool has `activeClipId: ""`, which names no clip.
+    const placed = pin(command, "clipId", project.getTrack(command.trackId)?.activeClipId || undefined);
+    return placed.clipId === undefined
+      ? placed
+      : pin(placed, "length", project.defaultPlacementLength(placed.trackId, placed.clipId));
+  },
 } satisfies Partial<NormalizeMap>;
 
 /** Command types that carry an ambient default this module resolves. Exported for the tests. */
@@ -57,8 +85,6 @@ export const normalizedTypes = (): NormalizedType[] => Object.keys(NORMALIZE) as
 
 /** The command as it should be applied, logged, forwarded and mirrored: nothing left to infer. */
 export function normalizeCommand(project: ProjectStore, command: EditCommand): EditCommand {
-  const normalizer = (NORMALIZE as Partial<NormalizeMap>)[command.type] as
-    | Normalizer<EditCommand["type"]>
-    | undefined;
+  const normalizer = (NORMALIZE as Partial<NormalizeMap>)[command.type] as Normalizer<EditCommand["type"]> | undefined;
   return normalizer ? normalizer(project, command) : command;
 }

@@ -434,6 +434,21 @@ export class ProjectStore {
   }
 
   // --- tracks ---------------------------------------------------------------
+  /**
+   * The name `addTrack` would choose for a new track of this type. Public because a dispatch pins it
+   * into the command (DAW-36): the default counts the tracks that exist, so leaving it to apply time
+   * means a replayed `createTrack` can name itself differently than it did the first time.
+   */
+  defaultTrackName(instrumentType: string): string {
+    const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
+    return `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`;
+  }
+
+  /** The name a new audio track would take. Same counting problem as `defaultTrackName`. */
+  defaultAudioTrackName(): string {
+    return `Audio ${this.tracks.length + 1}`;
+  }
+
   addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
@@ -449,7 +464,7 @@ export class ProjectStore {
     const track: InstrumentTrack = {
       kind: "instrument",
       id: trackId,
-      name: opts.name ?? `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`,
+      name: opts.name ?? this.defaultTrackName(type),
       instrumentType: type,
       parentId,
       muted: false,
@@ -595,7 +610,7 @@ export class ProjectStore {
     const track: AudioTrack = {
       kind: "audio",
       id: trackId,
-      name: opts.name ?? `Audio ${this.tracks.length + 1}`,
+      name: opts.name ?? this.defaultAudioTrackName(),
       parentId,
       muted: false,
       solo: false,
@@ -620,7 +635,7 @@ export class ProjectStore {
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
     const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
-    const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
+    const name = opts.name ?? clip.name ?? this.defaultAudioTrackName();
     const clipId = `c-${trackId}`;
     const durationSec = clip.durationSec ?? 0;
     const track: AudioTrack = {
@@ -954,6 +969,30 @@ export class ProjectStore {
 
   // --- clip pool + arrangement (instrument & audio) -------------------------
   /** A unique, human clip name (A, B, C, ... AA) not already used on the track. */
+  /** The name `addClip` would give the next clip in a track's pool (A, B, C...). Pinned at dispatch
+   *  (DAW-36) because it depends on which names are already taken. */
+  defaultClipName(trackId: string): string | undefined {
+    const track = this.getTrack(trackId);
+    return track ? this.nextClipName(track) : undefined;
+  }
+
+  /**
+   * What `addClip` would seed a new clip from: the clip it forks (none when `empty`) and the length
+   * it starts at. Both are ambient - the fork follows the track's ACTIVE clip, and an empty clip
+   * takes the PROJECT length - so a dispatch pins them into the command (DAW-36).
+   */
+  clipSeed(
+    trackId: string,
+    opts: { fromClipId?: string; empty?: boolean },
+  ): { fromClipId?: string; lengthBeats: number } | undefined {
+    const track = this.getTrack(trackId);
+    if (track?.kind !== "instrument") return undefined;
+    const source = opts.empty
+      ? undefined
+      : (track.clips.find((clip) => clip.id === (opts.fromClipId ?? track.activeClipId)) ?? track.clips[0]);
+    return { fromClipId: source?.id, lengthBeats: source ? source.store.getClip().lengthBeats : this.lengthBeats };
+  }
+
   private nextClipName(t: Track): string {
     const used = new Set(t.clips.map((clip) => clip.name));
     for (let i = 0; ; i++) {
@@ -1003,6 +1042,13 @@ export class ProjectStore {
     return t.clips.find((clip) => clip.id === (clipId ?? t.activeClipId))?.store;
   }
 
+  /** The length `addPlacement` would give a placement of this clip: its natural length. Tempo-derived
+   *  for audio, so a dispatch pins it into the command (DAW-36). */
+  defaultPlacementLength(trackId: string, clipId: string): number | undefined {
+    const track = this.getTrack(trackId);
+    return track ? this.naturalLength(track, clipId) : undefined;
+  }
+
   /** Natural length (beats) of a clip in a track's pool: notes length, or audio duration. */
   private naturalLength(t: Track, clipId: string): number {
     if (t.kind === "instrument") return t.clips.find((clip) => clip.id === clipId)?.store.getClip().lengthBeats ?? 4;
@@ -1028,18 +1074,19 @@ export class ProjectStore {
   ): NoteClip | undefined {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== "instrument") return undefined;
-    const source = opts.empty
-      ? undefined
-      : (t.clips.find((clip) => clip.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0]);
-    const id = opts.id && !t.clips.some((clip) => clip.id === opts.id) ? opts.id : this.nextClipId();
-    const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
+    // A given id that is already taken is refused, not renamed (DAW-36): minting a fresh one makes
+    // the created id unknowable in advance, so nothing downstream can name what the command made.
+    if (opts.id && t.clips.some((clip) => clip.id === opts.id)) return undefined;
+    const seed = this.clipSeed(trackId, opts);
+    const source = seed?.fromClipId ? t.clips.find((clip) => clip.id === seed.fromClipId) : undefined;
+    const id = opts.id ?? this.nextClipId();
     const clip: NoteClip = {
       id,
       name: opts.name ?? this.nextClipName(t),
       author: opts.author ?? "you",
       store: new ClipStore({
-        notes: seed.notes.map((note) => ({ ...note })),
-        lengthBeats: opts.lengthBeats ?? seed.lengthBeats,
+        notes: source ? source.store.snapshot().notes.map((note) => ({ ...note })) : [],
+        lengthBeats: opts.lengthBeats ?? seed?.lengthBeats ?? this.lengthBeats,
       }),
     };
     t.clips.push(clip);
@@ -1057,7 +1104,8 @@ export class ProjectStore {
   pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = "you"): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== content.kind) return;
-    const clipId = id && !t.clips.some((clip) => clip.id === id) ? id : this.nextClipId();
+    if (id && t.clips.some((clip) => clip.id === id)) return; // a taken id is refused, not renamed (DAW-36)
+    const clipId = id ?? this.nextClipId();
     if (t.kind === "instrument" && content.kind === "instrument") {
       t.clips.push({
         id: clipId,
@@ -1125,8 +1173,8 @@ export class ProjectStore {
     if (!t) return undefined;
     const clipId = opts.clipId ?? t.activeClipId;
     if (!t.clips.some((clip) => clip.id === clipId)) return undefined;
-    const id =
-      opts.id && !t.placements.some((placement) => placement.id === opts.id) ? opts.id : this.nextPlacementId();
+    if (opts.id && t.placements.some((placement) => placement.id === opts.id)) return undefined; // DAW-36
+    const id = opts.id ?? this.nextPlacementId();
     const placement: Placement = {
       id,
       clipId,

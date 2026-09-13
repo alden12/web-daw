@@ -53,15 +53,14 @@ const trackClipPool = (command: { trackId: string }): string[] => [`clips:${comm
 const DERIVED_FROM: Partial<{
   [K in EditCommand["type"]]: (command: Extract<EditCommand, { type: K }>) => string[];
 }> = {
-  // A new note clip is seeded at the project length.
+  // A new track's seed clip is still created at the project length (DAW-36 has not pinned that one
+  // yet - the command has no field for it).
   createTrack: () => ["project:length"],
   createTrackFromPatch: () => ["project:length"],
-  // ...and `addClip` also forks the track's ACTIVE clip, a per-track pointer that the other clip
-  // commands move. Keying the pool rather than the pointed-at clip keeps this a pure function of
-  // the command, which is what every caller of `conflictKeys` expects.
-  addClip: (command) => ["project:length", ...trackClipPool(command)],
+  // `addClip` and `addPlacement` used to be here too, for the project length and the track's ACTIVE
+  // clip. A dispatch now pins both into the command (DAW-36), so they read nothing shared and a
+  // concurrent change to either genuinely does not affect them.
   addAudioClip: trackClipPool,
-  addPlacement: trackClipPool,
   pasteClip: trackClipPool,
   removeClip: trackClipPool,
   addNoteClip: trackClipPool,
