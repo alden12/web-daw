@@ -994,7 +994,9 @@ export class ProjectStore {
     });
   }
 
-  /** The ClipStore for an instrument track's clip (the active one if `clipId` omitted). */
+  /** The ClipStore for an instrument track's clip. `clipId` is omitted only by log entries written
+   *  before DAW-36 (a dispatch resolves it now), and by direct callers that mean "whatever is open";
+   *  both fall back to the active clip. */
   getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
     const t = this.getTrack(trackId);
     if (t?.kind !== "instrument") return undefined;

@@ -19,6 +19,7 @@ import { fingerprintProject } from "../project/fingerprint";
 import { ProjectStore } from "../project/projectStore";
 import type { ProjectData } from "../project/types";
 import { applyEdit } from "./applyEdit";
+import { normalizeCommand } from "./normalize";
 import { authorshipBefore, invert, restoreAuthorship, type PriorAuthors } from "./invert";
 import { describeCommand, type DescribeContext } from "./describe";
 import type { Author, EditCommand, EditEntry } from "./types";
@@ -240,7 +241,11 @@ export class EditLog {
   }
 
   /** Apply + log an edit. UI edits are authored by the current user (default 'you'); MCP edits 'claude'. */
-  dispatch = (command: EditCommand, author: Author = this.localAuthor): void => {
+  dispatch = (raw: EditCommand, author: Author = this.localAuthor): void => {
+    // Resolve ambient defaults first (DAW-36), so the checkpoint, the apply, the log entry and the
+    // forward to the authority all see one self-contained command rather than four chances to
+    // resolve "the active clip" against four different states.
+    const command = normalizeCommand(this.project, raw);
     const now = Date.now();
     const key = COALESCABLE.has(command.type) ? `${author}:${coalesceKey(command)}` : null;
     const coalesce =
