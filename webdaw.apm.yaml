@@ -7207,8 +7207,8 @@ projects:
           ## The state of `invert.ts`: frozen, not deleted
 
 
-          47 command types are inverted on `slice-117-undo-by-inverse`, tested
-          and green. Leave them.
+          **44 of 59** command types are inverted on
+          `slice-117-undo-by-inverse`, tested and green. Leave them.
 
 
           Removing them now is real surgery (they interleave with several
@@ -7232,10 +7232,50 @@ projects:
           which is local-only and already discarded on a fingerprint mismatch.
 
 
+          ### Getting it back, if mobile or anything else argues for it
+
+
+          Recorded because stage D deletes it. Branch
+          `slice-117-undo-by-inverse`, head **`3ebd825`**, where
+
+          `src/audio/commands/invert.ts` is 521 lines and `test/invert.test.ts`
+          is 538.
+
+
+          | commit | what it added |
+
+          |---|---|
+
+          | `20e2f55` | `invert.ts` itself, the `Checkpoint` union, the property
+          harness, the authorship capture; the project setters and the 15 plain
+          setters |
+
+          | `2d9134f` | the add/remove pairs, `undoConflictKeys`,
+          `DERIVED_FROM`, canonical authorship ordering |
+
+          | `6d948ba` | harness only (relaxing the tempo conflict keys) |
+
+          | `5892b68` | `setTempo`'s inverse, once a tempo change became
+          destructive (DAW-35) |
+
+          | `a86a7e9` | `removeEffect`, `removeMidiDevice`, `removeTrack` +
+          `restoreTrack` |
+
+
+          `git show 3ebd825:src/audio/commands/invert.ts` reads it without
+          checking anything out. The four
+
+          commits are not independently cherry-pickable - each builds on the
+          last - so recovering a single
+
+          inverter is better done by copying the entry and its sample than by
+          replaying commits.
+
+
           ## Before this branch merges
 
 
-          **Revert `restoreTrack` (commit `a86a7e9`).** The one genuinely
+          **Revert `restoreTrack` (part of `a86a7e9`).** The one genuinely
           time-sensitive item, and the only part
 
           of this work that enters the *shared* edit log rather than local undo
@@ -7351,7 +7391,7 @@ projects:
             no longer exists.
         id: 01a07e69-c501-7593-89fc-4b3736d3a6d0
         created_at: 2026-09-08T00:27:36.065Z
-        updated_at: 2026-09-13T12:37:51.697Z
+        updated_at: 2026-09-13T12:40:48.889Z
         comments:
           - body: "The wider version of this, raised by Alden: make undo *granular* by
               giving each command an inverse, instead of anchoring snapshots at
