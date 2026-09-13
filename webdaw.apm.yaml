@@ -987,6 +987,248 @@ projects:
         use case. Net: the primitives that make it scale (shared-nothing rooms,
         snapshot + replay-the-tail) are ones we already have for versioning, so
         concurrency reuses them rather than inventing them.
+      Future architecture - whole-system sketch: >
+        A hand-drawn sketch (Sept 2026) of where the whole system could land
+        once hosting,
+
+        multiplayer, the agent, and server-side audio work all exist at once. It
+        is a
+
+        **target to aim at, not a commitment**: the named technologies
+        (RabbitMQ, Tigris,
+
+        Postgres) are illustrative of the *role*, not chosen products. Its value
+        here is
+
+        that it is the first drawing of all the tiers together, and it confirms
+        the storage
+
+        model the undo/history work (DAW-34) is already building toward.
+
+
+        Transcribed from the original whiteboard image; if that PNG is ever
+        committed, link
+
+        it here.
+
+
+        ```mermaid
+
+        flowchart LR
+          ClientA["Client A<br/>queues edits offline<br/>rebases on reconnect"] -->|WS| GW
+          ClientB[Client B] -->|WS| GW
+          Agent[AI agent] -->|MCP incl. SSE| GW
+          GW["API gateway<br/>auth, rate limiting<br/>routes project to room<br/>proxies WS"] <--> Dir[(Room / server<br/>directory)]
+          GW -->|WS| RoomA["Room A<br/>servers, region A"]
+          GW -->|WS| RoomB["Room B<br/>servers, region B"]
+          GW -->|MCP incl. SSE| MCP[MCP servers]
+          MCP -->|track state read/write| RoomA
+          RoomA --> PGA[("Postgres shard A<br/>edits, keyframes")]
+          RoomB --> PGB[(Postgres shard B)]
+          RoomA --> AQ[Audio processing queue]
+          AQ --> AW[Audio processing workers]
+          AW <--> Blob[("Blob storage<br/>samples, renders")]
+          MCP --> NQ[Analysis queue]
+          NQ --> NW[Analysis workers]
+          NW <--> Blob
+          NW --> MCP
+          AW -.->|"saves processed audio links (see note)"| PGA
+          ClientA <-->|upload/download via presigned URLs| Blob
+          ClientB <--> Blob
+        ```
+
+
+        **Data model in the sketch.** `Edits(id, seq, type, data, author,
+        projectId)`,
+
+        `Keyframes(seq, data, projectId)`, `Project(id, name, edits,
+        keyframes)`. Rooms
+
+        store edits plus *links* to sample blobs, never the audio itself; the
+        room resolves
+
+        those links to presigned URLs for clients, and hands out presigned
+        upload URLs so
+
+        sample bytes never pass through the API.
+
+
+        **What it confirms about work in flight.** That edits/keyframes pair is
+        exactly the
+
+        shape DAW-34 is moving undo onto, so the rewrite is building the thing
+        this diagram
+
+        assumes rather than a local-only detour. Undo falls out as just another
+        edit type
+
+        (an ordered tombstone naming a `seq`), needing no extra table and
+        replaying like
+
+        anything else. The one constraint the sketch does not state, and the one
+        that bites:
+
+        **keyframes must not prune the edits behind them**, or undo cannot
+        rebuild across a
+
+        keyframe boundary. Retention has to trail the keyframe by a margin
+        (DAW-34 stage B).
+
+
+        ### Who builds HEAD (already answered in the code)
+
+
+        The sketch does not say which side reconstructs current project state
+        from
+
+        keyframe + edits. In the shipped system it is **both, running the same
+        code** -
+
+        `ProjectStore` and `applyEdit` are DOM-free, so they execute identically
+        in Node and
+
+        in the browser. Three distinct paths:
+
+
+        1. **Room cold start (server).** `Room.load` in `server/api/rooms.ts`
+        reads the
+           `project.json` keyframe and replays the entries with `seq > headSeq` through
+           `applyEdit`. That store is the **authority's HEAD**, held in memory for the
+           room's life, and the room writes a fresh keyframe every `KEYFRAME_EDIT_INTERVAL`
+           edits to bound the next cold start.
+        2. **A client joining a hosted project (neither, strictly).** The client
+        does *not*
+           rebuild from the log. It loads whatever local copy it has, then the room sends a
+           `snapshot` message (the authority's `headSeq` plus a bounded window of recent
+           entries) and `SharedSession.onSnapshot` folds in **only the entries it is
+           missing**. Catch-up by delta, not reconstruction.
+        3. **Local-only or offline reload (client).** `ProjectRepository.load`
+        does the full
+           keyframe + tail replay in the browser, then the local mirror's still-unsent
+           `pending.json` queue is re-applied on top. This is the path when
+           `VITE_DAW_API_URL` is unset, and the path after an offline reload of a hosted
+           project.
+
+        Underneath all three, the client keeps two stores: `base` (confirmed,
+
+        server-ordered) and the live UI store, which is always **`base` with
+        `pending`
+
+        replayed on top**. A peer's edit advances `base` and triggers a rebase,
+        so the peer
+
+        edit slots underneath the local unconfirmed work. No operational
+        transform, no
+
+        CRDT.
+
+
+        Two consequences worth carrying into any scaled-up version of this
+        design. First,
+
+        **the two replays must agree exactly**, or server and client diverge
+        silently; that
+
+        is what DAW-36 (commands carry everything they need, no reads of ambient
+        state) is
+
+        for. Second, **rebuild cost lands wherever the rebuild happens**, and it
+        is small:
+
+        measured on a laptop, loading a keyframe is 0.5ms to 10ms depending on
+        project size,
+
+        and keyframe + 2000 replayed edits is 4ms to 24ms.
+
+
+        ### Deltas worth taking, reviewed against the sketch
+
+
+        - **Workers should write through the room, not around it.** In the
+        drawing, audio and
+          analysis workers save processed-audio links straight to Postgres. That skips the
+          room, so the change gets no `seq`, no fan-out, and clients only notice on the next
+          refetch. Instead the worker should **submit an edit like any other author** and let
+          the room assign order. A rendered stem then arrives indistinguishably from a human
+          dropping a clip in, and undo, replay and sync all work on it for free. This is the
+          same argument that makes the sketch's MCP-writes-into-the-room edge correct.
+        - **The gateway should not proxy every websocket.** Holding the sockets
+        makes it
+          stateful and scaled by connection count, and one restart drops every session.
+          Prefer: gateway authenticates, resolves the directory, and returns a room address
+          plus a short-lived token; the client connects to the room server directly.
+        - **Room ownership needs a lease with a fence token.** Everything in the
+        design
+          (total order on `seq`, no conflict resolution) rests on there being exactly one
+          room per project. A partition or a slow failover can otherwise leave two rooms
+          believing they own it. The lease's fence token checked on DB write is what makes a
+          zombie room's writes fail rather than interleave.
+        - **A project's DB shard must sit in its room's region,** else every
+        edit is a
+          cross-region write. Consequence already recorded above: a project is single-region
+          at a time, and moving it (drain room, move data, update directory) is a real
+          operation to design once collaborators genuinely span continents.
+        - **Gateway rate limiting cannot save you from a knob drag.** Continuous
+        gestures
+          have to coalesce client-side before they become edits at all (DAW-8.13), which the
+          existing scaling section already assumes.
+        - **Address sample blobs by content hash,** so the same drum hit
+        uploaded twice is
+          one object, and so a project copy is cheap.
+        - **Two brokers is more topology than the roles need.** Analysis and
+        audio processing
+          are two queues, not two message brokers.
+
+        ### The same system with those notes applied
+
+
+        ```mermaid
+
+        flowchart LR
+          subgraph Edge
+            GW["API gateway (stateless)<br/>auth, rate limiting<br/>resolves room, issues token"]
+            Dir[(Room / server directory<br/>project -> room, leases)]
+          end
+
+          ClientA["Client A<br/>base + pending, optimistic<br/>coalesces gestures<br/>queues offline, rebases on reconnect"]
+          ClientB[Client B]
+          Agent[AI agent]
+
+          ClientA -->|1. who owns P?| GW
+          ClientB --> GW
+          Agent -->|MCP incl. SSE| GW
+          GW <--> Dir
+          ClientA ==>|2. WS direct, with token| RoomA
+          ClientB ==> RoomA
+          Agent -->|MCP| MCP[MCP servers]
+          MCP -->|submits edits| RoomA
+
+          subgraph RegionA["Region A (project P is homed here)"]
+            RoomA["Room A - the authority for P<br/>holds HEAD in memory<br/>assigns seq, fans out<br/>holds a fenced lease"]
+            PGA[("Postgres shard A<br/>edits, keyframes<br/>retention trails the keyframe")]
+          end
+
+          RoomA -->|"append edit (fence-checked)"| PGA
+          PGA -->|keyframe + tail on cold start| RoomA
+
+          RoomA -->|enqueue job| Broker["One broker<br/>queues: audio-processing, analysis"]
+          Broker --> AW[Audio processing workers]
+          Broker --> NW[Analysis workers]
+          AW <--> Blob[("Blob storage<br/>content-hash addressed")]
+          NW <--> Blob
+          AW ==>|"submits an edit, like any author"| RoomA
+          NW ==>|"submits an edit / reports to agent"| RoomA
+          ClientA <-->|presigned URLs, bytes skip the API| Blob
+        ```
+
+
+        Bold edges are the two changes that matter: **clients hold the websocket
+        to the room
+
+        rather than to the gateway**, and **workers re-enter through the room**
+        so their
+
+        results are ordered edits rather than side-channel database writes.
       Sync service - foundations and deferred notes: >-
         Cross-cutting done infrastructure and deferred notes that do not belong
         to a single HOST ticket.
@@ -7204,10 +7446,50 @@ projects:
           field on those entries.
 
 
+          ### Who computes the post-undo state (transport, not format)
+
+
+          Raised 2026-09-13: if a rebuild is expensive on mobile, could the
+          **server** rebuild and send the
+
+          result, sparing every client the work? It does not help the case that
+          matters, and the choice stays
+
+          open either way.
+
+
+          - **Your own undo cannot wait for a round trip.** It applies
+          optimistically like every other edit, so
+            it rebuilds locally regardless, and a phone round trip (50-200ms) is slower than the rebuild it
+            would be replacing.
+          - **A peer's undo is the rare case**, rarer still once undo is
+          author-scoped (stage E), and it lands
+            on a mostly-idle client. That is the best possible moment to spend 20ms.
+          - **If offloading is ever worth it, send a delta, not a snapshot.**
+          Resending project state is the
+            wrong trade: tens to hundreds of KB against a few bytes, and on mobile the radio wake costs more
+            than the bytes do. The shape that works is the room rebuilding (it holds HEAD in memory anyway),
+            diffing before against after, and emitting the difference as **ordinary forward commands** clients
+            apply through `applyEdit`. That is an inverse, derived rather than hand-maintained. Note
+            `src/audio/commands/diff.ts` produces human-readable strings only, so this is new machinery, not a
+            reuse of it.
+          - **Cheaper levers come first** if mobile does bite: shorten the
+          keyframe interval so the replay tail
+            is shorter; keep a small ring of recent snapshots client-side as a **cache** for your own recent
+            undos (the old snapshot undo, but over a log that stays authoritative, so it cannot rot); or move
+            the rebuild off the main thread.
+
+          Either way the log plus its tombstones stays the truth, so how a peer
+          learns an undo's result is
+
+          swappable and nothing in stages A-E turns on it. Ship
+          everyone-rebuilds, measure on a real phone.
+
+
           ## The state of `invert.ts`: frozen, not deleted
 
 
-          **44 of 59** command types are inverted on
+          **43 of 58** command types are inverted on
           `slice-117-undo-by-inverse`, tested and green. Leave them.
 
 
@@ -7272,26 +7554,42 @@ projects:
           replaying commits.
 
 
+          **`removeTrack`'s inverter is the exception: it was removed again in
+          `d5e3d4d`** and should not come
+
+          back in that form. It only worked by introducing a `restoreTrack`
+          command into the shared edit log
+
+          (see below). If a track removal ever needs a fast undo, it has to be
+          built some other way.
+
+
           ## Before this branch merges
 
 
-          **Revert `restoreTrack` (part of `a86a7e9`).** The one genuinely
-          time-sensitive item, and the only part
+          **Done in `d5e3d4d`: `restoreTrack` reverted.** It was the only part
+          of this work that entered the
 
-          of this work that enters the *shared* edit log rather than local undo
-          state. The authority replays it
+          *shared* edit log rather than local undo state - the authority replays
+          it and it persists forever, so
 
-          and it persists forever, so once it ships, removing it becomes a
-          format-migration problem. Free to
-
-          remove while unmerged.
+          once shipped, removing it becomes a format-migration problem. Removed
+          while it was still free.
 
 
-          Keep from that commit: the `hydrateTrack` / `snapshotTrack`
-          extractions (good on their own merits, and
+          That took `removeTrack` out of `invert.ts` (43 now, not 44) and out of
+          the harness, and with it the
 
-          they chip away at an oversized file) and the `midiDeviceParam:`
-          authorship-leak fix.
+          `CONTAINMENT_GAP` exclusion, whose only member it was. Kept from
+          `a86a7e9`: the `hydrateTrack` /
+
+          `snapshotTrack` extractions, which `load` and `snapshotProject` use on
+          their own account, and the
+
+          `midiDeviceParam:` authorship-leak fix. Gates green after: 907 unit
+          tests, lint, `tsc -b`, server
+
+          typecheck.
 
 
           ## Worth having regardless of the undo model
@@ -7316,6 +7614,12 @@ projects:
 
 
           ## The plan
+
+
+          **0. Revert `restoreTrack`.** Done, `d5e3d4d`. The only step with a
+          deadline attached, because it was
+
+          the only one that reached the shared edit log.
 
 
           **A. Determinism (DAW-36).** A prerequisite: replay-minus-one is only
@@ -7364,17 +7668,32 @@ projects:
           the log is shared.
 
 
-          **E. Multiplayer.** The tombstone entry - append-only and itself
-          ordered, so replaying to a seq only
+          **E. Multiplayer.** Needs DAW-8.13's coalesce-before-forward first, or
+          one drag gesture is ~120
 
-          honours tombstones at or below it, and past commits stay true. Undo
-          and redo forward to peers.
+          authority rows and the oldest undo steps point at pruned ones. Then:
+          the tombstone entry - append-only
 
-          Author-scoped undo. Offline: an unsent edit is dropped from `pending`,
-          a sent-but-unacked one is
+          and itself ordered, so replaying to a seq only honours tombstones at
+          or below it, and past commits
 
-          tombstoned by `opId` (the room already maps `opId` to an assigned
-          seq), a confirmed one by seq.
+          stay true. Undo and redo forward to peers. Author-scoped undo.
+          Offline: an unsent edit is dropped from
+
+          `pending`, a sent-but-unacked one is tombstoned by `opId` (the room
+          already maps `opId` to an assigned
+
+          seq), a confirmed one by seq. How peers *learn* the result is the
+          transport question above, and
+
+          everyone-rebuilds is the shipping answer.
+
+
+          **F. Measure on a phone.** The gate on whether any of `invert.ts`
+          comes back. Not a blocker on
+
+          anything; it decides whether this item is finished or grows a fast
+          path.
 
 
           ## Dropped
@@ -7391,7 +7710,7 @@ projects:
             no longer exists.
         id: 01a07e69-c501-7593-89fc-4b3736d3a6d0
         created_at: 2026-09-08T00:27:36.065Z
-        updated_at: 2026-09-13T12:40:48.889Z
+        updated_at: 2026-09-13T17:58:45.652Z
         comments:
           - body: "The wider version of this, raised by Alden: make undo *granular* by
               giving each command an inverse, instead of anchoring snapshots at
