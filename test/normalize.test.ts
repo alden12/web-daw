@@ -61,6 +61,7 @@ describe("normalizeCommand", () => {
         "createTrack",
         "createTrackFromPatch",
         "createAudioTrack",
+        "createGroup",
         "addAudioTrack",
         "addAudioClip",
         "addClip",

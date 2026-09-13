@@ -311,6 +311,11 @@ export class ProjectStore {
 
   // --- groups ---------------------------------------------------------------
   /** Create a group (no emit). Reuses an existing group if `id` already exists. */
+  /** The name a new group would take. Counted, so a dispatch pins it (DAW-36). */
+  defaultGroupName(): string {
+    return `Group ${this.groups.length + 1}`;
+  }
+
   private createGroup(opts: { id?: string; name?: string; parentId?: string | null } = {}): Group {
     if (opts.id) {
       const existing = this.getGroup(opts.id);
@@ -318,7 +323,7 @@ export class ProjectStore {
     }
     const group: Group = {
       id: opts.id ?? this.nextGroupId(),
-      name: opts.name ?? `Group ${this.groups.length + 1}`,
+      name: opts.name ?? this.defaultGroupName(),
       parentId: opts.parentId ?? null,
       collapsed: false,
       muted: false,

@@ -65,6 +65,7 @@ const NORMALIZE = {
   createTrackFromPatch: (project, command) =>
     pin(pin(command, "name", project.defaultTrackName(command.instrumentType)), "lengthBeats", project.length),
   createAudioTrack: (project, command) => pin(command, "name", project.defaultAudioTrackName()),
+  createGroup: (project, command) => pin(command, "name", project.defaultGroupName()),
   // An audio placement's length is its duration at the tempo of the moment, and audio is not
   // time-stretched (DAW-35), so a replay at another tempo would lay out a different region.
   addAudioTrack: (project, command) =>
