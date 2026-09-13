@@ -41,7 +41,15 @@ export type BrowserToServer =
 /** Sent by the server to the browser tab (commands). */
 export type ServerToBrowser =
   // Track structure (id assigned by the creator so both ends agree)
-  | { type: "createTrack"; instrumentType: string; name?: string; id: string; groupId?: string }
+  | {
+      type: "createTrack";
+      instrumentType: string;
+      name?: string;
+      id: string;
+      groupId?: string;
+      /** Length of the seed clip. Defaults to the project length, and a dispatch pins it (DAW-36). */
+      lengthBeats?: number;
+    }
   | { type: "removeTrack"; trackId: string }
   | { type: "selectTrack"; trackId: string }
   | { type: "setTrack"; trackId: string; muted?: boolean; solo?: boolean; volume?: number; name?: string }

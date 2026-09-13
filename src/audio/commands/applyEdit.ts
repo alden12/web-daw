@@ -21,7 +21,12 @@ type ApplyMap = {
 
 const APPLY: ApplyMap = {
   createTrack: (project, command) =>
-    void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
+    void project.addTrack(command.instrumentType, {
+      name: command.name,
+      id: command.id,
+      groupId: command.groupId,
+      lengthBeats: command.lengthBeats,
+    }),
   createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
   applyPatch: (project, command) =>
     project.applyPatchToTrack({
@@ -41,6 +46,7 @@ const APPLY: ApplyMap = {
         durationSec: command.durationSec,
         startBeat: command.startBeat,
         gain: command.gain,
+        length: command.length,
       },
       { id: command.id, groupId: command.groupId },
     ),

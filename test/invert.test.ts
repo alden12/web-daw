@@ -26,6 +26,7 @@ import { paramKey } from "../src/audio/commands/authorship";
 import { conflictKeys, keysOverlap, undoConflictKeys } from "../src/audio/sync/conflict";
 import { fingerprintProject } from "../src/audio/project/fingerprint";
 import { ProjectStore } from "../src/audio/project/projectStore";
+import { normalizeCommand } from "../src/audio/commands/normalize";
 
 /**
  * Commands that COPY existing state into a new object. They are excluded from the second position in
@@ -489,17 +490,22 @@ describe("invert", () => {
     );
     let checked = 0;
 
-    for (const [first, second] of pairs) {
+    for (const [rawFirst, rawSecond] of pairs) {
       // Do `first`, let `second` land on top, then take `first` back the way `EditLog.rewind` does.
+      // Both are normalised where a dispatch would have normalised them (DAW-36), and are FIXED from
+      // there on - that is what a log entry is, and replaying one must not re-resolve it against
+      // whatever state it happens to meet.
       const { project: outOfOrder } = seeded();
+      const first = normalizeCommand(outOfOrder, rawFirst);
       const inverse = invert(outOfOrder, first);
       if (inverse === null) continue; // declined an inverse, so it takes a snapshot and the gate never sees it
+      const authors = authorshipBefore(outOfOrder, [first, ...inverse]);
+      applyEdit(outOfOrder, first, "you");
+      const second = normalizeCommand(outOfOrder, rawSecond);
       // The gate's own question, asked with the gate's own key function: only pairs it would let
       // through are claims we have to honour.
       if (keysOverlap(undoConflictKeys(first, inverse), conflictKeys(second))) continue;
       checked++;
-      const authors = authorshipBefore(outOfOrder, [first, ...inverse]);
-      applyEdit(outOfOrder, first, "you");
       applyEdit(outOfOrder, second, "you");
       for (const command of inverse) applyEdit(outOfOrder, command, "you");
       restoreAuthorship(outOfOrder, authors);

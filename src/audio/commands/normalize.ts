@@ -60,10 +60,20 @@ const NORMALIZE = {
 
   // Creation defaults. A name counts what already exists, and a clip's seed follows the track's
   // active clip and the project length, so all of them move between a dispatch and a replay.
-  createTrack: (project, command) => pin(command, "name", project.defaultTrackName(command.instrumentType)),
-  createTrackFromPatch: (project, command) => pin(command, "name", project.defaultTrackName(command.instrumentType)),
+  createTrack: (project, command) =>
+    pin(pin(command, "name", project.defaultTrackName(command.instrumentType)), "lengthBeats", project.length),
+  createTrackFromPatch: (project, command) =>
+    pin(pin(command, "name", project.defaultTrackName(command.instrumentType)), "lengthBeats", project.length),
   createAudioTrack: (project, command) => pin(command, "name", project.defaultAudioTrackName()),
-  addAudioTrack: (project, command) => pin(command, "name", project.defaultAudioTrackName()),
+  // An audio placement's length is its duration at the tempo of the moment, and audio is not
+  // time-stretched (DAW-35), so a replay at another tempo would lay out a different region.
+  addAudioTrack: (project, command) =>
+    pin(
+      pin(command, "name", project.defaultAudioTrackName()),
+      "length",
+      project.naturalBeats(command.durationSec ?? 0),
+    ),
+  addAudioClip: (project, command) => pin(command, "length", project.naturalBeats(command.durationSec ?? 0)),
   addClip: (project, command) => {
     const seed = project.clipSeed(command.trackId, command);
     const named = pin(command, "name", project.defaultClipName(command.trackId));

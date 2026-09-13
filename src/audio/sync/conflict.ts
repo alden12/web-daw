@@ -53,13 +53,9 @@ const trackClipPool = (command: { trackId: string }): string[] => [`clips:${comm
 const DERIVED_FROM: Partial<{
   [K in EditCommand["type"]]: (command: Extract<EditCommand, { type: K }>) => string[];
 }> = {
-  // A new track's seed clip is still created at the project length (DAW-36 has not pinned that one
-  // yet - the command has no field for it).
-  createTrack: () => ["project:length"],
-  createTrackFromPatch: () => ["project:length"],
-  // `addClip` and `addPlacement` used to be here too, for the project length and the track's ACTIVE
-  // clip. A dispatch now pins both into the command (DAW-36), so they read nothing shared and a
-  // concurrent change to either genuinely does not affect them.
+  // `createTrack`, `createTrackFromPatch`, `addClip` and `addPlacement` all used to be here, for the
+  // project length and the track's ACTIVE clip. A dispatch now pins both into the command (DAW-36),
+  // so they read nothing shared and a concurrent change to either genuinely does not affect them.
   addAudioClip: trackClipPool,
   pasteClip: trackClipPool,
   removeClip: trackClipPool,

@@ -449,7 +449,10 @@ export class ProjectStore {
     return `Audio ${this.tracks.length + 1}`;
   }
 
-  addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
+  addTrack(
+    instrumentType: string,
+    opts: { name?: string; id?: string; groupId?: string; lengthBeats?: number } = {},
+  ): Track {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
     const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
@@ -460,7 +463,7 @@ export class ProjectStore {
     // side, and divergent ids would make clip/placement tools address something
     // the other end doesn't have. Forks/new placements get communicated random ids.
     const clipId = `c-${trackId}`;
-    const clip = new ClipStore({ lengthBeats: this.lengthBeats });
+    const clip = new ClipStore({ lengthBeats: opts.lengthBeats ?? this.lengthBeats });
     const track: InstrumentTrack = {
       kind: "instrument",
       id: trackId,
@@ -519,13 +522,19 @@ export class ProjectStore {
     id: string;
     name?: string;
     groupId?: string;
+    lengthBeats?: number;
     instrumentType: string;
     params: PatchValues;
     effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
     midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
   }): Track {
     if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
-    const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
+    const track = this.addTrack(spec.instrumentType, {
+      name: spec.name,
+      id: spec.id,
+      groupId: spec.groupId,
+      lengthBeats: spec.lengthBeats,
+    });
     if (track.kind === "instrument") {
       track.params.load(spec.params);
       for (const device of spec.midiDevices ?? []) {
@@ -629,7 +638,7 @@ export class ProjectStore {
 
   /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
   addAudioTrack(
-    clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },
+    clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number; length?: number },
     opts: { name?: string; id?: string; groupId?: string } = {},
   ): AudioTrack {
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
@@ -657,7 +666,7 @@ export class ProjectStore {
           clipId,
           startBeat: clip.startBeat ?? 0,
           offset: 0,
-          length: this.naturalBeats(durationSec),
+          length: clip.length ?? this.naturalBeats(durationSec),
         },
       ],
       launchedClipId: null,
@@ -683,6 +692,7 @@ export class ProjectStore {
     durationSec?: number;
     gain?: number;
     startBeat?: number;
+    length?: number;
   }): void {
     const t = this.getTrack(spec.trackId);
     if (!t || t.kind !== "audio" || t.clips.some((clip) => clip.id === spec.id)) return;
@@ -698,7 +708,7 @@ export class ProjectStore {
     t.activeClipId = spec.id;
     if (!t.placements.some((placement) => placement.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat ?? 0);
-      const length = this.naturalBeats(durationSec);
+      const length = spec.length ?? this.naturalBeats(durationSec);
       // A recorded take punches in over the lane: replace whatever it overlaps.
       this.replaceRegion(t, startBeat, startBeat + length, spec.placementId);
       t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length });
@@ -781,8 +791,9 @@ export class ProjectStore {
     });
   }
 
-  /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */
-  private naturalBeats(durationSec: number): number {
+  /** Natural length of `durationSec` in beats at the CURRENT tempo (>= 1 beat). Public because a
+   *  dispatch pins the result into the command (DAW-36) - the tempo moves, the placement should not. */
+  naturalBeats(durationSec: number): number {
     return Math.max(1, secondsToBeats(durationSec, this.tempoBpm));
   }
 

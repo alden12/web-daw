@@ -62,6 +62,7 @@ describe("normalizeCommand", () => {
         "createTrackFromPatch",
         "createAudioTrack",
         "addAudioTrack",
+        "addAudioClip",
         "addClip",
         "addPlacement",
       ].sort(),
@@ -101,17 +102,71 @@ describe("normalizeCommand", () => {
     });
   });
 
-  // An empty clip seeds its length from the PROJECT length, so a later setLength used to change what
-  // a replayed addClip produced.
-  it("a forked-empty clip keeps the length the project had at the time", () => {
+  // Everything below states the property directly: take the entry the log KEPT, apply it to a
+  // project whose state has moved on, and the result must not follow that state. Replaying the log
+  // in order would prove nothing - it reproduces the very state the command used to read.
+
+  it("a logged note edit lands in the clip it named, wherever another is active", () => {
+    const { log } = seeded();
+    log.dispatch({ type: "addNote", trackId: "t-1", note: note("n-1") });
+    const logged = log.getEntries().at(-1)!.command;
+
+    const elsewhere = new ProjectStore(false); // a fresh project: c-t-1 is the active clip, c-2 is not
+    applyEdit(elsewhere, { type: "createTrack", instrumentType: "subtractive", id: "t-1" }, "you");
+    applyEdit(elsewhere, { type: "addClip", trackId: "t-1", id: "c-2", empty: true }, "you");
+    applyEdit(elsewhere, { type: "launchClip", trackId: "t-1", clipId: "c-t-1" }, "you");
+    elsewhere.selectClip("t-1", "c-t-1");
+    applyEdit(elsewhere, logged, "you");
+
+    expect(
+      elsewhere
+        .getClipStore("t-1", "c-2")
+        ?.getClip()
+        .notes.map((each) => each.id),
+    ).toEqual(["n-1"]);
+    expect(elsewhere.getClipStore("t-1", "c-t-1")?.getClip().notes).toHaveLength(0);
+  });
+
+  // An empty clip seeds its length from the PROJECT length.
+  it("a logged empty clip keeps the length the project had when it was made", () => {
     const { log } = seeded();
     log.dispatch({ type: "setLength", lengthBeats: 32 });
     log.dispatch({ type: "addClip", trackId: "t-1", id: "c-3", empty: true });
-    log.dispatch({ type: "setLength", lengthBeats: 128 });
+    const logged = log.getEntries().at(-1)!.command;
 
-    const replayed = new ProjectStore(false);
-    for (const entry of log.getEntries()) applyEdit(replayed, entry.command, entry.author);
-    expect(replayed.getClipStore("t-1", "c-3")?.getClip().lengthBeats).toBe(32);
+    const longer = seeded().project;
+    longer.setLength(128);
+    applyEdit(longer, logged, "you");
+
+    expect(longer.getClipStore("t-1", "c-3")?.getClip().lengthBeats).toBe(32);
+  });
+
+  it("a logged createTrack seeds its clip at the length the project had when it ran", () => {
+    const { log } = seeded();
+    log.dispatch({ type: "setLength", lengthBeats: 32 });
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-2" });
+    const logged = log.getEntries().at(-1)!.command;
+
+    const longer = seeded().project;
+    longer.setLength(128);
+    applyEdit(longer, logged, "you");
+
+    expect(longer.getClipStore("t-2")?.getClip().lengthBeats).toBe(32);
+  });
+
+  // Audio is not time-stretched (DAW-35), so a placement's length is its duration at the tempo of
+  // the moment. The same logged command at another tempo used to lay out a different region.
+  it("a logged audio placement keeps the length it was laid out at", () => {
+    const { project, log } = seeded();
+    log.dispatch({ type: "setTempo", bpm: 120 });
+    log.dispatch({ type: "addAudioTrack", id: "t-a", fileId: "f-1", durationSec: 4 });
+    const logged = log.getEntries().at(-1)!.command;
+
+    const faster = new ProjectStore(false);
+    faster.setTempo(180);
+    applyEdit(faster, logged, "you");
+
+    expect(faster.getTrack("t-a")?.placements[0]?.length).toBe(project.getTrack("t-a")?.placements[0]?.length);
   });
 
   it("refuses a colliding id rather than renaming it to one nobody can predict", () => {
@@ -119,26 +174,6 @@ describe("normalizeCommand", () => {
     log.dispatch({ type: "addClip", trackId: "t-1", id: "c-2", empty: true });
 
     expect(project.getTrack("t-1")?.clips.map((clip) => clip.id)).toEqual(["c-t-1", "c-2"]);
-  });
-
-  // The point of the whole exercise: a logged entry replays to the same place after the active clip
-  // has moved on. Before DAW-36 this note would land in whichever clip was active at replay time.
-  it("replays into the same clip after the active clip has changed", () => {
-    const { log } = seeded();
-    log.dispatch({ type: "addNote", trackId: "t-1", note: note("n-1") });
-    log.dispatch({ type: "launchClip", trackId: "t-1", clipId: "c-t-1" });
-    log.dispatch({ type: "addClip", trackId: "t-1", id: "c-3", empty: true });
-
-    const replayed = new ProjectStore(false);
-    for (const entry of log.getEntries()) applyEdit(replayed, entry.command, entry.author);
-
-    expect(
-      replayed
-        .getClipStore("t-1", "c-2")
-        ?.getClip()
-        .notes.map((n) => n.id),
-    ).toEqual(["n-1"]);
-    expect(replayed.getClipStore("t-1", "c-3")?.getClip().notes).toHaveLength(0);
   });
 
   // Replay MINUS an edit is the case the rebuild path (DAW-34 stage C) depends on: dropping the
