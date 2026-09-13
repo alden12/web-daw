@@ -8065,114 +8065,182 @@ projects:
         status: in-progress
         sort_path: "000036"
         body: >
-          Several commands take a default from whatever the project happens to
-          look like when they are applied,
+          Several commands took a default from whatever the project happened to
+          look like when they were
 
-          instead of carrying the value. That makes `applyEdit` a function of
-          more than `(state, command)`, and
+          applied, instead of carrying the value. That made `applyEdit` a
+          function of more than
 
-          a logged entry ambiguous about what it actually did.
-
-
-          ## Why it matters
+          `(state, command)`, and a logged entry ambiguous about what it
+          actually did.
 
 
-          **Replay only works by luck of ordering.** An entry saying "add this
-          note to whichever clip is active"
+          **Built on `slice-118-replay-determinism`**, in four commits:
+          `1775e9a` (note edits), `f23e7cc`
 
-          reproduces correctly today because the active clip is itself derived
+          (creation defaults + the id-collision change), `c5f02c0` (the lengths
+          that needed new fields),
+
+          `95eb487` (group names).
+
+
+          ## Why it mattered
+
+
+          **Replay only worked by luck of ordering.** An entry saying "add this
+          note to whichever clip is
+
+          active" reproduced correctly because the active clip is itself derived
           from the same log in the same
 
-          order. Anything that reorders, excludes or re-bases an entry breaks it
+          order. Anything that reorders, excludes or re-bases an entry broke it
           silently: revert-to-a-point
 
           (DAW-8.16), an offline queue flushed after peer edits, and the rebuild
-          path DAW-34 stage 4 may use.
+          path DAW-34 stage C uses.
 
 
-          **It blocks containment keys.** `authorshipEffect` is pure on the
+          **It blocked containment keys.** `authorshipEffect` is pure on the
           command, so with no clip id it
 
-          cannot key a note by the clip holding it - which is what DAW-34.1
+          could not key a note by the clip holding it - which is what DAW-34.1
           needs to make `removeClip` clash
 
-          with an edit to a note inside it.
+          with an edit to a note inside it. That is now expressible.
 
 
-          **The inverse already has to do this.** `invert.ts` pins the resolved
-          clip id in every note inverse
-
-          (`targetClipId`), because the active clip can move before an undo.
-          Half the codebase already treats
-
-          the unresolved form as unsafe to store.
-
-
-          **It is also why some commands do not commute.** Every entry in
+          **It was also why some commands did not commute.** Every entry in
           `DERIVED_FROM`
 
-          (`src/audio/sync/conflict.ts`) exists because a command reads shared
-          state to compute what it writes.
-
-          Fix the reads and those entries go away.
-
-
-          ## The audit
-
-
-          Found while building DAW-34. Expect more; this is the known set.
-
-
-          | command | ambient read | fix |
-
-          |---|---|---|
-
-          | `addNote`, `addNotes`, `editNotes`, `removeNote`, `removeNotes`,
-          `clearClip`, `setClipLength` | `clipId` defaults to the track's active
-          clip | resolve at dispatch |
-
-          | `createTrack` | default name from the track count (`Subtractive 3`
-          vs `Subtractive 2` depending on what else exists) | caller passes
-          `name` |
-
-          | `addClip` | default name from the pool; seed length from the project
-          length; forks the ACTIVE clip | pass `name`, `lengthBeats`,
-          `fromClipId` - all already optional fields |
-
-          | `addPlacement` | `length` defaults to the clip's natural length,
-          which for audio is tempo-derived | pass `length` |
-
-          | `addAudioTrack`, `addAudioClip` | placement length from
-          `durationSec` at the current tempo | pass `length` |
-
-          | `addClip`, `pasteClip`, `addPlacement` | mint a FRESH id when the
-          given id collides, so the created id is unknowable in advance | reject
-          rather than rename (they already decline an inverse for this, see
-          `invert.ts`) |
+          (`src/audio/sync/conflict.ts`) existed because a command read shared
+          state to compute what it wrote.
 
 
           ## The change
 
 
-          Resolve in `EditLog.dispatch`, before `applyEdit` and before the entry
-          is appended, so the command
+          `src/audio/commands/normalize.ts`: a command-type to normaliser map,
+          called once at the top of
 
-          that is applied, logged, forwarded to the authority and mirrored
-          offline is the same self-contained
+          `EditLog.dispatch`, before the checkpoint, the apply, the log entry
+          and the forward to the authority,
 
-          one. A command-type to normaliser map, per the repo's dispatch
-          convention; types with no entry pass
-
-          through.
+          so all four see the same self-contained command. Types with no entry
+          pass through.
 
 
-          **Keep the optional fields in the type.** The UI and the MCP boundary
-          should go on omitting them,
+          **The rules stayed in the store**, exposed as `defaultTrackName`,
+          `defaultAudioTrackName`,
+
+          `defaultGroupName`, `defaultClipName`, `clipSeed`,
+          `defaultPlacementLength` and a now-public
+
+          `naturalBeats`. One definition of "what this command would do", read
+          by both the normaliser and the
+
+          mutator. `addClip` was refactored onto `clipSeed` rather than keeping
+          a second copy of the lookup.
+
+
+          **The optional fields stayed optional in the type.** The UI and the
+          MCP boundary go on omitting them,
 
           because "the clip I have open" is the right thing for a caller to say.
-          What changes is that it stops
+          What changed is that it stops
 
           being optional by the time it is durable.
+
+
+          ## The audit, as built
+
+
+          | command | ambient read | what it carries now |
+
+          |---|---|---|
+
+          | `addNote`, `addNotes`, `editNotes`, `removeNote`, `removeNotes`,
+          `clearClip`, `setClipLength` | `clipId` defaulted to the track's
+          active clip | `clipId` |
+
+          | `createTrack`, `createTrackFromPatch` | name from the track count;
+          seed clip at the project length | `name`, `lengthBeats` (new field) |
+
+          | `createAudioTrack`, `addAudioTrack` | name from the track count |
+          `name` |
+
+          | `createGroup` | name from the group count | `name` |
+
+          | `addClip` | name from the pool; seed length from the project length;
+          forks the ACTIVE clip | `name`, `lengthBeats`, `fromClipId` |
+
+          | `addPlacement` | `clipId` from the active pointer; `length` from the
+          clip's natural length | `clipId`, `length` |
+
+          | `addAudioTrack`, `addAudioClip` | placement length from
+          `durationSec` at the current tempo | `length` (new field) |
+
+          | `addClip`, `pasteClip`, `addPlacement` | minted a FRESH id when the
+          given one collided | refuses instead |
+
+
+          New fields are all optional and filled by the dispatch, so no caller
+          changed and the wire schema
+
+          (structural, `catchall`) was untouched.
+
+
+          `createGroup` was not in the original audit. Found by grepping for the
+          pattern (`.length + 1` in a
+
+          name) rather than by re-reading the list, which is the way to look for
+          the rest if more turn up.
+
+
+          ## What it bought
+
+
+          `DERIVED_FROM` is down from ten entries to four (`addAudioClip`,
+          `pasteClip`, `removeClip`,
+
+          `addNoteClip`). `createTrack`, `createTrackFromPatch`, `addClip` and
+          `addPlacement` read nothing
+
+          shared any more, so a concurrent change to the project length or the
+          active clip genuinely does not
+
+          affect them.
+
+
+          Removing those entries immediately broke the out-of-order property
+          test in `test/invert.test.ts`,
+
+          which applies raw samples rather than dispatched ones. It now
+          normalises each command once, where a
+
+          dispatch would have, and treats the result as fixed - which is what a
+          log entry is. Worth keeping in
+
+          mind for any other test that builds commands by hand.
+
+
+          ## Tests
+
+
+          `test/normalize.test.ts`. The substantive ones all state the property
+          directly: take the entry the
+
+          log kept, apply it to a project whose state has moved on, and the
+          result must not follow that state.
+
+          Replaying the log in order proves nothing, because it reproduces the
+          very state the command used to
+
+          read - three of these tests were written that way first and were
+          vacuous.
+
+
+          All nine fail with the `normalizeCommand` call removed from
+          `dispatch`, checked rather than assumed.
 
 
           ## Notes
@@ -8182,28 +8250,13 @@ projects:
           sharpens both for free.
 
           - Pre-existing log entries keep the unresolved form and replay as they
-          do today, so no migration -
-            but the `?? activeClipId` fallback in `applyEdit` has to stay for them, with a comment saying it is
-            there for old entries rather than for new dispatches.
-          - Timestamps and authors are not part of this: they are metadata, not
-          state the command computes
-            from.
-
-          ## Who needs it
-
-
-          - **DAW-34.1** (containment keys) cannot key a note by its clip
-          without it.
-
-          - **DAW-34 stage 4**, if the rebuild path lands: replay-minus-one is
-          only exact if replay is.
-
-          - **DAW-8.16** (revert to a point) and offline reconnect already
-          depend on it and currently get away
-            with it.
+          did, so no migration. The
+            `?? activeClipId` fallbacks stay for them and now say that is what they are for.
+          - Timestamps and authors are not part of this: metadata, not state the
+          command computes from.
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
-        updated_at: 2026-09-13T18:03:38.420Z
+        updated_at: 2026-09-13T18:22:32.142Z
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"
