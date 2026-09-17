@@ -1,0 +1,24 @@
+# Local Postgres for the sync service (see docs/DESIGN.md + the sync-service slice).
+# `yarn db:up` starts it; the named volume keeps project data across restarts, which
+# is the whole point - the DB, not evictable browser storage, is now the durable store.
+services:
+  postgres:
+    image: postgres:16
+    container_name: web-daw-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-webdaw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webdaw}
+      POSTGRES_DB: ${POSTGRES_DB:-webdaw}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - web-daw-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-webdaw} -d ${POSTGRES_DB:-webdaw}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  web-daw-pgdata:

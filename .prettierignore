@@ -4,6 +4,9 @@ coverage
 playwright-report
 test-results
 
+# drizzle-kit generated migrations + metadata (leave as the tool emits them)
+drizzle
+
 # Dependency lockfile (no Prettier parser; leave it byte-for-byte)
 yarn.lock
 

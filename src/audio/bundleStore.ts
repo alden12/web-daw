@@ -10,6 +10,7 @@
  * `ProjectStorage` hands out a rooted `BundleStore` per project id and can
  * enumerate/delete them; the repository singleton points at the current project.
  */
+import { RemoteProjectStorage } from "./remoteStore";
 
 export interface BundleStore {
   readText(path: string): Promise<string | null>;
@@ -213,13 +214,21 @@ export class MemoryProjectStorage implements ProjectStorage {
 
 let storageSingleton: ProjectStorage | null = null;
 
-/** The app-wide project storage (OPFS in the browser, shared in-memory otherwise). */
+/**
+ * The app-wide project storage. Precedence: the remote sync server when
+ * `VITE_DAW_API_URL` is set (the durable, deployable backend), else OPFS in the browser,
+ * else shared in-memory (tests / no-OPFS). The seam is identical, so callers don't care.
+ */
 export function getProjectStorage(): ProjectStorage {
   if (!storageSingleton) {
-    storageSingleton =
-      typeof navigator !== "undefined" && !!navigator.storage?.getDirectory
-        ? new OpfsProjectStorage()
-        : new MemoryProjectStorage();
+    const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+    if (apiUrl) {
+      storageSingleton = new RemoteProjectStorage(apiUrl, import.meta.env?.VITE_DAW_API_TOKEN);
+    } else if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) {
+      storageSingleton = new OpfsProjectStorage();
+    } else {
+      storageSingleton = new MemoryProjectStorage();
+    }
   }
   return storageSingleton;
 }

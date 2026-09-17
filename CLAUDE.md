@@ -54,13 +54,21 @@ short list of coding conventions to follow throughout the codebase.
   `yarn format` + a CI format check is the durable fix - a worthwhile follow-up, but
   it reformats the whole tree once, so it lands as its own PR.)
 
-## Persistence: no legacy/format-migration support
+## Persistence: no legacy/format-migration support (pre-hosting)
 
-- We are the only users, so **don't carry legacy formats.** Bump the snapshot/storage
-  version freely and don't write migration paths, `LEGACY_*` keys, or `Legacy*`/
-  back-compat fields for old data. When a format changes, the old saved project is
-  simply discarded. (Existing migration code - `VariantData`, `LegacyAudioClip`, the
-  `ProjectStore.load` migration, `LEGACY_KEYS` - is fair game to delete.)
+- This applied while projects were disposable local-only data: **don't carry legacy
+  formats.** Bump the snapshot/storage version freely and don't write `LEGACY_*` keys or
+  `Legacy*`/back-compat fields; a format change simply discarded the old saved project.
+  (Existing migration code - `VariantData`, `LegacyAudioClip`, the `ProjectStore.load`
+  migration, `LEGACY_KEYS` - is fair game to delete.)
+- **This changed once projects are hosted server-side (the sync service).** We can no
+  longer discard users' saved data on a format change, so forward migration is now
+  required. Add a pure `fromVersion -> fromVersion + 1` upcaster to
+  `src/audio/project/documentMigration.ts` for each project-document (`project.json`)
+  schema bump; `ProjectRepository.load` chains them and heals the bundle. DB schema
+  changes go through `drizzle-kit generate` (versioned SQL under `drizzle/`). Still
+  forward-only - we don't support downgrades or reading arbitrarily old shapes, just a
+  continuous upgrade path. The "discard on change" shortcut is retired.
 
 ## CI
 

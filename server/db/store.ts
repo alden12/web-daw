@@ -1,0 +1,115 @@
+/**
+ * The data operations behind the sync API - all owner-scoped, so multi-user later is
+ * a change of principal, not of queries. The HTTP layer (api/app.ts) validates and maps
+ * these to status codes; here lives the actual SQL intent:
+ *  - listing hides soft-deleted projects; delete is soft (recoverable).
+ *  - a first write to an unknown project id creates its row (owner-stamped).
+ *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
+ *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
+ */
+import { and, eq, isNull, sql } from "drizzle-orm";
+import type { Db } from "./types";
+import { files, projects } from "./schema";
+
+export type WriteResult = { ok: true } | { ok: false; reason: "conflict" | "forbidden" };
+
+/** A bundle file's content: JSON text entries as parsed JSON, binary entries as bytes. */
+export type FilePayload = { kind: "json"; json: unknown } | { kind: "binary"; bytes: Uint8Array };
+
+const isCommitPath = (path: string) => path.startsWith("history/commits/");
+
+/** Ids of the owner's non-deleted projects (newest first). */
+export async function listProjectIds(db: Db, ownerId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.ownerId, ownerId), isNull(projects.deletedAt)))
+    .orderBy(sql`${projects.modifiedAt} desc`);
+  return rows.map((row) => row.id);
+}
+
+/** Soft-delete: stamp deletedAt so the project drops out of listings but its files remain. */
+export async function softDeleteProject(db: Db, ownerId: string, projectId: string): Promise<void> {
+  await db
+    .update(projects)
+    .set({ deletedAt: sql`now()` })
+    .where(and(eq(projects.id, projectId), eq(projects.ownerId, ownerId)));
+}
+
+/** A file's content (JSON or binary), or null if absent / not the owner's. */
+export async function readFile(db: Db, ownerId: string, projectId: string, path: string): Promise<FilePayload | null> {
+  const rows = await db
+    .select({ json: files.json, bytes: files.bytes })
+    .from(files)
+    .innerJoin(projects, eq(files.projectId, projects.id))
+    .where(and(eq(files.projectId, projectId), eq(files.path, path), eq(projects.ownerId, ownerId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return row.bytes != null ? { kind: "binary", bytes: row.bytes } : { kind: "json", json: row.json };
+}
+
+/** Whether a file exists for the owner (drives BundleStore.exists / sample dedup). */
+export async function fileExists(db: Db, ownerId: string, projectId: string, path: string): Promise<boolean> {
+  const rows = await db
+    .select({ path: files.path })
+    .from(files)
+    .innerJoin(projects, eq(files.projectId, projects.id))
+    .where(and(eq(files.projectId, projectId), eq(files.path, path), eq(projects.ownerId, ownerId)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Upsert a bundle file. Creates the project row on first write; enforces owner + append-only. */
+export async function writeFile(
+  db: Db,
+  ownerId: string,
+  projectId: string,
+  path: string,
+  payload: FilePayload,
+): Promise<WriteResult> {
+  // Exactly one payload column is set (mirrors the CHECK constraint).
+  const columns = payload.kind === "json" ? { json: payload.json, bytes: null } : { json: null, bytes: payload.bytes };
+  return db.transaction(async (tx) => {
+    // First write to this id creates the project (owner-stamped); a repeat is a no-op.
+    await tx.insert(projects).values({ id: projectId, ownerId }).onConflictDoNothing();
+    const owned = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId));
+    if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+
+    // Commits are immutable: never overwrite one (append-only history).
+    if (isCommitPath(path) && (await fileExists(tx, ownerId, projectId, path))) {
+      return { ok: false, reason: "conflict" };
+    }
+
+    await tx
+      .insert(files)
+      .values({ projectId, path, ...columns })
+      .onConflictDoUpdate({
+        target: [files.projectId, files.path],
+        set: { ...columns, updatedAt: sql`now()` },
+      });
+
+    // Keep the queryable project columns in step with the bundle's own metadata.
+    if (payload.kind === "json" && path === "meta.json") await syncMeta(tx, projectId, payload.json);
+    if (payload.kind === "json" && path === "manifest.json") await syncManifest(tx, projectId, payload.json);
+    return { ok: true };
+  });
+}
+
+/** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */
+async function syncMeta(db: Db, projectId: string, json: unknown): Promise<void> {
+  const meta = json as { name?: string; modifiedAt?: string } | null;
+  const modifiedAt = meta?.modifiedAt ? new Date(meta.modifiedAt) : new Date();
+  await db
+    .update(projects)
+    .set({ name: meta?.name || "Untitled", modifiedAt })
+    .where(eq(projects.id, projectId));
+}
+
+/** manifest.json -> projects.projectSchema (so a stale document version is queryable). */
+async function syncManifest(db: Db, projectId: string, json: unknown): Promise<void> {
+  const manifest = json as { projectSchema?: number } | null;
+  if (typeof manifest?.projectSchema === "number") {
+    await db.update(projects).set({ projectSchema: manifest.projectSchema }).where(eq(projects.id, projectId));
+  }
+}
