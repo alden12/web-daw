@@ -8062,7 +8062,7 @@ projects:
       - ref: DAW-36
         area: DAW
         title: Commands must carry what they need, not read it from ambient state
-        status: in-progress
+        status: review
         sort_path: "000036"
         body: >
           Several commands took a default from whatever the project happened to
@@ -8256,7 +8256,7 @@ projects:
           command computes from.
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
-        updated_at: 2026-09-13T18:22:32.142Z
+        updated_at: 2026-09-17T13:55:52.265Z
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"
