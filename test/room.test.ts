@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
-import { projects } from "../server/db/schema";
+import { deleteEditsBelow, listProjects } from "../server/db/store";
+import { files, projects } from "../server/db/schema";
 import type { ServerMessage } from "../src/contract/ws";
 import type { EditCommand } from "../src/audio/commands/types";
+import type { ProjectData } from "../src/audio/project/types";
 
 // A client stub that just records what the room pushes to it.
 const collector = () => {
@@ -15,6 +17,21 @@ const collector = () => {
 
 const createTrack = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
 const applied = (messages: ServerMessage[]) => messages.filter((m) => m.type === "editApplied");
+
+// Drive `count` createTrack edits through the room (seq starts at `start`); used to cross the keyframe interval.
+const fillTracks = async (room: Room, count: number, start = 0): Promise<void> => {
+  for (let index = start; index < start + count; index += 1) {
+    await room.applyIncoming({ command: createTrack(`t-${index}`), opId: `op-${index}` });
+  }
+};
+
+const readKeyframe = async (db: Awaited<ReturnType<typeof makeSyncEnv>>["db"], projectId: string) => {
+  const rows = await db
+    .select({ json: files.json })
+    .from(files)
+    .where(and(eq(files.projectId, projectId), eq(files.path, "project.json")));
+  return rows[0]?.json as (ProjectData & { headSeq?: number }) | undefined;
+};
 
 describe("Room (realtime authority)", () => {
   it("orders two clients' edits by a single monotonic seq and broadcasts to both", async () => {
@@ -89,6 +106,50 @@ describe("Room (realtime authority)", () => {
     // it - no dependence on the renamer pushing meta.json.
     const rows = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, "p1"));
     expect(rows[0]?.name).toBe("My Beat");
+  });
+
+  it("writes a project.json keyframe once the edit interval is crossed", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    // No keyframe before the interval is reached.
+    await fillTracks(room, 50);
+    expect(await readKeyframe(db, "p1")).toBeUndefined();
+
+    // Crossing KEYFRAME_INTERVAL (100 edits, seq 0..99) triggers exactly one keyframe write.
+    await fillTracks(room, 50, 50);
+    const keyframe = await readKeyframe(db, "p1");
+    expect(keyframe?.headSeq).toBe(99);
+    expect(keyframe?.tracks).toHaveLength(100);
+  });
+
+  it("reloads from the keyframe + tail, so a compacted log still reconstructs exact HEAD", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await fillTracks(room, 100); // keyframe at headSeq 99
+    await fillTracks(room, 5, 100); // seq 100..104, above the keyframe
+
+    // Simulate compaction pruning everything at/below the keyframe (the load only needs seq > headSeq).
+    await deleteEditsBelow(db, "p1", 99);
+
+    const reloaded = await Room.load(db, "local", "p1");
+    expect(reloaded.snapshot()).toEqual(room.snapshot());
+    expect(reloaded.snapshot().tracks).toHaveLength(105);
+
+    // The catch-up feed still has the retained tail above the keyframe.
+    const late = collector();
+    await reloaded.subscribe(late.client);
+    const snapshot = late.messages[0];
+    expect(snapshot.type === "snapshot" && snapshot.entries.length).toBeGreaterThan(0);
+  });
+
+  it("lists a project by its renamed name without any meta.json (syncMeta retired)", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await room.applyIncoming({ command: { type: "renameProject", name: "Track Two" } as EditCommand, opId: "op-1" });
+
+    // The listing reads projects.name (kept current by the rename edit via setProjectName), not meta.json.
+    const listing = await listProjects(db, { userId: "local" });
+    expect(listing.find((entry) => entry.id === "p1")?.name).toBe("Track Two");
   });
 
   it("converges on a stale-target edit (add to a just-removed track no-ops, no crash)", async () => {

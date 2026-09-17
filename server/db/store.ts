@@ -8,9 +8,10 @@
  *  - a first write to an unknown project id creates its row (owner-stamped); a later write is allowed for
  *    the owner or any member (never re-stamping the owner), else forbidden.
  *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
- *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
+ *  - writing manifest.json syncs the queryable `project_schema` column; the name/modifiedAt index is
+ *    maintained by the authority (`setProjectName` on a `renameProject` edit), not by `meta.json`.
  */
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Db } from "./types";
 import { edits, files, projectMembers, projects, users } from "./schema";
 
@@ -182,8 +183,9 @@ export async function writeFile(
         });
     }
 
-    // Keep the queryable project columns in step with the bundle's own metadata.
-    if (payload.kind === "json" && path === "meta.json") await syncMeta(tx, projectId, payload.json);
+    // Keep the queryable project schema column in step with the manifest. The name/modifiedAt index is
+    // maintained by the authority (setProjectName on a renameProject edit), so meta.json is not synced -
+    // it is still stored as a bundle file for the client's OPFS/export path, just not projected here.
     if (payload.kind === "json" && path === "manifest.json") await syncManifest(tx, projectId, payload.json);
     return { ok: true };
   });
@@ -293,6 +295,17 @@ export async function maxEditSeq(db: Db, ownerId: string, projectId: string): Pr
   return Number(rows[0]?.maxSeq ?? -1);
 }
 
+/**
+ * Compact the working edit log: delete entries with `seq <= uptoSeq`. Called by the authority after it
+ * writes a keyframe, to bound cold-start replay. The caller must pass a floor STRICTLY BELOW the keyframe's
+ * `headSeq` (so `Room.load`, which replays `readEdits(headSeq)`, never needs a pruned entry) and below the
+ * retained feed window. The write-once commit history lives in the `files` table, not `edits`, so it is
+ * untouched. Not access-gated: an internal authority-only operation keyed by project id.
+ */
+export async function deleteEditsBelow(db: Db, projectId: string, uptoSeq: number): Promise<void> {
+  await db.delete(edits).where(and(eq(edits.projectId, projectId), lte(edits.seq, uptoSeq)));
+}
+
 /** The project's real owner + whether `who` may open it, for the realtime room. Keyed by project id, so
  *  the room persists under the true owner (not whoever connects first). A not-yet-existing project is
  *  creatable by anyone (first-write-creates), with `who` as its owner. */
@@ -359,16 +372,6 @@ export async function setProjectName(db: Db, projectId: string, name: string): P
   await db
     .update(projects)
     .set({ name: name.trim() || "Untitled", modifiedAt: sql`now()` })
-    .where(eq(projects.id, projectId));
-}
-
-/** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */
-async function syncMeta(db: Db, projectId: string, json: unknown): Promise<void> {
-  const meta = json as { name?: string; modifiedAt?: string } | null;
-  const modifiedAt = meta?.modifiedAt ? new Date(meta.modifiedAt) : new Date();
-  await db
-    .update(projects)
-    .set({ name: meta?.name || "Untitled", modifiedAt })
     .where(eq(projects.id, projectId));
 }
 
