@@ -12,9 +12,12 @@ import type { ServerToBrowser } from "../mcp/protocol";
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
 
-// "agent" = the built-in in-app agent (model-agnostic); "claude" = the MCP / Claude Code
-// driver. Two distinct AI voices, plus the local user.
-export type Author = "you" | "claude" | "agent";
+// Who authored an edit. `"claude"` = the MCP / Claude Code driver; `"agent"` = the built-in in-app
+// agent (model-agnostic) - two reserved AI voices. `"you"` is the default solo user; any other value is
+// a human user id (multi-user). A free string, not a union, so a collaborator's id flows through the
+// edit stream as-is; `ReservedVoice` names the ones with fixed meaning/colour.
+export type ReservedVoice = "you" | "claude" | "agent";
+export type Author = ReservedVoice | (string & {});
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */
 type NonEditType =

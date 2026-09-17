@@ -1821,10 +1821,19 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     live as `base` with `pending` replayed on top). Wired through a single `EditLog` remote-sink so UI /
     MCP / recorder / agent edits all forward automatically; enabled whenever a remote backend is
     configured (`VITE_DAW_API_URL`), where the client stops HTTP autosave and the authority persists.
-    Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase); a shared
-    feed, peer-edit attribution in the activity log, and reconnect gap-fill hardening are follow-ons.
-    Still to build: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence),
-    **Phase D** (solo-offline PWA).
+    Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase).
+    **A3 (collaboration completeness, in progress) - A3a (slice 73, done):** per-user identity + colours.
+    `author` generalised from the 3-role enum to a bounded free string (`claude`/`agent` reserved AI
+    voices, `you` the default; any other value a human user id) - backward compatible, no schema bump.
+    A `currentUser` store (localStorage + `?user=` override, dev-only setter in the Authors settings tab,
+    removed once real auth supplies the id) sets `EditLog`'s local-author default, so UI edits carry the
+    user id (MCP/agent still stamp their own). A peer's `editApplied` now posts an append-only feed entry
+    via `EditLog.recordRemote` (narration, no re-apply), and the activity feed colours each entry by
+    `colorForAuthor` (any id -> a stable hue) instead of collapsing to three voice classes. Remaining A3:
+    **A3b** `renameProject` edit command (name into `project.json`, needs a `PROJECT_SCHEMA` bump);
+    **A3c** reconnect gap-fill; **A3d** full per-surface tinting (Tailwind voice-class -> inline-hex so
+    notes/knobs/blocks show peer colours too, not just the feed). Still to build after A3: **Phase B**
+    (server-side history/keyframe/commits), **Phase C** (presence), **Phase D** (solo-offline PWA).
   - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
     ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
     server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample

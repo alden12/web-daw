@@ -105,7 +105,9 @@ describe("validateBundleFile (other bundle docs)", () => {
     expect(validateBundleFile("manifest.json", { projectId: "p1" }).ok).toBe(false); // missing the numbers
     expect(validateBundleFile("log.json", [{ nope: true }]).ok).toBe(false); // entries need seq + command + author + time
     expect(validateBundleFile("history/commits/c1.json", { id: 5, entries: [] }).ok).toBe(false); // id not a string, missing fields
-    expect(validateBundleFile("history/commits/c1.json", { ...fullCommit, author: "someone-else" }).ok).toBe(false); // bad author enum
+    // author is a free string now (any user id), but still must BE a string.
+    expect(validateBundleFile("history/commits/c1.json", { ...fullCommit, author: "someone-else" }).ok).toBe(true); // a user id is valid
+    expect(validateBundleFile("history/commits/c1.json", { ...fullCommit, author: 123 }).ok).toBe(false); // not a string
   });
 
   it("passes unmodeled JSON paths through (still valid JSON, and never read by the app)", () => {

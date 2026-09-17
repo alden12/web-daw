@@ -17,6 +17,7 @@ import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects } from "../audio/projects/operations";
 import { currentProjectId } from "../audio/projectRepository";
+import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
 import { createWsClient, wsBaseFromApiUrl } from "../contract/client";
 import { VersionStore } from "../audio/commands/history";
@@ -167,6 +168,14 @@ export function AppShell() {
   const bodyRect = () => bodyRef.current?.getBoundingClientRect();
   const bodyLeft = () => bodyRect()?.left ?? 0;
   const bodyRight = () => bodyRect()?.right ?? 0;
+
+  // Stamp local edits with the current user id (default "you"), kept in sync as it changes, so in a
+  // shared session each user's edits carry their identity (and colour). Temporary until real auth.
+  useEffect(() => {
+    const sync = () => editLog.setLocalAuthor(readCurrentUser());
+    sync();
+    return subscribeCurrentUser(sync);
+  }, [editLog]);
 
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;
