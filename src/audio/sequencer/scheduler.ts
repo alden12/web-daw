@@ -10,7 +10,11 @@
  */
 import type { AudioEngine } from "../engine/AudioEngine";
 import type { ProjectStore } from "../project/projectStore";
+import type { TransportClock } from "../midi/device/clock";
 import { GRID, type NoteEvent } from "./types";
+import { grooveById } from "../grooves/catalog";
+import { grooveAt } from "./groove";
+import { clamp } from "../../util";
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.1;
@@ -119,7 +123,7 @@ export function metronomeClicksInBeatRange(
 // a future feature; 4/4 matches the timeline ruler's DEFAULT_BEATS_PER_BAR.
 const BEATS_PER_BAR = 4;
 
-export class Scheduler {
+export class Scheduler implements TransportClock {
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubscribe: (() => void) | null = null;
   /** When true, the transport schedules a metronome click on every beat. */
@@ -144,14 +148,34 @@ export class Scheduler {
     return this.timer !== null;
   }
 
+  // --- TransportClock (read by MIDI devices to place events on the tempo grid) ---
+  get playing(): boolean {
+    return this.timer !== null;
+  }
+  get currentTime(): number {
+    return this.engine.currentTime;
+  }
+  get secondsPerBeat(): number {
+    return 60 / this.project.tempo;
+  }
+  /** Continuous (unlooped) beats since play start at audio-clock `time`, from the live anchor. */
+  continuousBeatAtTime(time: number): number {
+    return this.anchorBeat + (time - this.anchorTime) * this.lastBps;
+  }
+
   /** Toggle the metronome click (read by `tick` each lookahead pass). */
   setMetronomeEnabled(on: boolean): void {
     this.metronomeEnabled = on;
   }
 
-  play(): void {
+  /**
+   * Start the transport. `atTime` anchors beat 0 to a specific AudioContext time
+   * (defaults to now); the recorder passes the count-in's downbeat so the transport
+   * metronome continues the count-in grid exactly in phase, free of setTimeout jitter.
+   */
+  play(atTime?: number): void {
     if (this.timer !== null || !this.engine.started) return;
-    this.anchorTime = this.engine.currentTime;
+    this.anchorTime = atTime ?? this.engine.currentTime;
     this.anchorBeat = 0;
     this.scheduledUntilBeats = 0;
     this.lastBps = this.project.tempo / 60;
@@ -167,7 +191,7 @@ export class Scheduler {
     this.timer = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
-    for (const track of this.project.getTracks()) this.engine.getInstrument(track.id)?.allNotesOff();
+    for (const track of this.project.getTracks()) this.engine.getNoteTarget(track.id)?.allNotesOff();
     this.engine.stopAllAudio();
     this.onStateChange?.(false);
   }
@@ -210,6 +234,11 @@ export class Scheduler {
     const fromBeats = this.scheduledUntilBeats;
     if (horizonBeats <= fromBeats) return;
 
+    // Resolve the project groove once per tick (cheap; the per-note math is in the
+    // instrument loop). amount 0 / Straight makes grooveAt a no-op, so no branch needed.
+    const { id: grooveId, amount: grooveAmount } = this.project.getGroove();
+    const groove = grooveById(grooveId);
+
     if (this.metronomeEnabled) {
       for (const { atBeat, accent } of metronomeClicksInBeatRange(
         fromBeats,
@@ -231,8 +260,9 @@ export class Scheduler {
         ? [{ id: "__launch", clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: loopLen }]
         : track.placements;
       if (track.kind === "instrument") {
-        const instrument = this.engine.getInstrument(track.id);
-        if (!instrument) continue;
+        // Route through the note pipeline (MIDI devices -> instrument), not the raw instrument.
+        const noteTarget = this.engine.getNoteTarget(track.id);
+        if (!noteTarget) continue;
         // Flatten the arrangement: each placement contributes its clip's notes,
         // tiled across its window (looping a clip whose window outruns it) and
         // shifted to the placement's start on the arrangement.
@@ -246,8 +276,11 @@ export class Scheduler {
           }
         }
         for (const { note, atBeat } of notesStartingInBeatRange(events, fromBeats, horizonBeats, loopLen, loopStart)) {
-          const when = this.anchorTime + (atBeat - this.anchorBeat) / bps;
-          instrument.playNote(note.pitch, beatsToSeconds(note.length, bpm), note.velocity, when);
+          // Groove nudges the onset + scales velocity at schedule time (notes untouched).
+          const shift = grooveAt(groove, atBeat, grooveAmount);
+          const when = Math.max(now, this.anchorTime + (atBeat - this.anchorBeat) / bps + shift.offsetBeats / bps);
+          const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
+          noteTarget.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, when);
         }
       } else {
         // Each audio placement triggers the clip's loop region at its start,

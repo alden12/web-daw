@@ -11,7 +11,20 @@ import type { ProjectStore } from "./project/projectStore";
 import type { EditLog } from "./commands/editLog";
 import { getRepository, type ProjectRepository } from "./projectRepository";
 
-const SAVE_DEBOUNCE_MS = 300;
+/** Fast cadence: coalesce an edit burst, then append the delta to the log. */
+const APPEND_DEBOUNCE_MS = 300;
+/**
+ * Rewrite the (expensive) `project.json` keyframe once the replay tail since the last one grows past
+ * this many edits. This is the PRIMARY keyframe trigger: keyframes bound load-time replay, not
+ * durability (the delta append is durable), and replay is cheap - so we keyframe on edit *count*, not
+ * on an idle timer that fired a full-bundle write after every editing pause. A starting value, tunable
+ * once large-project testing reveals the real assemble-from-deltas vs write-a-keyframe crossover.
+ */
+const KEYFRAME_EDIT_INTERVAL = 100;
+
+/** The edit log's high-water seq (edits + feed notes share the monotonic counter). */
+const highWaterSeq = (entries: { seq: number }[], notes: { seq: number }[]): number =>
+  Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
 
 /** Restore the saved project + edit log into the stores, if present. Await this
  *  before wiring sync, so the first MCP snapshot reflects the restored project. */
@@ -37,18 +50,60 @@ export async function restoreProject(
  * note posted with no following edit would never be saved. Returns a disposer.
  * Re-subscribes to track stores whenever the track set changes.
  */
-export function attachAutosave(
-  project: ProjectStore,
-  editLog: EditLog,
-  repo: ProjectRepository = getRepository(),
-): () => void {
-  let timer: ReturnType<typeof setTimeout> | null = null;
+export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository): () => void {
+  // Resolve the target at save time, not at attach time: a project switch replaces
+  // the current repository (setCurrentProject builds a new one per project), so a
+  // captured reference would keep writing the live project into the *previous*
+  // project's bundle. Tests inject a fixed repo; production follows the current one.
+  const targetRepo = () => repo ?? getRepository();
+  let appendTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Write the working snapshot as a keyframe + append the stream delta (edits + notes) + persist undo.
+  // The keyframe is written FIRST so its snapshot already reflects any undo/redo - the appended entries
+  // (<= headSeq) then only feed history, and a crash between the two can't resurrect an undone edit.
+  const keyframe = async (active: ProjectRepository) => {
+    const entries = editLog.getEntries();
+    const notes = editLog.getNotes();
+    await active.writeKeyframe(project.snapshot(), highWaterSeq(entries, notes));
+    await active.appendEdits(entries, notes);
+    await active.writeUndo(editLog.getCheckpoints());
+  };
+
+  const tick = async () => {
+    const active = targetRepo();
+    if (!active) return;
+    const entries = editLog.getEntries();
+    const notes = editLog.getNotes();
+    const keyframeSeq = active.keyframeSeq();
+    // Undo/redo can't be replayed forward, so a tail carrying one forces a fresh keyframe.
+    const undoRedoPending = entries.some(
+      (entry) => entry.seq > keyframeSeq && (entry.kind === "undo" || entry.kind === "redo"),
+    );
+    const needKeyframe =
+      keyframeSeq < 0 || undoRedoPending || highWaterSeq(entries, notes) - keyframeSeq >= KEYFRAME_EDIT_INTERVAL;
+    // Keyframe-first when needed (crash-safe for undo/redo); otherwise append the stream delta
+    // (edits + feed notes) - notes ride the delta now, so they persist without waiting for a keyframe.
+    if (needKeyframe) await keyframe(active);
+    else await active.appendEdits(entries, notes);
+  };
+
+  // Flush on page-hide: send whatever the debounce is still holding (an in-progress edit burst never
+  // pauses long enough to append) plus a meta touch, so a short session or a tab close does not lose
+  // the tail. Best-effort (fire-and-forget during unload); the delta stream already made everything up
+  // to the last pause durable. project.json is intentionally NOT keyframed here - it is rebuilt by
+  // replay on next load, and keeping the unload payload small keeps it reliable.
+  const flush = () => {
+    if (appendTimer) clearTimeout(appendTimer);
+    appendTimer = null;
+    const active = targetRepo();
+    if (!active) return;
+    void active.appendEdits(editLog.getEntries(), editLog.getNotes());
+    void active.touchMeta();
+  };
+
   const schedule = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      void repo.save(project.snapshot(), editLog.getEntries(), editLog.getNotes());
-      void repo.writeUndo(editLog.getCheckpoints()); // persist undo/redo so it survives a reload
-    }, SAVE_DEBOUNCE_MS);
+    if (appendTimer) clearTimeout(appendTimer);
+    appendTimer = setTimeout(() => void tick(), APPEND_DEBOUNCE_MS);
   };
 
   // Per-track/group subscriptions are rebuilt on structural change (they come/go).
@@ -76,10 +131,24 @@ export function attachAutosave(
   // Catch log-only changes (a feed note mutates no project state).
   const unsubLog = editLog.subscribe(schedule);
 
+  // Flush the pending tail when the tab is backgrounded or closed. Guarded for non-DOM hosts (tests).
+  const onHide = () => {
+    if (document.visibilityState === "hidden") flush();
+  };
+  const hasDom = typeof document !== "undefined" && typeof window !== "undefined";
+  if (hasDom) {
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+  }
+
   return () => {
-    if (timer) clearTimeout(timer);
+    if (appendTimer) clearTimeout(appendTimer);
     for (const unsub of trackUnsubs) unsub();
     unsubStructure();
     unsubLog();
+    if (hasDom) {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+    }
   };
 }

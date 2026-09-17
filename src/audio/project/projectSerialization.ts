@@ -20,10 +20,14 @@ import type {
   Placement,
   ClipAuthor,
   EffectData,
+  MidiDeviceData,
   InstrumentTrackData,
   AudioTrackData,
 } from "./types";
-import type { Track, Group, NoteClip, EffectInstance, EffectHost } from "./projectStore";
+import type { Track, Group, NoteClip, EffectInstance, EffectHost, MidiDeviceInstance } from "./projectStore";
+import type { SampleAsset } from "../samples/catalog";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { DEVICE_FORMAT_VERSION } from "../graph/zod";
 
 /** Serialize an effect chain (its params snapshotted) for persistence. */
 function snapshotEffects(host: EffectHost): EffectData[] {
@@ -35,17 +39,37 @@ function snapshotEffects(host: EffectHost): EffectData[] {
   }));
 }
 
+/** Serialize a MIDI-device chain (its params snapshotted) for persistence. */
+function snapshotMidiDevices(devices: MidiDeviceInstance[]): MidiDeviceData[] {
+  return devices.map((device) => ({
+    id: device.id,
+    type: device.type,
+    bypassed: device.bypassed,
+    params: device.params.snapshot(),
+  }));
+}
+
 /** The transport + selection fields a snapshot carries alongside the buses/tracks. */
 export interface TransportState {
+  name: string;
   tempoBpm: number;
   lengthBeats: number;
   loopStartBeats: number;
   selectedTrackId: string | null;
+  grooveId: string;
+  grooveAmount: number;
+  samples: SampleAsset[];
+  /** Last-editor map; only the persistable snapshot carries it (the reactive structure omits it). */
+  authorship?: Record<string, ClipAuthor>;
+  /** User-authored declarative devices embedded in the project (see ProjectData). */
+  customInstruments?: GraphInstrumentDef[];
+  customEffects?: GraphEffectDef[];
 }
 
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
 export function snapshotProject(tracks: Track[], groups: Group[], transport: TransportState): ProjectData {
   return {
+    name: transport.name,
     groups: groups.map((group) => ({
       id: group.id,
       name: group.name,
@@ -85,6 +109,7 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
         instrumentType: track.instrumentType,
         params: track.params.snapshot(),
         effects: snapshotEffects(track),
+        midiDevices: snapshotMidiDevices(track.midiDevices),
         clips: track.clips.map((clip) => {
           const data = clip.store.snapshot();
           return {
@@ -102,6 +127,14 @@ export function snapshotProject(tracks: Track[], groups: Group[], transport: Tra
     lengthBeats: transport.lengthBeats,
     loopStart: transport.loopStartBeats,
     selectedTrackId: transport.selectedTrackId,
+    grooveId: transport.grooveId,
+    grooveAmount: transport.grooveAmount,
+    samples: transport.samples.map((sample) => ({ ...sample })),
+    // Copy so undo checkpoints don't alias the live map (stamping mutates it in place).
+    authorship: { ...(transport.authorship ?? {}) },
+    customInstruments: (transport.customInstruments ?? []).map((def) => ({ ...def })),
+    customEffects: (transport.customEffects ?? []).map((def) => ({ ...def })),
+    deviceFormatVersion: DEVICE_FORMAT_VERSION,
   };
 }
 
@@ -116,7 +149,7 @@ export function loadEffectInstances(effects: ProjectData["tracks"][number]["effe
 
 /** Normalize a stored author tag (defaults to the local user). */
 export function clipAuthor(author: unknown): ClipAuthor {
-  return author === "claude" ? "claude" : "you";
+  return author === "agent" ? "agent" : author === "claude" ? "claude" : "you";
 }
 
 /** Id minters the clip-pool builder needs for its empty-clip / default-placement fallbacks. */

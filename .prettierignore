@@ -4,8 +4,14 @@ coverage
 playwright-report
 test-results
 
+# drizzle-kit generated migrations + metadata (leave as the tool emits them)
+drizzle
+
 # Dependency lockfile (no Prettier parser; leave it byte-for-byte)
 yarn.lock
 
 # Prose docs are hand-formatted; reformatting reflows them noisily
 *.md
+
+# Design mockups are hand-crafted, self-contained artifacts; leave them byte-for-byte
+docs/mockups

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { ParamStore } from "../src/audio/params/store";
-import { instrumentSchema, instrumentInfos } from "../src/audio/instruments/catalog";
+import { instrumentSchema, pickableInstrumentInfos } from "../src/audio/instruments/catalog";
 import { createInstrument } from "../src/audio/instruments/registry";
 
 /**
@@ -29,13 +29,21 @@ function fakeNode(extra: Record<string, unknown> = {}) {
     ...extra,
   };
 }
+function fakeBuffer(length: number, sampleRate: number) {
+  return { length, sampleRate, duration: length / sampleRate, numberOfChannels: 1 };
+}
 function fakeCtx() {
   return {
     currentTime: 0,
+    sampleRate: 44100,
     createGain: () => fakeNode({ gain: fakeParam() }),
     createOscillator: () =>
       fakeNode({ type: "sine", frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
     createBiquadFilter: () => fakeNode({ type: "lowpass", frequency: fakeParam(), Q: fakeParam() }),
+    // The sampler builds an AudioBufferSourceNode per voice and a silent buffer up front.
+    createBufferSource: () =>
+      fakeNode({ buffer: null, playbackRate: fakeParam(), start() {}, stop() {}, onended: null }),
+    createBuffer: (_channels: number, length: number, sampleRate: number) => fakeBuffer(length, sampleRate),
   };
 }
 
@@ -60,7 +68,8 @@ beforeAll(() => {
 afterAll(() => delete (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode);
 
 describe("instruments", () => {
-  for (const { type } of instrumentInfos()) {
+  // The hidden "none" sentinel is silent (empty schema, no voices) - exclude it here.
+  for (const { type } of pickableInstrumentInfos()) {
     it(`${type}: constructs and plays voices without wiring to an undefined node`, () => {
       const store = new ParamStore(instrumentSchema(type));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

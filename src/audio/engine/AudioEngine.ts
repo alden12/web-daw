@@ -15,22 +15,34 @@
  * silencing all its descendants. Audio playback is driven by the Scheduler, which
  * calls `scheduleAudioClip` the way it calls `instrument.playNote`.
  */
-import type { ProjectStore, EffectInstance } from "../project/projectStore";
+import type { ProjectStore, EffectInstance, InstrumentTrack } from "../project/projectStore";
 import type { AudioClipData } from "../project/types";
-import { createInstrument } from "../instruments/registry";
+import { createInstrument, registerInstrumentFactory } from "../instruments/registry";
 import type { Instrument } from "../instruments/types";
-import { createEffect } from "../effects/registry";
+import { createEffect, registerEffectFactory } from "../effects/registry";
 import type { Effect } from "../effects/types";
+import { createMidiDevice } from "../midi/device/registry";
+import { GraphMidiDevice, type NoteTarget } from "../midi/device/GraphMidiDevice";
+import type { TransportClock } from "../midi/device/clock";
+import { GraphInstrument } from "../graph/GraphInstrument";
+import { GraphEffect } from "../graph/GraphEffect";
 import { getAudioBuffer } from "../audioStore";
+import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
 import { audioPlayWindow } from "./audioWindow";
 import { loadWorklets } from "../worklets";
 
 interface TrackNode {
   instrument: Instrument;
+  /** The instrument type this node was built for, so a `setInstrument` swap rebuilds it. */
+  instrumentType: string;
   gain: GainNode;
   /** Effect instances by id; chain order comes from the track's effect list. */
   effects: Map<string, Effect>;
+  /** MIDI-device instances by id; chain order comes from the track's midiDevices list. */
+  midiDevices: Map<string, GraphMidiDevice>;
+  /** Head of the note pipeline (first device, or the instrument if the chain is empty). */
+  noteHead: NoteTarget;
 }
 
 interface AudioTrackNode {
@@ -73,7 +85,41 @@ export class AudioEngine {
   private readonly audioBuffers = new Map<string, AudioBuffer>();
   private readonly decoding = new Set<string>();
   private project: ProjectStore | null = null;
+  /** Custom-device types whose audio factory is already registered (idempotent sync in reconcile). */
+  private readonly registeredCustomTypes = new Set<string>();
   private unsubscribe: (() => void) | null = null;
+  /** The transport clock MIDI devices read (set by AppShell once the scheduler exists). */
+  private transport: TransportClock | null = null;
+  private cachedDeviceClock: TransportClock | null = null;
+
+  /** Point MIDI devices at the transport clock (the scheduler implements it). */
+  setTransportClock(clock: TransportClock): void {
+    this.transport = clock;
+  }
+
+  /**
+   * A stable clock handed to every MIDI device: it reads `this.transport` lazily (devices are built in
+   * reconcile, possibly before the scheduler is wired), falling back to sensible stopped-state values.
+   */
+  private get deviceClock(): TransportClock {
+    return (this.cachedDeviceClock ??= this.makeDeviceClock(this));
+  }
+
+  /** Build the shared device clock. `engine` is passed (not aliased) so the getters close over it. */
+  private makeDeviceClock(engine: AudioEngine): TransportClock {
+    return {
+      get playing() {
+        return engine.transport?.playing ?? false;
+      },
+      get currentTime() {
+        return engine.transport?.currentTime ?? engine.currentTime;
+      },
+      get secondsPerBeat() {
+        return engine.transport?.secondsPerBeat ?? 60 / (engine.project?.tempo ?? 120);
+      },
+      continuousBeatAtTime: (time) => engine.transport?.continuousBeatAtTime(time) ?? 0,
+    };
+  }
 
   get started(): boolean {
     return this.ctx !== null;
@@ -115,13 +161,36 @@ export class AudioEngine {
     await ctx.resume();
   }
 
+  /** Register a GraphInstrument/GraphEffect factory for each of the project's custom defs (once). */
+  private registerCustomFactories(project: ProjectStore): void {
+    for (const def of project.customInstruments) {
+      if (this.registeredCustomTypes.has(def.type)) continue;
+      registerInstrumentFactory(def.type, (ctx, store) => new GraphInstrument(ctx, store, def));
+      this.registeredCustomTypes.add(def.type);
+    }
+    for (const def of project.customEffects) {
+      if (this.registeredCustomTypes.has(def.type)) continue;
+      registerEffectFactory(def.type, (ctx, store) => new GraphEffect(ctx, store, def));
+      this.registeredCustomTypes.add(def.type);
+    }
+  }
+
   private reconcile(): void {
     const ctx = this.ctx;
     const project = this.project;
     if (!ctx || !project || !this.master) return;
 
+    // Register audio factories for the project's custom (declarative) devices before building
+    // nodes, so createInstrument/createEffect can realize a custom type. The store already
+    // registered their schemas; this is the Web Audio half, kept here (the store stays DOM-free).
+    this.registerCustomFactories(project);
+
     const groups = project.getGroups();
     const tracks = project.getTracks();
+
+    // Keep the sample registry current before (re)building instruments, so a
+    // Sampler can resolve its "asset:<id>" ref to a content hash immediately.
+    setSampleAssets(project.getSamples());
 
     // Solo + mute: enforced at the track gain; group buses stay open so a soloed
     // track inside an un-soloed group still routes through (see mix.ts).
@@ -141,6 +210,7 @@ export class AudioEngine {
     for (const [id, node] of this.nodes) {
       if (!instrumentIds.has(id)) {
         this.disposeEffects(node.effects);
+        for (const device of node.midiDevices.values()) device.dispose();
         node.instrument.dispose();
         node.gain.disconnect();
         this.nodes.delete(id);
@@ -182,11 +252,26 @@ export class AudioEngine {
         if (!node) {
           const gain = ctx.createGain();
           const instrument = createInstrument(track.instrumentType, ctx, track.params);
-          node = { instrument, gain, effects: new Map() };
+          node = {
+            instrument,
+            instrumentType: track.instrumentType,
+            gain,
+            effects: new Map(),
+            midiDevices: new Map(),
+            noteHead: instrument,
+          };
           this.nodes.set(track.id, node);
+        } else if (node.instrumentType !== track.instrumentType) {
+          // The track's instrument was swapped (setInstrument, e.g. assigning one to an
+          // empty track): dispose the old node and build the new one over the same gain.
+          node.instrument.dispose();
+          node.instrument = createInstrument(track.instrumentType, ctx, track.params);
+          node.instrumentType = track.instrumentType;
         }
         this.reconcileEffects(node.effects, track.effects);
         this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
+        // MIDI devices decorate the note path (no audio), terminating in the instrument.
+        this.reconcileMidiDevices(node, track);
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
         node.gain.gain.setTargetAtTime(mutedTracks.has(track.id) ? 0 : track.volume, ctx.currentTime, 0.01);
@@ -242,6 +327,36 @@ export class AudioEngine {
     for (const fx of chain) {
       if (!live.has(fx.id)) live.set(fx.id, createEffect(fx.type, ctx, fx.params));
     }
+  }
+
+  /**
+   * Sync a track's MIDI-device chain against its instances, then relink the note
+   * pipeline. Devices carry no audio, so this only creates/disposes interpreters and
+   * repoints their `next`: d0 -> d1 -> ... -> instrument. Bypassed devices stay linked
+   * (they pass through internally) so a mid-note bypass never strands held notes.
+   */
+  private reconcileMidiDevices(node: TrackNode, track: InstrumentTrack): void {
+    const want = new Set(track.midiDevices.map((device) => device.id));
+    for (const [id, device] of node.midiDevices) {
+      if (!want.has(id)) {
+        device.dispose();
+        node.midiDevices.delete(id);
+      }
+    }
+    for (const instance of track.midiDevices) {
+      if (!node.midiDevices.has(instance.id))
+        node.midiDevices.set(
+          instance.id,
+          createMidiDevice(instance.type, instance.params, node.instrument, this.deviceClock),
+        );
+    }
+    // Relink in the track's order, tail terminating in the instrument.
+    const chain = track.midiDevices.map((instance) => node.midiDevices.get(instance.id)!);
+    chain.forEach((device, index) => {
+      device.bypassed = track.midiDevices[index].bypassed;
+      device.setNext(chain[index + 1] ?? node.instrument);
+    });
+    node.noteHead = chain[0] ?? node.instrument;
   }
 
   /** Rewire source -> active effects (in order) -> dest. Leaves dest's own output. */
@@ -388,6 +503,32 @@ export class AudioEngine {
       .map((device) => ({ deviceId: device.deviceId, label: device.label }));
   }
 
+  /** Enumerate audio output devices (labels require a prior media-permission grant). */
+  async listOutputDevices(): Promise<{ deviceId: string; label: string }[]> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((device) => device.kind === "audiooutput")
+      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  }
+
+  /** Whether output-device routing (AudioContext.setSinkId) is available in this browser. */
+  get canSelectOutput(): boolean {
+    return typeof AudioContext !== "undefined" && "setSinkId" in AudioContext.prototype;
+  }
+
+  /** Route master output to a device by id ("" / null = system default). Chrome-only; a
+   *  bad id is ignored so playback stays on the current sink. */
+  async setOutputDevice(deviceId: string | null): Promise<void> {
+    const ctx = this.ctx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (!ctx?.setSinkId) return;
+    try {
+      await ctx.setSinkId(deviceId ?? "");
+    } catch {
+      // invalid/unavailable device - keep the current output
+    }
+  }
+
   /**
    * Open a mic input and wire it for capture: `MediaStreamSource -> captureNode ->
    * silent sink`. The voice DSP is disabled (or Chrome mangles the signal). The
@@ -482,6 +623,17 @@ export class AudioEngine {
 
   getInstrument(trackId: string): Instrument | undefined {
     return this.nodes.get(trackId)?.instrument;
+  }
+
+  /**
+   * The head of a track's note pipeline: its MIDI-device chain terminating in the
+   * instrument (or the instrument directly if there are no devices). Note sources
+   * (live input, the scheduler, MCP live notes) drive this instead of the instrument
+   * so devices transform every event; the instrument itself stays reachable via
+   * `getInstrument` for audio wiring.
+   */
+  getNoteTarget(trackId: string): NoteTarget | undefined {
+    return this.nodes.get(trackId)?.noteHead;
   }
 
   dispose(): void {

@@ -9,12 +9,13 @@
  */
 import type { ParamStore } from "../params/store";
 import type { Effect } from "./types";
-import { DelayEffect } from "./Delay";
-import { DistortionEffect } from "./Distortion";
+import { GraphEffect } from "../graph/GraphEffect";
+import { delay } from "./graph/delay";
+import { distortion } from "./graph/distortion";
+import { tremolo } from "./graph/tremolo";
 import { ReverbEffect } from "./Reverb";
 import { FilterEffect } from "./Filter";
 import { ChorusEffect } from "./Chorus";
-import { TremoloEffect } from "./Tremolo";
 import { BitcrusherEffect } from "./Bitcrusher";
 import { DEFAULT_EFFECT } from "./catalog";
 
@@ -33,12 +34,14 @@ export function createEffect(type: string, ctx: AudioContext, store: ParamStore)
 }
 
 // --- built-in factories (self-registered) ---------------------------------
-registerEffectFactory("delay", (ctx, store) => new DelayEffect(ctx, store));
-registerEffectFactory("distortion", (ctx, store) => new DistortionEffect(ctx, store));
+// Delay, Distortion, and Tremolo are declarative graph effects (data, not code); the
+// rest are still class-based. See src/audio/graph and DESIGN.md 16.
+registerEffectFactory(delay.type, (ctx, store) => new GraphEffect(ctx, store, delay));
+registerEffectFactory(distortion.type, (ctx, store) => new GraphEffect(ctx, store, distortion));
 registerEffectFactory("reverb", (ctx, store) => new ReverbEffect(ctx, store));
 registerEffectFactory("filter", (ctx, store) => new FilterEffect(ctx, store));
 registerEffectFactory("chorus", (ctx, store) => new ChorusEffect(ctx, store));
-registerEffectFactory("tremolo", (ctx, store) => new TremoloEffect(ctx, store));
+registerEffectFactory(tremolo.type, (ctx, store) => new GraphEffect(ctx, store, tremolo));
 registerEffectFactory("bitcrusher", (ctx, store) => new BitcrusherEffect(ctx, store));
 
 export { effectInfos, effectSchema, effectCatalogEntry, hasEffect, DEFAULT_EFFECT } from "./catalog";

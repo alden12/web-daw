@@ -10,8 +10,9 @@ import type { Scheduler } from "../sequencer/scheduler";
 import type { EditLog } from "../commands/editLog";
 import type { EditCommand } from "../commands/types";
 import type { VersionStore } from "../commands/history";
-import { newEffectId, newTrackId } from "../commands/ids";
-import { listPatches, savePatch, newPatchId } from "../patches/library";
+import { newEffectId, newMidiDeviceId, newTrackId } from "../commands/ids";
+import { savePatch, newPatchId } from "../patches/library";
+import { allPatches, findPatch } from "../patches/factory";
 import { DEFAULT_WS_PORT } from "./protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "./protocol";
 
@@ -59,9 +60,9 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   const live: LiveHandlers = {
     selectTrack: (msg) => projectStore.selectTrack(msg.trackId),
     selectClip: (msg) => projectStore.selectClip(msg.trackId, msg.clipId),
-    noteOn: (msg) => engine.getInstrument(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
-    noteOff: (msg) => engine.getInstrument(msg.trackId)?.noteOff(msg.midi),
-    allNotesOff: () => projectStore.getTracks().forEach((track) => engine.getInstrument(track.id)?.allNotesOff()),
+    noteOn: (msg) => engine.getNoteTarget(msg.trackId)?.noteOn(msg.midi, msg.velocity ?? 1),
+    noteOff: (msg) => engine.getNoteTarget(msg.trackId)?.noteOff(msg.midi),
+    allNotesOff: () => projectStore.getTracks().forEach((track) => engine.getNoteTarget(track.id)?.allNotesOff()),
     transport: (msg) => (msg.action === "play" ? scheduler.play() : scheduler.stop()),
     // Feed annotation from Claude: a line of intent narration in the activity feed.
     note: (msg) => editLog.note(msg.text, "claude"),
@@ -109,13 +110,37 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // replayable - effect ids minted here and carried in the command).
   const patchMethods: { [K in PatchMethod]: (params: Record<string, unknown>) => unknown } = {
     list: () =>
-      listPatches().map((pt) => ({
+      allPatches().map((pt) => ({
         id: pt.id,
         name: pt.name,
         author: pt.author,
         instrument: pt.instrumentType,
+        builtin: pt.builtin ?? false,
+        category: pt.category,
         effects: pt.effects.map((fx) => fx.type),
       })),
+    // Full specifics of one patch (param values + per-effect params), for inspecting or
+    // promoting a user patch into the factory bank. Searches factory + user by id/name.
+    get: (params) => {
+      const query = String(params.patch ?? "").trim();
+      const patch = findPatch(query);
+      if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
+      return {
+        id: patch.id,
+        name: patch.name,
+        author: patch.author,
+        instrument: patch.instrumentType,
+        builtin: patch.builtin ?? false,
+        category: patch.category,
+        params: patch.params,
+        midiDevices: (patch.midiDevices ?? []).map((device) => ({
+          type: device.type,
+          bypassed: device.bypassed ?? false,
+          params: device.params,
+        })),
+        effects: patch.effects.map((fx) => ({ type: fx.type, bypassed: fx.bypassed ?? false, params: fx.params })),
+      };
+    },
     save: (params) => {
       const trackId = (params.trackId as string | undefined) ?? projectStore.selectedId ?? undefined;
       const track = trackId ? projectStore.getTrack(trackId) : undefined;
@@ -128,6 +153,11 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
         author: "claude" as const,
         instrumentType: track.instrumentType,
         params: track.params.snapshot(),
+        midiDevices: track.midiDevices.map((device) => ({
+          type: device.type,
+          bypassed: device.bypassed,
+          params: device.params.snapshot(),
+        })),
         effects: track.effects.map((fx) => ({ type: fx.type, bypassed: fx.bypassed, params: fx.params.snapshot() })),
         createdAt: Date.now(),
       };
@@ -136,9 +166,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     },
     apply: (params) => {
       const query = String(params.patch ?? "").trim();
-      const all = listPatches();
-      const patch =
-        all.find((pt) => pt.id === query) ?? all.find((pt) => pt.name.toLowerCase() === query.toLowerCase());
+      const patch = findPatch(query);
       if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
       const command: EditCommand = {
         type: "createTrackFromPatch",
@@ -146,6 +174,12 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
         name: (params.name as string | undefined)?.trim() || patch.name,
         instrumentType: patch.instrumentType,
         params: patch.params,
+        midiDevices: (patch.midiDevices ?? []).map((device) => ({
+          id: newMidiDeviceId(),
+          type: device.type,
+          bypassed: device.bypassed,
+          params: device.params,
+        })),
         effects: patch.effects.map((fx) => ({
           id: newEffectId(),
           type: fx.type,
@@ -188,6 +222,11 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
               ...track.clips.map((clip) =>
                 clip.store.subscribe(() =>
                   send({ type: "clipSnapshot", trackId: track.id, clipId: clip.id, clip: clip.store.snapshot() }),
+                ),
+              ),
+              ...track.midiDevices.map((device) =>
+                device.params.subscribe((id, value) =>
+                  send({ type: "midiDeviceParamChanged", trackId: track.id, deviceId: device.id, id, value }),
                 ),
               ),
             ]

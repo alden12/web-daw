@@ -31,7 +31,9 @@ export function rampParam(ctx: BaseAudioContext, param: AudioParam, value: numbe
 export function bindParams(store: ParamStore, bindings: Record<string, ParamBinding>): () => void {
   const apply = (id: string): void => {
     const binding = bindings[id];
-    if (!binding) return;
+    // Skip a binding whose param the schema doesn't declare - e.g. a custom instrument that
+    // omits the base amp/envelope params; the base defaults then apply instead of throwing.
+    if (!binding || !store.has(id)) return;
     const spec = store.spec(id);
     const smoothMs = spec.kind === "number" ? spec.smoothMs : undefined;
     binding.apply(store.get(id), smoothMs);

@@ -29,6 +29,7 @@ test("records live MIDI into the selected instrument track", async ({ page }) =>
   await page.goto("/");
   await startAudio(page);
   await setNoCountIn(page);
+  await page.getByRole("button", { name: "Activity", exact: true }).click(); // feed shows the recorded take
 
   const record = page.getByRole("button", { name: "Record", exact: true });
   await record.click();

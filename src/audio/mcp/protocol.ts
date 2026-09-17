@@ -9,6 +9,7 @@
 import type { ParamValue } from "../params/types";
 import type { ClipData, NoteEvent } from "../sequencer/types";
 import type { ClipContent, ProjectData } from "../project/types";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 
 /**
  * Version-history RPC. The commit DAG lives in the tab (OPFS), so the server
@@ -24,7 +25,7 @@ export type HistoryMethod = "commit" | "revert" | "history" | "diff" | "state";
  * the matching `patchReply` (correlated by `id`), the same shape as the history RPC.
  * `list` reads the library, `save` captures a track's sound, `apply` adds a track.
  */
-export type PatchMethod = "list" | "save" | "apply";
+export type PatchMethod = "list" | "save" | "apply" | "get";
 
 /** Sent by the browser tab to the server (state sync + RPC replies). */
 export type BrowserToServer =
@@ -33,6 +34,7 @@ export type BrowserToServer =
   | { type: "paramChanged"; trackId: string; id: string; value: ParamValue }
   | { type: "clipSnapshot"; trackId: string; clipId: string; clip: ClipData }
   | { type: "effectParamChanged"; hostId: string; effectId: string; id: string; value: ParamValue }
+  | { type: "midiDeviceParamChanged"; trackId: string; deviceId: string; id: string; value: ParamValue }
   | { type: "historyReply"; id: string; ok: boolean; result?: unknown; error?: string }
   | { type: "patchReply"; id: string; ok: boolean; result?: unknown; error?: string };
 
@@ -43,6 +45,14 @@ export type ServerToBrowser =
   | { type: "removeTrack"; trackId: string }
   | { type: "selectTrack"; trackId: string }
   | { type: "setTrack"; trackId: string; muted?: boolean; solo?: boolean; volume?: number; name?: string }
+  // Assign (or swap) the instrument on an existing track - e.g. an empty track picks one.
+  | { type: "setInstrument"; trackId: string; instrumentType: string }
+  // Custom devices: user/AI-authored instruments & effects (declarative graphs), stored in the
+  // project. The def carries its own minted `type` id; removal addresses it by `deviceType`.
+  | { type: "addCustomInstrument"; def: GraphInstrumentDef }
+  | { type: "removeCustomInstrument"; deviceType: string }
+  | { type: "addCustomEffect"; def: GraphEffectDef }
+  | { type: "removeCustomEffect"; deviceType: string }
   // Group structure (bus tree; id assigned by the creator so both ends agree)
   | { type: "createGroup"; id: string; name?: string; parentId?: string | null }
   | { type: "removeGroup"; groupId: string }
@@ -65,6 +75,12 @@ export type ServerToBrowser =
   | { type: "moveEffect"; hostId: string; effectId: string; toIndex: number }
   | { type: "bypassEffect"; hostId: string; effectId: string; bypassed: boolean }
   | { type: "setEffectParam"; hostId: string; effectId: string; id: string; value: ParamValue }
+  // MIDI-device chain on an instrument track (device id assigned by the creator)
+  | { type: "addMidiDevice"; trackId: string; deviceType: string; id: string }
+  | { type: "removeMidiDevice"; trackId: string; deviceId: string }
+  | { type: "moveMidiDevice"; trackId: string; deviceId: string; toIndex: number }
+  | { type: "bypassMidiDevice"; trackId: string; deviceId: string; bypassed: boolean }
+  | { type: "setMidiDeviceParam"; trackId: string; deviceId: string; id: string; value: ParamValue }
   // Clip note editing. `clipId` is optional - omit it to target the track's active
   // clip. Plural forms (addNotes / editNotes / removeNotes) are one atomic edit
   // each - one feed entry, one undo step - so writing a part or a multi-note
@@ -115,6 +131,7 @@ export type ServerToBrowser =
   | { type: "allNotesOff" }
   // Transport (project-level)
   | { type: "setTempo"; bpm: number }
+  | { type: "setGroove"; grooveId?: string; amount?: number }
   | { type: "setLength"; lengthBeats: number }
   | { type: "setLoopStart"; beats: number }
   | { type: "transport"; action: "play" | "stop" }

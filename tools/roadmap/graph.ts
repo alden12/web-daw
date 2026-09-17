@@ -1,0 +1,445 @@
+import dagre from "@dagrejs/dagre";
+import type { Edge, Node } from "@xyflow/react";
+import { STATUSES, type RoadmapItem } from "../../scripts/roadmapParse";
+
+export type ColourMode = "status" | "area";
+
+/** Leaf ticket card payload. `colour` is the primary hue (status or area, per mode); `statusColour` always
+ *  tracks status so the glyph stays a status signal even in area mode. */
+export interface ItemNodeData extends Record<string, unknown> {
+  item: RoadmapItem;
+  colour: string;
+  statusColour: string;
+  selected: boolean;
+  dimmed: boolean;
+}
+export type ItemNode = Node<ItemNodeData, "item">;
+
+/** A parent ticket rendered as a container box (title bar + its child tickets inside). Selectable like a
+ *  leaf (opens its doc block), but also frames its children. */
+export interface TicketNodeData extends Record<string, unknown> {
+  item: RoadmapItem;
+  colour: string;
+  statusColour: string;
+  count: number;
+  selected: boolean;
+  dimmed: boolean;
+}
+export type TicketNode = Node<TicketNodeData, "ticket">;
+
+/** An area (epic) container box. */
+export interface AreaNodeData extends Record<string, unknown> {
+  area: string;
+  colour: string;
+  count: number;
+}
+export type AreaNode = Node<AreaNodeData, "area">;
+
+export type RoadmapNode = AreaNode | TicketNode | ItemNode;
+
+/** A distinct hue per area, assigned by first-seen order (areas are open, so this cycles). */
+const AREA_PALETTE = [
+  "#4f9dff", // blue
+  "#34d399", // green
+  "#a884f3", // violet
+  "#fbbf24", // amber
+  "#f472b6", // pink
+  "#22d3ee", // cyan
+  "#fb923c", // orange
+  "#a3e635", // lime
+];
+
+export function areaColours(areas: string[]): Record<string, string> {
+  return Object.fromEntries(areas.map((area, index) => [area, AREA_PALETTE[index % AREA_PALETTE.length]]));
+}
+
+const ITEM_WIDTH = 212;
+const ITEM_HEIGHT = 62;
+const GAP = 22; // between grid cells
+const PAD_X = 18; // box inner side padding
+const PAD_TOP = 46; // box title bar
+const PAD_BOTTOM = 20;
+const AREA_GAP = 40; // between area boxes
+const RANKSEP = 92; // dagre horizontal rank spacing (the flow direction)
+const NODESEP = 30; // dagre spacing within a rank
+
+interface Size {
+  width: number;
+  height: number;
+}
+interface Placement extends Size {
+  x: number;
+  y: number;
+}
+
+const childrenOf = (items: RoadmapItem[], parentId: string | null): RoadmapItem[] =>
+  items.filter((item) => item.parent === parentId);
+
+/** The rendered size of one item: a leaf card, or (if it has children) the box that frames them. */
+function sizeOf(item: RoadmapItem, items: RoadmapItem[]): Size {
+  const kids = childrenOf(items, item.id);
+  if (kids.length === 0) return { width: ITEM_WIDTH, height: ITEM_HEIGHT };
+  const box = layoutSiblings(kids, items).box;
+  return { width: box.width, height: box.height };
+}
+
+/** A box carrying its own id, the unit both packers work on. */
+type Boxed = { id: string } & Size;
+
+/** Lay a connected set of tickets out left-to-right by dependency (dagre), normalised so the content's
+ *  top-left sits at (0,0). Returns content-relative placements and the flow's extent. */
+function flowLayout(
+  nodes: RoadmapItem[],
+  edges: ReadonlyArray<readonly [string, string]>,
+  sizes: Map<string, Size>,
+): { placements: Map<string, Placement>; extent: Size } {
+  const graph = new dagre.graphlib.Graph();
+  graph.setGraph({ rankdir: "LR", nodesep: NODESEP, ranksep: RANKSEP });
+  graph.setDefaultEdgeLabel(() => ({}));
+  // Pass dagre a fresh label object per node - dagre mutates it with the computed centre, and reusing the
+  // `sizes` object would then leak that centre back into our placements.
+  for (const node of nodes) {
+    const size = sizes.get(node.id)!;
+    graph.setNode(node.id, { width: size.width, height: size.height });
+  }
+  for (const [from, to] of edges) graph.setEdge(from, to);
+  dagre.layout(graph);
+
+  const placements = new Map<string, Placement>();
+  let minX = Infinity;
+  let minY = Infinity;
+  for (const node of nodes) {
+    const laid = graph.node(node.id);
+    const size = sizes.get(node.id)!;
+    const x = laid.x - size.width / 2;
+    const y = laid.y - size.height / 2;
+    placements.set(node.id, { x, y, width: size.width, height: size.height });
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+  }
+  let width = 0;
+  let height = 0;
+  for (const placement of placements.values()) {
+    placement.x -= minX;
+    placement.y -= minY;
+    width = Math.max(width, placement.x + placement.width);
+    height = Math.max(height, placement.y + placement.height);
+  }
+  return { placements, extent: { width, height } };
+}
+
+/** Pack boxes into left-to-right shelves (rows), wrapping to a new shelf when the next box would exceed
+ *  `maxRowWidth`. Order is preserved (cards stay in document order), and each shelf is as tall as its tallest
+ *  box. Returns content-relative placements (origin 0,0) and the packed extent. */
+function shelfPack(
+  boxes: Boxed[],
+  maxRowWidth: number,
+  gap: number,
+): { placements: Map<string, Placement>; extent: Size } {
+  const placements = new Map<string, Placement>();
+  let x = 0;
+  let y = 0;
+  let shelfHeight = 0;
+  let width = 0;
+  for (const box of boxes) {
+    if (x > 0 && x + box.width > maxRowWidth) {
+      y += shelfHeight + gap;
+      x = 0;
+      shelfHeight = 0;
+    }
+    placements.set(box.id, { x, y, width: box.width, height: box.height });
+    x += box.width + gap;
+    width = Math.max(width, x - gap);
+    shelfHeight = Math.max(shelfHeight, box.height);
+  }
+  return { placements, extent: { width, height: y + shelfHeight } };
+}
+
+/** A row-width budget for shelf-packing `boxes` into a compact, roughly landscape block. Targets total area
+ *  rather than a column count, so a set that mixes small cards with a few large boxes packs the cards tightly
+ *  and lets each big box take its own shelf (a column count off the widest box would instead inflate every row
+ *  to that width). Never narrower than the widest box, so nothing is forced to overflow its row.
+ *
+ *  `spread` biases the budget wider: it is NOT the resulting aspect ratio but a slack factor for the vertical
+ *  space shelf-packing wastes when box heights vary. ~2.8 empirically lands both the area boxes and the whole
+ *  map near a 3:2 landscape; raise it for wider/shorter, lower it for taller/narrower. */
+function packWidth(boxes: Size[], gap: number, spread = 2.8): number {
+  const totalArea = boxes.reduce((sum, box) => sum + (box.width + gap) * (box.height + gap), 0);
+  const widest = Math.max(...boxes.map((box) => box.width));
+  return Math.max(widest, Math.sqrt(totalArea * spread));
+}
+
+/**
+ * Lay a set of sibling tickets out relative to a (0,0) content origin, in two zones: siblings joined by
+ * dependencies flow left-to-right (dagre), and the dependency-free remainder packs into a compact grid below
+ * them. Splitting the two matters because dagre lays disconnected nodes out as separate components and
+ * strands them in half-empty ranks - feeding it the loose cards is what made mixed areas sprawl. A group with
+ * no dependencies at all is just the grid; a fully-connected group is just the flow. Returns each sibling's
+ * placement (top-left, content-relative) and the enclosing box (content extent + container title/side/bottom
+ * padding), computed from the actual placements so a box always frames its children.
+ */
+function layoutSiblings(
+  siblings: RoadmapItem[],
+  items: RoadmapItem[],
+): { placements: Map<string, Placement>; box: Size } {
+  const sizes = new Map(siblings.map((sibling) => [sibling.id, sizeOf(sibling, items)]));
+  const siblingIds = new Set(siblings.map((sibling) => sibling.id));
+  const intraEdges = siblings.flatMap((sibling) =>
+    sibling.deps.filter((dep) => siblingIds.has(dep)).map((dep) => [dep, sibling.id] as const),
+  );
+  const connectedIds = new Set(intraEdges.flat());
+  const connected = siblings.filter((sibling) => connectedIds.has(sibling.id));
+  const loose = siblings.filter((sibling) => !connectedIds.has(sibling.id));
+
+  const placements = new Map<string, Placement>();
+
+  // Zone A: the dependency-connected siblings, ranked left-to-right so links point forward.
+  const flow =
+    connected.length > 0
+      ? flowLayout(connected, intraEdges, sizes)
+      : { placements: new Map<string, Placement>(), extent: { width: 0, height: 0 } };
+  for (const [id, placement] of flow.placements) placements.set(id, placement);
+
+  // Zone B: the dependency-free siblings, packed into a compact grid below the flow (or on their own when
+  // there is no flow). The grid is at least as wide as the flow so the two zones share a left edge.
+  if (loose.length > 0) {
+    const looseBoxes: Boxed[] = loose.map((sibling) => ({ id: sibling.id, ...sizes.get(sibling.id)! }));
+    const rowWidth = Math.max(flow.extent.width, packWidth(looseBoxes, GAP));
+    const packed = shelfPack(looseBoxes, rowWidth, GAP);
+    const offsetY = connected.length > 0 ? flow.extent.height + GAP : 0;
+    for (const [id, placement] of packed.placements) {
+      placements.set(id, { ...placement, y: placement.y + offsetY });
+    }
+  }
+
+  return { placements, box: boxOf(placements) };
+}
+
+/** The box that encloses a set of placed children: their extent plus the container padding (title bar on
+ *  top, PAD_X either side, PAD_BOTTOM below). Children are positioned at PAD_X/PAD_TOP + placement, so this
+ *  guarantees the frame always contains them. */
+function boxOf(placements: Map<string, Placement>): Size {
+  let right = 0;
+  let bottom = 0;
+  for (const placement of placements.values()) {
+    right = Math.max(right, placement.x + placement.width);
+    bottom = Math.max(bottom, placement.y + placement.height);
+  }
+  return { width: right + 2 * PAD_X, height: bottom + PAD_TOP + PAD_BOTTOM };
+}
+
+/** A built area: its name, its inner nodes (already laid out relative to the box), and the box size. */
+interface BuiltArea {
+  area: string;
+  inner: { nodes: RoadmapNode[]; box: Size };
+  size: Size;
+}
+
+/** Order the built areas so a dependency area precedes the areas that depend on it (a post-order over the
+ *  cross-area dependency graph, driven by the incoming area order). Packed in sequence, this keeps the few
+ *  cross-area links pointing forward (dependency on the left) and adjacent, rather than backwards or spanning
+ *  the map. Areas with no cross-area link keep their original order. */
+function orderAreasByLinkage(built: BuiltArea[], items: RoadmapItem[]): BuiltArea[] {
+  const areaOf = (id: string): string => id.split("-")[0];
+  // Directed: `dependsOn[area]` is the set of areas whose tickets `area`'s tickets depend on.
+  const dependsOn = new Map<string, Set<string>>();
+  for (const item of items) {
+    for (const dep of item.deps) {
+      const [dependency, dependent] = [areaOf(dep), areaOf(item.id)];
+      if (dependency !== dependent) {
+        const deps = dependsOn.get(dependent) ?? new Set<string>();
+        deps.add(dependency);
+        dependsOn.set(dependent, deps);
+      }
+    }
+  }
+  const byArea = new Map(built.map((entry) => [entry.area, entry]));
+  const seen = new Set<string>();
+  const order: BuiltArea[] = [];
+  const emit = (area: string): void => {
+    const entry = byArea.get(area);
+    if (!entry || seen.has(area)) return;
+    seen.add(area); // set before recursing so a dependency cycle can't loop forever
+    for (const dependency of dependsOn.get(area) ?? []) emit(dependency); // dependency areas first
+    order.push(entry);
+  };
+  for (const entry of built) emit(entry.area);
+  return order;
+}
+
+/**
+ * Build the React Flow graph: one box per area, tickets laid out inside by dependency flow, parent tickets
+ * framing their sub-tickets (nested boxes). Area boxes are shelf-packed into a roughly square block (with
+ * dependency-linked areas ordered adjacent) so the whole map fits a screen. Dependency edges are drawn at the
+ * ticket level and flow forward (dep -> dependent). `colourMode` chooses the item hue; `selectedId` drives the
+ * selection glow, neighbour highlight, and dimming.
+ *
+ * The layout always covers the FULL item set; filtering marks nodes `hidden` (via `hiddenIds`) rather than
+ * removing them, so a filter change never re-flows the map - visible nodes keep their exact positions.
+ *
+ * Edges are built separately (`buildEdges`) so hover/selection restyling updates only the edge layer and
+ * never has to rebuild - and repaint - a single node.
+ */
+export function buildGraph(
+  items: RoadmapItem[],
+  areas: string[],
+  colours: Record<string, string>,
+  colourMode: ColourMode,
+  selectedId: string | null,
+  hiddenIds: Set<string>,
+): RoadmapNode[] {
+  const visibleIds = new Set(items.map((item) => item.id));
+  const depEdges = items.flatMap((item) =>
+    item.deps
+      .filter((dep) => visibleIds.has(dep))
+      .map((dep) => ({ id: `${dep}->${item.id}`, source: dep, target: item.id })),
+  );
+  const neighbours = selectedId
+    ? new Set(
+        depEdges
+          .filter((edge) => edge.source === selectedId || edge.target === selectedId)
+          .flatMap((edge) => [edge.source, edge.target]),
+      )
+    : null;
+
+  const hueOf = (item: RoadmapItem): string =>
+    colourMode === "area" ? (colours[item.area] ?? "#94a3b8") : (STATUSES[item.status]?.colour ?? "#94a3b8");
+  const nodeDataFor = (item: RoadmapItem) => ({
+    item,
+    colour: hueOf(item),
+    statusColour: STATUSES[item.status]?.colour ?? "#94a3b8",
+    selected: item.id === selectedId,
+    dimmed: neighbours ? !neighbours.has(item.id) : false,
+  });
+
+  // Lay a container's children out once and emit their nodes (positions relative to the container). A child
+  // that has children of its own becomes a nested ticket-box and recurses. `parentId` (without `extent`)
+  // keeps children moving with their box when it is dragged, but doesn't clamp the auto-layout into overlap.
+  const buildContainer = (containerId: string, siblings: RoadmapItem[]): { nodes: RoadmapNode[]; box: Size } => {
+    const { placements, box } = layoutSiblings(siblings, items);
+    const nodes = siblings.flatMap((sibling): RoadmapNode[] => {
+      const placement = placements.get(sibling.id)!;
+      const position = { x: PAD_X + placement.x, y: PAD_TOP + placement.y };
+      const kids = childrenOf(items, sibling.id);
+      if (kids.length > 0) {
+        const inner = buildContainer(sibling.id, kids);
+        const ticketBox: TicketNode = {
+          id: sibling.id,
+          type: "ticket",
+          parentId: containerId,
+          position,
+          hidden: hiddenIds.has(sibling.id),
+          style: { width: inner.box.width, height: inner.box.height },
+          data: { ...nodeDataFor(sibling), count: kids.length },
+          zIndex: 1,
+        };
+        return [ticketBox, ...inner.nodes];
+      }
+      const leaf: ItemNode = {
+        id: sibling.id,
+        type: "item",
+        parentId: containerId,
+        position,
+        hidden: hiddenIds.has(sibling.id),
+        style: { width: ITEM_WIDTH, height: ITEM_HEIGHT },
+        data: nodeDataFor(sibling),
+        zIndex: 2,
+      };
+      return [leaf];
+    });
+    return { nodes, box };
+  };
+
+  // Build each area's inner layout once, then pack the area boxes. Areas joined by a cross-area dependency are
+  // ordered consecutively (so those few links stay short when packed in sequence), then the boxes shelf-pack
+  // into a roughly square block rather than fixed-width rows.
+  const built: BuiltArea[] = areas.flatMap((area) => {
+    const topTickets = items.filter((item) => item.area === area && item.parent === null);
+    if (topTickets.length === 0) return [];
+    const inner = buildContainer(`area:${area}`, topTickets);
+    return [{ area, inner, size: inner.box }];
+  });
+
+  const ordered = orderAreasByLinkage(built, items);
+  const packed = shelfPack(
+    ordered.map((entry) => ({ id: entry.area, ...entry.size })),
+    packWidth(
+      ordered.map((entry) => entry.size),
+      AREA_GAP,
+    ),
+    AREA_GAP,
+  );
+
+  const nodes: RoadmapNode[] = ordered.flatMap((entry) => {
+    const position = packed.placements.get(entry.area)!;
+    const areaItems = items.filter((item) => item.area === entry.area);
+    const areaBox: AreaNode = {
+      id: `area:${entry.area}`,
+      type: "area",
+      position: { x: position.x, y: position.y },
+      hidden: areaItems.every((item) => hiddenIds.has(item.id)), // hide the box only when nothing in it shows
+      data: { area: entry.area, colour: colours[entry.area] ?? "#94a3b8", count: areaItems.length },
+      style: { width: entry.size.width, height: entry.size.height },
+      zIndex: 0,
+    };
+    return [areaBox, ...entry.inner.nodes];
+  });
+
+  return nodes;
+}
+
+/**
+ * Build the dependency edges as a layer independent of the node layout, so hover and selection restyle them
+ * (via `setEdges` alone) without rebuilding - or repainting - a single node.
+ *
+ * An intra-area edge is the crisp orthogonal flow. A cross-area edge cannot route cleanly through the packed
+ * area boxes (its endpoints sit in separate containers), so at rest it is a faint solid line sent BEHIND the
+ * boxes (negative z) - visible only in the gutters between them, never crossing content. An edge is "lit"
+ * (full colour, lifted to the front) when selected, or on hover: hovering a ticket lights the paths directly
+ * attached to that ticket, while hovering an area box lights only that area's external (cross-area) links, not
+ * the paths internal to it. Selecting additionally dims the edges it does not touch; hovering only lifts, to
+ * stay calm.
+ */
+export function buildEdges(
+  items: RoadmapItem[],
+  colours: Record<string, string>,
+  colourMode: ColourMode,
+  selectedId: string | null,
+  hoveredId: string | null,
+  hiddenIds: Set<string>,
+): Edge[] {
+  const visibleIds = new Set(items.map((item) => item.id));
+  const areaOf = (id: string): string => id.split("-")[0];
+  const hueOf = (item: RoadmapItem): string =>
+    colourMode === "area" ? (colours[item.area] ?? "#94a3b8") : (STATUSES[item.status]?.colour ?? "#94a3b8");
+  const hoveredArea = hoveredId?.startsWith("area:") ? hoveredId.slice("area:".length) : null;
+
+  return items.flatMap((item) =>
+    item.deps
+      .filter((dep) => visibleIds.has(dep))
+      .map((dep) => {
+        const selectedEnd = selectedId === dep || selectedId === item.id;
+        const crossArea = areaOf(dep) !== areaOf(item.id);
+        const hoveredEnd =
+          hoveredArea != null
+            ? crossArea && (areaOf(dep) === hoveredArea || areaOf(item.id) === hoveredArea)
+            : hoveredId != null && (dep === hoveredId || item.id === hoveredId);
+        const lit = selectedEnd || hoveredEnd;
+        return {
+          id: `${dep}->${item.id}`,
+          source: dep,
+          target: item.id,
+          type: "smoothstep",
+          pathOptions: { borderRadius: 12 },
+          hidden: hiddenIds.has(dep) || hiddenIds.has(item.id),
+          animated: selectedEnd,
+          zIndex: lit ? 20 : crossArea ? -1 : 5,
+          style: {
+            stroke: lit ? hueOf(item) : "#7c8aa0",
+            strokeWidth: lit ? 2.5 : crossArea ? 1.2 : 1.5,
+            opacity: lit ? 1 : selectedId ? (crossArea ? 0.08 : 0.12) : crossArea ? 0.4 : 0.6,
+          },
+        };
+      }),
+  );
+}

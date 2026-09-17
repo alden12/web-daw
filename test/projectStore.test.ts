@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
-import { instrumentInfos } from "../src/audio/instruments/catalog";
+import { instrumentInfos, pickableInstrumentInfos } from "../src/audio/instruments/catalog";
 
 describe("ProjectStore", () => {
   it("seeds one subtractive track by default and selects it", () => {
@@ -13,6 +13,29 @@ describe("ProjectStore", () => {
 
   it("can start empty (server mirror) with seedDefault=false", () => {
     expect(new ProjectStore(false).getStructure().tracks).toHaveLength(0);
+  });
+
+  it("renames the project (state, so it rides snapshot/load) and defaults empty to Untitled", () => {
+    const p = new ProjectStore(false);
+    expect(p.name).toBe("Untitled");
+    p.renameProject("  My Song  ");
+    expect(p.name).toBe("My Song"); // trimmed
+    expect(p.getStructure().name).toBe("My Song");
+    expect(p.snapshot().name).toBe("My Song");
+
+    const reloaded = new ProjectStore(false);
+    reloaded.load(p.snapshot());
+    expect(reloaded.name).toBe("My Song"); // round-trips
+
+    p.renameProject("   ");
+    expect(p.name).toBe("Untitled"); // empty resets
+  });
+
+  it("defaults the name to Untitled when a document has none", () => {
+    const p = new ProjectStore(false);
+    p.renameProject("Was Named");
+    p.load({ ...p.snapshot(), name: undefined });
+    expect(p.name).toBe("Untitled");
   });
 
   it("adds tracks of different instrument types, each with its own schema", () => {
@@ -134,21 +157,21 @@ describe("ProjectStore", () => {
 });
 
 describe("ProjectStore groups (bus tree)", () => {
-  it("files a new track into its instrument family group (librarian), creating it", () => {
+  it("files new tracks into the single default 'main' group, creating it once", () => {
     const p = new ProjectStore(false);
-    const sub = p.addTrack("subtractive"); // family "Synths"
+    const sub = p.addTrack("subtractive");
     const groups = p.getGroups();
     expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe("Synths");
+    expect(groups[0].name).toBe("main");
     expect(groups[0].parentId).toBeNull();
     expect(sub.parentId).toBe(groups[0].id);
 
-    // a second subtractive reuses the same family group; an fm makes a new one
+    // every kind of track reuses the same "main" group (no more per-family groups)
     const sub2 = p.addTrack("subtractive");
     expect(sub2.parentId).toBe(groups[0].id);
-    const fm = p.addTrack("fm"); // family "Bass"
-    expect(p.getGroups()).toHaveLength(2);
-    expect(p.getGroup(fm.parentId)!.name).toBe("Bass");
+    const fm = p.addTrack("fm");
+    expect(p.getGroups()).toHaveLength(1);
+    expect(fm.parentId).toBe(groups[0].id);
   });
 
   it("seeds the default project with one track filed into a group", () => {
@@ -214,7 +237,7 @@ describe("ProjectStore groups (bus tree)", () => {
     expect(b.getTrack(t.id)!.parentId).toBe(grp.id);
   });
 
-  it("migrates a legacy flat snapshot by filing tracks into family groups", () => {
+  it("migrates a legacy flat snapshot by filing tracks into the main group", () => {
     const legacy = {
       tracks: [
         {
@@ -246,14 +269,14 @@ describe("ProjectStore groups (bus tree)", () => {
     const p = new ProjectStore(false);
     p.load(legacy);
     expect(p.getStructure().tracks).toHaveLength(2);
-    // each track was filed into a real group named for its family
-    expect(p.getGroup(p.getTrack("t-1")!.parentId)!.name).toBe("Synths");
-    expect(p.getGroup(p.getTrack("t-2")!.parentId)!.name).toBe("Bass");
+    // both tracks were filed into the single "main" group
+    expect(p.getGroup(p.getTrack("t-1")!.parentId)!.name).toBe("main");
+    expect(p.getTrack("t-2")!.parentId).toBe(p.getTrack("t-1")!.parentId);
   });
 });
 
 describe("ProjectStore audio tracks", () => {
-  it("adds an audio track filed into the Audio group, with a clip + placement", () => {
+  it("adds an audio track filed into the main group, with a clip + placement", () => {
     const p = new ProjectStore(false);
     const t = p.addAudioTrack({ fileId: "au-xyz", name: "Take 1", durationSec: 3.5 });
     expect(t.kind).toBe("audio");
@@ -261,8 +284,37 @@ describe("ProjectStore audio tracks", () => {
     expect(t.clips[0].durationSec).toBe(3.5);
     expect(t.placements[0].startBeat).toBe(0);
     const group = p.getGroup(t.parentId)!;
-    expect(group.name).toBe("Audio");
+    expect(group.name).toBe("main");
     expect(group.parentId).toBeNull();
+  });
+
+  it("creates an empty audio track (no clip/placement) filed into the main group", () => {
+    const p = new ProjectStore(false);
+    const t = p.addEmptyAudioTrack();
+    expect(t.kind).toBe("audio");
+    expect(t.clips).toEqual([]);
+    expect(t.placements).toEqual([]);
+    expect(t.activeClipId).toBe("");
+    expect(p.getGroup(t.parentId)!.name).toBe("main");
+    expect(p.selectedId).toBe(t.id);
+  });
+
+  it("records a take into an empty audio track created up front", () => {
+    const p = new ProjectStore(false);
+    const t = p.addEmptyAudioTrack({ name: "Vox" });
+    p.setTempo(120);
+    p.addAudioClip({
+      trackId: t.id,
+      id: "c-take",
+      placementId: "p-take",
+      fileId: "au-1",
+      durationSec: 2,
+      startBeat: 0,
+    });
+    const got = p.getTrack(t.id)!;
+    expect(got.clips.map((c) => c.id)).toEqual(["c-take"]);
+    expect(got.activeClipId).toBe("c-take");
+    expect(got.placements.map((pl) => pl.id)).toEqual(["p-take"]);
   });
 
   it("records a take into an existing audio track (clip pool + placement, active)", () => {
@@ -455,8 +507,8 @@ describe("addNoteClip (recorded MIDI take)", () => {
 });
 
 describe("instrument catalog", () => {
-  it("exposes a label and a valid schema for every instrument type", () => {
-    for (const def of instrumentInfos()) {
+  it("exposes a label and a valid schema for every pickable instrument type", () => {
+    for (const def of pickableInstrumentInfos()) {
       expect(def.label).toBeTruthy();
       expect(def.schema.length).toBeGreaterThan(0);
       for (const spec of def.schema) {
@@ -465,5 +517,78 @@ describe("instrument catalog", () => {
       }
       expect(def.type).toBeTruthy();
     }
+  });
+});
+
+describe("ProjectStore setInstrument (empty tracks)", () => {
+  it("creates an empty track (none) and assigns an instrument, keeping its clips", () => {
+    const p = new ProjectStore(false);
+    const empty = p.addTrack("none", { name: "Track 1" });
+    expect(empty.instrumentType).toBe("none");
+    expect(empty.kind).toBe("instrument");
+    if (empty.kind === "instrument") expect(empty.params.snapshot()).toEqual({}); // empty schema
+    const clipCount = empty.clips.length;
+
+    p.setInstrument(empty.id, "subtractive");
+    const t = p.getTrack(empty.id)!;
+    expect(t.kind).toBe("instrument");
+    if (t.kind === "instrument") {
+      expect(t.instrumentType).toBe("subtractive");
+      expect(t.clips.length).toBe(clipCount); // clips/placements preserved across the swap
+      expect(Object.keys(t.params.snapshot()).length).toBeGreaterThan(0); // params rebuilt from the new schema
+    }
+  });
+
+  it("setInstrument is a no-op for the same type or a non-instrument track", () => {
+    const p = new ProjectStore(false);
+    const t = p.addTrack("subtractive");
+    const before = t.params.snapshot();
+    p.setInstrument(t.id, "subtractive"); // same type
+    expect(p.getTrack(t.id)!.kind === "instrument" && p.getTrack(t.id)).toBeTruthy();
+    expect((p.getTrack(t.id) as typeof t).params.snapshot()).toEqual(before);
+    p.setInstrument("nope", "fm"); // missing track -> no throw
+  });
+});
+
+describe("ProjectStore applyPatchToTrack (audition a patch on an existing track)", () => {
+  it("replaces instrument, params, and effect chain, keeping the track's clips", () => {
+    const p = new ProjectStore(false);
+    const track = p.addTrack("subtractive");
+    p.getClipStore(track.id)!.addNote({ pitch: 60, start: 0 });
+    p.addEffect(track.id, "reverb");
+
+    p.applyPatchToTrack({
+      trackId: track.id,
+      instrumentType: "fm",
+      params: { "fm.ratio": 3 },
+      effects: [{ id: "fx-delay", type: "delay", params: { "delay.feedback": 0.5 } }],
+    });
+
+    const got = p.getTrack(track.id)!;
+    expect(got.kind).toBe("instrument");
+    if (got.kind !== "instrument") return;
+    expect(got.instrumentType).toBe("fm");
+    expect(got.params.get("fm.ratio")).toBe(3);
+    expect(got.effects.map((effect) => effect.type)).toEqual(["delay"]); // reverb replaced
+    expect(got.effects[0].params.get("delay.feedback")).toBe(0.5);
+    expect(p.getClipStore(track.id)!.getClip().notes).toHaveLength(1); // clips preserved
+  });
+
+  it("fills params the patch omits from the new instrument's defaults", () => {
+    const p = new ProjectStore(false);
+    const track = p.addTrack("fm");
+    track.params.set("fm.ratio", 9);
+    p.applyPatchToTrack({ trackId: track.id, instrumentType: "fm", params: {}, effects: [] });
+    const got = p.getTrack(track.id)!;
+    // Same instrument, empty patch -> every param reset to its schema default (not left at 9).
+    if (got.kind === "instrument") expect(got.params.get("fm.ratio")).toBe(2);
+  });
+
+  it("no-ops on an audio track or a missing track", () => {
+    const p = new ProjectStore(false);
+    const audio = p.addEmptyAudioTrack();
+    p.applyPatchToTrack({ trackId: audio.id, instrumentType: "fm", params: {}, effects: [] });
+    expect(p.getTrack(audio.id)!.kind).toBe("audio");
+    p.applyPatchToTrack({ trackId: "nope", instrumentType: "fm", params: {}, effects: [] }); // no throw
   });
 });

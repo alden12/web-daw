@@ -25,6 +25,33 @@ function installLocalStorage(): Map<string, string> {
   return store;
 }
 
+// Minimal document/window shim (node env has neither) so the page-hide flush listeners register and
+// can be fired. `hide()` flips visibility and dispatches visibilitychange to the captured handlers.
+function installDomShim() {
+  const listeners: Record<string, Set<EventListener>> = {};
+  let visibility = "visible";
+  const on = (type: string, handler: EventListener) => void (listeners[type] ??= new Set()).add(handler);
+  const off = (type: string, handler: EventListener) => void listeners[type]?.delete(handler);
+  (globalThis as unknown as { document: unknown }).document = {
+    get visibilityState() {
+      return visibility;
+    },
+    addEventListener: on,
+    removeEventListener: off,
+  };
+  (globalThis as unknown as { window: unknown }).window = { addEventListener: on, removeEventListener: off };
+  return {
+    hide: () => {
+      visibility = "hidden";
+      listeners["visibilitychange"]?.forEach((handler) => handler(new Event("visibilitychange")));
+    },
+    cleanup: () => {
+      delete (globalThis as { document?: unknown }).document;
+      delete (globalThis as { window?: unknown }).window;
+    },
+  };
+}
+
 describe("EditLog.restore", () => {
   it("restores entries, continues seq monotonically, and resets undo/redo", () => {
     const project = new ProjectStore(false);
@@ -67,6 +94,8 @@ describe("project + edit-log persistence", () => {
   });
   afterEach(() => {
     delete (globalThis as { localStorage?: Storage }).localStorage;
+    delete (globalThis as { document?: unknown }).document;
+    delete (globalThis as { window?: unknown }).window;
     vi.useRealTimers();
   });
 
@@ -97,6 +126,167 @@ describe("project + edit-log persistence", () => {
     expect(entries.map((e) => e.author)).toEqual(["you", "claude"]);
   });
 
+  it("reconstructs HEAD from a keyframe plus a replayed edit tail", async () => {
+    // Simulate a stale keyframe with edits appended after it (the delta case): the working state
+    // on reload must equal the live snapshot, rebuilt by replaying the tail through applyEdit.
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+
+    // Distinct-target edits (no coalescing), so seqs are stable and the keyframe is consistent.
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-2" });
+    // Keyframe reflecting only the first two edits.
+    await repo.writeKeyframe(project.snapshot(), log.getEntries().at(-1)!.seq);
+    // Two more edits AFTER the keyframe - appended to the log, not folded into a new keyframe.
+    log.dispatch({ type: "setTempo", bpm: 140 });
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-3" });
+    await repo.appendEdits(log.getEntries());
+    const live = project.snapshot();
+
+    // Reload with a fresh repo over the same bundle.
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+
+    expect(project2.snapshot()).toEqual(live); // keyframe + replayed tail == live HEAD
+    expect(project2.tempo).toBe(140);
+    expect(project2.getTrack("t-3")?.kind).toBe("instrument");
+    // The feed still shows the whole authored history (keyframe's log.json + the tail).
+    expect(log2.getEntries().map((e) => e.command.type)).toEqual([
+      "createTrack",
+      "createTrack",
+      "setTempo",
+      "createTrack",
+    ]);
+  });
+
+  it("autosave forces a keyframe on undo, so a reload keeps the undone state (not the resurrected edit)", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.dispatch({ type: "setTempo", bpm: 100 });
+    await vi.runAllTimersAsync(); // keyframe reflecting both edits
+    log.undo(); // tempo back to 120; appends a kind:"undo" entry (not replayable forward)
+    await vi.runAllTimersAsync(); // autosave must FORCE a keyframe here
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    // If the undo hadn't forced a keyframe, replaying the tail would skip it and resurrect bpm 100.
+    expect(project2.tempo).toBe(120);
+  });
+
+  it("keeps project.json stable across an edit burst below the keyframe interval, still reconstructs on load", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    await vi.runAllTimersAsync(); // the first tick forces the initial keyframe
+    const keyframeAfterFirst = repo.keyframeSeq();
+
+    // A burst well below KEYFRAME_EDIT_INTERVAL: distinct-target edits (no coalescing).
+    for (let i = 0; i < 10; i++) {
+      log.dispatch({ type: "createTrack", instrumentType: "fm", id: `t-x${i}` });
+    }
+    await vi.runAllTimersAsync();
+    // No fresh keyframe - the tail is short, so project.json still reflects the first keyframe's seq;
+    // the burst lives only as appended deltas.
+    expect(repo.keyframeSeq()).toBe(keyframeAfterFirst);
+    const live = project.snapshot();
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    expect(project2.snapshot()).toEqual(live); // keyframe + replayed tail == live HEAD
+  });
+
+  it("writes a fresh keyframe once the edit tail passes the interval", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    await vi.runAllTimersAsync();
+    const keyframeAfterFirst = repo.keyframeSeq();
+
+    // Well past KEYFRAME_EDIT_INTERVAL (100) so the count trigger fires a new keyframe.
+    for (let i = 0; i < 120; i++) {
+      log.dispatch({ type: "createTrack", instrumentType: "fm", id: `t-x${i}` });
+    }
+    await vi.runAllTimersAsync();
+    expect(repo.keyframeSeq()).toBeGreaterThan(keyframeAfterFirst);
+    dispose();
+    vi.useRealTimers();
+  });
+
+  it("persists a feed note on the fast cadence, without forcing a keyframe", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    await vi.runAllTimersAsync(); // initial keyframe
+    const keyframeSeq = repo.keyframeSeq();
+
+    log.note("layering a pad on top", "claude"); // no project edit; below the interval
+    await vi.runAllTimersAsync();
+    expect(repo.keyframeSeq()).toBe(keyframeSeq); // the note did NOT trigger a keyframe
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    expect(log2.getNotes().map((n) => n.text)).toEqual(["layering a pad on top"]); // durable via notes.json
+  });
+
+  it("flushes the pending edit burst on page-hide, before the debounce fires", async () => {
+    vi.useFakeTimers();
+    const dom = installDomShim();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    await vi.runAllTimersAsync(); // initial keyframe + manifest, so a reload has a starting point
+
+    // A further edit whose debounce is still pending - nothing appended yet.
+    log.dispatch({ type: "setTempo", bpm: 145 });
+    dom.hide(); // page-hide -> flush the tail immediately
+    await vi.runAllTimersAsync(); // let the flush's fire-and-forget writes settle
+    dispose();
+    dom.cleanup();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    expect(project2.tempo).toBe(145); // the pending edit survived via the page-hide flush
+  });
+
   it("persists a feed note posted with no following edit (saved via the log subscription)", async () => {
     vi.useFakeTimers();
     const repo = new ProjectRepository(new MemoryBundleStore());
@@ -115,6 +305,36 @@ describe("project + edit-log persistence", () => {
     const log2 = new EditLog(project2);
     await restoreProject(project2, log2, repo);
     expect(log2.getNotes().map((n) => n.text)).toEqual(["about to layer a pad on top"]);
+  });
+
+  it("folds feed notes into the unified stream (no separate notes.json) and round-trips them", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.note("layering a pad", "claude");
+    await vi.runAllTimersAsync();
+    dispose();
+    vi.useRealTimers();
+
+    // The note is an entry in the append stream (kind:"note"), not a notes.json blob.
+    expect(await store.readText("notes.json")).toBeNull();
+    const stream = JSON.parse((await store.readText("edits.json"))!) as Array<{
+      kind?: string;
+      command: { type: string; text?: string };
+    }>;
+    expect(stream.some((entry) => entry.kind === "note" && entry.command.text === "layering a pad")).toBe(true);
+
+    // It round-trips back into the feed on reload, split from the edits.
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    expect(log2.getNotes().map((n) => n.text)).toEqual(["layering a pad"]);
+    expect(log2.getEntries().map((e) => e.command.type)).toEqual(["createTrack"]);
   });
 
   it("persists undo/redo so undo works after a restore (reload)", async () => {
@@ -241,10 +461,18 @@ describe("project + edit-log persistence", () => {
     const notes = [{ seq: 1, text: "set the groove tempo", author: "claude" as const, time: 2 }];
 
     const files = await source.exportBundle(project, log, notes);
-    // Readable JSON entries plus the referenced sample as real .wav bytes.
+    // Readable JSON entries plus the referenced sample as real .wav bytes. The unified stream
+    // (edits.json) carries the edit and the feed note (as a kind:"note" entry), ordered by seq.
     const proj = JSON.parse(new TextDecoder().decode(files["project.json"])) as ProjectData;
     expect(proj.tempoBpm).toBe(128);
-    expect(files["notes.json"]).toBeTruthy();
+    const stream = JSON.parse(new TextDecoder().decode(files["edits.json"])) as Array<{
+      seq: number;
+      kind?: string;
+      command: { type: string; text?: string };
+    }>;
+    expect(stream.map((entry) => entry.seq)).toEqual([0, 1]);
+    expect(stream[1]).toMatchObject({ kind: "note", command: { type: "note", text: "set the groove tempo" } });
+    expect(files["notes.json"]).toBeUndefined(); // retired: notes live in the stream now
     expect(files[`samples/${hash}.wav`]).toBeTruthy();
 
     // Import into a brand-new, empty repository.

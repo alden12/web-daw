@@ -40,6 +40,23 @@ export function usePersistentNumber(key: string, fallback: number, min: number, 
   return [value, set] as const;
 }
 
+/** A string persisted under `key`, optionally constrained to a set of allowed values. */
+export function usePersistentString<T extends string>(key: string, fallback: T, allowed?: readonly T[]) {
+  const [value, setValue] = useState<T>(() => {
+    const raw = read(key) as T | null;
+    if (raw === null) return fallback;
+    return !allowed || allowed.includes(raw) ? raw : fallback;
+  });
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      write(key, next);
+    },
+    [key],
+  );
+  return [value, set] as const;
+}
+
 /** A boolean persisted under `key`. */
 export function usePersistentBoolean(key: string, fallback: boolean) {
   const [value, setValue] = useState(() => {

@@ -28,10 +28,17 @@ import {
   hasInstrument,
   catalogEntry,
   instrumentSchema,
-  instrumentFamily,
+  registerInstrument,
+  unregisterInstrument,
   DEFAULT_INSTRUMENT,
+  EMPTY_INSTRUMENT,
 } from "../instruments/catalog";
-import { hasEffect, effectSchema, DEFAULT_EFFECT } from "../effects/catalog";
+import { hasEffect, effectSchema, registerEffect, unregisterEffect, DEFAULT_EFFECT } from "../effects/catalog";
+import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/device/catalog";
+import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { parseCustomDevices } from "../graph/zod";
+import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
+import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
 import type {
   ProjectData,
@@ -42,6 +49,7 @@ import type {
   ClipAuthor,
   ClipContent,
   EffectData,
+  MidiDeviceData,
 } from "./types";
 
 const MIN_BPM = 20;
@@ -51,8 +59,9 @@ const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this late
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
 const MAX_AUDIO_GAIN = 4; // ~+12 dB - lets a quiet recording be boosted
 const MIN_LOOP_SEC = 0.05; // seconds - smallest audio loop region
-/** Default group family imported/recorded audio is filed into (the librarian). */
-const AUDIO_FAMILY = "Audio";
+/** The single default group every new track is filed into (stable id for delta replay). */
+const MAIN_GROUP_NAME = "main";
+const MAIN_GROUP_ID = "g-main";
 
 /** An effect at runtime: meta + its own ParamStore over the effect's schema. */
 export interface EffectInstance {
@@ -65,6 +74,14 @@ export interface EffectInstance {
 /** Anything that owns an ordered effect chain: a track or a group bus. */
 export interface EffectHost {
   effects: EffectInstance[];
+}
+
+/** A MIDI device at runtime: meta + its own ParamStore over the device's schema. */
+export interface MidiDeviceInstance {
+  id: string;
+  type: string;
+  bypassed: boolean;
+  params: ParamStore;
 }
 
 /** A group bus at runtime: meta + its own effect chain. Nests via parentId. */
@@ -107,6 +124,8 @@ export interface InstrumentTrack extends BaseTrack {
   kind: "instrument";
   instrumentType: string;
   params: ParamStore;
+  /** Note-transform devices between the note source and the instrument (ordered). */
+  midiDevices: MidiDeviceInstance[];
   clips: NoteClip[];
   activeClipId: string;
   placements: Placement[];
@@ -129,21 +148,41 @@ export type Track = InstrumentTrack | AudioTrack;
 
 /** Stable structural view for the UI (no child stores). */
 export interface ProjectStructure {
+  /** The project's display name (renamed via the `renameProject` edit, so it syncs live). */
+  name: string;
   groups: GroupMeta[];
   tracks: TrackMeta[];
   tempoBpm: number;
   lengthBeats: number;
   /** Loop start in beats; the playback loop region is [loopStart, lengthBeats]. */
   loopStart: number;
+  /** Project-wide groove template id (see grooves/catalog) + how strongly it applies. */
+  grooveId: string;
+  grooveAmount: number;
+  /** The project's imported-sample library (referenced by Sampler params as "asset:<id>"). */
+  samples: SampleAsset[];
   selectedTrackId: string | null;
 }
 
 export class ProjectStore {
+  private projectName = "Untitled";
   private tracks: Track[] = [];
   private groups: Group[] = [];
   private tempoBpm = 120;
   private lengthBeats = 16;
   private loopStartBeats = 0;
+  private grooveId = DEFAULT_GROOVE_ID;
+  private grooveAmount = 1;
+  private samples: SampleAsset[] = [];
+  /** Who last edited each object (key -> author), for the last-editor colour tint. Mutated in
+   *  place at the applyEdit seam via setAuthor; snapshot() copies it out and load() restores it,
+   *  so it rides undo/redo/reload like the rest of the project. */
+  private authorship: Record<string, ClipAuthor> = {};
+  // User-authored devices (declarative graphs) embedded in the project. Their schemas are
+  // (un)registered in the catalogs as they load/change so tracks resolve them; the engine
+  // registers the audio factories (it owns Web Audio, keeping this store DOM-free).
+  private customInstrumentDefs: GraphInstrumentDef[] = [];
+  private customEffectDefs: GraphEffectDef[] = [];
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: ProjectStructure;
@@ -163,6 +202,9 @@ export class ProjectStore {
   private nextEffectId(): string {
     return `fx-${crypto.randomUUID().slice(0, 8)}`;
   }
+  private nextMidiDeviceId(): string {
+    return `md-${crypto.randomUUID().slice(0, 8)}`;
+  }
   private nextClipId(): string {
     return `c-${crypto.randomUUID().slice(0, 8)}`;
   }
@@ -172,10 +214,14 @@ export class ProjectStore {
 
   private rebuild(): void {
     this.cached = buildStructure(this.tracks, this.groups, {
+      name: this.projectName,
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
+      grooveId: this.grooveId,
+      grooveAmount: this.grooveAmount,
+      samples: this.samples,
     });
   }
 
@@ -215,6 +261,18 @@ export class ProjectStore {
   get loopStart(): number {
     return this.loopStartBeats;
   }
+  get name(): string {
+    return this.projectName;
+  }
+
+  /** Rename the project (empty falls back to "Untitled"). Applied via the `renameProject` edit, so it
+   *  rides undo/redo, the activity feed, and multiplayer sync like any other edit. */
+  renameProject(name: string): void {
+    const next = name.trim() || "Untitled";
+    if (this.projectName === next) return;
+    this.projectName = next;
+    this.emit();
+  }
 
   // --- groups ---------------------------------------------------------------
   /** Create a group (no emit). Reuses an existing group if `id` already exists. */
@@ -237,16 +295,15 @@ export class ProjectStore {
     return group;
   }
 
-  /** Find the top-level group named for a family, or create it (no emit). The
-   *  "librarian": new tracks are filed into their instrument's family group. The
-   *  created id is derived from the family name (not random) so that replaying a
-   *  createTrack which auto-files into a family group reconstructs the SAME id -
-   *  delta replay (undo, commit materialize) needs apply to be a pure function of
-   *  the command. Existing groups still match by name, so old projects are unaffected. */
-  private ensureFamilyGroup(family: string): Group {
+  /** Find the single default "main" group, or create it (no emit). New tracks are
+   *  filed here; grouping is otherwise manual. The id is fixed (not random) so that
+   *  replaying a createTrack that auto-files into it reconstructs the SAME id - delta
+   *  replay (undo, commit materialize) needs apply to be a pure function of the command. */
+  private ensureMainGroup(): Group {
     return (
-      this.groups.find((group) => group.parentId === null && group.name === family) ??
-      this.createGroup({ id: `g-fam-${family.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name: family })
+      this.groups.find((group) => group.parentId === null && group.id === MAIN_GROUP_ID) ??
+      this.groups.find((group) => group.parentId === null) ??
+      this.createGroup({ id: MAIN_GROUP_ID, name: MAIN_GROUP_NAME })
     );
   }
 
@@ -345,8 +402,7 @@ export class ProjectStore {
   addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
-    const parentId =
-      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(instrumentFamily(type)).id;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
     const params = new ParamStore(instrumentSchema(type));
     // Derive the seed clip/placement ids from the (agreed) track id so the browser
@@ -358,7 +414,7 @@ export class ProjectStore {
     const track: InstrumentTrack = {
       kind: "instrument",
       id: trackId,
-      name: opts.name ?? `${catalogEntry(type).label} ${this.tracks.length + 1}`,
+      name: opts.name ?? `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`,
       instrumentType: type,
       parentId,
       muted: false,
@@ -366,6 +422,7 @@ export class ProjectStore {
       volume: 0.8,
       params,
       effects: [],
+      midiDevices: [],
       clips: [{ id: clipId, name: "A", author: "you", store: clip }],
       activeClipId: clipId,
       // One placement of the seed clip at the start, so a new track plays its clip.
@@ -376,6 +433,29 @@ export class ProjectStore {
     this.selectedTrackId = trackId;
     this.emit();
     return track;
+  }
+
+  /**
+   * Assign (or swap) the instrument on an existing instrument track - e.g. an empty
+   * track (`none`) picks one. Rebuilds the ParamStore from the new schema (shared
+   * param ids carry over; unknown ones are dropped) and keeps the track's clips,
+   * placements, effects, name, and mix. MIDI devices are cleared: they shape how the
+   * chosen instrument is played (an octavator/arp tied to it), so swapping to a new
+   * instrument or patch starts its note chain fresh rather than leaving stale devices.
+   * A pure function of (trackId, type), so delta replay is deterministic; the engine
+   * swaps the node (and disposes the removed devices) on the next reconcile.
+   */
+  setInstrument(trackId: string, instrumentType: string): void {
+    const track = this.getTrack(trackId);
+    if (!track || track.kind !== "instrument") return;
+    const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
+    if (track.instrumentType === type) return;
+    const carried = track.params.snapshot();
+    track.params = new ParamStore(instrumentSchema(type));
+    track.params.load(carried); // load ignores ids not in the new schema
+    track.instrumentType = type;
+    track.midiDevices = [];
+    this.emit();
   }
 
   /**
@@ -392,11 +472,18 @@ export class ProjectStore {
     instrumentType: string;
     params: PatchValues;
     effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
   }): Track {
     if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
     const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
     if (track.kind === "instrument") {
       track.params.load(spec.params);
+      for (const device of spec.midiDevices ?? []) {
+        const added = this.addMidiDevice(track.id, device.type, device.id);
+        if (!added) continue;
+        added.params.load(device.params);
+        if (device.bypassed) this.setMidiDeviceBypass(track.id, device.id, true);
+      }
       for (const fx of spec.effects) {
         const effect = this.addEffect(track.id, fx.type, fx.id);
         if (!effect) continue;
@@ -408,14 +495,95 @@ export class ProjectStore {
     return track;
   }
 
+  /**
+   * Apply a patch to an existing instrument track (auditioning a patch on the current
+   * track): replace its instrument, parameter values, and effect chain, keeping the
+   * track's clips, name, and mix. A pure function of its argument (effect ids carried
+   * in), so delta replay is deterministic. No-op on a non-instrument track.
+   *
+   * The instrument is handled two ways so the engine keeps making sound: on a *type
+   * change* the ParamStore is replaced and the engine swaps the instrument node and
+   * rebinds to the new store; on the *same* instrument the existing store is mutated in
+   * place, because the engine's live param bindings are subscribed to that object.
+   */
+  applyPatchToTrack(spec: {
+    trackId: string;
+    instrumentType: string;
+    params: PatchValues;
+    effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+  }): void {
+    const track = this.getTrack(spec.trackId);
+    if (!track || track.kind !== "instrument") return;
+    const type = hasInstrument(spec.instrumentType) ? spec.instrumentType : DEFAULT_INSTRUMENT;
+    const schema = instrumentSchema(type);
+    // The patch may set only some params; fill the rest from schema defaults so the
+    // applied sound is the patch's, not a blend with whatever the track held before.
+    const values = {
+      ...Object.fromEntries(schema.map((paramSpec) => [paramSpec.id, paramSpec.default])),
+      ...spec.params,
+    };
+    if (track.instrumentType !== type) {
+      track.instrumentType = type;
+      track.params = new ParamStore(schema);
+    }
+    track.params.load(values);
+    // Replace the MIDI-device chain (the engine reconciles device add/remove by id).
+    for (const device of [...track.midiDevices]) this.removeMidiDevice(track.id, device.id);
+    for (const device of spec.midiDevices ?? []) {
+      const added = this.addMidiDevice(track.id, device.type, device.id);
+      if (!added) continue;
+      added.params.load(device.params);
+      if (device.bypassed) this.setMidiDeviceBypass(track.id, device.id, true);
+    }
+    // Replace the effect chain (the engine reconciles effect add/remove by id).
+    for (const effect of [...track.effects]) this.removeEffect(track.id, effect.id);
+    for (const fx of spec.effects) {
+      const effect = this.addEffect(track.id, fx.type, fx.id);
+      if (!effect) continue;
+      effect.params.load(fx.params);
+      if (fx.bypassed) this.setEffectBypass(track.id, fx.id, true);
+    }
+    this.emit();
+  }
+
+  /**
+   * Create an empty audio track (no clips/placements yet) - the audio peer of an
+   * empty instrument track. It renders an empty lane and an empty workbench until a
+   * take is recorded into it (`addAudioClip`) or a clip is dropped onto it. Files into
+   * the main group by default. `activeClipId` is "" (no clip selected) until then.
+   */
+  addEmptyAudioTrack(opts: { name?: string; id?: string; groupId?: string } = {}): AudioTrack {
+    if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
+    const trackId = opts.id ?? this.nextId();
+    const track: AudioTrack = {
+      kind: "audio",
+      id: trackId,
+      name: opts.name ?? `Audio ${this.tracks.length + 1}`,
+      parentId,
+      muted: false,
+      solo: false,
+      volume: 0.8,
+      effects: [],
+      clips: [],
+      activeClipId: "",
+      placements: [],
+      launchedClipId: null,
+    };
+    this.tracks.push(track);
+    this.selectedTrackId = trackId;
+    this.emit();
+    return track;
+  }
+
   /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
   addAudioTrack(
     clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },
     opts: { name?: string; id?: string; groupId?: string } = {},
   ): AudioTrack {
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
-    const parentId =
-      opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureFamilyGroup(AUDIO_FAMILY).id;
+    const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
     const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
     const clipId = `c-${trackId}`;
@@ -653,6 +821,40 @@ export class ProjectStore {
     this.emit();
   }
 
+  /** The project-wide groove: which template, and how strongly it applies (0..1). */
+  getGroove(): { id: string; amount: number } {
+    return { id: this.grooveId, amount: this.grooveAmount };
+  }
+
+  /** Set the project groove template and/or amount; omitted fields stay unchanged. */
+  setGroove(id?: string, amount?: number): void {
+    const nextId = id ?? this.grooveId;
+    const nextAmount = amount === undefined ? this.grooveAmount : clamp(amount, 0, 1);
+    if (nextId === this.grooveId && nextAmount === this.grooveAmount) return;
+    this.grooveId = nextId;
+    this.grooveAmount = nextAmount;
+    this.emit();
+  }
+
+  /** The project's imported-sample library. */
+  getSamples(): SampleAsset[] {
+    return this.samples;
+  }
+
+  /** Add an imported sample to the library (no-op if its id already exists). */
+  addSample(asset: SampleAsset): void {
+    if (this.samples.some((sample) => sample.id === asset.id)) return;
+    this.samples = [...this.samples, asset];
+    this.emit();
+  }
+
+  /** Remove a sample from the library by id (does not delete its bytes from the store). */
+  removeSample(id: string): void {
+    if (!this.samples.some((sample) => sample.id === id)) return;
+    this.samples = this.samples.filter((sample) => sample.id !== id);
+    this.emit();
+  }
+
   /**
    * Set the arrangement loop length (beats): the scheduler loops the region
    * [loopStart, lengthBeats]. Clip lengths are independent (set per clip in the
@@ -700,6 +902,22 @@ export class ProjectStore {
         return existing;
       }
       const params = new ParamStore(effectSchema(wanted.type));
+      if (wanted.params) params.load(wanted.params);
+      return { id: wanted.id, type: wanted.type, bypassed: wanted.bypassed, params };
+    });
+  }
+
+  /** Reconcile a MIDI-device chain against a target list IN PLACE (reuse by id, keep state). */
+  private loadMidiDevicesInPlace(track: InstrumentTrack, want: MidiDeviceData[]): void {
+    const byId = new Map(track.midiDevices.map((device) => [device.id, device] as const));
+    track.midiDevices = want.map((wanted) => {
+      const existing = byId.get(wanted.id);
+      if (existing && existing.type === wanted.type) {
+        existing.bypassed = wanted.bypassed;
+        existing.params.load(wanted.params);
+        return existing;
+      }
+      const params = new ParamStore(midiDeviceSchema(wanted.type));
       if (wanted.params) params.load(wanted.params);
       return { id: wanted.id, type: wanted.type, bypassed: wanted.bypassed, params };
     });
@@ -974,6 +1192,63 @@ export class ProjectStore {
     return this.getEffectHost(hostId)?.effects.find((fx) => fx.id === effectId);
   }
 
+  // --- MIDI-device chain (instrument tracks only) ---------------------------
+  private getMidiHost(trackId: string): InstrumentTrack | undefined {
+    const track = this.getTrack(trackId);
+    return track?.kind === "instrument" ? track : undefined;
+  }
+
+  addMidiDevice(trackId: string, type: string, id?: string): MidiDeviceInstance | undefined {
+    const track = this.getMidiHost(trackId);
+    if (!track) return undefined;
+    const deviceType = hasMidiDevice(type) ? type : DEFAULT_MIDI_DEVICE;
+    if (id) {
+      const existing = track.midiDevices.find((device) => device.id === id);
+      if (existing) return existing;
+    }
+    const device: MidiDeviceInstance = {
+      id: id ?? this.nextMidiDeviceId(),
+      type: deviceType,
+      bypassed: false,
+      params: new ParamStore(midiDeviceSchema(deviceType)),
+    };
+    track.midiDevices.push(device);
+    this.emit();
+    return device;
+  }
+
+  removeMidiDevice(trackId: string, deviceId: string): void {
+    const track = this.getMidiHost(trackId);
+    if (!track) return;
+    const idx = track.midiDevices.findIndex((device) => device.id === deviceId);
+    if (idx === -1) return;
+    track.midiDevices.splice(idx, 1);
+    this.emit();
+  }
+
+  moveMidiDevice(trackId: string, deviceId: string, toIndex: number): void {
+    const track = this.getMidiHost(trackId);
+    if (!track) return;
+    const from = track.midiDevices.findIndex((device) => device.id === deviceId);
+    if (from === -1) return;
+    const to = clamp(toIndex, 0, track.midiDevices.length - 1);
+    if (to === from) return;
+    const [device] = track.midiDevices.splice(from, 1);
+    track.midiDevices.splice(to, 0, device);
+    this.emit();
+  }
+
+  setMidiDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
+    const device = this.getMidiHost(trackId)?.midiDevices.find((d) => d.id === deviceId);
+    if (!device || device.bypassed === bypassed) return;
+    device.bypassed = bypassed;
+    this.emit();
+  }
+
+  getMidiDevice(trackId: string, deviceId: string): MidiDeviceInstance | undefined {
+    return this.getMidiHost(trackId)?.midiDevices.find((device) => device.id === deviceId);
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -982,14 +1257,115 @@ export class ProjectStore {
   // --- persistence / sync ---
   snapshot(): ProjectData {
     return snapshotProject(this.tracks, this.groups, {
+      name: this.projectName,
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
       selectedTrackId: this.selectedTrackId,
+      grooveId: this.grooveId,
+      grooveAmount: this.grooveAmount,
+      samples: this.samples,
+      authorship: this.authorship,
+      customInstruments: this.customInstrumentDefs,
+      customEffects: this.customEffectDefs,
     });
   }
 
+  /** The author who last edited a given object key (`track:<id>`, `note:<id>`, ...), or undefined. */
+  authorOf(key: string): ClipAuthor | undefined {
+    return this.authorship[key];
+  }
+
+  /** Record who last edited an object key. Emits only when the author actually changes, so the
+   *  last-editor tint refreshes the instant a new voice takes over (e.g. a human grabbing an
+   *  agent-set knob) without a full rebuild on every re-stamp of the same author (a knob drag
+   *  re-stamps "you" every frame; only the first frame flips the colour and needs a notify). */
+  setAuthor(key: string, author: ClipAuthor): void {
+    if (this.authorship[key] === author) return;
+    this.authorship[key] = author;
+    this.emit();
+  }
+
+  /** Forget authorship for removed objects, by exact key or by `prefix:` (drops every key under it).
+   *  Emits only when something was actually removed. */
+  dropAuthors(keysOrPrefixes: string[]): void {
+    let removed = false;
+    for (const entry of keysOrPrefixes) {
+      if (entry.endsWith(":")) {
+        for (const key of Object.keys(this.authorship))
+          if (key.startsWith(entry)) {
+            delete this.authorship[key];
+            removed = true;
+          }
+      } else if (entry in this.authorship) {
+        delete this.authorship[entry];
+        removed = true;
+      }
+    }
+    if (removed) this.emit();
+  }
+
+  // --- custom devices (user/AI-authored declarative instruments & effects) ---
+
+  get customInstruments(): GraphInstrumentDef[] {
+    return this.customInstrumentDefs;
+  }
+  get customEffects(): GraphEffectDef[] {
+    return this.customEffectDefs;
+  }
+
+  private registerInstrumentDef(def: GraphInstrumentDef): void {
+    registerInstrument({ type: def.type, label: def.label ?? def.type, schema: def.schema, family: "Custom" });
+  }
+  private registerEffectDef(def: GraphEffectDef): void {
+    registerEffect({ type: def.type, label: def.label ?? def.type, schema: def.schema });
+  }
+
+  /**
+   * Validate + (re)register the project's custom device schemas, replacing any previously
+   * registered set (so switching/reloading a project can't leak the old project's devices).
+   * Invalid defs are dropped by parseCustomDevices. Called at the top of load(), before tracks
+   * build their param stores from these schemas.
+   */
+  private syncCustomDevices(data: ProjectData): void {
+    for (const def of this.customInstrumentDefs) unregisterInstrument(def.type);
+    for (const def of this.customEffectDefs) unregisterEffect(def.type);
+    const { instruments, effects } = parseCustomDevices(data);
+    this.customInstrumentDefs = instruments;
+    this.customEffectDefs = effects;
+    for (const def of instruments) this.registerInstrumentDef(def);
+    for (const def of effects) this.registerEffectDef(def);
+  }
+
+  /** Add (or replace by type) a custom instrument, registering its schema. The def is validated at
+   *  the boundary (MCP / project load); this is also the authored command's replay path. */
+  addCustomInstrument(def: GraphInstrumentDef): void {
+    this.customInstrumentDefs = [...this.customInstrumentDefs.filter((existing) => existing.type !== def.type), def];
+    this.registerInstrumentDef(def);
+    this.emit();
+  }
+  removeCustomInstrument(type: string): void {
+    if (!this.customInstrumentDefs.some((def) => def.type === type)) return;
+    this.customInstrumentDefs = this.customInstrumentDefs.filter((def) => def.type !== type);
+    unregisterInstrument(type);
+    this.emit();
+  }
+  addCustomEffect(def: GraphEffectDef): void {
+    this.customEffectDefs = [...this.customEffectDefs.filter((existing) => existing.type !== def.type), def];
+    this.registerEffectDef(def);
+    this.emit();
+  }
+  removeCustomEffect(type: string): void {
+    if (!this.customEffectDefs.some((def) => def.type === type)) return;
+    this.customEffectDefs = this.customEffectDefs.filter((def) => def.type !== type);
+    unregisterEffect(type);
+    this.emit();
+  }
+
   load(data: ProjectData): void {
+    // Register the project's custom device schemas first, so tracks resolve them below.
+    this.syncCustomDevices(data);
+    this.projectName = data.name ?? "Untitled";
     const projLen = data.lengthBeats ?? 16;
     this.groups = (data.groups ?? []).map((group) => ({
       id: group.id,
@@ -1043,25 +1419,27 @@ export class ProjectStore {
         instrumentType: stored.instrumentType,
         params,
         effects: reused?.effects ?? [],
+        midiDevices: reused?.midiDevices ?? [],
         clips,
         activeClipId,
         placements,
         launchedClipId,
       };
       this.loadEffectsInPlace(track, sound.effects);
+      this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
       return track;
     });
-    // Invariant: every track must belong to a real group; file any orphan into its
-    // instrument's family group.
+    // Invariant: every track must belong to a real group; file any orphan into main.
     for (const track of this.tracks) {
-      if (!track.parentId || !this.getGroup(track.parentId)) {
-        const family = track.kind === "audio" ? AUDIO_FAMILY : instrumentFamily(track.instrumentType);
-        track.parentId = this.ensureFamilyGroup(family).id;
-      }
+      if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;
     }
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;
     this.loopStartBeats = clamp(data.loopStart ?? 0, 0, this.lengthBeats - MIN_LOOP);
+    this.grooveId = data.grooveId ?? DEFAULT_GROOVE_ID;
+    this.grooveAmount = clamp(data.grooveAmount ?? 1, 0, 1);
+    this.samples = (data.samples ?? []).map((sample) => ({ ...sample }));
+    this.authorship = { ...(data.authorship ?? {}) };
     this.selectedTrackId =
       data.selectedTrackId && this.getTrack(data.selectedTrackId) ? data.selectedTrackId : (this.tracks[0]?.id ?? null);
     this.emit();

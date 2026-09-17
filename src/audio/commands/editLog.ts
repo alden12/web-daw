@@ -65,6 +65,7 @@ const COALESCABLE = new Set<EditCommand["type"]>([
   "setGroup",
   "setAudioClip",
   "setTempo",
+  "setGroove",
   "setLength",
   "setLoopStart",
   "editNotes",
@@ -88,6 +89,10 @@ function coalesceKey(command: EditCommand): string {
       return `setAudioClip:${command.trackId}`;
     case "setTempo":
       return "setTempo";
+    case "setGroove":
+      // Coalesce by which facet is changing, so amount drags collapse but a template
+      // pick stays its own entry.
+      return command.grooveId !== undefined ? "setGroove:id" : "setGroove:amount";
     case "setLength":
       return "setLength";
     case "setLoopStart":
@@ -140,18 +145,25 @@ export class EditLog {
   private undoStack: Checkpoint[] = [];
   private redoStack: Checkpoint[] = [];
   private seq = 0;
+  /** The author stamped on local edits/undo/redo when a caller doesn't specify one (MCP passes "claude",
+   *  the agent "agent"). Defaults to "you"; a shared session sets it to the current user id. */
+  private localAuthor: Author = "you";
   private lastKey: string | null = null;
   private lastTime = 0;
   private readonly listeners = new Set<() => void>();
   private cached!: EditLogState;
+  /** Optional realtime sink: when a shared session is live, each dispatched edit is forwarded to the
+   *  authority after being applied optimistically here (see SharedSession). Undo/redo do NOT forward -
+   *  they are local best-effort in a shared session. */
+  private remote: ((command: EditCommand, author: Author) => void) | null = null;
 
   constructor(project: ProjectStore) {
     this.project = project;
     this.rebuild();
   }
 
-  /** Apply + log an edit. UI edits are authored 'you'; MCP (Claude) edits 'claude'. */
-  dispatch = (command: EditCommand, author: Author = "you"): void => {
+  /** Apply + log an edit. UI edits are authored by the current user (default 'you'); MCP edits 'claude'. */
+  dispatch = (command: EditCommand, author: Author = this.localAuthor): void => {
     const now = Date.now();
     const key = COALESCABLE.has(command.type) ? `${author}:${coalesceKey(command)}` : null;
     const coalesce =
@@ -174,6 +186,28 @@ export class EditLog {
     }
     this.lastKey = key;
     this.lastTime = now;
+    this.remote?.(command, author);
+    this.emit();
+  };
+
+  /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority. */
+  setRemote = (sink: ((command: EditCommand, author: Author) => void) | null): void => {
+    this.remote = sink;
+  };
+
+  /** Set the author stamped on local edits (the current user id in a shared session). */
+  setLocalAuthor = (author: Author): void => {
+    this.localAuthor = author;
+  };
+
+  /**
+   * Record a remote peer's edit in the activity feed WITHOUT applying it (the SharedSession has already
+   * applied it to the project). Append-only, like a reflog entry, so the feed narrates who-did-what
+   * across users. Gets a fresh local `seq` (the feed's own ordering); the caller (SharedSession) already
+   * dedups each authoritative edit once, so no seq-space mixing here.
+   */
+  recordRemote = (command: EditCommand, author: Author): void => {
+    this.entries.push({ seq: this.seq++, command, author, time: Date.now(), kind: "edit" });
     this.emit();
   };
 
@@ -187,7 +221,7 @@ export class EditLog {
     this.entries.push({
       seq: this.seq++,
       command: cp.command,
-      author: "you",
+      author: this.localAuthor,
       time: Date.now(),
       kind: "undo",
       label: `Undid: ${describeCommand(cp.command)}`,
@@ -204,7 +238,7 @@ export class EditLog {
     this.entries.push({
       seq: this.seq++,
       command: cp.command,
-      author: "you",
+      author: this.localAuthor,
       time: Date.now(),
       kind: "redo",
       label: `Redid: ${describeCommand(cp.command)}`,

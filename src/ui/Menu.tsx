@@ -10,7 +10,7 @@
  * selection) or a `submenu` that opens as a hover flyout to the side - the flyout side
  * follows `align`, so a right-aligned menu flies its submenus left (toward the viewport).
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const VIEWPORT_MARGIN = 8; // keep the popover this far inside the viewport edges
@@ -37,13 +37,26 @@ const itemClass = (danger?: boolean) =>
   }`;
 
 /** One row in a popover: a leaf action, a radio selection, or a submenu parent. */
-function Row({ item, side, onClose }: { item: MenuItem; side: "left" | "right"; onClose: () => void }) {
+function Row({
+  item,
+  side,
+  onClose,
+  reserveCheck,
+}: {
+  item: MenuItem;
+  side: "left" | "right";
+  onClose: () => void;
+  /** Reserve the check gutter even on uncheckable rows, so a mixed menu's labels align. */
+  reserveCheck: boolean;
+}) {
   const [openSub, setOpenSub] = useState(false);
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
-  // A check column only when this item participates in a radio group, so plain
-  // action menus aren't indented by an empty gutter.
+  // Show the check column for radio items; reserve an empty one on the menu's other
+  // rows when any sibling is checkable, so plain/submenu rows still line up.
   const check =
-    item.checked !== undefined ? <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span> : null;
+    item.checked !== undefined || reserveCheck ? (
+      <span className="w-3 shrink-0 text-you">{item.checked ? "✓" : ""}</span>
+    ) : null;
 
   if (item.submenu) {
     return (
@@ -74,7 +87,13 @@ function Row({ item, side, onClose }: { item: MenuItem; side: "left" | "right"; 
             } min-w-44 py-1 rounded-lg border border-line bg-card shadow-lg z-50`}
           >
             {item.submenu.map((sub, i) => (
-              <Row key={sub.label ?? i} item={sub} side={side} onClose={onClose} />
+              <Row
+                key={sub.label ?? i}
+                item={sub}
+                side={side}
+                onClose={onClose}
+                reserveCheck={item.submenu!.some((s) => s.checked !== undefined)}
+              />
             ))}
           </div>
         )}
@@ -106,11 +125,14 @@ export function Menu({
   label = "More actions",
   align = "right",
   triggerClassName = "shrink-0 px-1 text-[15px] leading-none text-muted hover:text-ink cursor-pointer",
+  trigger = "⋮",
 }: {
   items: MenuItem[];
   label?: string;
   align?: "left" | "right";
   triggerClassName?: string;
+  /** The trigger glyph/content (defaults to the kebab ⋮). */
+  trigger?: ReactNode;
 }) {
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -191,7 +213,7 @@ export function Menu({
         }}
         className={triggerClassName}
       >
-        ⋮
+        {trigger}
       </button>
       {open &&
         coords &&
@@ -199,11 +221,22 @@ export function Menu({
           <div
             ref={popRef}
             role="menu"
+            // Stop pointerdown from bubbling to document: the popover is portaled to
+            // document.body, so an ancestor popover's outside-click handler would
+            // otherwise treat a click here as "outside" and unmount us before the
+            // click lands (nested-menu case, e.g. the project row's kebab).
+            onPointerDown={(e) => e.stopPropagation()}
             style={{ position: "fixed", top: coords.top, left: coords.left }}
             className="z-50 min-w-40 py-1 rounded-lg border border-line bg-card shadow-lg"
           >
             {items.map((item, i) => (
-              <Row key={item.label ?? i} item={item} side={submenuSide} onClose={closeMenu} />
+              <Row
+                key={item.label ?? i}
+                item={item}
+                side={submenuSide}
+                onClose={closeMenu}
+                reserveCheck={items.some((other) => other.checked !== undefined)}
+              />
             ))}
           </div>,
           document.body,

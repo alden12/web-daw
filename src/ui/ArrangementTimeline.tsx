@@ -26,8 +26,9 @@ import type { Recorder } from "../audio/recording/recorder";
 import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
-import { DEFAULT_INSTRUMENT } from "../audio/instruments/catalog";
+import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu } from "./Menu";
+import { GROOVES } from "../audio/grooves/catalog";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { clamp } from "../util";
@@ -91,6 +92,16 @@ export function ArrangementTimeline({
   const rec = useRecorder(recorder);
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
+
+  // Bring the selected track's row into view (e.g. when selection is driven from the
+  // project tree). `nearest` is a no-op when the row is already visible.
+  const selectedTrackId = project.selectedTrackId;
+  useEffect(() => {
+    if (!selectedTrackId) return;
+    scrollRef.current
+      ?.querySelector(`[data-track-id="${CSS.escape(selectedTrackId)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedTrackId]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
@@ -307,6 +318,23 @@ export function ArrangementTimeline({
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
+  // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
+  // caller supplies how to create the track (MIDI vs audio) given a destination group.
+  const newTrackSubmenu = (createTrack: (groupId: string) => void) => [
+    ...project.groups.map((group) => ({ label: group.name, onClick: () => createTrack(group.id) })),
+    {
+      label: "New group",
+      onClick: () => {
+        const groupId = newGroupId();
+        dispatch({ type: "createGroup", id: groupId });
+        createTrack(groupId);
+      },
+    },
+  ];
+  const createMidiTrack = (groupId: string) =>
+    dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
+  const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
+
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
       <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
@@ -328,35 +356,9 @@ export function ArrangementTimeline({
               onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
             },
             // Every track lives in a group, so adding one picks the destination group
-            // (or a fresh group). Nested as a submenu so the menu stays short.
-            {
-              label: "New track in",
-              submenu: [
-                ...project.groups.map((group) => ({
-                  label: group.name,
-                  onClick: () =>
-                    dispatch({
-                      type: "createTrack",
-                      instrumentType: DEFAULT_INSTRUMENT,
-                      id: newTrackId(),
-                      groupId: group.id,
-                    }),
-                })),
-                {
-                  label: "New group",
-                  onClick: () => {
-                    const groupId = newGroupId();
-                    dispatch({ type: "createGroup", id: groupId });
-                    dispatch({
-                      type: "createTrack",
-                      instrumentType: DEFAULT_INSTRUMENT,
-                      id: newTrackId(),
-                      groupId,
-                    });
-                  },
-                },
-              ],
-            },
+            // (or a fresh group). Nested as submenus so the menu stays short.
+            { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
+            { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
             { separator: true },
             // Recording settings live here too (one toolbar menu, not a second kebab).
             {
@@ -379,20 +381,23 @@ export function ArrangementTimeline({
                 },
               ],
             },
+            { separator: true },
+            // Groove: project-wide swing/feel applied at playback (non-destructive).
             {
-              label: "Input device",
-              submenu: [
-                {
-                  label: "Default input",
-                  checked: rec.deviceId === null,
-                  onClick: () => recorder.setDevice(null),
-                },
-                ...rec.devices.map((device) => ({
-                  label: device.label || "Microphone",
-                  checked: rec.deviceId === device.deviceId,
-                  onClick: () => recorder.setDevice(device.deviceId),
-                })),
-              ],
+              label: "Groove",
+              submenu: GROOVES.map((groove) => ({
+                label: groove.name,
+                checked: project.grooveId === groove.id,
+                onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
+              })),
+            },
+            {
+              label: "Groove amount",
+              submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
+                label: `${Math.round(value * 100)}%`,
+                checked: project.grooveAmount === value,
+                onClick: () => dispatch({ type: "setGroove", amount: value }),
+              })),
             },
           ]}
         />

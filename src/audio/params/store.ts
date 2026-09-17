@@ -14,10 +14,14 @@ type ByKind<K extends ParamSpec["kind"]> = Extract<ParamSpec, { kind: K }>;
 const COERCE: { [K in ParamSpec["kind"]]: (spec: ByKind<K>, value: ParamValue) => ParamValue } = {
   number: (spec, value) => {
     const n = typeof value === "number" ? value : Number(value);
-    return Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.default;
+    if (!Number.isFinite(n)) return spec.default;
+    const snapped = spec.step ? Math.round(n / spec.step) * spec.step : n;
+    return Math.min(spec.max, Math.max(spec.min, snapped));
   },
   enum: (spec, value) => (spec.options.includes(value as string) ? (value as string) : spec.default),
   boolean: (_spec, value) => Boolean(value),
+  // A sample ref is an opaque tagged string; trust a string, fall back otherwise.
+  sample: (spec, value) => (typeof value === "string" ? value : spec.default),
 };
 
 function coerce(spec: ParamSpec, value: ParamValue): ParamValue {
@@ -40,6 +44,11 @@ export class ParamStore {
     const spec = this.specs.get(id);
     if (!spec) throw new Error(`Unknown parameter: ${id}`);
     return spec;
+  }
+
+  /** Whether the schema declares this parameter. */
+  has(id: string): boolean {
+    return this.specs.has(id);
   }
 
   /** Every param spec, in schema order (for generic, schema-driven binding). */

@@ -13,20 +13,93 @@ import { z } from "zod";
 import { WebSocket, WebSocketServer } from "ws";
 import type { RawData } from "ws";
 import { ProjectStore } from "../src/audio/project/projectStore";
-import type { Track, InstrumentTrack, EffectInstance, Group } from "../src/audio/project/projectStore";
-import { instrumentInfos, hasInstrument, instrumentSchema, instrumentFamily } from "../src/audio/instruments/catalog";
+import type {
+  Track,
+  InstrumentTrack,
+  EffectInstance,
+  MidiDeviceInstance,
+  Group,
+} from "../src/audio/project/projectStore";
+import {
+  pickableInstrumentInfos,
+  hasInstrument,
+  instrumentSchema,
+  instrumentFamily,
+} from "../src/audio/instruments/catalog";
 import { effectInfos, hasEffect, effectSchema } from "../src/audio/effects/catalog";
+import { midiDeviceInfos, hasMidiDevice, midiDeviceSchema } from "../src/audio/midi/device/catalog";
 import { validateParam } from "../src/audio/params/validate";
 import type { NoteEvent } from "../src/audio/sequencer/types";
+import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequencer/quantize";
+import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
+import { BUILTIN_SAMPLES, builtinRef, assetRef } from "../src/audio/samples/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
+import {
+  parseInstrumentDef,
+  parseEffectDef,
+  instrumentDefInputSchema,
+  effectDefInputSchema,
+} from "../src/audio/graph/zod";
+import { VOCABULARY, NODE_KINDS } from "../src/audio/graph/vocabulary";
+import { INSTRUMENT_RESERVED, EFFECT_RESERVED } from "../src/audio/graph/validate";
 
 const randomId = () => crypto.randomUUID();
 const makeTrackId = () => `t-${randomId().slice(0, 8)}`;
 const makeGroupId = () => `g-${randomId().slice(0, 8)}`;
 const makeEffectId = () => `fx-${randomId().slice(0, 8)}`;
+const makeMidiDeviceId = () => `md-${randomId().slice(0, 8)}`;
 const makeClipId = () => `c-${randomId().slice(0, 8)}`;
 const makePlacementId = () => `p-${randomId().slice(0, 8)}`;
+const makeCustomInstrumentId = () => `ci-${randomId().slice(0, 8)}`;
+const makeCustomEffectId = () => `ce-${randomId().slice(0, 8)}`;
+
+/** The declarative device format, as data the AI can read before authoring one. */
+const deviceFormatDoc = () => ({
+  overview:
+    "A custom instrument is { label?, schema, voice }; a custom effect is { label?, schema, graph }. " +
+    "`schema` is the parameter list (the keystone - drives UI/automation/persistence). `voice`/`graph` is a node graph. " +
+    "Include amp.level + env.attack + env.release in an instrument schema for level/envelope control; include `mix` in an effect schema for dry/wet.",
+  nodeKinds: NODE_KINDS.map((kind) => ({
+    kind,
+    audioParams: VOCABULARY[kind].audioParams,
+    properties: VOCABULARY[kind].properties,
+  })),
+  reserved: { instrument: INSTRUMENT_RESERVED, effect: EFFECT_RESERVED },
+  binding:
+    "A node field is a literal, or { param: <schema id>, scale?, offset? } to bind it (value = param*scale + offset). Enum fields (waveform, filterType) are a literal string or a param.",
+  connection:
+    "[from, to]; `to` is a node id (audio input) or `nodeId.param` to modulate that AudioParam. Reserved ids are the amp/in/wet endpoints above.",
+  oscFrequency:
+    "An osc tracks the played note by default; `noteRatio` multiplies the note (FM/sub-oscillator); `frequency` sets an absolute Hz (an LFO).",
+  example: {
+    label: "My Synth",
+    schema: [
+      {
+        id: "filter.cutoff",
+        label: "Cutoff",
+        kind: "number",
+        min: 20,
+        max: 20000,
+        default: 4000,
+        taper: "exponential",
+      },
+      { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 },
+      { id: "env.attack", label: "Attack", kind: "number", min: 1, max: 2000, default: 5, unit: "ms" },
+      { id: "env.release", label: "Release", kind: "number", min: 1, max: 4000, default: 200, unit: "ms" },
+    ],
+    voice: {
+      nodes: [
+        { id: "osc", kind: "osc", waveform: "sawtooth" },
+        { id: "filter", kind: "biquad", filterType: "lowpass", frequency: { param: "filter.cutoff" } },
+      ],
+      connections: [
+        ["osc", "filter"],
+        ["filter", "amp"],
+      ],
+    },
+  },
+});
 
 export interface DawMcp {
   server: McpServer;
@@ -60,6 +133,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     },
     clipSnapshot: (msg) => mirror.getClipStore(msg.trackId, msg.clipId)?.load(msg.clip),
     effectParamChanged: (msg) => mirror.getEffect(msg.hostId, msg.effectId)?.params.set(msg.id, msg.value),
+    midiDeviceParamChanged: (msg) => mirror.getMidiDevice(msg.trackId, msg.deviceId)?.params.set(msg.id, msg.value),
     historyReply: (msg) => resolvePending(msg),
     patchReply: (msg) => resolvePending(msg),
   };
@@ -185,6 +259,18 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     return { hostId: h.hostId, label: h.label, effect };
   }
 
+  /** Resolve an instrument track and one of its MIDI devices by id. */
+  function resolveMidiDevice(
+    track: string | undefined,
+    deviceId: string,
+  ): { trackId: string; label: string; device: MidiDeviceInstance } | { error: string } {
+    const r = resolveInstrumentTrack(track);
+    if ("error" in r) return { error: r.error };
+    const device = r.track.midiDevices.find((d) => d.id === deviceId);
+    if (!device) return { error: `Unknown MIDI device "${deviceId}" on track ${r.id}. Use list_midi_devices.` };
+    return { trackId: r.id, label: `track ${r.id}`, device };
+  }
+
   /** The top-level group for an instrument family, creating one (id only) if absent. */
   function familyGroup(family: string): { id: string; name: string; created: boolean } {
     const existing = mirror.getGroups().find((g) => g.parentId === null && g.name === family);
@@ -218,7 +304,11 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
             tempoBpm: mirror.tempo,
             lengthBeats: mirror.length,
             selectedTrackId: mirror.selectedId,
-            instruments: instrumentInfos().map((def) => ({ id: def.type, label: def.label, family: def.family })),
+            instruments: pickableInstrumentInfos().map((def) => ({
+              id: def.type,
+              label: def.label,
+              family: def.family,
+            })),
             tracks: mirror.getTracks().map((t) => ({
               id: t.id,
               name: t.name,
@@ -253,7 +343,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     async ({ instrument, name, group }) => {
       if (!hasInstrument(instrument)) {
         return fail(
-          `Unknown instrument "${instrument}". Options: ${instrumentInfos()
+          `Unknown instrument "${instrument}". Options: ${pickableInstrumentInfos()
             .map((i) => i.type)
             .join(", ")}.`,
         );
@@ -305,6 +395,100 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
       if (!sendToTab({ type: "selectTrack", trackId: r.id })) return fail("No DAW tab connected.");
       mirror.selectTrack(r.id);
       return ok(`Selected track ${r.id}.`);
+    },
+  );
+
+  // --- custom devices (author declarative instruments/effects, stored in the project) ---
+
+  server.registerTool(
+    "describe_device_format",
+    {
+      title: "Describe device format",
+      description:
+        "The declarative format for custom instruments/effects: node kinds and their parameters, plus connection and binding syntax. Read this before create_instrument / create_effect.",
+      inputSchema: {},
+    },
+    async () => ok(JSON.stringify(deviceFormatDoc(), null, 2)),
+  );
+
+  server.registerTool(
+    "create_instrument",
+    {
+      title: "Create custom instrument",
+      description:
+        "Author a custom instrument from a declarative node graph (see describe_device_format) and store it in the project. Returns its type id; use it with create_track.",
+      inputSchema: instrumentDefInputSchema.shape,
+    },
+    async ({ label, schema, voice }) => {
+      const type = makeCustomInstrumentId();
+      const result = parseInstrumentDef({ type, label, schema, voice });
+      if (!result.ok) return fail(`Invalid instrument: ${result.errors.join("; ")}`);
+      if (!sendToTab({ type: "addCustomInstrument", def: result.def })) return fail("No DAW tab connected.");
+      mirror.addCustomInstrument(result.def);
+      return ok(`Created instrument "${label ?? type}" (type ${type}). Use create_track with instrument "${type}".`);
+    },
+  );
+
+  server.registerTool(
+    "create_effect",
+    {
+      title: "Create custom effect",
+      description:
+        "Author a custom effect from a declarative node graph (see describe_device_format; process from `in` to `wet`, include a `mix` param) and store it in the project. Returns its type id; use it with add_effect.",
+      inputSchema: effectDefInputSchema.shape,
+    },
+    async ({ label, schema, graph }) => {
+      const type = makeCustomEffectId();
+      const result = parseEffectDef({ type, label, schema, graph });
+      if (!result.ok) return fail(`Invalid effect: ${result.errors.join("; ")}`);
+      if (!sendToTab({ type: "addCustomEffect", def: result.def })) return fail("No DAW tab connected.");
+      mirror.addCustomEffect(result.def);
+      return ok(`Created effect "${label ?? type}" (type ${type}). Use add_effect with effect "${type}".`);
+    },
+  );
+
+  server.registerTool(
+    "list_custom_devices",
+    {
+      title: "List custom devices",
+      description: "The project's user/AI-authored instruments and effects (declarative devices).",
+      inputSchema: {},
+    },
+    async () => {
+      const describe = (def: { type: string; label?: string; schema: readonly unknown[] }) => ({
+        type: def.type,
+        label: def.label ?? def.type,
+        params: def.schema.length,
+      });
+      return ok(
+        JSON.stringify(
+          { instruments: mirror.customInstruments.map(describe), effects: mirror.customEffects.map(describe) },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "remove_custom_device",
+    {
+      title: "Remove custom device",
+      description: "Delete a custom instrument or effect by its type id (see list_custom_devices).",
+      inputSchema: { deviceType: z.string() },
+    },
+    async ({ deviceType }) => {
+      if (mirror.customInstruments.some((def) => def.type === deviceType)) {
+        if (!sendToTab({ type: "removeCustomInstrument", deviceType })) return fail("No DAW tab connected.");
+        mirror.removeCustomInstrument(deviceType);
+        return ok(`Removed custom instrument ${deviceType}.`);
+      }
+      if (mirror.customEffects.some((def) => def.type === deviceType)) {
+        if (!sendToTab({ type: "removeCustomEffect", deviceType })) return fail("No DAW tab connected.");
+        mirror.removeCustomEffect(deviceType);
+        return ok(`Removed custom effect ${deviceType}.`);
+      }
+      return fail(`No custom device with type "${deviceType}". Use list_custom_devices.`);
     },
   );
 
@@ -677,6 +861,162 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     },
   );
 
+  // --- MIDI devices (on an instrument track's note chain) -------------------
+  // MIDI devices transform note events (live + playback) before the instrument.
+  // They live only on instrument tracks (no group buses), so these tools take a track.
+  server.registerTool(
+    "list_midi_devices",
+    {
+      title: "List MIDI devices",
+      description:
+        "List an instrument track's MIDI-device chain (id, type, bypass, in order) and the available device types.",
+      inputSchema: { ...trackArg },
+    },
+    async ({ track }) => {
+      const r = resolveInstrumentTrack(track);
+      if ("error" in r) return fail(r.error);
+      return ok(
+        JSON.stringify(
+          {
+            track: r.id,
+            available: midiDeviceInfos().map((def) => ({ id: def.type, label: def.label })),
+            devices: r.track.midiDevices.map((device) => ({
+              id: device.id,
+              type: device.type,
+              bypassed: device.bypassed,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    },
+  );
+
+  server.registerTool(
+    "add_midi_device",
+    {
+      title: "Add MIDI device",
+      description:
+        "Append a MIDI device to an instrument track's note chain (see list_midi_devices for types). Returns the new device id.",
+      inputSchema: { ...trackArg, device: z.string() },
+    },
+    async ({ track, device }) => {
+      const r = resolveInstrumentTrack(track);
+      if ("error" in r) return fail(r.error);
+      if (!hasMidiDevice(device)) {
+        return fail(
+          `Unknown MIDI device "${device}". Options: ${midiDeviceInfos()
+            .map((d) => d.type)
+            .join(", ")}.`,
+        );
+      }
+      const id = makeMidiDeviceId();
+      if (!sendToTab({ type: "addMidiDevice", trackId: r.id, deviceType: device, id }))
+        return fail("No DAW tab connected.");
+      mirror.addMidiDevice(r.id, device, id);
+      return ok(`Added ${device} MIDI device to track ${r.id} (id ${id}).`);
+    },
+  );
+
+  server.registerTool(
+    "remove_midi_device",
+    {
+      title: "Remove MIDI device",
+      description: "Remove a MIDI device from an instrument track's note chain by id.",
+      inputSchema: { ...trackArg, device_id: z.string() },
+    },
+    async ({ track, device_id }) => {
+      const r = resolveMidiDevice(track, device_id);
+      if ("error" in r) return fail(r.error);
+      if (!sendToTab({ type: "removeMidiDevice", trackId: r.trackId, deviceId: device_id }))
+        return fail("No DAW tab connected.");
+      mirror.removeMidiDevice(r.trackId, device_id);
+      return ok(`Removed MIDI device ${device_id} from ${r.label}.`);
+    },
+  );
+
+  server.registerTool(
+    "move_midi_device",
+    {
+      title: "Move MIDI device",
+      description: "Reorder a MIDI device within a track's note chain (0 = first, applied earliest).",
+      inputSchema: { ...trackArg, device_id: z.string(), to_index: z.number().int().min(0) },
+    },
+    async ({ track, device_id, to_index }) => {
+      const r = resolveMidiDevice(track, device_id);
+      if ("error" in r) return fail(r.error);
+      if (!sendToTab({ type: "moveMidiDevice", trackId: r.trackId, deviceId: device_id, toIndex: to_index }))
+        return fail("No DAW tab connected.");
+      mirror.moveMidiDevice(r.trackId, device_id, to_index);
+      return ok(`Moved MIDI device ${device_id} to index ${to_index} on ${r.label}.`);
+    },
+  );
+
+  server.registerTool(
+    "bypass_midi_device",
+    {
+      title: "Bypass MIDI device",
+      description: "Enable or bypass a MIDI device (bypassed devices pass notes through untransformed).",
+      inputSchema: { ...trackArg, device_id: z.string(), bypassed: z.boolean() },
+    },
+    async ({ track, device_id, bypassed }) => {
+      const r = resolveMidiDevice(track, device_id);
+      if ("error" in r) return fail(r.error);
+      if (!sendToTab({ type: "bypassMidiDevice", trackId: r.trackId, deviceId: device_id, bypassed }))
+        return fail("No DAW tab connected.");
+      mirror.setMidiDeviceBypass(r.trackId, device_id, bypassed);
+      return ok(`${bypassed ? "Bypassed" : "Enabled"} MIDI device ${device_id} on ${r.label}.`);
+    },
+  );
+
+  server.registerTool(
+    "list_midi_device_parameters",
+    {
+      title: "List MIDI device parameters",
+      description: "List a MIDI device's parameters with schema and current values.",
+      inputSchema: { ...trackArg, device_id: z.string() },
+    },
+    async ({ track, device_id }) => {
+      const r = resolveMidiDevice(track, device_id);
+      if ("error" in r) return fail(r.error);
+      const params = midiDeviceSchema(r.device.type).map((spec) => ({ ...spec, value: r.device.params.get(spec.id) }));
+      return ok(
+        JSON.stringify({ track: r.trackId, device: device_id, type: r.device.type, parameters: params }, null, 2),
+      );
+    },
+  );
+
+  server.registerTool(
+    "set_midi_device_parameter",
+    {
+      title: "Set MIDI device parameter",
+      description: "Set a parameter on a MIDI device. Validated against the device's schema (range/enum).",
+      inputSchema: {
+        ...trackArg,
+        device_id: z.string(),
+        id: z.string(),
+        value: z.union([z.number(), z.string(), z.boolean()]),
+      },
+    },
+    async ({ track, device_id, id, value }) => {
+      const r = resolveMidiDevice(track, device_id);
+      if ("error" in r) return fail(r.error);
+      let spec;
+      try {
+        spec = r.device.params.spec(id);
+      } catch {
+        return fail(`Unknown parameter "${id}" for MIDI device "${r.device.type}".`);
+      }
+      const err = validateParam(spec, value);
+      if (err) return fail(err);
+      if (!sendToTab({ type: "setMidiDeviceParam", trackId: r.trackId, deviceId: device_id, id, value }))
+        return fail("No DAW tab connected.");
+      r.device.params.set(id, value);
+      return ok(`Set ${id} = ${JSON.stringify(value)} on MIDI device ${device_id}.`);
+    },
+  );
+
   // --- Clip notes -----------------------------------------------------------
   // Note tools edit one clip in the track's pool - the active clip, or `clip` if given.
   const noteShape = {
@@ -774,6 +1114,41 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
         return fail("No DAW tab connected.");
       for (const note of edited) r.store.putNote(note);
       return ok(`Edited ${edited.length} notes on ${r.id}.`);
+    },
+  );
+
+  server.registerTool(
+    "quantize",
+    {
+      title: "Quantize",
+      description:
+        "Pull a clip's note timings toward a grid. Quantizes the given note ids, or the whole clip if none are given. Applied as one atomic edit.",
+      inputSchema: {
+        ...trackArg,
+        ...clipArg,
+        grid: z
+          .enum(GRID_DIVISIONS.map((division) => division.label) as [string, ...string[]])
+          .optional()
+          .describe("grid resolution (default 1/16)"),
+        strength: z.number().min(0).max(1).optional().describe("0 = no change, 1 = full snap (default 1)"),
+        ends: z.boolean().optional().describe("also snap note ends, so lengths land on the grid (default false)"),
+        ids: z.array(z.string()).optional().describe("note ids to quantize; omit to quantize the whole clip"),
+      },
+    },
+    async ({ track, clip, grid, strength, ends, ids }) => {
+      const r = resolveClip(track, clip);
+      if ("error" in r) return fail(r.error);
+      const all = r.store.getClip().notes;
+      const targets = ids?.length ? all.filter((note) => ids.includes(note.id)) : all;
+      if (!targets.length) return fail("No notes to quantize.");
+      const notes = quantizeNotes(targets, {
+        gridBeats: beatsForGrid(grid ?? "1/16"),
+        strength: strength ?? 1,
+        ends: ends ?? false,
+      });
+      if (!sendToTab({ type: "editNotes", trackId: r.id, clipId: clip, notes })) return fail("No DAW tab connected.");
+      for (const note of notes) r.store.putNote(note);
+      return ok(`Quantized ${notes.length} notes on ${r.id} to ${grid ?? "1/16"}.`);
     },
   );
 
@@ -1098,6 +1473,65 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
   );
 
   server.registerTool(
+    "set_groove",
+    {
+      title: "Set groove",
+      description:
+        "Set the project-wide groove (swing/feel) applied to all instrument tracks at playback, and/or its amount. Non-destructive - notes are untouched. Use list_grooves for ids.",
+      inputSchema: {
+        groove: z
+          .enum(GROOVES.map((g) => g.id) as [string, ...string[]])
+          .optional()
+          .describe("groove id (see list_grooves); omit to change only the amount"),
+        amount: z.number().min(0).max(1).optional().describe("how strongly the groove applies, 0..1 (default 1)"),
+      },
+    },
+    async ({ groove, amount }) => {
+      if (groove === undefined && amount === undefined) return fail("Pass a groove and/or an amount.");
+      if (!sendToTab({ type: "setGroove", grooveId: groove, amount })) return fail("No DAW tab connected.");
+      mirror.setGroove(groove, amount);
+      const g = mirror.getGroove();
+      return ok(`Groove: ${grooveById(g.id).name} at ${Math.round(g.amount * 100)}%.`);
+    },
+  );
+
+  server.registerTool(
+    "list_grooves",
+    {
+      title: "List grooves",
+      description: "List the available groove templates (id + name) and the current selection.",
+    },
+    async () =>
+      ok(
+        JSON.stringify(
+          { grooves: GROOVES.map((g) => ({ id: g.id, name: g.name })), current: mirror.getGroove() },
+          null,
+          2,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "list_samples",
+    {
+      title: "List samples",
+      description:
+        "List samples for the Sampler instrument: the built-in kit plus the project's imported library. Set a Sampler track's sample by calling set_parameter with param \"sampler.sample\" and one of these refs. Importing a new file is done in the app UI (the server can't read local files).",
+    },
+    async () =>
+      ok(
+        JSON.stringify(
+          {
+            builtin: BUILTIN_SAMPLES.map((sample) => ({ ref: builtinRef(sample.id), name: sample.name })),
+            project: mirror.getSamples().map((sample) => ({ ref: assetRef(sample.id), name: sample.name })),
+          },
+          null,
+          2,
+        ),
+      ),
+  );
+
+  server.registerTool(
     "set_length",
     {
       title: "Set loop length",
@@ -1242,13 +1676,31 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     {
       title: "List patches",
       description:
-        "List the saved instrument patches (presets) in the user library: id, name, author, instrument type, and effect types. Patches are global (shared across projects).",
+        "List the instrument patches (presets) available: id, name, author, instrument type, effect types, a `builtin` flag (true = a shipped factory preset, false = a user-saved one), and category. Patches are global (shared across projects). Use get_patch for one patch's full parameter values.",
       inputSchema: {},
     },
     async () => {
       const r = await runPatch("list");
       if ("tabError" in r) return fail(r.tabError);
       if (!r.ok) return fail(r.error ?? "Could not read patches.");
+      return ok(JSON.stringify(r.result, null, 2));
+    },
+  );
+
+  server.registerTool(
+    "get_patch",
+    {
+      title: "Get patch",
+      description:
+        "Get the full specifics of one patch (by name or id from list_patches): its instrument, every parameter value, and its effect chain with per-effect params. Works for both factory and user patches - useful for inspecting a sound or promoting a user patch into the factory bank.",
+      inputSchema: {
+        patch: z.string().min(1).describe("patch name or id (from list_patches)"),
+      },
+    },
+    async ({ patch }) => {
+      const r = await runPatch("get", { patch });
+      if ("tabError" in r) return fail(r.tabError);
+      if (!r.ok) return fail(r.error ?? "Could not read the patch.");
       return ok(JSON.stringify(r.result, null, 2));
     },
   );
@@ -1278,7 +1730,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     {
       title: "Apply patch",
       description:
-        "Add a new instrument track from a saved patch (by name or id from list_patches). One undoable edit; the track files into the instrument family group.",
+        "Add a new instrument track from a patch - factory or user (by name or id from list_patches). One undoable edit; the track files into the main group.",
       inputSchema: {
         patch: z.string().min(1).describe("patch name or id (from list_patches)"),
         name: z.string().optional().describe("name for the new track (default: the patch name)"),

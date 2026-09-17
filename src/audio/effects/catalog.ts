@@ -177,6 +177,11 @@ export function registerEffect(info: EffectInfo): void {
   REGISTRY.set(info.type, info);
 }
 
+/** Remove a registered effect (custom, project-scoped devices are unregistered on unload). */
+export function unregisterEffect(type: string): void {
+  REGISTRY.delete(type);
+}
+
 /** Every registered effect, in registration order (iterate this, never hardcode). */
 export function effectInfos(): EffectInfo[] {
   return [...REGISTRY.values()];

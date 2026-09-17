@@ -10,6 +10,8 @@
 import type { EditCommand } from "./types";
 import { catalogEntry, hasInstrument } from "../instruments/catalog";
 import { effectCatalogEntry, hasEffect } from "../effects/catalog";
+import { midiDeviceCatalogEntry, hasMidiDevice } from "../midi/device/catalog";
+import { grooveById } from "../grooves/catalog";
 
 /** Resolves a track/group/effect-host id to its current name (for richer labels). */
 export interface DescribeContext {
@@ -18,6 +20,7 @@ export interface DescribeContext {
 
 const instLabel = (type: string): string => (hasInstrument(type) ? catalogEntry(type).label : type);
 const fxLabel = (type: string): string => (hasEffect(type) ? effectCatalogEntry(type).label : type);
+const mdLabel = (type: string): string => (hasMidiDevice(type) ? midiDeviceCatalogEntry(type).label : type);
 
 /** ` <prep> Name` (or just ` Name` when prep is '') if the id resolves, else ''. */
 function on(ctx: DescribeContext | undefined, id: string | undefined, prep = "on"): string {
@@ -35,7 +38,12 @@ type DescribeMap = {
 const DESCRIBE: DescribeMap = {
   createTrack: (command, ctx) => `Added ${instLabel(command.instrumentType)} track${on(ctx, command.id, "")}`,
   createTrackFromPatch: (command) => `Added ${command.name ? `"${command.name}"` : "a patch"} from the library`,
+  applyPatch: (command, ctx) => `Applied ${command.name ? `"${command.name}"` : "patch"}${on(ctx, command.trackId)}`,
+  createAudioTrack: (command, ctx) => `Added audio track${on(ctx, command.id, "")}`,
   addAudioTrack: (command) => `Imported ${command.name ?? "audio"}`,
+  renameProject: (command) => `Renamed project to "${command.name}"`,
+  commit: (command) => `Saved version: ${command.message}`,
+  loadSnapshot: (command) => command.message,
   removeTrack: () => "Removed track",
   setTrack: (command, ctx) => {
     const name = on(ctx, command.trackId, "");
@@ -44,6 +52,12 @@ const DESCRIBE: DescribeMap = {
     if (command.solo !== undefined) return `${command.solo ? "Soloed" : "Unsoloed"} track${name}`;
     return `Set volume${name}`;
   },
+  setInstrument: (command, ctx) =>
+    `Set instrument to ${instLabel(command.instrumentType)}${on(ctx, command.trackId, "")}`,
+  addCustomInstrument: (command) => `Added instrument "${command.def.label ?? command.def.type}"`,
+  removeCustomInstrument: () => "Removed a custom instrument",
+  addCustomEffect: (command) => `Added effect "${command.def.label ?? command.def.type}"`,
+  removeCustomEffect: () => "Removed a custom effect",
   setAudioClip: () => "Edited audio clip",
   addAudioClip: (command) => `Recorded ${command.name ? `"${command.name}"` : "a take"}`,
   addNoteClip: (command) =>
@@ -66,6 +80,12 @@ const DESCRIBE: DescribeMap = {
   moveEffect: () => "Reordered effect",
   bypassEffect: (command, ctx) => `${command.bypassed ? "Bypassed" : "Enabled"} effect${on(ctx, command.hostId)}`,
   setEffectParam: (command, ctx) => `Set ${command.id}${on(ctx, command.hostId)}`,
+  addMidiDevice: (command, ctx) => `Added ${mdLabel(command.deviceType)}${on(ctx, command.trackId, "to")}`,
+  removeMidiDevice: (command, ctx) => `Removed MIDI device${on(ctx, command.trackId, "from")}`,
+  moveMidiDevice: () => "Reordered MIDI device",
+  bypassMidiDevice: (command, ctx) =>
+    `${command.bypassed ? "Bypassed" : "Enabled"} MIDI device${on(ctx, command.trackId)}`,
+  setMidiDeviceParam: (command, ctx) => `Set ${command.id}${on(ctx, command.trackId)}`,
   addNote: (command, ctx) => `Added note${on(ctx, command.trackId, "to")}`,
   addNotes: (command, ctx) => `Added ${plural(command.notes.length)}${on(ctx, command.trackId, "to")}`,
   editNotes: (command, ctx) => `Edited ${plural(command.notes.length)}${on(ctx, command.trackId)}`,
@@ -85,8 +105,14 @@ const DESCRIBE: DescribeMap = {
   launchClip: (command) => (command.clipId ? "Launched clip" : "Stopped clip"),
   stopAllClips: () => "Back to timeline",
   setTempo: (command) => `Set tempo ${command.bpm}`,
+  setGroove: (command) =>
+    command.grooveId !== undefined
+      ? `Set groove to ${grooveById(command.grooveId).name}`
+      : `Set groove amount ${Math.round((command.amount ?? 0) * 100)}%`,
   setLength: (command) => `Set loop length ${command.lengthBeats}`,
   setLoopStart: (command) => `Set loop start ${command.beats}`,
+  addSample: (command) => `Imported "${command.name}"`,
+  removeSample: () => "Removed sample",
 };
 
 export function describeCommand(command: EditCommand, ctx?: DescribeContext): string {

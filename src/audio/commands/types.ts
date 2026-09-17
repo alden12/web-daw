@@ -11,8 +11,14 @@
 import type { ServerToBrowser } from "../mcp/protocol";
 import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
+import type { ProjectData } from "../project/types";
 
-export type Author = "you" | "claude";
+// Who authored an edit. `"claude"` = the MCP / Claude Code driver; `"agent"` = the built-in in-app
+// agent (model-agnostic) - two reserved AI voices. `"you"` is the default solo user; any other value is
+// a human user id (multi-user). A free string, not a union, so a collaborator's id flows through the
+// edit stream as-is; `ReservedVoice` names the ones with fixed meaning/colour.
+export type ReservedVoice = "you" | "claude" | "agent";
+export type Author = ReservedVoice | (string & {});
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */
 type NonEditType =
@@ -46,6 +52,14 @@ export type LocalEdit =
       trackId: string;
       clipId?: string;
       patch: { gain?: number; name?: string; loopStartSec?: number; loopEndSec?: number; gridOffsetSec?: number };
+    }
+  | {
+      // Create an EMPTY audio track (no clip yet) - the audio peer of `createTrack`
+      // with an empty instrument. Recording a take or dropping a clip fills it later.
+      type: "createAudioTrack";
+      id: string;
+      name?: string;
+      groupId?: string;
     }
   | {
       // Add an audio clip (e.g. a recorded take) to an EXISTING audio track's pool
@@ -86,6 +100,61 @@ export type LocalEdit =
       instrumentType: string;
       params: PatchValues;
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+      midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    }
+  | {
+      // Apply a patch to an EXISTING instrument track (for auditioning a patch on the
+      // current track): replaces its instrument, params, and effect chain, keeping the
+      // track's clips, name, and mix. Effect ids are pre-minted by the caller (carried
+      // here) so replay reproduces them. `name` is only for the activity-feed phrasing.
+      type: "applyPatch";
+      trackId: string;
+      name?: string;
+      instrumentType: string;
+      params: PatchValues;
+      effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+      midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
+    }
+  | {
+      // Add an imported sample to the project library. The bytes are already in the
+      // content-addressed store (contentHash); the id is pre-minted by the caller so
+      // replaying reproduces the same library entry. Browser-only (Node can't hash a
+      // local file), so this lives in LocalEdit, not the MCP protocol.
+      type: "addSample";
+      id: string;
+      name: string;
+      contentHash: string;
+      source?: string;
+    }
+  | { type: "removeSample"; id: string }
+  | {
+      // Rename the project. The name is project state (in project.json), so a rename syncs across a
+      // shared session and rides undo/redo + history like any edit; meta.json keeps a copy as the
+      // library's list index. Browser-only for now (no MCP wire message).
+      type: "renameProject";
+      name: string;
+    }
+  | {
+      // A version-history *commit marker*: a durable "save this version" point in the authored edit
+      // stream. It changes no project state (applyEdit no-ops it), so it rides the sync pipeline like any
+      // edit - queued offline, assigned an authoritative `seq` by the authority, broadcast to peers - and
+      // the commit DAG is derived from these markers (HEAD = the latest marker's seq; a commit spans the
+      // edits between it and the previous marker). No mutable HEAD pointer, so concurrent commits can't
+      // race. See docs/DESIGN.md (Phase B2).
+      type: "commit";
+      message: string;
+    }
+  | {
+      // A version-history *revert*: jump the whole project back to a past version's state. Unlike a
+      // commit marker (a no-op pointer), a revert changes state - so it carries the target `project`
+      // snapshot inline and `applyEdit` replays it with `project.load`. Embedding the snapshot keeps it a
+      // plain forward edit: it rides the sync pipeline, applies optimistically, replays on peers, and
+      // self-anchors on replay, with zero special-casing in the realtime authority. Rare + explicit, so
+      // the snapshot payload is acceptable (unlike frequent commits, which stay lightweight markers). It
+      // is also a history node: `message` names it ("Revert to ..."). See docs/DESIGN.md (Phase B2).
+      type: "loadSnapshot";
+      project: ProjectData;
+      message: string;
     };
 
 /** Every durable, authored edit. Serializable by construction. */
@@ -97,8 +166,9 @@ export interface EditEntry {
   command: EditCommand;
   author: Author;
   time: number;
-  /** What this entry records. Absent = a normal edit (back-compat). */
-  kind?: "edit" | "undo" | "redo";
+  /** What this entry records. Absent = a normal edit (back-compat). "note" is a feed-only annotation
+   *  folded into the one authored stream (text on `command`); skipped by forward replay. */
+  kind?: "edit" | "undo" | "redo" | "note";
   /** Display override for non-edit entries (e.g. "Undid: Added note"). */
   label?: string;
 }

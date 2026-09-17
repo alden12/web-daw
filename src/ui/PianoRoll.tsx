@@ -20,6 +20,10 @@
  * end so you can scroll there and drag the end out.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ProjectStore } from "../audio/project/projectStore";
+import { noteKey } from "../audio/commands/authorship";
+import { authorNoteStyle } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 import type { ClipStore } from "../audio/sequencer/clipStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -34,6 +38,10 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
+import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
+import { QUANT_KEYS } from "./quantizeSettings";
+import { Menu, type MenuItem } from "./Menu";
+import { isBlackKey, pitchName } from "./noteNames";
 
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
@@ -42,20 +50,42 @@ const RESIZE_PX = 6; // grab zone on a note's right edge
 const DRAG_THRESH = 4; // px before an empty-grid press becomes a marquee
 const TRAIL_BEATS = 8; // empty grid drawn past the loop end (room to expand into)
 const VEL_BAR_W = 4; // px - a slim velocity marker per note
+const RULER_H = 22; // px - matches Ruler's height, for the label-gutter corner spacer
 
 const ZOOM_X = { min: 24, max: 240 };
 const ZOOM_Y = { min: 7, max: 28 };
 const VEL = { min: 24, max: 160 };
 
-const SNAP_OPTIONS = [
-  { label: "1/4", value: 1 },
-  { label: "1/8", value: 0.5 },
-  { label: "1/16", value: 0.25 },
-];
+// The note-grid choices (incl. triplets) come from the one shared list, so the snap
+// dropdown and the quantize action always offer the same resolutions.
+const STRENGTH_OPTIONS = [0.25, 0.5, 0.75, 1];
 
-const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(((pitch % 12) + 12) % 12);
-const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const pitchNote = (pitch: number) => `${NOTE_NAMES[((pitch % 12) + 12) % 12]}${Math.floor(pitch / 12) - 1}`;
+/**
+ * How the roll's pitch rows are labelled, tinted, and framed. The default is the
+ * chromatic keyboard (C-names, black-key stripes, framed around middle C); a drum
+ * kit passes a mapping so rows read as pad names and frame to the pad range - see
+ * DrumRoll.
+ */
+export type RollRows = {
+  /** Left-edge label for a row, or null for none. */
+  label: (pitch: number) => string | null;
+  /** Rows to tint (black keys, or loaded pads). */
+  highlight: (pitch: number) => boolean;
+  /** Pitch range to scroll into view when the clip is empty. */
+  frame: { lo: number; hi: number };
+  /**
+   * Width (px) of a reserved left gutter for the row labels. 0/undefined = labels float
+   * over the grid at the left edge (the chromatic default); a drum kit reserves a column
+   * so the pad names sit beside the notes rather than on top of them.
+   */
+  gutter?: number;
+};
+
+const CHROMATIC_ROWS: RollRows = {
+  label: (pitch) => (pitch % 12 === 0 ? pitchName(pitch) : null),
+  highlight: isBlackKey,
+  frame: { lo: 57, hi: 64 }, // around middle C
+};
 
 type Drag =
   | {
@@ -83,15 +113,26 @@ export function PianoRoll({
   scheduler,
   recorder,
   trackId,
+  clipId,
   dispatch,
+  projectStore,
+  rows = CHROMATIC_ROWS,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
   recorder: Recorder;
   trackId: string;
+  /** The clip these edits target. Sent explicitly (not left to the receiver's active clip) so note
+   *  edits address the same clip on every replica in a shared session, whatever each has selected. */
+  clipId: string;
   dispatch: Dispatch;
+  /** Supplies per-note last-editor authorship for the voice tint; omit to leave notes untinted. */
+  projectStore?: ProjectStore;
+  /** Row labelling/tinting/framing; defaults to the chromatic keyboard. */
+  rows?: RollRows;
 }) {
   const clip = useClip(clipStore);
+  const presence = useAuthorPresence();
   // The take in flight, if it is recording into THIS track: its notes overlay the
   // roll live (absolute beats, so they sit under the playhead).
   const rec = useRecorder(recorder);
@@ -102,9 +143,15 @@ export function PianoRoll({
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
   const [rowH, setRowH] = usePersistentNumber("web-daw:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:roll-snap-div", 0.25, 0.25, 1);
+  const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
   const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
+
+  // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
+  // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
+  const [quantStrength, setQuantStrength] = usePersistentNumber(QUANT_KEYS.strength, 1, 0, 1);
+  const [quantEnds, setQuantEnds] = usePersistentBoolean(QUANT_KEYS.ends, false);
+  const [quantOnRecord, setQuantOnRecord] = usePersistentBoolean(QUANT_KEYS.onRecord, false);
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -122,6 +169,7 @@ export function PianoRoll({
   const width = beatToX(viewBeats, pxPerBeat);
   const height = ROWS * rowH;
   const cellW = pxPerBeat * snapDiv;
+  const gutter = rows.gutter ?? 0; // reserved left column for row labels (0 = float over the grid)
 
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const clampStart = (b: number) => clamp(b, 0, Math.max(0, len - GRID));
@@ -142,8 +190,8 @@ export function PianoRoll({
     if (!el) return;
     const notes = clipStore.getClip().notes;
     const pitches = notes.map((note) => note.pitch);
-    const hi = pitches.length ? Math.max(...pitches) : 64;
-    const lo = pitches.length ? Math.min(...pitches) : 57; // frame around C4
+    const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
+    const lo = pitches.length ? Math.min(...pitches) : rows.frame.lo;
     const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
     requestAnimationFrame(() => {
       el.scrollTop = clamp(centerRow * rowH + rowH / 2 - el.clientHeight / 2, 0, height - el.clientHeight);
@@ -166,17 +214,18 @@ export function PianoRoll({
       // ctrl (pinch) zooms both axes; shift zooms horizontal only.
       if (e.ctrlKey) setRowH(rowH * factor);
       const rect = el.getBoundingClientRect();
-      const contentX = e.clientX - rect.left + el.scrollLeft;
+      // Beat 0 sits at content-x = gutter (the reserved label column), so anchor off that.
+      const contentX = e.clientX - rect.left + el.scrollLeft - gutter;
       const beatAtCursor = contentX / pxPerBeat;
       const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
       setPxPerBeat(next);
       requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left);
+        el.scrollLeft = beatAtCursor * next + gutter - (e.clientX - rect.left);
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, rowH, setPxPerBeat, setRowH]);
+  }, [pxPerBeat, rowH, gutter, setPxPerBeat, setRowH]);
 
   // Drive the playhead off the audio clock (already wrapped to the loop region).
   // While a MIDI take records into this track, also grow the held-note ghosts from
@@ -218,7 +267,7 @@ export function PianoRoll({
         setSelection(new Set());
       } else if ((e.key === "Delete" || e.key === "Backspace") && ids.length) {
         e.preventDefault();
-        dispatch({ type: "removeNotes", trackId, ids });
+        dispatch({ type: "removeNotes", trackId, clipId, ids });
         setSelection(new Set());
       } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
@@ -234,7 +283,7 @@ export function PianoRoll({
           velocity: note.velocity,
         }));
         if (e.key === "x") {
-          dispatch({ type: "removeNotes", trackId, ids });
+          dispatch({ type: "removeNotes", trackId, clipId, ids });
           setSelection(new Set());
         }
       } else if (mod && e.key === "v" && clipboard.current.length) {
@@ -247,7 +296,7 @@ export function PianoRoll({
           length: entry.length,
           velocity: entry.velocity,
         }));
-        dispatch({ type: "addNotes", trackId, notes });
+        dispatch({ type: "addNotes", trackId, clipId, notes });
         setSelection(new Set(notes.map((note) => note.id)));
       }
     };
@@ -289,7 +338,7 @@ export function PianoRoll({
           const original = d.origin.get(id)!;
           return { ...original, start: clampStart(original.start + dB), pitch: clampPitch(original.pitch + dP) };
         });
-        dispatch({ type: "editNotes", trackId, notes });
+        dispatch({ type: "editNotes", trackId, clipId, notes });
       } else {
         if (!d.moved && dB === 0) return;
         d.moved = true;
@@ -298,7 +347,7 @@ export function PianoRoll({
           return { ...original, length: clampLen(original.length + dB, original.start) };
         });
         if (notes.length === 1) lastLen.current = notes[0].length;
-        dispatch({ type: "editNotes", trackId, notes });
+        dispatch({ type: "editNotes", trackId, clipId, notes });
       }
     };
     beginPointerDrag(onMove, () => {
@@ -359,7 +408,12 @@ export function PianoRoll({
       }
       const id = newNoteId();
       const start = clampStart(floorBeat(beat, snapOn ? snapDiv : GRID));
-      dispatch({ type: "addNote", trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
+      dispatch({
+        type: "addNote",
+        trackId,
+        clipId,
+        note: { id, pitch, start, length: lastLen.current, velocity: 0.8 },
+      });
       setSelection(new Set([id]));
     });
   };
@@ -377,7 +431,7 @@ export function PianoRoll({
       const rect = velRef.current!.getBoundingClientRect();
       const v = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
       const notes = ids.map((id) => ({ ...origin.get(id)!, velocity: v }));
-      dispatch({ type: "editNotes", trackId, notes });
+      dispatch({ type: "editNotes", trackId, clipId, notes });
     };
     apply(e.clientY);
     beginPointerDrag(
@@ -403,8 +457,33 @@ export function PianoRoll({
     `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${rowH}px)`,
   ].join(", ");
 
+  // Quantize the selection (or the whole clip if nothing is selected) to the snap grid,
+  // by the current strength, as ONE editNotes command (one undo step, one feed entry).
+  const targets = selection.size ? clip.notes.filter((note) => selection.has(note.id)) : clip.notes;
+  const quantize = () => {
+    if (!targets.length) return;
+    const notes = quantizeNotes(targets, { gridBeats: snapDiv, strength: quantStrength, ends: quantEnds });
+    dispatch({ type: "editNotes", trackId, clipId, notes });
+  };
+
+  const settingsItems: MenuItem[] = [
+    {
+      label: "Strength",
+      submenu: STRENGTH_OPTIONS.map((value) => ({
+        label: `${Math.round(value * 100)}%`,
+        checked: quantStrength === value,
+        onClick: () => setQuantStrength(value),
+      })),
+    },
+    { label: "Quantize note ends", checked: quantEnds, onClick: () => setQuantEnds(!quantEnds) },
+    { separator: true },
+    { label: "Auto-quantize recordings", checked: quantOnRecord, onClick: () => setQuantOnRecord(!quantOnRecord) },
+  ];
+
   const zoomBtn =
     "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+  const toolBtn =
+    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
@@ -420,12 +499,31 @@ export function PianoRoll({
           onChange={(e) => setSnapDiv(Number(e.target.value))}
           className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
         >
-          {SNAP_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
+          {GRID_DIVISIONS.map((division) => (
+            <option key={division.label} value={division.beats}>
+              {division.label}
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          title={selection.size ? "Quantize selected notes to the grid" : "Quantize all notes to the grid"}
+          className={toolBtn}
+          disabled={!targets.length}
+          onClick={quantize}
+        >
+          Quantize{selection.size ? " sel" : ""}
+        </button>
+        <button
+          type="button"
+          title="Auto-quantize notes as they're recorded"
+          aria-pressed={quantOnRecord}
+          className={`${toolBtn} ${quantOnRecord ? "border-you text-you" : ""}`}
+          onClick={() => setQuantOnRecord(!quantOnRecord)}
+        >
+          Auto-Q
+        </button>
+        <Menu items={settingsItems} label="Quantize settings" align="left" />
         <div className="ml-auto flex items-center gap-1.5">
           <span className="font-mono text-[10px] text-faint">zoom</span>
           <button
@@ -453,149 +551,179 @@ export function PianoRoll({
         </div>
       </div>
 
-      {/* scroll area: ruler (sticky top) + grid + velocity lane (sticky bottom) */}
+      {/* scroll area: ruler (sticky top) + grid + velocity lane (sticky bottom). When a
+          label gutter is reserved (drum kits), a sticky-left column holds the row labels
+          beside the notes; otherwise the labels float over the grid (display:contents,
+          so the layout is identical to a plain roll). */}
       <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
-        <Ruler
-          viewBeats={viewBeats}
-          loopStart={0}
-          loopEnd={len}
-          pxPerBeat={pxPerBeat}
-          onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, lengthBeats: beats })}
-        />
-
-        <div
-          ref={gridRef}
-          data-testid="piano-grid"
-          className="relative cursor-copy"
-          style={{ width, height, background: gridBg }}
-          onPointerDown={onGridDown}
-        >
-          {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
-          <div
-            className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
-            style={{ left: beatToX(len, pxPerBeat), width: beatToX(viewBeats - len, pxPerBeat) }}
-          />
-
-          {Array.from({ length: ROWS }, (_, row) => {
-            const pitch = MAX_PITCH - row;
-            return (
-              <div
-                key={pitch}
-                className={`absolute left-0 right-0 pointer-events-none ${isBlackKey(pitch) ? "bg-white/[0.035]" : ""}`}
-                style={{ top: row * rowH, height: rowH }}
-              >
-                {pitch % 12 === 0 && (
-                  <span className="sticky left-0.5 z-1 font-mono text-[9px] text-muted pl-0.5">{pitchNote(pitch)}</span>
-                )}
+        <div className={gutter ? "flex" : "contents"} style={gutter ? { width: gutter + width } : undefined}>
+          {gutter > 0 && (
+            <div className="sticky left-0 z-6 shrink-0 bg-rail border-r border-line" style={{ width: gutter }}>
+              <div style={{ height: RULER_H }} />
+              <div className="relative" style={{ height }}>
+                {Array.from({ length: ROWS }, (_unused, row) => {
+                  const pitch = MAX_PITCH - row;
+                  const rowLabel = rows.label(pitch);
+                  return rowLabel ? (
+                    <div
+                      key={pitch}
+                      title={rowLabel}
+                      className="absolute left-0 right-0 flex items-center truncate px-1.5 font-mono text-[9px] leading-none text-muted"
+                      style={{ top: row * rowH, height: rowH }}
+                    >
+                      {rowLabel}
+                    </div>
+                  ) : null;
+                })}
               </div>
-            );
-          })}
-
-          {clip.notes.map((note) => {
-            const selected = selection.has(note.id);
-            return (
-              <div
-                key={note.id}
-                data-testid="note"
-                onPointerDown={(e) => onNoteDown(note, e)}
-                className={`absolute rounded-sm box-border cursor-grab ${
-                  selected
-                    ? "bg-bright border border-you ring-1 ring-you"
-                    : "bg-you border border-you/40 hover:brightness-125"
-                }`}
-                style={{
-                  left: beatToX(note.start, pxPerBeat),
-                  width: Math.max(2, beatToX(note.length, pxPerBeat) - 1),
-                  top: (MAX_PITCH - note.pitch) * rowH,
-                  height: rowH - 1,
-                  opacity: 0.45 + 0.55 * note.velocity,
-                }}
-                title={`${pitchNote(note.pitch)} · ${note.start}+${note.length} beats · vel ${note.velocity.toFixed(2)}`}
-              >
-                <div className="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize" />
-              </div>
-            );
-          })}
-
-          {marquee && (
-            <div
-              className="absolute border border-you/70 bg-you/10 pointer-events-none"
-              style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
-            />
+            </div>
           )}
+          <div className={gutter ? "shrink-0" : "contents"} style={gutter ? { width } : undefined}>
+            <Ruler
+              viewBeats={viewBeats}
+              loopStart={0}
+              loopEnd={len}
+              pxPerBeat={pxPerBeat}
+              onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, lengthBeats: beats })}
+            />
 
-          {/* Live record overlay: notes captured so far (static) plus the notes still
-              held (grown out to the playhead each frame). Drawn in the record colour. */}
-          {take && (
-            <>
-              {take.captured.map((note, i) => (
-                <div
-                  key={`cap-${i}`}
-                  data-testid="ghost-note"
-                  className="absolute rounded-sm bg-claude/70 border border-claude pointer-events-none z-4"
-                  style={{
-                    left: beatToX(note.startBeat, pxPerBeat),
-                    width: Math.max(2, beatToX(note.endBeat - note.startBeat, pxPerBeat) - 1),
-                    top: (MAX_PITCH - note.pitch) * rowH,
-                    height: rowH - 1,
-                  }}
-                />
-              ))}
-              <div ref={heldRef} className="contents">
-                {take.held.map((note) => (
+            <div
+              ref={gridRef}
+              data-testid="piano-grid"
+              className="relative cursor-copy"
+              style={{ width, height, background: gridBg }}
+              onPointerDown={onGridDown}
+            >
+              {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
+              <div
+                className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
+                style={{ left: beatToX(len, pxPerBeat), width: beatToX(viewBeats - len, pxPerBeat) }}
+              />
+
+              {Array.from({ length: ROWS }, (_, row) => {
+                const pitch = MAX_PITCH - row;
+                const rowLabel = rows.label(pitch);
+                return (
                   <div
-                    key={`held-${note.pitch}`}
-                    data-testid="ghost-note"
-                    data-left={beatToX(note.startBeat, pxPerBeat)}
-                    className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
+                    key={pitch}
+                    className={`absolute left-0 right-0 pointer-events-none ${rows.highlight(pitch) ? "bg-white/[0.035]" : ""}`}
+                    style={{ top: row * rowH, height: rowH }}
+                  >
+                    {rowLabel && gutter === 0 && (
+                      <span className="sticky left-0.5 z-1 font-mono text-[9px] text-muted pl-0.5">{rowLabel}</span>
+                    )}
+                  </div>
+                );
+              })}
+
+              {clip.notes.map((note) => {
+                const selected = selection.has(note.id);
+                // Tint the note by its last editor. Falls back to "you" when unstamped.
+                const author = projectStore?.authorOf(noteKey(note.id)) ?? "you";
+                return (
+                  <div
+                    key={note.id}
+                    data-testid="note"
+                    onPointerDown={(e) => onNoteDown(note, e)}
+                    className={`absolute rounded-sm box-border cursor-grab border ${
+                      selected ? "bg-bright" : "hover:brightness-125"
+                    }`}
                     style={{
-                      left: beatToX(note.startBeat, pxPerBeat),
-                      width: 2,
+                      ...authorNoteStyle(author, selected, presence),
+                      left: beatToX(note.start, pxPerBeat),
+                      width: Math.max(2, beatToX(note.length, pxPerBeat) - 1),
                       top: (MAX_PITCH - note.pitch) * rowH,
                       height: rowH - 1,
+                      opacity: 0.45 + 0.55 * note.velocity,
+                    }}
+                    title={`${rows.label(note.pitch) ?? pitchName(note.pitch)} · ${note.start}+${note.length} beats · vel ${note.velocity.toFixed(2)}`}
+                  >
+                    <div className="absolute top-0 bottom-0 right-0 w-1.5 cursor-ew-resize" />
+                  </div>
+                );
+              })}
+
+              {marquee && (
+                <div
+                  className="absolute border border-you/70 bg-you/10 pointer-events-none"
+                  style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+                />
+              )}
+
+              {/* Live record overlay: notes captured so far (static) plus the notes still
+              held (grown out to the playhead each frame). Drawn in the record colour. */}
+              {take && (
+                <>
+                  {take.captured.map((note, i) => (
+                    <div
+                      key={`cap-${i}`}
+                      data-testid="ghost-note"
+                      className="absolute rounded-sm bg-claude/70 border border-claude pointer-events-none z-4"
+                      style={{
+                        left: beatToX(note.startBeat, pxPerBeat),
+                        width: Math.max(2, beatToX(note.endBeat - note.startBeat, pxPerBeat) - 1),
+                        top: (MAX_PITCH - note.pitch) * rowH,
+                        height: rowH - 1,
+                      }}
+                    />
+                  ))}
+                  <div ref={heldRef} className="contents">
+                    {take.held.map((note) => (
+                      <div
+                        key={`held-${note.pitch}`}
+                        data-testid="ghost-note"
+                        data-left={beatToX(note.startBeat, pxPerBeat)}
+                        className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
+                        style={{
+                          left: beatToX(note.startBeat, pxPerBeat),
+                          width: 2,
+                          top: (MAX_PITCH - note.pitch) * rowH,
+                          height: rowH - 1,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div
+                ref={playheadRef}
+                className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
+                style={{ height }}
+              />
+            </div>
+
+            {/* velocity lane */}
+            <div
+              ref={velRef}
+              className="sticky bottom-0 z-10 border-t border-line bg-rail"
+              style={{ width, height: velH }}
+              title="Velocity - drag a bar"
+            >
+              {/* resize the lane by dragging its top edge */}
+              <div
+                role="separator"
+                aria-label="Resize velocity lane"
+                onPointerDown={onVelResize}
+                className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10"
+              />
+              {clip.notes.map((note) => {
+                const selected = selection.has(note.id);
+                return (
+                  <div
+                    key={note.id}
+                    onPointerDown={(e) => onVelDown(note, e)}
+                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
+                    style={{
+                      left: beatToX(note.start, pxPerBeat),
+                      width: VEL_BAR_W,
+                      height: Math.max(2, note.velocity * (velH - 3)),
                     }}
                   />
-                ))}
-              </div>
-            </>
-          )}
-
-          <div
-            ref={playheadRef}
-            className="absolute top-0 left-0 w-0.5 bg-you pointer-events-none opacity-0 z-5"
-            style={{ height }}
-          />
-        </div>
-
-        {/* velocity lane */}
-        <div
-          ref={velRef}
-          className="sticky bottom-0 z-10 border-t border-line bg-rail"
-          style={{ width, height: velH }}
-          title="Velocity - drag a bar"
-        >
-          {/* resize the lane by dragging its top edge */}
-          <div
-            role="separator"
-            aria-label="Resize velocity lane"
-            onPointerDown={onVelResize}
-            className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10"
-          />
-          {clip.notes.map((note) => {
-            const selected = selection.has(note.id);
-            return (
-              <div
-                key={note.id}
-                onPointerDown={(e) => onVelDown(note, e)}
-                className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
-                style={{
-                  left: beatToX(note.start, pxPerBeat),
-                  width: VEL_BAR_W,
-                  height: Math.max(2, note.velocity * (velH - 3)),
-                }}
-              />
-            );
-          })}
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
     </div>

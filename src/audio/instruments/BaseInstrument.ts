@@ -43,7 +43,7 @@ export abstract class BaseInstrument implements Instrument {
   protected abstract buildGraph(): void;
   /** Param id -> binding. Subclasses usually spread `commonBindings()`. */
   protected abstract buildBindings(): Record<string, ParamBinding>;
-  /** Build + connect + tune a voice (oscillators not started; base starts it). */
+  /** Build + connect + tune a voice (sources not started; base starts it). */
   protected abstract createVoice(midi: number, when: number): VoiceHandle;
 
   /** amp.level (output gain) + envelope times - shared by every instrument. */
@@ -63,13 +63,17 @@ export abstract class BaseInstrument implements Instrument {
   private startVoice(voice: VoiceHandle, velocity: number, when: number): void {
     const attack = this.env.attackMs / 1000;
     const g = voice.amp.gain;
+    const level = Math.max(0.0001, velocity);
+    voice.level = level;
+    voice.attackStart = when;
+    voice.attackEnd = when + attack;
     g.setValueAtTime(0, when);
-    g.linearRampToValueAtTime(Math.max(0.0001, velocity), when + attack);
-    for (const osc of voice.oscillators) osc.start(when);
+    g.linearRampToValueAtTime(level, when + attack);
+    for (const source of voice.sources) source.start(when);
     this.active.add(voice);
-    voice.oscillators[0].onended = () => {
+    voice.sources[0].onended = () => {
       this.active.delete(voice);
-      for (const osc of voice.oscillators) osc.disconnect();
+      for (const source of voice.sources) source.disconnect();
       voice.amp.disconnect();
     };
   }
@@ -80,14 +84,19 @@ export abstract class BaseInstrument implements Instrument {
     const at = Math.max(when, this.ctx.currentTime);
     const release = this.env.releaseMs / 1000;
     const g = voice.amp.gain;
-    if (typeof g.cancelAndHoldAtTime === "function") {
-      g.cancelAndHoldAtTime(at);
-    } else {
-      g.cancelScheduledValues(at);
-      g.setValueAtTime(g.value, at);
-    }
+    // Anchor the gain at its true value at `at` (mid-attack or full sustain), then ramp to 0.
+    // We compute the held value ourselves rather than calling cancelAndHoldAtTime, whose Chrome
+    // bug makes the following linearRamp start from the wrong value - an instant step to ~0 that
+    // clicks the moment a note is released. Explicit setValueAtTime + ramp is jump-free.
+    const level = voice.level ?? g.value;
+    const attackStart = voice.attackStart ?? at;
+    const attackEnd = voice.attackEnd ?? at;
+    const heldLevel =
+      at <= attackStart ? 0 : at >= attackEnd ? level : level * ((at - attackStart) / (attackEnd - attackStart));
+    g.cancelScheduledValues(at);
+    g.setValueAtTime(heldLevel, at);
     g.linearRampToValueAtTime(0, at + release);
-    for (const osc of voice.oscillators) osc.stop(at + release + 0.02);
+    for (const source of voice.sources) source.stop(at + release + 0.02);
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {

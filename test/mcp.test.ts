@@ -65,13 +65,52 @@ describe("MCP server (tracks)", () => {
     await daw.close();
   });
 
+  it("describe_device_format lists the node vocabulary", async () => {
+    const doc = parse(await call("describe_device_format"));
+    const kinds = doc.nodeKinds.map((entry: { kind: string }) => entry.kind);
+    expect(kinds).toContain("osc");
+    expect(kinds).toContain("biquad");
+    expect(doc.reserved.instrument).toContain("amp");
+  });
+
+  it("create_instrument rejects a malformed def at the boundary", async () => {
+    const res = await call("create_instrument", {
+      schema: [],
+      voice: { nodes: [{ id: "osc", kind: "osc" }], connections: [["osc", "ghost"]] },
+    });
+    expect(res.isError).toBe(true);
+  });
+
+  it("create_instrument stores a valid device, forwards it, and lists it", async () => {
+    const messages = await connectTab();
+    const res = await call("create_instrument", {
+      label: "Test Synth",
+      schema: [{ id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 }],
+      voice: { nodes: [{ id: "osc", kind: "osc", waveform: "sawtooth" }], connections: [["osc", "amp"]] },
+    });
+    expect(res.isError).toBeFalsy();
+    const created = /type (ci-\w+)/.exec(res.content[0].text)?.[1];
+    expect(created).toBeTruthy();
+
+    await waitFor(() => typesOf(messages).includes("addCustomInstrument"));
+    const list = parse(await call("list_custom_devices"));
+    expect(list.instruments).toHaveLength(1);
+    expect(list.instruments[0].label).toBe("Test Synth");
+
+    await call("remove_custom_device", { deviceType: created }); // cleanup (global catalog)
+  });
+
   it("list_tracks reports the instrument palette and starts with no tracks", async () => {
     const data = parse(await call("list_tracks"));
     expect(data.connected).toBe(false);
     expect(data.tracks).toEqual([]);
     expect(data.instruments.map((i: { id: string }) => i.id).sort()).toEqual([
+      "drumkit",
       "fm",
+      "mellotron",
+      "nimbus",
       "organ",
+      "sampler",
       "subtractive",
       "supersaw",
       "wavetable",
@@ -120,6 +159,25 @@ describe("MCP server (tracks)", () => {
     expect((await call("set_parameter", { id: "fm.ratio", value: 2 })).isError).toBe(true);
   });
 
+  it("list_samples lists the built-in kit; set_parameter validates a sampler sample ref", async () => {
+    const data = parse(await call("list_samples"));
+    const builtinRefs = data.builtin.map((sample: { ref: string }) => sample.ref);
+    expect(builtinRefs).toContain("builtin:kick");
+    expect(builtinRefs.length).toBeGreaterThanOrEqual(5);
+    expect(data.project).toEqual([]); // no imported samples yet
+
+    const messages = await connectTab();
+    const trackId = await makeTrack("sampler");
+
+    expect((await call("set_parameter", { id: "sampler.sample", value: "builtin:clap" })).isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("setParam"));
+    expect(messages).toContainEqual({ type: "setParam", trackId, id: "sampler.sample", value: "builtin:clap" });
+    // an imported-asset ref shape is also accepted
+    expect((await call("set_parameter", { id: "sampler.sample", value: "asset:smp-1234" })).isError).toBeFalsy();
+    // a bare string is not a valid tagged sample ref
+    expect((await call("set_parameter", { id: "sampler.sample", value: "garbage" })).isError).toBe(true);
+  });
+
   it("add_note / add_notes / clear_clip target the selected track", async () => {
     const messages = await connectTab();
     const trackId = await makeTrack("subtractive");
@@ -141,6 +199,29 @@ describe("MCP server (tracks)", () => {
     await call("clear_clip");
     notes = parse(await call("list_notes")).clip.notes;
     expect(notes).toHaveLength(0);
+  });
+
+  it("quantize pulls a clip's notes to the grid and emits one editNotes", async () => {
+    const messages = await connectTab();
+    await makeTrack("subtractive");
+
+    await call("add_notes", {
+      notes: [
+        { pitch: 60, start: 1.1, length: 0.9 },
+        { pitch: 64, start: 2.05, length: 1 },
+      ],
+    });
+    // Off-grid positions survive (the store no longer force-snaps).
+    let notes = parse(await call("list_notes")).clip.notes;
+    expect(notes.find((n: { pitch: number }) => n.pitch === 60).start).toBeCloseTo(1.1);
+
+    const res = await call("quantize", { grid: "1/4", strength: 1 });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("editNotes"));
+
+    notes = parse(await call("list_notes")).clip.notes;
+    expect(notes.find((n: { pitch: number }) => n.pitch === 60).start).toBeCloseTo(1.0);
+    expect(notes.find((n: { pitch: number }) => n.pitch === 64).start).toBeCloseTo(2.0);
   });
 
   it("add_note can target a specific track id", async () => {
@@ -181,6 +262,18 @@ describe("MCP server (tracks)", () => {
     await call("set_tempo", { bpm: 90 });
     await waitFor(() => typesOf(messages).includes("setTempo"));
     expect(parse(await call("list_tracks")).tempoBpm).toBe(90);
+  });
+
+  it("set_groove forwards and updates the mirror; list_grooves reports it", async () => {
+    const messages = await connectTab();
+    await makeTrack();
+    await call("set_groove", { groove: "8th-58", amount: 0.5 });
+    await waitFor(() => typesOf(messages).includes("setGroove"));
+    const grooves = parse(await call("list_grooves"));
+    expect(grooves.current).toEqual({ id: "8th-58", amount: 0.5 });
+    expect(grooves.grooves.map((g: { id: string }) => g.id)).toContain("straight");
+    // bad id is rejected by the enum schema
+    expect((await call("set_groove", { groove: "nope" })).isError).toBe(true);
   });
 
   it("play / stop forward transport commands", async () => {
@@ -272,6 +365,60 @@ describe("MCP server (tracks)", () => {
     expect(list.effects).toHaveLength(1);
     expect(list.effects[0].id).toBe(delayId);
     expect(list.effects[0].bypassed).toBe(true);
+  });
+
+  it("add_midi_device forwards, validates the type, and appears in list_midi_devices", async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack("subtractive");
+
+    expect((await call("add_midi_device", { device: "bogus" })).isError).toBe(true);
+
+    const res = await call("add_midi_device", { device: "octavator" });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("addMidiDevice"));
+    const added = messages.find((m) => (m as { type: string }).type === "addMidiDevice") as {
+      trackId: string;
+      deviceType: string;
+    };
+    expect(added.trackId).toBe(trackId);
+    expect(added.deviceType).toBe("octavator");
+
+    const list = parse(await call("list_midi_devices"));
+    expect(list.devices).toHaveLength(1);
+    expect(list.devices[0].type).toBe("octavator");
+    expect(list.available.map((d: { id: string }) => d.id)).toContain("octavator");
+  });
+
+  it("set_midi_device_parameter forwards with track + device id and validates", async () => {
+    const messages = await connectTab();
+    const trackId = await makeTrack("subtractive");
+    await call("add_midi_device", { device: "octavator" });
+    const deviceId = parse(await call("list_midi_devices")).devices[0].id as string;
+
+    const okRes = await call("set_midi_device_parameter", { device_id: deviceId, id: "level", value: 0.5 });
+    expect(okRes.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("setMidiDeviceParam"));
+    expect(messages).toContainEqual({
+      type: "setMidiDeviceParam",
+      trackId,
+      deviceId,
+      id: "level",
+      value: 0.5,
+    });
+
+    expect((await call("set_midi_device_parameter", { device_id: deviceId, id: "level", value: 9 })).isError).toBe(
+      true,
+    );
+    expect((await call("set_midi_device_parameter", { device_id: deviceId, id: "nope", value: 1 })).isError).toBe(true);
+    expect((await call("set_midi_device_parameter", { device_id: "md-nope", id: "level", value: 0.5 })).isError).toBe(
+      true,
+    );
+  });
+
+  it("rejects a MIDI device on an audio track", async () => {
+    await connectTab();
+    // No instrument track selected: the tool errors rather than misfiling the device.
+    expect((await call("add_midi_device", { track: "t-nope", device: "octavator" })).isError).toBe(true);
   });
 
   it("create_track files a track into its instrument family group (librarian)", async () => {

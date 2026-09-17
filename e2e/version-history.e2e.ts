@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * The version timeline (activity panel -> Versions tab): save named versions of
+ * The version timeline (Activity rail view -> Versions tab): save named versions of
  * the commit DAG, see a commit's semantic diff, and revert to one. Each edit here
  * is an inline track rename, so the diffs are predictable.
  */
@@ -23,13 +23,19 @@ async function renameTrack(page: Page, to: string) {
   await input.press("Enter");
 }
 
+/** Open the Activity rail view (where the activity feed + Versions tab live). */
+async function openActivity(page: Page) {
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+}
+
 test("save versions, view a diff, and revert", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
   await renameTrack(page, "Bass"); // an edit -> something to commit
 
-  await page.getByRole("combobox", { name: "Panel view" }).selectOption("versions");
+  await openActivity(page);
+  await page.getByRole("combobox", { name: "Activity view" }).selectOption("versions");
   const name = page.getByPlaceholder("Name this version…");
   await name.fill("first");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -54,11 +60,12 @@ test("a saved version shows as a marker in the activity feed", async ({ page }) 
   await dismissStart(page);
 
   await renameTrack(page, "Verse");
-  await page.getByRole("combobox", { name: "Panel view" }).selectOption("versions");
+  await openActivity(page);
+  await page.getByRole("combobox", { name: "Activity view" }).selectOption("versions");
   await page.getByPlaceholder("Name this version…").fill("verse idea");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
   // Back in the activity feed, the save appears inline among the edits.
-  await page.getByRole("combobox", { name: "Panel view" }).selectOption("activity");
+  await page.getByRole("combobox", { name: "Activity view" }).selectOption("activity");
   await expect(page.getByText(/saved · verse idea/)).toBeVisible();
 });

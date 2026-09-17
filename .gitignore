@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Local env (the agent model key lives here; never committed)
+.env
+.env.*
+!.env.example
+!.env.test
+
 # Playwright
 /test-results
 /playwright-report

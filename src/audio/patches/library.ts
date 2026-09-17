@@ -21,7 +21,14 @@ export interface PatchEffect {
   params: PatchValues;
 }
 
-/** A saved instrument preset: instrument + params + effect chain, named by the user. */
+/** One MIDI device in a saved patch (same idless shape as PatchEffect). */
+export interface PatchMidiDevice {
+  type: string;
+  bypassed?: boolean;
+  params: PatchValues;
+}
+
+/** A saved instrument preset: instrument + params + MIDI-device + effect chains, named by the user. */
 export interface Patch {
   id: string;
   name: string;
@@ -29,7 +36,13 @@ export interface Patch {
   instrumentType: string;
   params: PatchValues;
   effects: PatchEffect[];
+  /** MIDI-device chain (note transforms). Optional: patches saved before this default to none. */
+  midiDevices?: PatchMidiDevice[];
   createdAt: number;
+  /** True for a shipped factory preset (read-only, not in localStorage - see factory.ts). */
+  builtin?: boolean;
+  /** Optional grouping label for the library (factory presets set this, e.g. "Bass"). */
+  category?: string;
 }
 
 const STORAGE_KEY = "web-daw:patches:v1";

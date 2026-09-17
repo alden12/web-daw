@@ -8,6 +8,7 @@
  * replaces - only the entry point changes.
  */
 import type { ProjectStore } from "../project/projectStore";
+import { authorshipEffect, clipKey, noteEditClipTarget } from "./authorship";
 import type { Author, EditCommand } from "./types";
 
 type ApplyMap = {
@@ -22,6 +23,16 @@ const APPLY: ApplyMap = {
   createTrack: (project, command) =>
     void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
   createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
+  applyPatch: (project, command) =>
+    project.applyPatchToTrack({
+      trackId: command.trackId,
+      instrumentType: command.instrumentType,
+      params: command.params,
+      effects: command.effects,
+      midiDevices: command.midiDevices,
+    }),
+  createAudioTrack: (project, command) =>
+    void project.addEmptyAudioTrack({ id: command.id, name: command.name, groupId: command.groupId }),
   addAudioTrack: (project, command) =>
     void project.addAudioTrack(
       {
@@ -33,6 +44,13 @@ const APPLY: ApplyMap = {
       },
       { id: command.id, groupId: command.groupId },
     ),
+  renameProject: (project, command) => project.renameProject(command.name),
+  // A version-history commit marker: changes no project state (its presence in the log is the version
+  // point). No-op on replay; history derives commits from these markers. See docs/DESIGN.md (Phase B2).
+  commit: () => {},
+  // A revert: replace the whole project with the target version's embedded snapshot. A plain forward
+  // edit (load the carried state), so replay + sync need no special-casing; self-anchoring on replay.
+  loadSnapshot: (project, command) => project.load(command.project),
   removeTrack: (project, command) => project.removeTrack(command.trackId),
   setTrack: (project, command) => {
     if (command.muted !== undefined) project.setMuted(command.trackId, command.muted);
@@ -40,6 +58,11 @@ const APPLY: ApplyMap = {
     if (command.volume !== undefined) project.setVolume(command.trackId, command.volume);
     if (command.name !== undefined) project.renameTrack(command.trackId, command.name);
   },
+  setInstrument: (project, command) => project.setInstrument(command.trackId, command.instrumentType),
+  addCustomInstrument: (project, command) => project.addCustomInstrument(command.def),
+  removeCustomInstrument: (project, command) => project.removeCustomInstrument(command.deviceType),
+  addCustomEffect: (project, command) => project.addCustomEffect(command.def),
+  removeCustomEffect: (project, command) => project.removeCustomEffect(command.deviceType),
   setAudioClip: (project, command) => project.setAudioClip(command.trackId, command.clipId, command.patch),
   addAudioClip: (project, command) => project.addAudioClip(command),
   // A recorded MIDI take: create the clip (with its notes), punch it in over the
@@ -67,6 +90,13 @@ const APPLY: ApplyMap = {
   bypassEffect: (project, command) => project.setEffectBypass(command.hostId, command.effectId, command.bypassed),
   setEffectParam: (project, command) =>
     project.getEffect(command.hostId, command.effectId)?.params.set(command.id, command.value),
+  addMidiDevice: (project, command) => void project.addMidiDevice(command.trackId, command.deviceType, command.id),
+  removeMidiDevice: (project, command) => project.removeMidiDevice(command.trackId, command.deviceId),
+  moveMidiDevice: (project, command) => project.moveMidiDevice(command.trackId, command.deviceId, command.toIndex),
+  bypassMidiDevice: (project, command) =>
+    project.setMidiDeviceBypass(command.trackId, command.deviceId, command.bypassed),
+  setMidiDeviceParam: (project, command) =>
+    project.getMidiDevice(command.trackId, command.deviceId)?.params.set(command.id, command.value),
   // Note edits target a specific clip (defaulting to the active one). addNotes /
   // editNotes both insert-or-replace by id (putNote): a new id adds, an existing
   // id moves/resizes/re-velocities in place. One call, one edit.
@@ -118,8 +148,17 @@ const APPLY: ApplyMap = {
   launchClip: (project, command) => project.launchClip(command.trackId, command.clipId),
   stopAllClips: (project) => project.stopAllClips(),
   setTempo: (project, command) => project.setTempo(command.bpm),
+  setGroove: (project, command) => project.setGroove(command.grooveId, command.amount),
   setLength: (project, command) => project.setLength(command.lengthBeats),
   setLoopStart: (project, command) => project.setLoopStart(command.beats),
+  addSample: (project, command) =>
+    project.addSample({
+      id: command.id,
+      name: command.name,
+      contentHash: command.contentHash,
+      source: command.source,
+    }),
+  removeSample: (project, command) => project.removeSample(command.id),
 };
 
 export function applyEdit(project: ProjectStore, command: EditCommand, author: Author): void {
@@ -128,4 +167,15 @@ export function applyEdit(project: ProjectStore, command: EditCommand, author: A
     command,
     author,
   );
+  // Stamp who last edited each object this command touched (and forget any it removed), so the
+  // last-editor colour tint reads it. One seam for UI + MCP + replay keeps authorship exact.
+  const effect = authorshipEffect(command);
+  if (effect.removed) project.dropAuthors(effect.removed);
+  if (effect.touched) for (const key of effect.touched) project.setAuthor(key, author);
+  // Note edits also stamp their (possibly active) clip, so its timeline block tracks note authorship.
+  const noteTarget = noteEditClipTarget(command);
+  if (noteTarget) {
+    const clipId = noteTarget.clipId ?? project.getTrack(noteTarget.trackId)?.activeClipId ?? undefined;
+    if (clipId) project.setAuthor(clipKey(clipId), author);
+  }
 }

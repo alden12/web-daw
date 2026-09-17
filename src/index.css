@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 /* Design tokens. Value hierarchy: ground (darkest) -> card (lightest), so the
-   center workbench reads brightest. Two-voice accents: you = teal, claude = coral. */
+   center workbench reads brightest. Voices: you = teal, agent (built-in AI) =
+   violet, claude (the MCP / Claude Code driver) = coral. */
 @theme {
   --color-ground: #101216;
   --color-rail: #14171c;
@@ -17,6 +18,7 @@
   --color-faint: #5c626e;
 
   --color-you: #56c7c2;
+  --color-agent: #a884f3;
   --color-claude: #d9775a;
 
   --color-good: #2ecc71;
@@ -39,6 +41,38 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+
+  /* Low-profile scrollbars app-wide: no track background, just a light, slightly
+     translucent handle. The transparent border + padding-box clip slims the
+     visible thumb and insets it from the edges. They stay visible whenever content
+     overflows - never the macOS overlay auto-hide. In Chrome the standard scrollbar-*
+     properties make it defer to the OS (auto-hiding) scrollbars and ignore
+     ::-webkit-scrollbar, so we give the standard props to Firefox only (via a feature
+     query it matches and Chrome does not) and style Chrome/WebKit through the
+     pseudo-elements, which render always-on. */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+    }
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.35);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.5);
+  }
 }
 
 /* Region grid. The library and agent column widths are driven by inline
@@ -47,11 +81,11 @@
    grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
 .app-body {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 320px;
+  grid-template-columns: 48px 200px minmax(0, 1fr) 320px;
   grid-template-rows: 1fr 244px;
   grid-template-areas:
-    "library center agent"
-    "timeline timeline timeline";
+    "rail library center agent"
+    "rail timeline timeline timeline";
   transition: grid-template-columns 0.42s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -59,4 +93,157 @@
   .app-body {
     transition: none;
   }
+}
+
+/* Markdown-rendered agent replies (see ui/Markdown.tsx). Tailwind's preflight strips
+   default element styles, so the block elements are restyled here, scoped to `.md`.
+   Tuned tight for the narrow agent panel; long code/tables scroll horizontally rather
+   than widening the panel. */
+.md {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre,
+.md table {
+  margin: 0.5em 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 0.9em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-bright);
+}
+.md h1 {
+  font-size: 1.25em;
+}
+.md h2 {
+  font-size: 1.15em;
+}
+.md h3 {
+  font-size: 1.05em;
+}
+.md h4 {
+  font-size: 1em;
+}
+.md ul,
+.md ol {
+  padding-left: 1.3em;
+}
+.md li {
+  margin: 0.2em 0;
+}
+.md li > ul,
+.md li > ol {
+  margin: 0.2em 0;
+}
+.md a {
+  color: var(--color-agent);
+  text-decoration: none;
+}
+.md a:hover {
+  text-decoration: underline;
+}
+.md strong {
+  font-weight: 600;
+  color: var(--color-bright);
+}
+.md blockquote {
+  padding-left: 0.8em;
+  border-left: 2px solid var(--color-line);
+  color: var(--color-muted);
+}
+.md hr {
+  margin: 0.9em 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+/* Inline code + code blocks. */
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.md :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--color-ground);
+  border: 1px solid var(--color-line-soft);
+}
+.md pre {
+  padding: 0.7em 0.8em;
+  border-radius: 6px;
+  background: var(--color-ground);
+  border: 1px solid var(--color-line-soft);
+  overflow-x: auto;
+}
+.md pre code {
+  padding: 0;
+  background: none;
+  border: 0;
+}
+/* Tables (GFM). */
+.md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.md th,
+.md td {
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--color-line);
+  text-align: left;
+}
+.md th {
+  background: var(--color-ground);
+  font-weight: 600;
+}
+
+/* Compact syntax-highlighting palette for rehype-highlight (highlight.js token
+   classes), keyed to the app's voice colors so code reads on the dark panel. */
+.md .hljs-comment,
+.md .hljs-quote {
+  color: var(--color-faint);
+  font-style: italic;
+}
+.md .hljs-keyword,
+.md .hljs-selector-tag,
+.md .hljs-built_in,
+.md .hljs-literal {
+  color: var(--color-agent);
+}
+.md .hljs-string,
+.md .hljs-attr,
+.md .hljs-attribute,
+.md .hljs-regexp {
+  color: var(--color-you);
+}
+.md .hljs-number,
+.md .hljs-symbol,
+.md .hljs-meta {
+  color: var(--color-claude);
+}
+.md .hljs-title,
+.md .hljs-name,
+.md .hljs-section {
+  color: var(--color-bright);
+  font-weight: 600;
+}
+.md .hljs-type,
+.md .hljs-class .hljs-title {
+  color: var(--color-good);
 }

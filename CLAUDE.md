@@ -54,25 +54,57 @@ short list of coding conventions to follow throughout the codebase.
   `yarn format` + a CI format check is the durable fix - a worthwhile follow-up, but
   it reformats the whole tree once, so it lands as its own PR.)
 
-## Persistence: no legacy/format-migration support
+## Persistence: no legacy/format-migration support (pre-hosting)
 
-- We are the only users, so **don't carry legacy formats.** Bump the snapshot/storage
-  version freely and don't write migration paths, `LEGACY_*` keys, or `Legacy*`/
-  back-compat fields for old data. When a format changes, the old saved project is
-  simply discarded. (Existing migration code - `VariantData`, `LegacyAudioClip`, the
-  `ProjectStore.load` migration, `LEGACY_KEYS` - is fair game to delete.)
+- This applied while projects were disposable local-only data: **don't carry legacy
+  formats.** Bump the snapshot/storage version freely and don't write `LEGACY_*` keys or
+  `Legacy*`/back-compat fields; a format change simply discarded the old saved project.
+  (Existing migration code - `VariantData`, `LegacyAudioClip`, the `ProjectStore.load`
+  migration, `LEGACY_KEYS` - is fair game to delete.)
+- **This changed once projects are hosted server-side (the sync service).** We can no
+  longer discard users' saved data on a format change, so forward migration is now
+  required. Add a pure `fromVersion -> fromVersion + 1` upcaster to
+  `src/audio/project/documentMigration.ts` for each project-document (`project.json`)
+  schema bump; `ProjectRepository.load` chains them and heals the bundle. DB schema
+  changes go through `drizzle-kit generate` (versioned SQL under `drizzle/`). Still
+  forward-only - we don't support downgrades or reading arbitrarily old shapes, just a
+  continuous upgrade path. The "discard on change" shortcut is retired.
 
 ## CI
 
 - `build`, `test`, `test:e2e`, and `tsc` (via `build` + `check:server`) run in GitHub
   Actions (`.github/workflows/ci.yml`) on every push to `main` and every PR. Keep them
   green; a red gate blocks the merge.
+- **Running `test:e2e` locally: just `yarn test:e2e`** - no `.env` juggling. Playwright starts
+  the dev server with `vite --mode test`, which loads the committed `.env.test` (blank
+  `VITE_SUPABASE_*`/`VITE_DAW_API_URL`) *after* `.env`, so a local `.env` can no longer flip the
+  auth gate on and strand every test at the login screen. (The old `mv .env .env.bak` dance is
+  retired; if you add a new build-time `VITE_*` that must be off in e2e, blank it in `.env.test`.)
 
-## General
+## Roadmap
+
+- `docs/DESIGN.md` is the **single source of truth for the project map.** Every ticket carries an
+  inline `` `AREA-N` `status` `` marker right beside its prose (syntax + the fixed status vocab are
+  documented in the doc's "Roadmap markers" section). `yarn roadmap:view` renders them as a graph;
+  `yarn roadmap:check` validates them (run it after touching a marker).
+- **Keep markers current - nothing moves them automatically, it is a manual discipline.** When you
+  open a PR that implements a ticket, flip its marker to `review` in the *same* change (`review` =
+  built and working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And
+  whenever you notice a stale status (a ticket really done/merged/in-progress/abandoned but marked
+  otherwise), fix it right away in whatever change you are already making - don't wait to be asked.
 
 - The parameter schema is the keystone: UI, MCP, automation, and persistence are
   projections of it. Don't add per-parameter or per-type UI/branching - map over
   the schema/catalog.
 - Keep the Node MCP server DOM-free: pure data (schemas/catalogs) stays in
   `catalog.ts`; anything touching Web Audio stays in `registry.ts`/engine.
+- **Follow MIDI / General MIDI conventions** where a standard exists, so the app
+  interoperates with other tools and matches what an LLM already knows. Notably: C4 = MIDI
+  60; drum kits default their pad notes to the GM drum map (kick = 36, snare = 38, closed
+  hat = 42, open hat = 46, ...), not an ad-hoc layout. Defaults stay data (remappable), but
+  pick the standard as the default.
 - No em-dash characters in committed text (commits, comments, docs).
+- **UI glyph icons: size them up.** Small glyph controls (disclosure arrows, chevrons,
+  kebab dots) tend to render too cramped. Default new ones to ~16-18px with an adequate
+  hit area (~`w-6`/`w-7`), not `text-[10px]`; size up existing small ones when you touch
+  them. (Established from repeated user feedback.)

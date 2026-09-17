@@ -19,9 +19,15 @@ async function dismissStart(page: Page) {
 
 const chips = (page: Page) => page.getByTitle(/drag onto the lane/);
 
+/** Open the Activity rail view so the edit feed is visible. */
+async function openActivity(page: Page) {
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+}
+
 test("copy and paste a clip in the rail adds a clip to the pool", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openActivity(page);
 
   await expect(chips(page)).toHaveCount(1); // the seed clip A
   await chips(page).first().click(); // select + focus the rail
