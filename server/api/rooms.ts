@@ -25,7 +25,7 @@ import {
 } from "../../src/audio/history/keyframes";
 import type { Author, EditCommand, EditEntry } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
-import type { ServerMessage } from "../../src/contract/ws";
+import type { ClientMessage, ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
 import {
   appendEdits,
@@ -64,6 +64,24 @@ export interface IncomingEdit {
   kind?: "undo" | "redo";
   undoes?: string;
 }
+
+type WireEdit = Extract<ClientMessage, { type: "edit" }>;
+
+/**
+ * One translation from an inbound `edit` message to what a room applies, shared by the WebSocket
+ * server and the tests that drive a room directly.
+ *
+ * It exists because there used to be two: the ws server listed the fields it forwarded and the tests
+ * listed theirs, so `kind`/`undoes` reached a room in the tests and were dropped on the real path -
+ * an undo in a hosted session re-applied the very edit it was taking back. Every wire field is
+ * spread through rather than listed, so a field added to the contract cannot go missing here; the
+ * room reads what it knows and ignores the envelope that rides along.
+ */
+export const incomingEdit = (message: WireEdit): IncomingEdit => ({
+  ...message,
+  // The contract types `command` off the schema; a room wants the union the engine applies.
+  command: message.command as EditCommand,
+});
 
 /** Version-history markers that pin a keyframe at their seq (a diff / revert-to base): a named `commit`
  *  and a `loadSnapshot` revert. Both are also enumerable history nodes (kept through log compaction). */

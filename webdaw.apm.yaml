@@ -8424,6 +8424,47 @@ projects:
             window does.
 
 
+          ### The wire gap E3 shipped with, fixed on slice-125
+
+
+          E3 forwarded the tombstone and every test agreed it arrived, and in
+          the running app it did not.
+
+          `wsServer` built its `IncomingEdit` by listing the fields it
+          forwarded, and that list predated
+
+          `kind`/`undoes`, so a tombstone reached the authority as a plain edit:
+          the room applied the command
+
+          it carries - the command of the edit being taken back - straight
+          forward again, and logged the entry
+
+          with no `undoes` for a cold start to honour. Undo was worse than
+          before in a hosted session.
+
+
+          It survived the suite because the three transport harnesses wrote
+          their own translation, so the
+
+          tests exercised a copy of the ws server rather than the ws server.
+          The fix is one translation
+
+          (`incomingEdit`), shared by both, which spreads every wire field
+          through rather than listing them -
+
+          so a field added to the contract cannot go missing on the way to a
+          room - and the harnesses now
+
+          go through the real path. Two tests state the mapping outright.
+
+
+          **The lesson worth keeping:** a test harness that reimplements the
+          boundary it stands in for proves
+
+          the harness works. Where a seam is a translation, the translation has
+          to be the shared thing.
+
+
           ### Still open in stage E
 
 
