@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { makeSyncEnv } from "./support/syncEnv";
+import { makeSyncEnv, seedEdits } from "./support/syncEnv";
 import { Harness } from "./support/syncHarness";
 import { Room } from "../server/api/rooms";
 import { files } from "../server/db/schema";
@@ -47,14 +47,22 @@ describe("a room's start keyframe", () => {
   // The retain interval measures from the newest base, so seeding the start also moves the cadence:
   // the next slot is taken 500 edits after the START rather than 500 after the first keyframe. Same
   // spacing, one base earlier, and the project's opening edits covered instead of stranded.
+  it("holds the only slot until the interval has elapsed from it", async () => {
+    const { db } = await makeSyncEnv();
+    await seedEdits(db, "p1", 120);
+    const room = await Room.load(db, "local", "p1");
+    await fill(room, 1, 120); // crosses the keyframe interval, but not the retain one
+
+    expect(await ring(db)).toEqual([-1, null, null, null, null]);
+  });
+
   it("becomes the base the retain interval counts from", async () => {
     const { db } = await makeSyncEnv();
+    await seedEdits(db, "p1", 500);
     const room = await Room.load(db, "local", "p1");
-    await fill(room, 120);
-    expect(await ring(db)).toEqual([-1, null, null, null, null]);
+    await fill(room, 1, 500);
 
-    await fill(room, 400, 120);
-    expect(await ring(db)).toEqual(expect.arrayContaining([-1, 499]));
+    expect(await ring(db)).toEqual([-1, 500, null, null, null]);
   });
 
   // The case that sent me looking: a client's own first edit, undone after the project moved past

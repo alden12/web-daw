@@ -42,10 +42,12 @@ async function leftBehind() {
   author.flush();
 
   author.disconnect();
-  for (let index = 0; index < 120; index += 1) {
+  for (let index = 0; index < 20; index += 1) {
     await room.applyIncoming({ command: track(`t-${index}`), opId: `bg-${index}` });
   }
   // The authority's own compaction, run early: everything below seq 1 goes, taking our edit with it.
+  // Early because real compaction needs two thousand edits to trigger, and what matters here is the
+  // state it leaves - a log that can no longer account for an edit the room still holds.
   await deleteEditsBelow(db, "p1", 1);
   return { db, room, harness, author };
 }
