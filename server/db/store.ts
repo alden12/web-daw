@@ -7,14 +7,24 @@
  *  - `history/commits/*` is write-once (append-only history); overwrites are refused.
  *  - writing manifest.json / meta.json syncs the queryable columns (schema / name+time).
  */
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Db } from "./types";
-import { files, projects } from "./schema";
+import { edits, files, projects } from "./schema";
 
 export type WriteResult = { ok: true } | { ok: false; reason: "conflict" | "forbidden" };
 
 /** A bundle file's content: JSON text entries as parsed JSON, binary entries as bytes. */
 export type FilePayload = { kind: "json"; json: unknown } | { kind: "binary"; bytes: Uint8Array };
+
+/** One authored edit as appended/read over the wire (structural; the command stays opaque here). */
+export type EditEntryInput = {
+  seq: number;
+  command: unknown;
+  author: string;
+  time: number;
+  kind?: string;
+  label?: string;
+};
 
 const isCommitPath = (path: string) => path.startsWith("history/commits/");
 
@@ -101,6 +111,78 @@ export async function writeFile(
     if (payload.kind === "json" && path === "manifest.json") await syncManifest(tx, projectId, payload.json);
     return { ok: true };
   });
+}
+
+/**
+ * Append authored edits to the project's log (append-only). Creates the project on first write
+ * and enforces owner. Each `seq` is immutable: a re-sent entry (same `seq`) is an idempotent
+ * no-op via `onConflictDoNothing`, never an overwrite. Returns the project's current max seq.
+ */
+export async function appendEdits(
+  db: Db,
+  ownerId: string,
+  projectId: string,
+  entries: EditEntryInput[],
+): Promise<{ ok: true; maxSeq: number } | { ok: false; reason: "forbidden" }> {
+  return db.transaction(async (tx) => {
+    await tx.insert(projects).values({ id: projectId, ownerId }).onConflictDoNothing();
+    const owned = await tx.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, projectId));
+    if (owned[0]?.ownerId !== ownerId) return { ok: false, reason: "forbidden" };
+
+    if (entries.length > 0) {
+      await tx
+        .insert(edits)
+        .values(
+          entries.map((entry) => ({
+            projectId,
+            seq: entry.seq,
+            command: entry.command,
+            author: entry.author,
+            time: entry.time,
+            kind: entry.kind ?? null,
+            label: entry.label ?? null,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+
+    const rows = await tx
+      .select({ maxSeq: sql<number>`coalesce(max(${edits.seq}), -1)` })
+      .from(edits)
+      .where(eq(edits.projectId, projectId));
+    return { ok: true, maxSeq: Number(rows[0]?.maxSeq ?? -1) };
+  });
+}
+
+/** The owner's authored edits with `seq > sinceSeq`, oldest first (the delta tail / feed window). */
+export async function readEdits(
+  db: Db,
+  ownerId: string,
+  projectId: string,
+  sinceSeq: number,
+): Promise<EditEntryInput[]> {
+  const rows = await db
+    .select({
+      seq: edits.seq,
+      command: edits.command,
+      author: edits.author,
+      time: edits.time,
+      kind: edits.kind,
+      label: edits.label,
+    })
+    .from(edits)
+    .innerJoin(projects, eq(edits.projectId, projects.id))
+    .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId), gt(edits.seq, sinceSeq)))
+    .orderBy(edits.seq);
+  // Drop null kind/label so the entries match the wire schema (optional, not nullable).
+  return rows.map((row) => ({
+    seq: row.seq,
+    command: row.command,
+    author: row.author,
+    time: row.time,
+    ...(row.kind != null ? { kind: row.kind } : {}),
+    ...(row.label != null ? { label: row.label } : {}),
+  }));
 }
 
 /** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */

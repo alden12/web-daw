@@ -20,7 +20,16 @@ import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { zValidator } from "@hono/zod-validator";
 import type { Db } from "../db/types";
-import { listProjectIds, readFile, fileExists, writeFile, softDeleteProject, type FilePayload } from "../db/store";
+import {
+  listProjectIds,
+  readFile,
+  fileExists,
+  writeFile,
+  softDeleteProject,
+  appendEdits,
+  readEdits,
+  type FilePayload,
+} from "../db/store";
 import { validateBundleFile } from "../../src/audio/project/schema";
 import { routes, isBinaryPath } from "../../src/contract/http";
 
@@ -128,5 +137,29 @@ export function createApp(db: Db, options: AppOptions = {}) {
         if (result.ok) return c.body(null, 204);
         return c.json({ error: result.reason }, result.reason === "conflict" ? 409 : 403);
       })
+      .post(
+        routes.appendEdits.path,
+        zValidator("param", routes.appendEdits.params),
+        limitBody,
+        zValidator("json", routes.appendEdits.body),
+        async (c) => {
+          const { id } = c.req.valid("param");
+          const { entries } = c.req.valid("json");
+          const result = await appendEdits(db, c.get("ownerId"), id, entries);
+          if (!result.ok) return c.json({ error: result.reason }, 403);
+          return c.json({ maxSeq: result.maxSeq });
+        },
+      )
+      .get(
+        routes.getEdits.path,
+        zValidator("param", routes.getEdits.params),
+        zValidator("query", routes.getEdits.query),
+        async (c) => {
+          const { id } = c.req.valid("param");
+          const { since } = c.req.valid("query");
+          const entries = await readEdits(db, c.get("ownerId"), id, since ?? -1);
+          return c.json({ entries });
+        },
+      )
   );
 }

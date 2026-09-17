@@ -62,6 +62,19 @@ describe("RemoteBundleStore / RemoteProjectStorage", () => {
     await expect(bundle.writeText("history/commits/c1.json", c1)).resolves.toBeUndefined();
   });
 
+  it("appends and reads back edits through the seam", async () => {
+    const bundle = new RemoteProjectStorage("http://localhost").bundle("p1");
+    const edits = [
+      { seq: 0, command: { type: "addNote" }, author: "you", time: 1 },
+      { seq: 1, command: { type: "removeNote" }, author: "you", time: 2 },
+    ] as unknown as Parameters<typeof bundle.appendEdits>[0];
+
+    expect(await bundle.readEdits(-1)).toEqual([]);
+    await bundle.appendEdits(edits);
+    expect((await bundle.readEdits(-1)).map((entry) => entry.seq)).toEqual([0, 1]);
+    expect((await bundle.readEdits(0)).map((entry) => entry.seq)).toEqual([1]);
+  });
+
   it("sends the bearer token when configured", async () => {
     env = await makeSyncEnv({ token: "secret" }); // the fetch closure reads the current env
     const ok = new RemoteProjectStorage("http://localhost", "secret");

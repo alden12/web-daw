@@ -14,8 +14,10 @@
  */
 import { z } from "zod";
 import { projectId, filePath } from "./errors";
+import { editEntrySchema } from "../audio/project/schema";
 
 const fileParams = z.object({ id: projectId, path: filePath });
+const idParams = z.object({ id: projectId });
 
 /** Bundle paths under this prefix hold raw bytes (audio samples); everything else is JSON. */
 export const SAMPLES_PREFIX = "samples/";
@@ -59,6 +61,22 @@ export const routes = {
     path: "/projects/:id/files/:path{.+}",
     params: fileParams,
     body: "raw",
+  },
+  /** Append authored edits to the project's log (append-only; a re-sent seq is idempotent). */
+  appendEdits: {
+    method: "POST",
+    path: "/projects/:id/edits",
+    params: idParams,
+    body: z.object({ entries: z.array(editEntrySchema) }),
+    response: z.object({ maxSeq: z.number() }),
+  },
+  /** Fetch the edit tail with `seq > since` (default: from the start), oldest first. */
+  getEdits: {
+    method: "GET",
+    path: "/projects/:id/edits",
+    params: idParams,
+    query: z.object({ since: z.coerce.number().optional() }),
+    response: z.object({ entries: z.array(editEntrySchema) }),
   },
 } as const;
 

@@ -10,6 +10,7 @@
  */
 import { createApiClient, type ApiClient } from "../contract/client";
 import type { BundleStore, ProjectStorage } from "./bundleStore";
+import type { EditEntry } from "./commands/types";
 
 /** One project's bundle over the sync API, rooted at `projects/<id>/files/`. */
 export class RemoteBundleStore implements BundleStore {
@@ -39,6 +40,17 @@ export class RemoteBundleStore implements BundleStore {
 
   exists(path: string): Promise<boolean> {
     return this.client.fileExists(this.projectId, path);
+  }
+
+  async appendEdits(entries: EditEntry[]): Promise<void> {
+    await this.client.appendEdits(this.projectId, entries);
+  }
+
+  async readEdits(sinceSeq: number): Promise<EditEntry[]> {
+    // The wire shape validates `command` structurally ({type}); at runtime it is the full stored
+    // command, so this cast back to the app's EditEntry is safe.
+    const entries = await this.client.getEdits(this.projectId, sinceSeq);
+    return entries as unknown as EditEntry[];
   }
 
   // The content-type tells the server how to store it: JSON text entries as queryable jsonb,
