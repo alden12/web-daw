@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
+import { readEdits } from "../server/db/store";
 import { SharedSession, type SyncTransport, type LocalMirror, type PendingOp } from "../src/audio/sync/sharedSession";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
@@ -516,6 +517,70 @@ describe("SharedSession (client optimistic + rebase)", () => {
     const roomStore = new ProjectStore(false);
     roomStore.load(harness.room.snapshot());
     expect(noteStart(roomStore)).toBe(5); // still the peer's value; the held move never flushed
+  });
+
+  // --- commit markers: server-authoritative history foundation (B2 steps 1-2) ------
+  const commitMarkers = async (db: Parameters<typeof readEdits>[0]) =>
+    (await readEdits(db, { userId: "local" }, "p1", -1)).filter(
+      (entry) => (entry.command as { type?: string }).type === "commit",
+    );
+
+  it("authors a commit marker into the log: held offline, gets an authoritative seq on reconnect, peers see it", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1", "alice");
+    const b = harness.connect("p1", "bob");
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    a.disconnect();
+    a.session.postCommit("first cut", "alice");
+    await harness.pump();
+    expect(await commitMarkers(db)).toHaveLength(0); // held offline - never reached the authority
+
+    a.reconnect();
+    await harness.pump(); // subscribe -> snapshot
+    a.flush(); // fold snapshot -> flush the held marker
+    await harness.pump(); // authority assigns a seq + broadcasts
+    a.flush();
+    b.flush();
+
+    const markers = await commitMarkers(db);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].seq).toBeGreaterThanOrEqual(0); // an authoritative seq, assigned by the Room
+    expect((markers[0].command as { message?: string }).message).toBe("first cut");
+    // The marker changes no project state (applyEdit no-ops it).
+    expect(harness.room.snapshot().tracks).toHaveLength(0);
+    // Peer B sees it narrated in its feed, attributed to alice.
+    const bCommit = b.editLog.getEntries().find((entry) => entry.command.type === "commit");
+    expect(bCommit?.author).toBe("alice");
+  });
+
+  it("two clients committing concurrently both land as distinct ordered markers (no HEAD race)", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1", "alice");
+    const b = harness.connect("p1", "bob");
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    a.session.postCommit("A version", "alice");
+    b.session.postCommit("B version", "bob");
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    const markers = await commitMarkers(db);
+    // The old shared mutable HEAD (refs.json) would have let one clobber the other; as ordered log
+    // entries both survive with distinct authoritative seqs, and HEAD is simply the latest.
+    expect(markers).toHaveLength(2);
+    expect(new Set(markers.map((marker) => marker.seq)).size).toBe(2);
+    expect(markers.map((marker) => (marker.command as { message?: string }).message).sort()).toEqual([
+      "A version",
+      "B version",
+    ]);
   });
 });
 

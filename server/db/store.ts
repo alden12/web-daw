@@ -299,11 +299,23 @@ export async function maxEditSeq(db: Db, ownerId: string, projectId: string): Pr
  * Compact the working edit log: delete entries with `seq <= uptoSeq`. Called by the authority after it
  * writes a keyframe, to bound cold-start replay. The caller must pass a floor STRICTLY BELOW the keyframe's
  * `headSeq` (so `Room.load`, which replays `readEdits(headSeq)`, never needs a pruned entry) and below the
- * retained feed window. The write-once commit history lives in the `files` table, not `edits`, so it is
- * untouched. Not access-gated: an internal authority-only operation keyed by project id.
+ * retained feed window. The full snapshot per commit lives in the `files` table (`history/commits/*`), so
+ * it is untouched. Not access-gated: an internal authority-only operation keyed by project id.
+ *
+ * Version-history *markers* are exempt from pruning, so the commit list stays enumerable by scanning the
+ * log no matter how old: `commit` (a tiny named-version pointer; its state is a pinned keyframe fetched by
+ * seq) and `loadSnapshot` (a revert; it carries its own snapshot, and must survive so replay across it
+ * stays exact). Only fine-grained edits are pruned.
  */
 export async function deleteEditsBelow(db: Db, projectId: string, uptoSeq: number): Promise<void> {
-  await db.delete(edits).where(and(eq(edits.projectId, projectId), lte(edits.seq, uptoSeq)));
+  await db.delete(edits).where(
+    and(
+      eq(edits.projectId, projectId),
+      lte(edits.seq, uptoSeq),
+      // Constants, not user input, so inlining is safe (and dodges array-param binding differences).
+      sql`${edits.command}->>'type' not in ('commit', 'loadSnapshot')`,
+    ),
+  );
 }
 
 /** The project's real owner + whether `who` may open it, for the realtime room. Keyed by project id, so

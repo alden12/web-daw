@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
 import { deleteEditsBelow, listProjects } from "../server/db/store";
-import { files, projects } from "../server/db/schema";
+import { edits, files, projects } from "../server/db/schema";
 import type { ServerMessage } from "../src/contract/ws";
 import type { EditCommand } from "../src/audio/commands/types";
 import type { ProjectData } from "../src/audio/project/types";
@@ -16,6 +16,7 @@ const collector = () => {
 };
 
 const createTrack = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
+const commitMarker = (message: string): EditCommand => ({ type: "commit", message }) as EditCommand;
 const applied = (messages: ServerMessage[]) => messages.filter((m) => m.type === "editApplied");
 
 // Drive `count` createTrack edits through the room (seq starts at `start`); used to cross the keyframe interval.
@@ -31,6 +32,25 @@ const readKeyframe = async (db: Awaited<ReturnType<typeof makeSyncEnv>>["db"], p
     .from(files)
     .where(and(eq(files.projectId, projectId), eq(files.path, "project.json")));
   return rows[0]?.json as (ProjectData & { headSeq?: number }) | undefined;
+};
+
+// The commit-pinned keyframe written at a commit marker's seq (history/keyframes/<seq>.json).
+const readCommitKeyframe = async (
+  db: Awaited<ReturnType<typeof makeSyncEnv>>["db"],
+  projectId: string,
+  seq: number,
+) => {
+  const rows = await db
+    .select({ json: files.json })
+    .from(files)
+    .where(and(eq(files.projectId, projectId), eq(files.path, `history/keyframes/${seq}.json`)));
+  return rows[0]?.json as (ProjectData & { headSeq?: number }) | undefined;
+};
+
+// Direct-select the surviving edit seqs (oldest first), to assert what compaction pruned vs kept.
+const remainingSeqs = async (db: Awaited<ReturnType<typeof makeSyncEnv>>["db"], projectId: string) => {
+  const rows = await db.select({ seq: edits.seq }).from(edits).where(eq(edits.projectId, projectId)).orderBy(edits.seq);
+  return rows.map((row) => row.seq);
 };
 
 describe("Room (realtime authority)", () => {
@@ -140,6 +160,39 @@ describe("Room (realtime authority)", () => {
     await reloaded.subscribe(late.client);
     const snapshot = late.messages[0];
     expect(snapshot.type === "snapshot" && snapshot.entries.length).toBeGreaterThan(0);
+  });
+
+  it("pins a keyframe at a commit marker's seq, exact even with later edits", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await fillTracks(room, 3); // seq 0..2, three tracks
+    const commit = await room.applyIncoming({ command: commitMarker("v1"), opId: "op-commit" });
+    const commitSeq = commit.type === "editApplied" ? commit.seq : -1;
+    expect(commitSeq).toBe(3);
+    // More edits AFTER the commit: the pinned keyframe must still reflect state AT the commit's seq,
+    // not the later HEAD (it was snapshotted synchronously at seq assignment).
+    await fillTracks(room, 2, 4); // seq 4..5, two more tracks
+
+    const pinned = await readCommitKeyframe(db, "p1", commitSeq);
+    expect(pinned?.headSeq).toBe(commitSeq);
+    expect(pinned?.tracks).toHaveLength(3); // three at the commit, not the five that exist now
+    expect(room.snapshot().tracks).toHaveLength(5);
+  });
+
+  it("keeps history markers (commit + revert) through compaction, so history stays enumerable", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await fillTracks(room, 2); // seq 0..1
+    await room.applyIncoming({ command: commitMarker("early"), opId: "op-commit" }); // seq 2
+    await fillTracks(room, 2, 3); // seq 3..4
+    // A revert (loadSnapshot) marker at seq 5, carrying a snapshot.
+    const revert = { type: "loadSnapshot", project: room.snapshot(), message: 'Revert to "early"' } as EditCommand;
+    await room.applyIncoming({ command: revert, opId: "op-revert" }); // seq 5
+    await fillTracks(room, 2, 6); // seq 6..7
+
+    // Prune everything at/below seq 7: fine-grained edits go, but both markers (seq 2, 5) survive.
+    await deleteEditsBelow(db, "p1", 7);
+    expect(await remainingSeqs(db, "p1")).toEqual([2, 5]);
   });
 
   it("lists a project by its renamed name without any meta.json (syncMeta retired)", async () => {

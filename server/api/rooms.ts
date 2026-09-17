@@ -13,6 +13,7 @@
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { applyEdit } from "../../src/audio/commands/applyEdit";
+import { commitKeyframePath } from "../../src/audio/history/paths";
 import type { Author, EditCommand } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
 import type { ServerMessage } from "../../src/contract/ws";
@@ -53,6 +54,10 @@ export interface IncomingEdit {
 
 /** Only pure-forward edits replay through `applyEdit`; notes and undo/redo markers are skipped. */
 const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
+
+/** Version-history markers that pin a keyframe at their seq (a diff / revert-to base): a named `commit`
+ *  and a `loadSnapshot` revert. Both are also enumerable history nodes (kept through log compaction). */
+const isHistoryMarker = (type: string): boolean => type === "commit" || type === "loadSnapshot";
 
 /** The `snapshot` message's entries field (its `command` is the schema-typed shape, not `unknown`). */
 type SnapshotEntries = Extract<ServerMessage, { type: "snapshot" }>["entries"];
@@ -145,6 +150,21 @@ export class Room {
     if (pruneFloor >= 0) await deleteEditsBelow(this.db, this.projectId, pruneFloor);
   }
 
+  /**
+   * Pin a keyframe at a commit's seq: write its full HEAD snapshot to the write-once `history/commits/*`
+   * path, keyed by seq. Materialising a commit (diff / revert-to) then loads this snapshot directly - zero
+   * replay, exact, and durable however old the commit is. Self-contained, so log compaction never affects
+   * it; it is stored, never broadcast (peers get the lightweight marker in the edit stream). Best-effort:
+   * the marker is already persisted, so a failed keyframe just means that commit can't be materialised
+   * until re-derived - it never loses the fact that the commit happened.
+   */
+  private async persistCommitKeyframe(seq: number, snapshot: ProjectData): Promise<void> {
+    await writeFile(this.db, { userId: this.ownerId }, this.projectId, commitKeyframePath(seq), {
+      kind: "json",
+      json: { ...snapshot, headSeq: seq },
+    });
+  }
+
   /** Add a client and send it the catch-up `snapshot` (head + recent stream). */
   async subscribe(client: RoomClient): Promise<void> {
     this.clients.add(client);
@@ -186,6 +206,12 @@ export class Room {
     const seq = ++this.maxSeq;
     applyEdit(this.store, edit.command, author);
     this.appliedOps.set(edit.opId, seq);
+    // A version-history marker pins a keyframe AT its own seq (time-travel base). Snapshot HEAD
+    // synchronously here - before any `await` - so a concurrent edit crossing this section can't advance
+    // the store first and make the keyframe reflect a later seq. `commit` is a no-op (snapshot = HEAD);
+    // `loadSnapshot` (revert) has already loaded its target into the store above (snapshot = that target).
+    // Written to storage below (never broadcast); materialising any marker just loads its keyframe.
+    const markerSnapshot = isHistoryMarker(edit.command.type) ? this.store.snapshot() : null;
     const applied: ServerMessage = {
       type: "editApplied",
       projectId: this.projectId,
@@ -201,6 +227,7 @@ export class Room {
     // Keep the queryable index name current on a rename, so every collaborator's listing reflects it
     // without the renamer pushing meta.json (a peer never writes the owner's meta.json).
     if (edit.command.type === "renameProject") await setProjectName(this.db, this.projectId, this.store.name);
+    if (markerSnapshot) await this.persistCommitKeyframe(seq, markerSnapshot);
     // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a bounded
     // tail. Runs after the broadcast, so it never delays peers seeing the edit.
     if (this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();

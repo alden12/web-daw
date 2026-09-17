@@ -278,3 +278,126 @@ describe("VersionStore (commit DAG)", () => {
     expect(await vs2.diff(hist[1].id, head!.id)).toContain("Tempo 74 -> 90 BPM");
   });
 });
+
+// --- remote mode: history derived from the authoritative log's markers -------------------------------
+
+import type { EditEntry } from "../src/audio/commands/types";
+import { commitKeyframePath } from "../src/audio/history/paths";
+
+/** A confirmed authoritative log entry (edit or version marker) at a given seq. */
+const entry = (seq: number, command: EditEntry["command"], author = "you"): EditEntry => ({
+  seq,
+  command,
+  author,
+  time: seq,
+  kind: "edit",
+});
+const track = (id: string) => ({ type: "createTrack", instrumentType: "subtractive", id }) as EditEntry["command"];
+const commit = (message: string) => ({ type: "commit", message }) as EditEntry["command"];
+
+/** A ProjectData snapshot with one named track (a distinct state to revert / diff against). */
+function snapshotWithTrack(id: string, name: string) {
+  const project = new ProjectStore(false);
+  project.addTrack("subtractive", { id, name });
+  return project.snapshot();
+}
+
+describe("VersionStore (remote / server-authoritative history)", () => {
+  /** A remote-mode store over a seeded in-memory bundle + a capturing commit sink. */
+  async function remoteSetup(seed: EditEntry[] = []) {
+    const bundle = new MemoryBundleStore();
+    if (seed.length > 0) await bundle.appendEdits(seed);
+    const repo = new ProjectRepository(bundle);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const posted: { message: string; author: string }[] = [];
+    const vs = new VersionStore(project, log, repo);
+    vs.setRemote({ postCommit: (message, author) => posted.push({ message, author }) });
+    await vs.load();
+    return { bundle, repo, project, log, vs, posted };
+  }
+
+  it("derives the version list from the log's markers, newest first, keyed by authoritative seq", async () => {
+    const { vs } = await remoteSetup([
+      entry(0, track("t-0")),
+      entry(1, track("t-1")),
+      entry(2, commit("v1")),
+      entry(3, track("t-2")),
+      entry(4, commit("v2"), "claude"),
+    ]);
+
+    const hist = await vs.history();
+    expect(hist.map((commit) => [commit.id, commit.message, commit.parent])).toEqual([
+      ["4", "v2", "2"],
+      ["2", "v1", null],
+    ]);
+    expect(hist[0].author).toBe("claude");
+    expect(hist[1].entryCount).toBe(2); // the two edits before v1
+    expect(hist[0].entryCount).toBe(1); // the one edit between v1 and v2
+  });
+
+  it("reports HEAD + uncommitted from the log", async () => {
+    // A trailing edit after the last marker -> uncommitted work, HEAD is the last marker.
+    const withPending = await remoteSetup([entry(0, track("t-0")), entry(1, commit("v1")), entry(2, track("t-1"))]);
+    expect(withPending.vs.getState()).toMatchObject({ headId: "1", hasUncommitted: true });
+
+    // Nothing after the last marker -> clean.
+    const clean = await remoteSetup([entry(0, track("t-0")), entry(1, commit("v1"))]);
+    expect(clean.vs.getState()).toMatchObject({ headId: "1", hasUncommitted: false });
+  });
+
+  it("authors a commit through the session sink only when there is uncommitted work", async () => {
+    const { vs, posted } = await remoteSetup([entry(0, track("t-0"))]); // one edit, no marker yet
+    expect(await vs.commit("first", "you")).toBeNull(); // no synthesized summary (rides sync)
+    expect(posted).toEqual([{ message: "first", author: "you" }]);
+
+    // With the marker now present and nothing after it, a further commit is a no-op.
+    const clean = await remoteSetup([entry(0, track("t-0")), entry(1, commit("first"))]);
+    await clean.vs.commit("again", "you");
+    expect(clean.posted).toEqual([]);
+  });
+
+  it("reverts by dispatching a loadSnapshot of the target's pinned keyframe, applied optimistically", async () => {
+    const { bundle, log, project, vs } = await remoteSetup([
+      entry(0, track("t-old")),
+      entry(1, commit("v1")),
+      entry(2, track("t-new")),
+      entry(3, commit("v2")),
+    ]);
+    // Pin v1's keyframe (state at seq 1): one track "t-old". Current live state is empty.
+    await bundle.writeText(commitKeyframePath(1), JSON.stringify({ ...snapshotWithTrack("t-old", "Old"), headSeq: 1 }));
+
+    const dispatched: EditEntry["command"][] = [];
+    log.setRemote((command) => dispatched.push(command));
+    await vs.revertTo("1", "you");
+
+    // Optimistically applied: the live project jumped to v1's state.
+    expect(project.getTrack("t-old")).toBeTruthy();
+    // And it rode the sync pipeline as a loadSnapshot carrying that snapshot + a naming message.
+    expect(dispatched).toHaveLength(1);
+    const revert = dispatched[0] as { type: string; message: string; project: { tracks: unknown[] } };
+    expect(revert.type).toBe("loadSnapshot");
+    expect(revert.message).toBe('Revert to "v1"');
+    expect(revert.project.tracks).toHaveLength(1);
+  });
+
+  it("diffs two versions by materialising their pinned keyframes", async () => {
+    const { bundle, vs } = await remoteSetup([entry(0, commit("a")), entry(1, commit("b"))]);
+    const slow = new ProjectStore(false);
+    slow.setTempo(90);
+    const fast = new ProjectStore(false);
+    fast.setTempo(140);
+    await bundle.writeText(commitKeyframePath(0), JSON.stringify({ ...slow.snapshot(), headSeq: 0 }));
+    await bundle.writeText(commitKeyframePath(1), JSON.stringify({ ...fast.snapshot(), headSeq: 1 }));
+
+    expect(await vs.diff("0", "1")).toContain("Tempo 90 -> 140 BPM");
+  });
+
+  it("notifies subscribers when the log advances", async () => {
+    const { vs } = await remoteSetup([entry(0, track("t-0"))]);
+    let fired = 0;
+    vs.subscribe(() => (fired += 1));
+    await vs.onLogAdvanced();
+    expect(fired).toBe(1);
+  });
+});
