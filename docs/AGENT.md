@@ -98,7 +98,7 @@ sequenceDiagram
     participant Tools as ToolRegistry
 
     User->>Brain: add a four-on-the-floor kick
-    loop until final answer or step cap
+    loop until final answer, step cap, or user stop
         Brain->>Provider: messages + tool schemas
         alt model returns a tool call
             Provider-->>Brain: call add_note
@@ -115,6 +115,13 @@ sequenceDiagram
 
 That is 90% of what Claude Code is. Provider tool-use / function-calling gives us the
 "return a structured tool call" step natively, so we never parse freeform text.
+
+The loop is **interruptible and legible** (`AGENT-10`): an `AbortSignal` threads panel ->
+loop -> provider -> `fetch`, so a **Stop** button cancels the in-flight request and the run
+returns the work done so far (`stopped: true`) rather than throwing; and each act round (the
+model's narration + the tools it ran) is surfaced as an `AgentStep`, live via `onStep`, so the
+panel shows the think-act-observe trail as it unfolds. Token-by-token streaming (instant Stop,
+thinking arriving live) is the follow-on `AGENT-10.1`.
 
 ### The layers we build
 

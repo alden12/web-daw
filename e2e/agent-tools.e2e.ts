@@ -64,9 +64,11 @@ test("runs a tool call from the model and edits the project", async ({ page }) =
   await input.fill("make me a bass track");
   await page.getByRole("button", { name: "Send", exact: true }).click();
 
-  // The loop ran the tool (activity chip) and gave a final answer.
-  await expect(page.getByText(/create_track/)).toBeVisible();
+  // The loop gave its final answer; the think-act-observe trail auto-collapses once the run
+  // finishes, so expand the "N steps" disclosure to see the tool chip it ran.
   await expect(page.getByText("Added a subtractive track called Agent Bass.")).toBeVisible();
+  await page.getByRole("button", { name: /step/ }).click();
+  await expect(page.getByText(/Create track/)).toBeVisible();
 
   // The tool dispatched a real edit: the new track exists in the project.
   await expect(page.getByText("Agent Bass").first()).toBeVisible();

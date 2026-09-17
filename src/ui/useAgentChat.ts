@@ -2,12 +2,14 @@
  * The reason-act loop for one user message, tracking ephemeral pending/error. The
  * conversation turns are owned by the caller (the session store), passed in with a
  * setter, so switching sessions swaps the history transparently. The loop seeds from the
- * visible turns; its own tool rounds stay internal, and each assistant turn records which
- * tools ran (for the activity chips). See docs/AGENT.md.
+ * visible turns; each assistant turn records the act rounds it ran (`steps`, the
+ * think-act-observe trail) as they happen, so the panel grows the trail live. A run is
+ * interruptible: `stop()` aborts the in-flight request and keeps the partial trail. See
+ * docs/AGENT.md.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createProvider } from "../audio/agent/provider";
-import { runAgent } from "../audio/agent/loop";
+import { runAgent, type AgentStep } from "../audio/agent/loop";
 import type { AgentProvider, AgentTool, ChatMessage } from "../audio/agent/types";
 
 const SYSTEM_PROMPT = [
@@ -18,7 +20,10 @@ const SYSTEM_PROMPT = [
   "A drum kit maps each pad to a specific MIDI note. It follows the General MIDI drum map by default " +
     "(kick=36, snare=38, closed hat=42, open hat=46, ...), but pads can be remapped and custom samples may differ, " +
     "so call list_parameters on that track and use the `pads` map (each pad's note + sound) to pick pitches.",
-  "Make small, purposeful edits, then briefly tell the user what you did.",
+  "Make small, purposeful edits by calling the matching tool, then briefly confirm what changed.",
+  "Never say you have added, changed, removed, or created something unless you actually called its " +
+    "tool in this same turn and saw it succeed. Do not describe an edit in the past tense before doing " +
+    "it, and do not end your turn with a promise to act - if you intend to make a change, call the tool now.",
   "If a tool returns an error, read it and adjust - do not repeat the same failing call.",
 ].join(" ");
 
@@ -27,14 +32,19 @@ export interface ChatTurn {
   content: string;
   /** When the turn was created (epoch ms), for the timestamp. */
   at?: number;
-  /** Tools the agent ran to produce this turn (assistant turns only). */
-  activity?: { name: string; ok: boolean }[];
+  /** The act rounds the agent ran to produce this turn, in order (assistant turns only). */
+  steps?: AgentStep[];
+  /** True when the run was interrupted by the user before finishing (assistant turns only). */
+  stopped?: boolean;
   /** Tokens the exchange cost (assistant turns only). */
   usage?: { inputTokens: number; outputTokens: number };
 }
 
 export interface ChatError {
   message: string;
+  /** The raw model/provider response that failed, when available - shown on demand in the
+   *  error box so you can see exactly what came back. */
+  details?: string;
 }
 
 export function useAgentChat(
@@ -52,6 +62,7 @@ export function useAgentChat(
   const agent = useMemo(() => provider ?? createProvider(), [provider]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Run the loop over a conversation ending in the message to answer, appending the
   // assistant turn on success. Shared by send (new message) and retry (re-run the last).
@@ -59,28 +70,47 @@ export function useAgentChat(
     async (history: ChatTurn[]) => {
       setError(null);
       setPending(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const startedAt = Date.now();
       const context = getContext?.();
       const messages: ChatMessage[] = [
         { role: "system", content: SYSTEM_PROMPT },
         ...(context ? [{ role: "system" as const, content: context }] : []),
         ...history.map((turn): ChatMessage => ({ role: turn.role, content: turn.content })),
       ];
+      // Per-run accumulator: steps arrive in order via onStep, so we grow a draft
+      // assistant turn and re-publish it as the trail unfolds.
+      const liveSteps: AgentStep[] = [];
       try {
-        const result = await runAgent({ messages, provider: agent, tools });
+        const result = await runAgent({
+          messages,
+          provider: agent,
+          tools,
+          signal: controller.signal,
+          // Grow the trail live: each completed act round appends to a draft assistant turn.
+          onStep: (step) => {
+            liveSteps[step.index] = { text: step.text, activity: step.activity };
+            setTurns([...history, { role: "assistant", content: "", at: startedAt, steps: [...liveSteps] }]);
+          },
+        });
         setTurns([
           ...history,
           {
             role: "assistant",
             content: result.text,
-            at: Date.now(),
-            activity: result.invocations.map((invocation) => ({ name: invocation.name, ok: invocation.ok })),
+            at: startedAt,
+            steps: result.steps,
+            stopped: result.stopped,
             usage: result.usage,
           },
         ]);
       } catch (err) {
         setError(toChatError(err));
+        setTurns(history);
       } finally {
         setPending(false);
+        abortRef.current = null;
       }
     },
     [agent, tools, setTurns, getContext],
@@ -103,9 +133,19 @@ export function useAgentChat(
     void run(turns);
   }, [pending, turns, run]);
 
-  return { pending, error, send, retry };
+  // Interrupt the in-flight run; runAgent resolves with the partial trail (stopped: true),
+  // so the success path records what was done rather than surfacing an error.
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  return { pending, error, send, retry, stop };
 }
 
 function toChatError(err: unknown): ChatError {
-  return { message: err instanceof Error ? err.message : "Something went wrong talking to the agent." };
+  const message = err instanceof Error ? err.message : "Something went wrong talking to the agent.";
+  // Provider/parse errors (ProviderError, ModelResponseError, EmptyReplyError) carry the raw
+  // response body on `raw`; surface it as details so the error box can reveal it on demand.
+  const raw = err && typeof err === "object" && "raw" in err ? (err as { raw?: unknown }).raw : undefined;
+  return { message, ...(typeof raw === "string" && raw.length > 0 ? { details: raw } : {}) };
 }

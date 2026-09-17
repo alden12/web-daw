@@ -45,13 +45,19 @@ export interface ToolSpec {
   parameters: Record<string, unknown>;
 }
 
+/** Per-call knobs the loop hands the provider. `signal` lets a user interrupt abort the
+ *  in-flight request (the fetch is cancelled and rejects with an `AbortError`). */
+export interface ChatOptions {
+  signal?: AbortSignal;
+}
+
 /**
  * The one narrow seam the agent loop talks to. A provider turns a conversation (plus the
  * available tools) into a reply; vendor dialects (Gemini, OpenAI, ...) live inside the
  * implementation, never in the loop.
  */
 export interface AgentProvider {
-  chat(messages: ChatMessage[], tools?: ToolSpec[]): Promise<ProviderReply>;
+  chat(messages: ChatMessage[], tools?: ToolSpec[], options?: ChatOptions): Promise<ProviderReply>;
 }
 
 /**

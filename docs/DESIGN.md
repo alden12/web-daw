@@ -1455,38 +1455,51 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   feedback, so the loop becomes play-an-idea -> agent develops it -> you hear it and keep or
   reject. On-thesis: it makes the keystone note vocabulary an input modality for the agent,
   reusing the exact shapes already flowing through `dispatch`/MCP.
-`AGENT-7` `to-do` **zod validation of model responses**
+`AGENT-7` `review` **zod validation of model responses**
 
-- **Validate model responses with zod, not hand-rolled parsing.** The provider layer
-  (`src/audio/agent/provider.ts`, `loop.ts`) currently pulls apart the model's HTTP response
+- **Validate model responses with zod, not hand-rolled parsing - IN REVIEW.** The provider
+  layer (`src/audio/agent/provider.ts`) used to pull apart the model's HTTP response
   imperatively - `JSON.parse(raw)` then a chain of `(data as { choices?: unknown }).choices`
-  casts and `typeof` guards to reach `finish_reason`, `usage`, `tool_calls`, streamed tool-call
-  argument fragments, and error bodies. A model response is an **untrusted boundary** like any
-  other (MCP inputs, loaded bundles), so it should go through zod: define a response schema per
-  provider shape and `parse`/`safeParse` the payload, surfacing a clear message on a malformed
-  reply instead of an `undefined`-shaped crash downstream. This also matches the keystone rule -
-  the tool-call `arguments` string is already validated against the tool's zod schema on dispatch,
-  so validating the *envelope* the same way closes the last hand-parsed gap. **General rule:
-  parsing any unknown/untrusted object shape uses zod** (`safeParse` at the edge, typed value
-  inward), never `as`-cast + `typeof` ladders. Cheap, self-contained; do it when the provider
-  layer is next touched.
+  casts and `typeof` guards to reach `finish_reason`, `usage`, and `tool_calls`. A model
+  response is an **untrusted boundary** like any other (MCP inputs, loaded bundles), so
+  `parseReply` now runs the payload through a zod `completionSchema.safeParse` - a clear
+  message on a malformed reply instead of an `undefined`-shaped crash downstream. This matches
+  the keystone rule - the tool-call `arguments` string is already validated against the tool's
+  zod schema on dispatch, so validating the *envelope* the same way closes the last hand-parsed
+  gap. **General rule: parsing any unknown/untrusted object shape uses zod** (`safeParse` at the
+  edge, typed value inward), never `as`-cast + `typeof` ladders. Landed folded into `AGENT-10`,
+  where the provider layer was already open. (The streamed-fragment parsing it also mentioned
+  moves to `AGENT-10.1`, which introduces streaming.)
 
-`AGENT-10` `to-do` **Agentic loop, run-until-done** (deps: AGENT-2)
+`AGENT-10` `review` **Agentic loop, run-until-done** (deps: AGENT-2)
 
-- **Turn call-and-response into a real agent loop.** Today the panel/MCP loop
-  (`src/audio/agent/loop.ts`, `provider.ts`) is essentially one turn: prompt -> the model optionally
-  calls tools -> a reply. The shift is a *run-until-done* loop: each iteration the model emits either
-  tool calls or a terminal "finished" signal; we execute the tools, feed the results back, and repeat
-  until a stop condition - the model signals done, a hard **iteration cap**, an error, or a **user
-  interrupt**. Use the model's **interleaved thinking** between tool results - that is where the
-  "think, reflect, reconsider" behaviour actually lives; reflection is not a separate mode, it is the
-  model reasoning over tool output before its next move (and it becomes *grounded* reflection once the
-  loop can call the `AGENT-4` analysis tools on its own render, rather than second-guessing in a
-  vacuum). This is the spine the other agent tickets hang off - the ears (`AGENT-4`), play-an-idea
-  (`AGENT-5`), and the plan artifact (`AGENT-11`) are all tools/inputs the loop drives. Fold `AGENT-7`
-  (zod-validate the model-response envelope) in here, since hardening the loop is exactly when the
-  provider layer is touched. Keep it a **single** agent loop to start - a dedicated composition-critic
-  sub-agent is a later split only if one loop stops scaling, and it adds real coordination cost.
+- **Interruptible, legible run-until-done loop - IN REVIEW.** `runAgent` (`src/audio/agent/loop.ts`)
+  was already a *run-until-done* ReAct loop (iterate up to `maxSteps`, run tool calls, feed results
+  back, stop on a text-only reply or the cap) - the "call-and-response" framing was stale. This slice
+  hardened it into a real agent loop along the two axes that were actually missing:
+  (1) **user interrupt** - an `AbortSignal` threads panel -> loop -> provider -> `fetch`; a **Stop**
+  button cancels the in-flight request and the loop returns the work done so far (`stopped: true`)
+  instead of throwing; (2) **legibility** - each act round (the model's narration + the tools it ran)
+  is surfaced as an `AgentStep`, live via `onStep`, so the panel grows the think-act-observe trail as
+  it unfolds (expanded while running, auto-collapsed to an "N steps" disclosure once finished). This is
+  where the model's **interleaved thinking** becomes visible; it becomes *grounded* reflection once the
+  loop can call the `AGENT-4` analysis tools on its own render. Also folded in `AGENT-7` (zod-validate
+  the response envelope). This is the spine the other agent tickets hang off - the ears (`AGENT-4`),
+  play-an-idea (`AGENT-5`), and the plan artifact (`AGENT-11`) are all tools/inputs the loop drives.
+  Kept a **single** agent loop - a composition-critic sub-agent is a later split only if one loop stops
+  scaling. Token-by-token streaming (so Stop is instant and thinking arrives live) is split out as
+  `AGENT-10.1`.
+
+  `AGENT-10.1` `to-do` **Streaming replies + reasoning capture** (deps: AGENT-10)
+  Swap the provider transport from a whole-body `response.text()` to **streaming SSE** (`stream: true`;
+  parse `choices[].delta`, assembling tool-call `arguments` fragments by index, `finish_reason`, and
+  trailing `usage`). A pure, heavily-tested SSE->reply assembler isolates the fragile part; the loop
+  prefers a `chatStream` seam and feeds `onStep` live partial text, so **Stop becomes instant** (cancel
+  the reader) and the trail types out as it arrives. Capture provider **reasoning** deltas where the
+  OpenAI-compat surface exposes them (`reasoning_content`); full thinking-token capture on
+  Anthropic/OpenAI may need their native endpoints - honest limit, otherwise lean on the interleaved
+  narration from `AGENT-10`. Throttle UI re-renders (rAF / N-char batches) so markdown does not re-parse
+  per token.
 
 `AGENT-11` `to-do` **Interactive plan artifact + approval gate** (deps: AGENT-10)
 
