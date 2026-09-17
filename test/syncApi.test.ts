@@ -8,8 +8,19 @@ const put = (app: Awaited<ReturnType<typeof makeSyncEnv>>["app"], path: string, 
   app.request(`/projects/${path}`, { method: "PUT", body });
 
 // Minimal but validly-shaped bundle documents (the server shape-checks JSON writes).
-const PROJECT = JSON.stringify({ groups: [], tracks: [], tempoBpm: 120, lengthBeats: 16 });
-const commit = (id: string) => JSON.stringify({ id, parent: null, entries: [] });
+const PROJECT = JSON.stringify({ groups: [], tracks: [], tempoBpm: 120, lengthBeats: 16, selectedTrackId: null });
+const commit = (id: string) =>
+  JSON.stringify({
+    id,
+    parent: null,
+    author: "you",
+    message: "",
+    time: 0,
+    auto: true,
+    entryCount: 0,
+    entries: [],
+    lastSeq: 0,
+  });
 
 describe("sync API routes", () => {
   it("creates a project on first file write and lists it", async () => {
@@ -74,6 +85,16 @@ describe("sync API routes", () => {
     const { app } = await makeSyncEnv();
     expect((await put(app, "p-demo/files/project.json", '{"tracks":"not an array"}')).status).toBe(422);
     expect((await put(app, "p-demo/files/manifest.json", '{"projectId":"p"}')).status).toBe(422);
+    // The schema now deep-validates the tree: a track missing its `kind` discriminant is rejected,
+    // where the old shallow (array-of-unknown) check let it through.
+    const badTrack = JSON.stringify({
+      groups: [],
+      tracks: [{ id: "t1" }],
+      tempoBpm: 120,
+      lengthBeats: 16,
+      selectedTrackId: null,
+    });
+    expect((await put(app, "p-demo/files/project.json", badTrack)).status).toBe(422);
     // A valid shape still writes.
     expect((await put(app, "p-demo/files/project.json", PROJECT)).status).toBe(204);
   });
