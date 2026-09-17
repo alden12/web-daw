@@ -81,7 +81,17 @@ short list of coding conventions to follow throughout the codebase.
   auth gate on and strand every test at the login screen. (The old `mv .env .env.bak` dance is
   retired; if you add a new build-time `VITE_*` that must be off in e2e, blank it in `.env.test`.)
 
-## General
+## Roadmap
+
+- `docs/DESIGN.md` is the **single source of truth for the project map.** Every ticket carries an
+  inline `` `AREA-N` `status` `` marker right beside its prose (syntax + the fixed status vocab are
+  documented in the doc's "Roadmap markers" section). `yarn roadmap:view` renders them as a graph;
+  `yarn roadmap:check` validates them (run it after touching a marker).
+- **Keep markers current - nothing moves them automatically, it is a manual discipline.** When you
+  open a PR that implements a ticket, flip its marker to `review` in the *same* change (`review` =
+  built and working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And
+  whenever you notice a stale status (a ticket really done/merged/in-progress/abandoned but marked
+  otherwise), fix it right away in whatever change you are already making - don't wait to be asked.
 
 - The parameter schema is the keystone: UI, MCP, automation, and persistence are
   projections of it. Don't add per-parameter or per-type UI/branching - map over

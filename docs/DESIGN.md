@@ -137,8 +137,8 @@ In priority order:
   4), not the co-author framing. Guard against being a toy that never converts upward.
 - **(a) hobbyist producers and (c) working/semi-pro producers - not targeted, as designed.**
   Winning them would mean third-party plugin support (WAM/VST), which dilutes the core
-  differentiator (see goals below and the fork at `INST-7`). We do not chase them unless
-  direct evidence shows plugin absence is the actual thing blocking adoption.
+  differentiator (see goals below and the WAM fork under section 12, "Open decisions"). We do not
+  chase them unless direct evidence shows plugin absence is the actual thing blocking adoption.
 
 The **biggest risk is audience ambiguity** (the top-4 objection on our closest analogue's
 launch thread): versioning wins developers, the agent wins beginners, and the two audiences
@@ -958,6 +958,17 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   - *MCP payoff:* exposing key in project state lets the agent compose diatonically ("add a ii-V-I in
     the project key"). Pairs with the autotune scale-snap layer under "Audio pitch & time".
 
+- `DAW-13` `to-do` **Audio export and mixdown**
+
+  There is currently **no way to get a finished track out of the DAW as audio.** The `.daw.zip` export
+  (slice 15) is the *project* bundle, not a rendered mix, and `OfflineAudioContext` appears only under
+  `AGENT-4.1` (agent ears). Render the arrangement offline to a buffer and encode it out (WAV first, then
+  MP3 / stem options), surfaced as a transport / File action. Every segment needs this and it plausibly
+  gates any public launch. Engine work is a **shared offline-render core** with `AGENT-4.1`: build the
+  offline render once (client-side, the exact DSP graph the user hears) and both mixdown-export and the
+  agent's ears draw on it - so the two are best built together, with export the more fundamental of the
+  pair. Not research-driven; found while mapping the roadmap.
+
 ### Shipped feature detail (done, see DAW-1..7)
 
 Detailed write-ups of features already summarised by the DAW-1..7 done-core list at the top of the doc.
@@ -1491,19 +1502,86 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   plan -> edits. Decomposes directly into existing `dispatch`/MCP tool calls; no new engine surface,
   mostly panel UX plus a plan schema.
 
-`AGENT-8` `to-do` **Agent off-switch**
+`AGENT-8` `to-do` **Agent modes: off / librarian / full** (deps: AGENT-2)
 
-- **A first-class disable/off-switch for the agent** (referenced from Market & positioning). The product
-  must never feel like the AI is unavoidable: a clear control to turn the agent off entirely (no calls,
-  no background analysis), so the DAW stands on its own as a plain DAW for anyone who wants that. See
-  `docs/RESEARCH.md` section 4.
+- **A capability setting for how much the agent can do, not just whether it runs.** Three modes:
+  - **Off** - no agent at all: no calls, no background analysis. The DAW stands on its own as a plain
+    DAW, for anyone who wants that.
+  - **Librarian** - assist without authoring. The agent can create and configure instruments and
+    effects, help with the mix, run analysis (its "ears", `AGENT-4`), answer questions and scaffold a
+    project, but it **cannot write musical content** (notes, clips, sections, arrangement). This is the
+    research's evidenced use case (the *librarian* framing, section 4; it is where blank-page
+    (`AGENT-13`) and mixing-assist (`AGENT-14`) live), and a safe default that gives real help without
+    the agent ever "writing your track for you".
+  - **Full** - the complete two-voice co-author (sections 1 and 3): the agent may author musical content
+    too, its edits landing coral through the same `dispatch` seam.
+- **Implementation is a permission policy over the one tool catalog, not per-mode branching.** The agent
+  drives the project through a single tool catalog dispatched over one seam (converging on `AGENT-6`); a
+  mode is just which tool *categories* that seam admits - off = none; librarian = everything except the
+  content-authoring writes (`addNotes` / `editNotes` / clip / section / arrangement); full = all.
+  Keystone-friendly: modes stay data (a category tag per catalog entry + a policy), so a new tool
+  inherits its gating for free and there is no per-mode UI/branching to maintain.
+- **Why it matters (evidence + a decided override).** It contradicts a current design stance - section 3
+  says "the agent is never fully gone", with Produce mode collapsing it to a thin presence rail - and the
+  only conditional-acceptance voice in the research corpus asks for exactly the opposite: *"as long as we
+  can turn it off."* Off honours that; librarian answers the sceptic who wants help but not a co-author.
+  Low cost (a setting + a catalog policy), direct evidence, so decide it deliberately rather than by
+  default. (User-facing labels for the three modes are TBD; "librarian" is the research's term of art.)
+  See `docs/RESEARCH.md` section 4.
 
-`AGENT-9` `to-do` **Local-by-default provenance**
+`AGENT-9` `to-do` **Local-by-default provenance, strip authorship on export** (deps: AGENT-3)
 
-- **Keep agent provenance local by default** (referenced from Market & positioning). The two-voice
-  authorship log and agent intent notes are valuable, but they must never become an evidence trail held
-  *against* the user: default provenance to the user's own machine/project rather than a server-side
-  record, and make any sharing explicit and opt-in. See `docs/RESEARCH.md` section 9.
+- **Keep the authorship trail a working aid, never an evidence trail against the user.** `AGENT-3`
+  shipped, so the authored-edit log and agent-intent notes already exist; this ticket is about not
+  weaponising them. The two-voice colour, AI cursor and activity feed are framed as trust features
+  (sections 1 and 3), but they are also a durable record of "AI touched this", and industry AI-labelling
+  is standardising. Stance:
+  - **Provenance is local by default and never exported.** Export / bounce / `.daw.zip` strips
+    authorship and agent-intent metadata unless the user explicitly opts in. (This is the export path of
+    `DAW-13` - the strip happens where the mixdown leaves the app.)
+  - Teal/coral is a **working** aid, not a permanent property of the artifact: it lives in your project,
+    not in what you ship.
+  - Any server-side or shared provenance stays explicit and opt-in.
+- **Why (evidence + caveat).** A producer of 30 years had a demo **auto-rejected by a record label** for
+  ticking "Did you use AI?" on a submission form, having used AI only for supplementary drum patterns.
+  The evidence is n=1 and self-reported, but the mechanism is plausible and the fix is nearly free. See
+  `docs/RESEARCH.md` section 4 (Hazard 2: provenance is a liability).
+
+`AGENT-12` `to-do` **Auto-generated version summaries** (deps: AGENT-2)
+
+- **The agent writes the commit message the user won't.** Section 7 already calls plain-language version
+  summaries an "AI superpower", and `AGENT-3` (done) shipped the commit-notes machinery they attach to -
+  this ticket fills the gap between them. On a save/commit the agent summarises what changed in plain
+  language ("36 tracks: 12 audio, 24 instrument"; "added a breakdown, widened the pad"), **tiered by
+  importance**: a minor save gets a one-line note, the day's last (or a larger) save gets a fuller
+  summary. It sits in the librarian tier of `AGENT-8` (it describes, it does not author), and it is the
+  most specific unprompted user request found in the research - an Ableton user asks for commit metadata,
+  then immediately says he will not write it himself. See `docs/RESEARCH.md` section 7.
+
+`AGENT-13` `to-do` **Blank page: where do I start** (deps: AGENT-2)
+
+- **Beat the blank page - the librarian's flagship job.** The #1 reported struggle at 19% (roughly 2.3x
+  the next item), and the agent's strongest *evidenced* use case. On an empty (or stuck) project the
+  agent scaffolds a starting point - picks and configures instruments, lays out a few tracks, suggests a
+  direction or a groove - so the user has something to react to instead of silence. Crucially this is the
+  **librarian** framing (section 4), not the co-author framing (section 1): it sets things up, it does
+  not write your music, so it lives squarely in `AGENT-8`'s librarian tier. The clearest strategic
+  recommendation in this research is to **lead with the librarian** and let authorship be something users
+  discover, which makes this the tip of that spear. See `docs/RESEARCH.md` section 7 (and the librarian in
+  section 4). (Promoted from a research proposal originally numbered AGENT-10, which is now the agentic
+  loop.)
+
+`AGENT-14` `to-do` **Mixing assist** (deps: AGENT-4.1)
+
+- **AI pointed at the mix, not at authorship - the one place assistive AI demonstrably sells.** The #2
+  reported struggle at 8.2%, and the commercial sweet spot the research flags: iZotope built a business
+  on exactly this gap. It is the natural payoff of the agent's "ears" (`AGENT-4.1`, objective DSP
+  analysis): the ears *measure* the mix (loudness/LUFS, spectral balance, masking, clipping), mixing
+  assist turns those measurements into advice and moves ("the kick and bass are masking around 80 Hz",
+  "you're 6 dB hot on the master"). It stays in `AGENT-8`'s **librarian** tier - it adjusts the mix and
+  advises, it does not author musical content - so it is safe help by default. See `docs/RESEARCH.md`
+  section 7. (Promoted from a research proposal originally numbered AGENT-11, which is now the interactive
+  plan artifact.)
 
 **Collaboration & multi-user (options, not a decided direction)**
 
@@ -1719,6 +1797,29 @@ of snapshots, and the human-readable file format.
 - Whether agent edits ever gate behind a propose / preview / accept step, or always land-then-
   undo (current model). The activity panel is already halfway to a propose/accept loop; land-
   then-undo keeps creative flow, but a gate may build trust for large or destructive batches.
+- **Finishing vs. optionality: do we need a deliberate "constraint / finishing mode" that narrows
+  choices?** Producers report finishing tracks by *deleting* plugins and options ("less stuff, more
+  creativity" worked "like magic"), yet the axis principle (section 3), clip variants (section 6) and
+  AI-generated takes all *manufacture* optionality - the #4 reported struggle at 7.0%. Open because it
+  hedges against our own fearless-iteration thesis and there is no concrete design yet, only a direction.
+  (Surfaced as a proposed ticket, DAW-14, in `docs/RESEARCH.md` section 12; kept a question, not a ticket.)
+- **Branching (slice 15C): current lean is to keep it deferred indefinitely.** The evidence says the
+  demand is **linear revert and snapshot safety**, not branch-and-A/B - even sympathetic developers
+  struggle to name a branching use case, and a branch you cannot merge is just a save-as with better
+  manners (merge is explicitly not the pitch). Revert already shipped (`HOST-6.2`). Revisit only on direct
+  evidence of a real branching use case. See `docs/RESEARCH.md` section 12.D for the full reasoning.
+- **Third-party plugins (a WAM host): do we allow it at all? Leaning no; keeping an eye on it.** WAM
+  would bring ~50 browser plugins and unblock the semi-pro segment, but a WAM plugin's full state is an
+  opaque `getState()` blob beyond its declared parameters, so it **reopens the completeness hole** that
+  makes our projects diffable, self-contained JSON (the constraint is the moat). A schema bridge is
+  *partly* possible - WAM's `getParameterInfo()` is close to our `ParamSpec`, so a plugin's *parameters*
+  could be automated and agent-addressed like a built-in device - but that describes the control surface,
+  not the whole state (opaque blob, bespoke UI, out-of-schema samples/IRs remain). A **params-only host**
+  (persist only the declared params, refuse the opaque blob) would stay complete but reset stateful
+  plugins, surviving cleanly only for simple effects (EQ / comp / filter), the mixing category. Current
+  lean: **do not build the full host**; the params-only subset is the version to revisit first, and only
+  on direct evidence that plugin absence is what is actually blocking adoption. See `docs/RESEARCH.md`
+  section 12.E.
 
 ## 13. Reference
 
