@@ -202,7 +202,12 @@ export class SharedSession {
   /**
    * Enqueue a locally-applied edit for the authority: hold it as a pending optimistic op and send it.
    * `EditLog` has already applied it to the live store; the `editApplied` echo (matched by `opId`)
-   * confirms it. Undo/redo do NOT route here - they are local best-effort in a shared session.
+   * confirms it.
+   *
+   * An undo/redo routes here too, as a TOMBSTONE (`kind` + `undoes`) rather than an edit, which is
+   * what makes an undo a shared fact instead of a local guess. It queues and flushes like any other
+   * op, so one made offline reaches the authority on reconnect - but it is never applied FORWARD,
+   * here or at the authority; see `rebuildLive`.
    */
   enqueue(
     command: EditCommand,
@@ -449,19 +454,54 @@ export class SharedSession {
     this.seed = scratch.snapshot();
   }
 
-  /** Rebuild the live store as `base` with `pending` replayed on top (leaving `base` pristine). During a
-   *  conflict hold, pending is NOT replayed, so the live store shows the peer's (authoritative) state
-   *  while the user decides. */
+  /**
+   * Rebuild the live store as `base` with `pending` replayed on top (leaving `base` pristine). During
+   * a conflict hold, pending is NOT replayed, so the live store shows the peer's (authoritative)
+   * state while the user decides.
+   *
+   * **A tombstone in `pending` cannot be applied forward.** Its `command` is the command of the edit
+   * being taken back (carried so a feed can name it), so replaying it forward re-applies the very
+   * edit the undo removed - and every rebuild is a chance to do that: a peer's edit, a reconnect, an
+   * offline reload replaying its saved queue. `EditLog.undo` gets the project right at the moment it
+   * is pressed, which is why this went unnoticed until an undo made offline came back.
+   *
+   * So a queue holding an unsent undo takes the long way: replay the whole stream from the seed with
+   * its tombstones honoured, exactly as `rebuildBase` does one level down, because what the undo
+   * excludes may be baked into `base` and nothing applied forward can take it out again. With no
+   * tombstone pending - every other rebuild, which is nearly all of them - `base` is already
+   * tombstone-aware and the cheap forward replay is correct.
+   */
   private rebuildLive(): void {
     // A drag in progress is one held forward, not yet in `pending` (DAW-8.13), and this rebuild
     // replaces the live project with `base` + `pending` - so without this the rebuild would throw
     // away the part of the drag that has happened so far.
     this.editLog.flushForward();
     const scratch = new ProjectStore(false);
-    scratch.load(this.base.snapshot());
-    if (!this.conflictHold) for (const op of this.pending) applyEdit(scratch, op.command, op.author);
+    if (this.conflictHold || !this.pending.some((op) => op.undoes !== undefined)) {
+      scratch.load(this.base.snapshot());
+      if (!this.conflictHold) for (const op of this.pending) applyEdit(scratch, op.command, op.author);
+    } else {
+      // `replayEntries` works the tombstones out over everything it is given, so the confirmed log
+      // and the queue are replayed as one stream and an undo of either is honoured. An edit already
+      // folded into the seed cannot be excluded, which costs undo depth exactly as folding does for
+      // `base` - see `trimConfirmed`.
+      scratch.load(this.seed);
+      replayEntries(scratch, this.confirmed.concat(this.pending.map(this.asEntry)));
+    }
     this.projectStore.load(scratch.snapshot());
   }
+
+  /** A pending op as a log entry, so it can be replayed alongside the confirmed stream. Its `seq`
+   *  sits above the confirmed head, which is where it will land if the authority accepts it. */
+  private readonly asEntry = (op: PendingOp, index: number): EditEntry => ({
+    seq: this.headSeq + 1 + index,
+    id: op.opId,
+    command: op.command,
+    author: op.author,
+    time: Date.now(),
+    kind: op.kind ?? "edit",
+    undoes: op.undoes,
+  });
 
   close(): void {
     this.editLog.setRemote(null); // flushes a held edit while the session can still send it
