@@ -29,12 +29,25 @@ export const SAMPLES_PREFIX = "samples/";
  */
 export const isBinaryPath = (path: string): boolean => path.startsWith(SAMPLES_PREFIX);
 
+/** A member's role on a project. "owner" is implicit (the project's owner); stored members are "editor"
+ *  today, with room for a read-only "viewer" later. */
+export const projectRole = z.enum(["owner", "editor"]);
+
+/** One project in the caller's library listing: id + name + modifiedAt (mirrors meta.json, so the client
+ *  needn't read each bundle) + the caller's role (owner vs shared-with-me), for owner-only UI gating. */
+export const projectListing = z.object({
+  id: z.string(),
+  name: z.string(),
+  modifiedAt: z.string(),
+  role: projectRole,
+});
+
 export const routes = {
-  /** List the caller's (non-deleted) project ids. */
+  /** List the caller's accessible (owned + shared, non-deleted) projects. */
   listProjects: {
     method: "GET",
     path: "/projects",
-    response: z.object({ ids: z.array(z.string()) }),
+    response: z.object({ projects: z.array(projectListing) }),
   },
   /** Soft-delete a project (recoverable; files retained). */
   deleteProject: {
@@ -78,6 +91,27 @@ export const routes = {
     params: idParams,
     query: z.object({ since: z.coerce.number().optional(), limit: z.coerce.number().optional() }),
     response: z.object({ entries: z.array(editEntrySchema) }),
+  },
+  /** List a project's members (owner-only): 200 | 403 not-owner | 404 no-such-project. */
+  listMembers: {
+    method: "GET",
+    path: "/projects/:id/members",
+    params: idParams,
+    response: z.object({ members: z.array(z.object({ email: z.string(), role: z.string() })) }),
+  },
+  /** Share a project with someone by email (owner-only). Idempotent (re-invite updates the role). */
+  addMember: {
+    method: "POST",
+    path: "/projects/:id/members",
+    params: idParams,
+    body: z.object({ email: z.email(), role: z.enum(["editor"]).optional() }),
+    response: z.object({ ok: z.literal(true) }),
+  },
+  /** Revoke a member's access by email (owner-only). The email rides the path (a single segment). */
+  removeMember: {
+    method: "DELETE",
+    path: "/projects/:id/members/:email",
+    params: z.object({ id: projectId, email: z.string() }),
   },
 } as const;
 

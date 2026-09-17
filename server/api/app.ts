@@ -1,11 +1,12 @@
 /**
- * The sync API: a thin, owner-scoped bundle-file store over Postgres. It mirrors the
+ * The sync API: a thin bundle-file store over Postgres, access gated as "owner or member". It mirrors the
  * client's `BundleStore`/`ProjectStorage` seam (src/audio/bundleStore.ts) as HTTP:
- *   GET    /projects                    -> { ids }         (ProjectStorage.listProjectIds)
- *   DELETE /projects/:id                -> 204             (soft delete; recoverable)
+ *   GET    /projects                    -> { projects }    (ProjectStorage.listProjects; owned + shared)
+ *   DELETE /projects/:id                -> 204             (soft delete; recoverable; owner-only)
  *   GET    /projects/:id/files/<path>   -> bytes | 404     (BundleStore.readText/readBlob)
  *   HEAD   /projects/:id/files/<path>   -> 200 | 404       (BundleStore.exists)
  *   PUT    /projects/:id/files/<path>   -> 204 | 409 | 403 (BundleStore.writeText/writeBlob)
+ *   GET/POST/DELETE /projects/:id/members  -> sharing (owner-only): list / invite-by-email / revoke
  *
  * The route surface (paths + param schemas) is not defined here - it is sourced from the
  * shared contract (src/contract/http.ts), so the server mounts exactly what the client
@@ -22,20 +23,28 @@ import { bodyLimit } from "hono/body-limit";
 import { zValidator } from "@hono/zod-validator";
 import type { Db } from "../db/types";
 import {
-  listProjectIds,
+  listProjects,
   readFile,
   fileExists,
   writeFile,
   softDeleteProject,
   appendEdits,
   readEdits,
+  listMembers,
+  addMember,
+  removeMember,
+  getProjectOwner,
+  type Accessor,
   type FilePayload,
 } from "../db/store";
 import { validateBundleFile } from "../../src/audio/project/schema";
 import { routes, isBinaryPath } from "../../src/contract/http";
 import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipal } from "./principal";
 
-type Env = { Variables: { ownerId: string } };
+type Env = { Variables: { ownerId: string; userEmail?: string } };
+
+/** The request's identity for access checks: user id (owner match) + best-effort email (member match). */
+const who = (c: Context<Env>): Accessor => ({ userId: c.get("ownerId"), email: c.get("userEmail") });
 
 /** Read a bearer credential from an `Authorization: Bearer <token>` header (undefined if absent). */
 const bearer = (header: string | undefined): string | undefined =>
@@ -92,6 +101,15 @@ export function createApp(db: Db, options: AppOptions = {}) {
   const limitBody: MiddlewareHandler<Env> = (c, next) =>
     (isBinaryPath(c.req.param("path") ?? "") ? sampleBodyLimit : jsonBodyLimit)(c, next);
 
+  /** Gate a member-management route to the project's owner: 404 if it doesn't exist, 403 if the caller
+   *  isn't its owner. Returns the error response to short-circuit with, or null when the caller is owner. */
+  const requireOwner = async (c: Context<Env>, projectId: string): Promise<Response | null> => {
+    const owner = await getProjectOwner(db, projectId);
+    if (owner == null) return c.json({ error: "not-found" }, 404);
+    if (owner !== c.get("ownerId")) return c.json({ error: "forbidden" }, 403);
+    return null;
+  };
+
   return (
     new Hono<Env>()
       // Request logging first (dev), so it times the whole request incl. later middleware.
@@ -102,19 +120,21 @@ export function createApp(db: Db, options: AppOptions = {}) {
         const principal = await resolvePrincipal(bearer(c.req.header("Authorization")));
         if (!principal) return c.json({ error: "unauthorized" }, 401);
         c.set("ownerId", principal.userId);
+        c.set("userEmail", principal.email);
         await next();
       })
       .get(routes.listProjects.path, async (c) => {
-        const ids = await listProjectIds(db, c.get("ownerId"));
-        return c.json({ ids });
+        const projects = await listProjects(db, who(c));
+        return c.json({ projects });
       })
       .delete(routes.deleteProject.path, zValidator("param", routes.deleteProject.params), async (c) => {
+        // Owner-only: a member can't delete a shared project (softDeleteProject filters on owner).
         await softDeleteProject(db, c.get("ownerId"), c.req.valid("param").id);
         return c.body(null, 204);
       })
       .get(routes.getFile.path, zValidator("param", routes.getFile.params), async (c) => {
         const { id, path } = c.req.valid("param");
-        const payload = await readFile(db, c.get("ownerId"), id, path);
+        const payload = await readFile(db, who(c), id, path);
         if (!payload) return c.body(null, 404);
         if (payload.kind === "json") {
           return new Response(JSON.stringify(payload.json), {
@@ -131,7 +151,7 @@ export function createApp(db: Db, options: AppOptions = {}) {
       })
       .on("HEAD", routes.headFile.path, zValidator("param", routes.headFile.params), async (c) => {
         const { id, path } = c.req.valid("param");
-        const present = await fileExists(db, c.get("ownerId"), id, path);
+        const present = await fileExists(db, who(c), id, path);
         return c.body(null, present ? 200 : 404);
       })
       .put(routes.putFile.path, zValidator("param", routes.putFile.params), limitBody, async (c) => {
@@ -154,7 +174,7 @@ export function createApp(db: Db, options: AppOptions = {}) {
           if (!shape.ok) return c.json({ error: "invalid-shape", detail: shape.error }, 422);
           payload = { kind: "json", json };
         }
-        const result = await writeFile(db, c.get("ownerId"), id, path, payload);
+        const result = await writeFile(db, who(c), id, path, payload);
         if (result.ok) return c.body(null, 204);
         return c.json({ error: result.reason }, result.reason === "conflict" ? 409 : 403);
       })
@@ -166,7 +186,7 @@ export function createApp(db: Db, options: AppOptions = {}) {
         async (c) => {
           const { id } = c.req.valid("param");
           const { entries } = c.req.valid("json");
-          const result = await appendEdits(db, c.get("ownerId"), id, entries);
+          const result = await appendEdits(db, who(c), id, entries);
           if (!result.ok) return c.json({ error: result.reason }, 403);
           return c.json({ maxSeq: result.maxSeq });
         },
@@ -178,9 +198,36 @@ export function createApp(db: Db, options: AppOptions = {}) {
         async (c) => {
           const { id } = c.req.valid("param");
           const { since, limit } = c.req.valid("query");
-          const entries = await readEdits(db, c.get("ownerId"), id, since ?? -1, limit);
+          const entries = await readEdits(db, who(c), id, since ?? -1, limit);
           return c.json({ entries });
         },
       )
+      // --- Sharing: member management is owner-only (only the project's owner may invite/revoke). ---
+      .get(routes.listMembers.path, zValidator("param", routes.listMembers.params), async (c) => {
+        const { id } = c.req.valid("param");
+        const denied = await requireOwner(c, id);
+        if (denied) return denied;
+        return c.json({ members: await listMembers(db, id) });
+      })
+      .post(
+        routes.addMember.path,
+        zValidator("param", routes.addMember.params),
+        zValidator("json", routes.addMember.body),
+        async (c) => {
+          const { id } = c.req.valid("param");
+          const denied = await requireOwner(c, id);
+          if (denied) return denied;
+          const { email, role } = c.req.valid("json");
+          await addMember(db, id, email, role ?? "editor", c.get("ownerId"));
+          return c.json({ ok: true } as const);
+        },
+      )
+      .delete(routes.removeMember.path, zValidator("param", routes.removeMember.params), async (c) => {
+        const { id, email } = c.req.valid("param");
+        const denied = await requireOwner(c, id);
+        if (denied) return denied;
+        await removeMember(db, id, email);
+        return c.body(null, 204);
+      })
   );
 }

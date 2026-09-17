@@ -9,7 +9,7 @@
  * commits is the DAW's policy, applied here rather than in the transport.
  */
 import { createApiClient, type ApiClient, type TokenSource } from "../contract/client";
-import type { BundleStore, ProjectStorage } from "./bundleStore";
+import type { BundleStore, ProjectListing, ProjectStorage } from "./bundleStore";
 import type { EditEntry } from "./commands/types";
 
 /** One project's bundle over the sync API, rooted at `projects/<id>/files/`. */
@@ -76,7 +76,7 @@ export class RemoteProjectStorage implements ProjectStorage {
     return new RemoteBundleStore(this.client, projectId);
   }
 
-  listProjectIds(): Promise<string[]> {
+  listProjects(): Promise<ProjectListing[]> {
     return this.client.listProjects();
   }
 

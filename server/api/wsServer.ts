@@ -5,9 +5,10 @@
  * `Room` authority (rooms.ts) - this file is only the transport glue (parse frames, route to the room,
  * clean up on close).
  *
- * Auth: a browser `WebSocket` cannot set an Authorization header, so the shared token (when set) is
- * read from the `?token=` query at the upgrade - mirroring the HTTP bearer gate. Owner is the stubbed
- * single principal for now.
+ * Auth: a browser `WebSocket` cannot set an Authorization header, so the token is read from the `?token=`
+ * query at the upgrade - mirroring the HTTP bearer gate. That establishes *authentication* (who); the
+ * room registry then does per-project *authorization* (may this user open this project?) - a subscribe to
+ * a project the principal neither owns nor is a member of is refused.
  */
 import { WebSocket, WebSocketServer } from "ws";
 import type { Server } from "node:http";
@@ -51,8 +52,8 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
     // *authentication* (who) only - per-project *authorization* (may this user open this project?) needs
     // the membership model and lands with sharing (Auth-C). Until then the owner is the only real user.
     const credential = new URL(request.url ?? "", "http://localhost").searchParams.get("token") ?? undefined;
-    const principal = resolvePrincipal(credential);
-    void principal.then((resolved) => {
+    const principalPromise = resolvePrincipal(credential);
+    void principalPromise.then((resolved) => {
       if (resolved) {
         log("connection opened");
       } else {
@@ -70,9 +71,8 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
     let projectId: string | null = null;
 
     socket.on("message", async (data) => {
-      const resolved = await principal;
-      if (!resolved) return; // unauthorized; the socket is closing
-      const ownerId = resolved.userId;
+      const principal = await principalPromise;
+      if (!principal) return; // unauthorized; the socket is closing
       let raw: unknown;
       try {
         raw = JSON.parse(String(data));
@@ -92,8 +92,14 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         return;
       }
       if (message.type === "subscribe") {
+        const room = await registry.get(message.projectId, principal);
+        if (!room) {
+          log(`subscribe ${message.projectId} refused (forbidden)`);
+          client.send({ type: "error", message: "not authorized for this project" });
+          socket.close(1008, "forbidden");
+          return;
+        }
         projectId = message.projectId;
-        const room = await registry.get(ownerId, projectId);
         await room.subscribe(client);
         log(`subscribe ${projectId} (now ${room.connectionCount} peer(s))`);
         return;
@@ -103,7 +109,11 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         client.send({ type: "error", message: "subscribe to the project before editing it" });
         return;
       }
-      const room = await registry.get(ownerId, message.projectId);
+      const room = await registry.get(message.projectId, principal);
+      if (!room) {
+        client.send({ type: "error", message: "not authorized for this project" });
+        return;
+      }
       const applied = await room.applyIncoming({
         command: message.command as EditCommand,
         opId: message.opId,

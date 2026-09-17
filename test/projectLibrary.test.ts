@@ -109,10 +109,13 @@ describe("MemoryProjectStorage enumerate + delete", () => {
     const storage = new MemoryProjectStorage();
     await storage.bundle("a").writeText("project.json", "{}");
     await storage.bundle("b").writeText("meta.json", '{"name":"B"}');
-    expect((await storage.listProjectIds()).sort()).toEqual(["a", "b"]);
+    const ids = async () => (await storage.listProjects()).map((project) => project.id);
+    expect((await ids()).sort()).toEqual(["a", "b"]);
+    // meta.json feeds the listing name; a bundle without one falls back to its id.
+    expect((await storage.listProjects()).find((project) => project.id === "b")?.name).toBe("B");
 
     await storage.deleteProject("a");
-    expect(await storage.listProjectIds()).toEqual(["b"]);
+    expect(await ids()).toEqual(["b"]);
     expect(await storage.bundle("a").readText("project.json")).toBeNull();
   });
 });

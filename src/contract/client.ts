@@ -16,6 +16,10 @@ import { channels, parseServerMessage, type ClientMessage, type ServerMessage } 
 import type { ErrorBody } from "./errors";
 
 type ProjectList = z.infer<(typeof routes.listProjects)["response"]>;
+/** One project in the library listing (id + name + modifiedAt + the caller's role). */
+export type ProjectListing = ProjectList["projects"][number];
+/** One member as returned by the Share panel. */
+export type MemberEntry = z.infer<(typeof routes.listMembers)["response"]>["members"][number];
 
 /** The bearer credential: either a fixed string, or a getter re-read per request/reconnect (so a
  *  refreshed auth token takes effect without rebuilding the client). Evaluated lazily via `resolveToken`. */
@@ -30,7 +34,8 @@ export type WireEditEntry = z.infer<(typeof routes.getEdits)["response"]>["entri
 export type WriteOutcome = { ok: true } | { ok: false; status: number; error: string };
 
 export interface ApiClient {
-  listProjects(): Promise<string[]>;
+  /** The caller's accessible projects (owned + shared), each with the caller's role. */
+  listProjects(): Promise<ProjectListing[]>;
   deleteProject(id: string): Promise<void>;
   readText(id: string, path: string): Promise<string | null>;
   readBlob(id: string, path: string): Promise<ArrayBuffer | null>;
@@ -41,6 +46,12 @@ export interface ApiClient {
   /** Fetch edits with `seq > since` (from the start if omitted), oldest first. `limit` caps to the
    *  most recent N (bounded feed window). */
   getEdits(id: string, since?: number, limit?: number): Promise<WireEditEntry[]>;
+  /** List a project's members (owner-only; throws 403 for a non-owner). */
+  getMembers(id: string): Promise<MemberEntry[]>;
+  /** Share a project with someone by email (owner-only). */
+  addMember(id: string, email: string, role?: "editor"): Promise<void>;
+  /** Revoke a member's access by email (owner-only). */
+  removeMember(id: string, email: string): Promise<void>;
 }
 
 export function createApiClient(config: { baseUrl: string; token?: TokenSource }): ApiClient {
@@ -72,7 +83,7 @@ export function createApiClient(config: { baseUrl: string; token?: TokenSource }
       const res = await fetch(`${baseUrl}${routes.listProjects.path}`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`sync: list projects failed (${res.status})`);
       const body = (await res.json()) as ProjectList;
-      return body.ids;
+      return body.projects;
     },
 
     async deleteProject(id) {
@@ -132,6 +143,38 @@ export function createApiClient(config: { baseUrl: string; token?: TokenSource }
       if (!res.ok) throw new Error(`sync: get edits for ${id} failed (${res.status})`);
       const body = (await res.json()) as z.infer<(typeof routes.getEdits)["response"]>;
       return body.entries;
+    },
+
+    async getMembers(id) {
+      const url = `${baseUrl}/projects/${encodeURIComponent(id)}/members`;
+      const res = await fetch(url, { headers: authHeaders() });
+      if (!res.ok) throw new Error(`sync: list members of ${id} failed (${res.status})`);
+      const body = (await res.json()) as z.infer<(typeof routes.listMembers)["response"]>;
+      return body.members;
+    },
+
+    async addMember(id, email, role) {
+      const url = `${baseUrl}/projects/${encodeURIComponent(id)}/members`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(role ? { email, role } : { email }),
+      });
+      if (!res.ok) {
+        let error = res.statusText;
+        try {
+          error = ((await res.json()) as ErrorBody).error ?? error;
+        } catch {
+          /* non-JSON error body; keep the status text */
+        }
+        throw new Error(`sync: share ${id} with ${email} failed (${res.status}: ${error})`);
+      }
+    },
+
+    async removeMember(id, email) {
+      const url = `${baseUrl}/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(email)}`;
+      const res = await fetch(url, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error(`sync: remove ${email} from ${id} failed (${res.status})`);
     },
   };
 }

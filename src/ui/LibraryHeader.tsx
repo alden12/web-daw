@@ -15,6 +15,7 @@ import { useProject } from "../audio/project/useProject";
 import { type ProjectMeta, listProjects, refreshProjects, subscribeProjects } from "../audio/projects/library";
 import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
 import { currentProjectId } from "../audio/projectRepository";
+import { authEnabled } from "../auth/session";
 import { exportProjectFile, importProjectFile } from "./projectFile";
 import type { LibraryView } from "./ActivityRail";
 import { InlineRename } from "./InlineRename";
@@ -34,11 +35,13 @@ export function LibraryHeader({
   projectStore,
   editLog,
   versionStore,
+  onOpenShare,
 }: {
   activeView: LibraryView;
   projectStore: ProjectStore;
   editLog: EditLog;
   versionStore: VersionStore;
+  onOpenShare: (projectId: string, projectName: string) => void;
 }) {
   const { canUndo, canRedo } = useEditLog(editLog);
   const [projects, setProjects] = useState<ProjectMeta[]>(() => listProjects());
@@ -50,6 +53,11 @@ export function LibraryHeader({
   // the library list (meta.json) is the fallback before the store has loaded.
   const currentName =
     useProject(projectStore).name || projects.find((meta) => meta.id === currentId)?.name || "Project";
+  // Sharing is a real-auth, owner-only action. Offer it when auth is on and the current project isn't one
+  // shared *with* us (role "editor"); a brand-new project not yet in the list has no role, and its creator
+  // is its owner, so it qualifies too.
+  const currentRole = projects.find((meta) => meta.id === currentId)?.role;
+  const canShare = authEnabled && currentRole !== "editor";
 
   // Mirror the project library; re-enumerate on mount (the header always exists).
   useEffect(() => {
@@ -103,6 +111,7 @@ export function LibraryHeader({
     { separator: true },
     { label: "Export project…", onClick: () => void exportProjectFile(projectStore, editLog) },
     { label: "Import project…", onClick: () => importRef.current?.click() },
+    ...(canShare ? [{ separator: true }, { label: "Share…", onClick: () => onOpenShare(currentId, currentName) }] : []),
   ];
 
   return (

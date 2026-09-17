@@ -1,22 +1,20 @@
 /**
  * The project library: the set of saved projects, each its own bundle under
  * `projects/<id>/`. This is the browser-facing store the rail's Project view reads -
- * a cached list + a subscribe seam, refreshed by enumerating the project storage and
- * reading each bundle's `meta.json`. Mirrors the patches-library shape, but async
- * (OPFS enumeration) and cached, since reads can't be synchronous.
+ * a cached list + a subscribe seam, refreshed by asking the project storage for its
+ * listings. Mirrors the patches-library shape, but async and cached, since reads can't
+ * be synchronous.
  *
- * The current-project pointer lives in `projectRepository` (a shared localStorage key)
- * so the repository singleton and this library agree on which bundle is active; the
- * imperative flows (create/switch/rename/delete) live in `operations.ts`.
+ * The listing (id + name + modifiedAt + the caller's role) comes straight from the storage
+ * seam: the remote backend returns it in one request (owned + shared projects), the local
+ * backends read each bundle's meta.json. The current-project pointer lives in
+ * `projectRepository` (a shared localStorage key); the imperative flows
+ * (create/switch/rename/delete) live in `operations.ts`.
  */
-import { getProjectStorage, type ProjectStorage } from "../bundleStore";
+import { getProjectStorage, type ProjectListing, type ProjectStorage } from "../bundleStore";
 
-export interface ProjectMeta {
-  id: string;
-  name: string;
-  /** ISO timestamp of the last save; "" if never written. */
-  modifiedAt: string;
-}
+/** A project in the library list. Re-exported from the storage seam (id + name + modifiedAt + role). */
+export type ProjectMeta = ProjectListing;
 
 let cache: ProjectMeta[] = [];
 const listeners = new Set<() => void>();
@@ -36,22 +34,10 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-async function readMeta(storage: ProjectStorage, id: string): Promise<ProjectMeta> {
-  const raw = await storage.bundle(id).readText("meta.json");
-  try {
-    const meta = JSON.parse(raw ?? "") as { name?: string; modifiedAt?: string };
-    return { id, name: meta.name || id, modifiedAt: meta.modifiedAt ?? "" };
-  } catch {
-    return { id, name: id, modifiedAt: "" };
-  }
-}
-
-/** Enumerate the stored projects, read their metadata, update + notify the cache. */
+/** Ask the storage for its listings, sort newest-first, update + notify the cache. */
 export async function refreshProjects(storage: ProjectStorage = getProjectStorage()): Promise<ProjectMeta[]> {
-  const ids = await storage.listProjectIds();
-  const metas = await Promise.all(ids.map((id) => readMeta(storage, id)));
-  metas.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
-  cache = metas;
+  const metas = await storage.listProjects();
+  cache = [...metas].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
   emit();
   return cache;
 }

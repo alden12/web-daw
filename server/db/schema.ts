@@ -116,7 +116,34 @@ export const edits = pgTable(
   (table) => [primaryKey({ columns: [table.projectId, table.seq] })],
 );
 
+/**
+ * Project sharing: who may open a project besides its owner. A member is identified by email (the
+ * invited identity, stored lowercase) rather than a `users.id`, so an owner can invite someone who has
+ * not signed up yet - the row is claimed implicitly when a provider account whose verified email matches
+ * signs in (we match the token's email at query time, never a FK into `users`). Access is "owner OR a
+ * member row for my email". FK to `projects` with ON DELETE RESTRICT to match `files`/`edits` (deletion
+ * is soft). `role` leaves room for a read-only "viewer" later; only "editor" is used today.
+ */
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "restrict" }),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("editor"),
+    /** The owner who added this member (nullable; informational). */
+    invitedBy: text("invited_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.email] }),
+    index("project_members_email_idx").on(table.email),
+  ],
+);
+
 export type UserRow = typeof users.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type EditRow = typeof edits.$inferSelect;
+export type ProjectMemberRow = typeof projectMembers.$inferSelect;

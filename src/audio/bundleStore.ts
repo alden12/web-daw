@@ -161,6 +161,20 @@ export class MemoryBundleStore implements BundleStore {
   }
 }
 
+/** The caller's role on a listed project: their own, or one shared with them. Local backends have no
+ *  sharing, so everything they list is "owner"; the remote backend fills it from the server. */
+export type ProjectRole = "owner" | "editor";
+
+/** A project as surfaced to the library list: id + display metadata (mirrors the bundle's meta.json, so
+ *  the list needs no extra per-bundle read on the remote backend) + the caller's role. */
+export interface ProjectListing {
+  id: string;
+  name: string;
+  /** ISO timestamp of the last save; "" if never written. */
+  modifiedAt: string;
+  role: ProjectRole;
+}
+
 /**
  * The multi-project root: hands out a per-project bundle store and can list/delete
  * projects. One instance backs the whole app (OPFS in the browser, shared in-memory
@@ -168,29 +182,42 @@ export class MemoryBundleStore implements BundleStore {
  */
 export interface ProjectStorage {
   bundle(projectId: string): BundleStore;
-  listProjectIds(): Promise<string[]>;
+  /** The caller's projects with display metadata + role (owned + shared on the remote backend). */
+  listProjects(): Promise<ProjectListing[]>;
   deleteProject(projectId: string): Promise<void>;
+}
+
+/** Read a bundle's `meta.json` into a listing (role "owner" - local backends have no sharing). Falls
+ *  back to the id as the name when meta.json is missing or malformed. */
+async function readBundleListing(store: BundleStore, id: string): Promise<ProjectListing> {
+  const raw = await store.readText("meta.json");
+  try {
+    const meta = JSON.parse(raw ?? "") as { name?: string; modifiedAt?: string };
+    return { id, name: meta.name || id, modifiedAt: meta.modifiedAt ?? "", role: "owner" };
+  } catch {
+    return { id, name: id, modifiedAt: "", role: "owner" };
+  }
 }
 
 class OpfsProjectStorage implements ProjectStorage {
   bundle(projectId: string): BundleStore {
     return new OpfsBundleStore([PROJECTS_DIR, projectId]);
   }
-  async listProjectIds(): Promise<string[]> {
+  async listProjects(): Promise<ProjectListing[]> {
+    let ids: string[] = [];
     try {
       const root = await navigator.storage.getDirectory();
       const dir = await root.getDirectoryHandle(PROJECTS_DIR, { create: false });
-      const ids: string[] = [];
       // `entries()` is an async iterator on the directory handle (FileSystem Access API);
       // the DOM lib doesn't type it, so reach it through a narrow cast.
       const entries = (dir as unknown as { entries(): AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
       for await (const [name, handle] of entries) {
         if (handle.kind === "directory") ids.push(name);
       }
-      return ids;
     } catch {
-      return [];
+      ids = [];
     }
+    return Promise.all(ids.map((id) => readBundleListing(this.bundle(id), id)));
   }
   async deleteProject(projectId: string): Promise<void> {
     try {
@@ -248,13 +275,13 @@ export class MemoryProjectStorage implements ProjectStorage {
   bundle(projectId: string): BundleStore {
     return new RootedMemoryStore(this.text, this.blob, this.prefix(projectId));
   }
-  async listProjectIds(): Promise<string[]> {
+  async listProjects(): Promise<ProjectListing[]> {
     const ids = new Set<string>();
     const head = `${PROJECTS_DIR}/`;
     for (const key of [...this.text.keys(), ...this.blob.keys()]) {
       if (key.startsWith(head)) ids.add(key.slice(head.length).split("/")[0]);
     }
-    return [...ids];
+    return Promise.all([...ids].map((id) => readBundleListing(this.bundle(id), id)));
   }
   async deleteProject(projectId: string): Promise<void> {
     const head = this.prefix(projectId);

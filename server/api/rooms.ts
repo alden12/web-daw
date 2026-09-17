@@ -7,8 +7,9 @@
  * echo (see docs/DESIGN.md, sync-service roadmap).
  *
  * DOM-free (Node): reuses `ProjectStore(false)` + `applyEdit`, exactly like `server/mcpServer.ts` and the
- * repository's replay path. Single-owner for now (auth is stubbed); a room is owner-scoped so real
- * accounts later are a change of principal, not of logic.
+ * repository's replay path. A room is keyed by project id and persists as the project's *real* owner
+ * (resolved from the `projects` table), so a shared project is one room regardless of who connects; the
+ * registry authorizes each caller (owner or member) before handing back the room.
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { applyEdit } from "../../src/audio/commands/applyEdit";
@@ -16,7 +17,16 @@ import type { Author, EditCommand } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
 import type { ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
-import { appendEdits, ensureUser, maxEditSeq, readEdits, readFile, type EditEntryInput } from "../db/store";
+import {
+  appendEdits,
+  ensureUser,
+  maxEditSeq,
+  readEdits,
+  readFile,
+  resolveProjectAccess,
+  type Accessor,
+  type EditEntryInput,
+} from "../db/store";
 
 /** How many recent entries a `snapshot` carries (bounded feed window; matches MAX_PERSISTED_ENTRIES). */
 const SNAPSHOT_WINDOW = 2000;
@@ -66,15 +76,16 @@ export class Room {
     // In production the principal seam already provisioned it; this keeps the authority self-consistent
     // for any caller (and idempotent).
     await ensureUser(db, ownerId);
+    const owner: Accessor = { userId: ownerId };
     const store = new ProjectStore(false);
-    const projectFile = await readFile(db, ownerId, projectId, "project.json");
+    const projectFile = await readFile(db, owner, projectId, "project.json");
     let headSeq = -1;
     if (projectFile?.kind === "json" && projectFile.json) {
       const { headSeq: reflected, ...base } = projectFile.json as ProjectData & { headSeq?: number };
       headSeq = reflected ?? -1;
       store.load(base as ProjectData);
     }
-    const tail = await readEdits(db, ownerId, projectId, headSeq);
+    const tail = await readEdits(db, owner, projectId, headSeq);
     for (const entry of tail) {
       if (isReplayable(entry.kind)) applyEdit(store, entry.command as EditCommand, entry.author as Author);
     }
@@ -95,7 +106,8 @@ export class Room {
   async subscribe(client: RoomClient): Promise<void> {
     this.clients.add(client);
     // Cast: readEdits types `command` as unknown; at runtime each is the full stored command object.
-    const entries = (await readEdits(this.db, this.ownerId, this.projectId, -1, SNAPSHOT_WINDOW)) as SnapshotEntries;
+    const owner: Accessor = { userId: this.ownerId };
+    const entries = (await readEdits(this.db, owner, this.projectId, -1, SNAPSHOT_WINDOW)) as SnapshotEntries;
     client.send({ type: "snapshot", projectId: this.projectId, headSeq: this.maxSeq, entries });
   }
 
@@ -142,7 +154,7 @@ export class Room {
     // Broadcast before the persist await, so broadcast order == seq order across concurrent edits.
     this.broadcast(applied);
     const entry: EditEntryInput = { seq, command: edit.command, author, time: Date.now(), kind: "edit" };
-    await appendEdits(this.db, this.ownerId, this.projectId, [entry]);
+    await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
     return applied;
   }
 
@@ -162,13 +174,21 @@ export class RoomRegistry {
     this.db = db;
   }
 
-  /** Get (or lazily load) the room for a project. Concurrent callers share one load. */
-  async get(ownerId: string, projectId: string): Promise<Room> {
+  /**
+   * Get (or lazily load) the room for a project, authorizing the caller first. Returns `null` when the
+   * principal may not open the project (not its owner, not a member) - the transport turns that into a
+   * refusal. The room is keyed by project id and loaded under the project's *real* owner, so a member
+   * joins the same room and their edits persist under the owner (closing the pre-Auth-C hole where the
+   * first subscriber's id was baked in). Concurrent callers share one load.
+   */
+  async get(projectId: string, principal: Accessor): Promise<Room | null> {
+    const access = await resolveProjectAccess(this.db, principal, projectId);
+    if (!access.allowed) return null;
     const live = this.rooms.get(projectId);
     if (live) return live;
     const pending = this.loading.get(projectId);
     if (pending) return pending;
-    const load = Room.load(this.db, ownerId, projectId).then((room) => {
+    const load = Room.load(this.db, access.ownerId, projectId).then((room) => {
       this.rooms.set(projectId, room);
       this.loading.delete(projectId);
       return room;

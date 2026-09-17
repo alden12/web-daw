@@ -39,10 +39,10 @@ describe("RemoteBundleStore / RemoteProjectStorage", () => {
     expect(read).not.toBeNull();
     expect(new Uint8Array(read!)).toEqual(bytes);
 
-    expect(await storage.listProjectIds()).toEqual(["p1"]);
+    expect((await storage.listProjects()).map((project) => project.id)).toEqual(["p1"]);
 
     await storage.deleteProject("p1");
-    expect(await storage.listProjectIds()).toEqual([]);
+    expect(await storage.listProjects()).toEqual([]);
   });
 
   it("treats a repeated commit write as idempotent (409 swallowed, no throw)", async () => {
@@ -78,9 +78,9 @@ describe("RemoteBundleStore / RemoteProjectStorage", () => {
   it("sends the bearer token when configured", async () => {
     env = await makeSyncEnv({ token: "secret" }); // the fetch closure reads the current env
     const ok = new RemoteProjectStorage("http://localhost", "secret");
-    expect(await ok.listProjectIds()).toEqual([]);
+    expect(await ok.listProjects()).toEqual([]);
 
     const bad = new RemoteProjectStorage("http://localhost", "wrong");
-    await expect(bad.listProjectIds()).rejects.toThrow();
+    await expect(bad.listProjects()).rejects.toThrow();
   });
 });

@@ -57,7 +57,7 @@ async function seedNewProject(deps: ProjectDeps, name: string): Promise<string> 
  * live store) as the first project; otherwise open the persisted current (or newest).
  */
 export async function initProjects(deps: ProjectDeps, storage: ProjectStorage = getProjectStorage()): Promise<void> {
-  const ids = await storage.listProjectIds();
+  const ids = (await storage.listProjects()).map((project) => project.id);
   if (ids.length === 0) {
     // Seed the first project under a *stable* id (the persisted current, or "default"),
     // not a fresh random one: boot can run twice (React StrictMode double-invokes the
@@ -123,7 +123,7 @@ export async function deleteProject(
   await storage.deleteProject(id);
   if (wasCurrent) {
     // Don't flush (that would resurrect the deleted bundle); repoint directly.
-    const remaining = (await storage.listProjectIds()).filter((other) => other !== id);
+    const remaining = (await storage.listProjects()).map((project) => project.id).filter((other) => other !== id);
     if (remaining[0]) {
       setCurrentProject(remaining[0]);
       await loadCurrentInto(deps);
