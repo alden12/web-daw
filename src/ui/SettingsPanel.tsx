@@ -11,6 +11,7 @@ import { MidiSettings } from "./MidiSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import type { AgentConfig } from "../audio/agent/config";
 import type { AuthorColorConfig } from "./authorColors";
+import type { EditLog } from "../audio/commands/editLog";
 import type { MidiInput } from "../audio/midi/midiInput";
 import type { Recorder } from "../audio/recording/recorder";
 import type { AudioEngine } from "../audio/engine/AudioEngine";
@@ -26,6 +27,7 @@ const TABS: { id: Tab; label: string }[] = [
 export function SettingsPanel({
   agentConfig,
   authorColors,
+  editLog,
   midiInput,
   recorder,
   engine,
@@ -33,6 +35,7 @@ export function SettingsPanel({
 }: {
   agentConfig: AgentConfig;
   authorColors: AuthorColorConfig;
+  editLog: EditLog;
   midiInput: MidiInput;
   recorder: Recorder;
   engine: AudioEngine;
@@ -85,7 +88,7 @@ export function SettingsPanel({
         </div>
 
         {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
-        {tab === "authors" && <AuthorColorSettings config={authorColors} />}
+        {tab === "authors" && <AuthorColorSettings config={authorColors} editLog={editLog} />}
         {tab === "midi" && <MidiSettings midiInput={midiInput} />}
         {tab === "recording" && <RecordingSettings recorder={recorder} engine={engine} />}
       </div>

@@ -9,7 +9,8 @@ import type { ProjectStore } from "../../audio/project/projectStore";
 import type { Dispatch } from "../../audio/commands/types";
 import { newTrackId } from "../../audio/commands/ids";
 import { trackKey } from "../../audio/commands/authorship";
-import { voiceOf } from "../authorVoice";
+import { authorHex } from "../authorStyle";
+import { useAuthorPresence } from "../authorColorsContext";
 import { EMPTY_INSTRUMENT } from "../../audio/instruments/catalog";
 import { Menu } from "../Menu";
 import { InlineRename } from "../InlineRename";
@@ -107,9 +108,11 @@ function TrackHeader({
   projectStore: ProjectStore;
   dispatch: Dispatch;
 }) {
-  // Always-on left accent in the track's last-editor colour (a live CSS var, so it recolours with
-  // the swatch). Selection is carried by the background tint, so the two cues don't fight one edge.
-  const accent = `var(--color-${voiceOf(projectStore.authorOf(trackKey(track.id)) ?? "you")})`;
+  const presence = useAuthorPresence();
+  // Always-on left accent in the track's last-editor colour (resolves any user id to its hue, so a
+  // collaborator's track reads in their colour). Selection is carried by the background tint, so the
+  // two cues don't fight one edge.
+  const accent = authorHex(projectStore.authorOf(trackKey(track.id)) ?? "you", presence);
   return (
     <div
       onClick={() => projectStore.selectTrack(track.id)}
