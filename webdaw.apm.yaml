@@ -8897,11 +8897,38 @@ projects:
           (see E8), so a complete log can rebuild any state - including one a
           corrupt keyframe broke, which no
 
-          snapshot can do unless it happens to sit before the damage. Storage
-          favours it too: an edit row is a
+          snapshot can do unless it happens to sit before the damage.
 
-          couple of hundred bytes, so ~100k edits is ~20MB against ~25MB for
-          five keyframes of a large project.
+
+          **Storage does NOT favour it** (correcting a first estimate that put
+          the ring at 25MB; the measured
+
+          figure in `keyframes.ts` is ~250KB for the whole ring normal, ~5MB
+          for the whole ring large, so ~1MB
+
+          a keyframe). Back of the envelope on edits: one edit is one gesture
+          after coalescing, a dense
+
+          arrangement is 10-20k note edits, weeks of automation and mixing
+          another 10-50k, so a
+
+          heavily-worked project is order **100k edits** and a pathological one
+          maybe 500k. At ~400 bytes a
+
+          row that is **~40MB** and **~200MB** against a ~5MB ring - 8x to 40x
+          the storage, per project.
+
+
+          **Speed does favour it.** The stage-B measurements say replaying the
+          full 2000-edit window on a
+
+          large project is 23.7ms on a laptop, about 12us an edit. So 100k
+          edits is ~1.2s on a laptop and
+
+          maybe 5s on a phone; 500k is ~6s and ~30s. A recovery rebuild is a
+          progress spinner, not the
+
+          "several minutes" a dialog would want to warn about.
 
 
           Two costs, and the second is the real one:
@@ -8917,17 +8944,47 @@ projects:
             `documentMigration` upgrades them. This is a commitment rather than a change.
 
 
-          **Recommendation: let stage F settle it.** F already measures rebuild
-          cost on a real phone, which is
+          **Exponential keyframe spacing (Alden's).** Right, and it composes -
+          with one structural catch: a
 
-          exactly the number that says whether full-log replay is a usable
-          recovery path or a theoretical one.
+          keyframe is worthless beyond LOG retention, because using a base at
+          edit N needs every entry from N
 
-          A cheap middle option if it is not: keep pruning the WORKING log but
-          archive pruned edits to a cold
+          to now. So the two are different knobs. Log retention sets what is
+          POSSIBLE; keyframe spacing sets
 
-          bundle file nothing reads on the hot path - recovery reads it, undo
-          does not.
+          how FAST. Exponential is strictly better than the fixed 500 for the
+          same five slots - bases at
+
+          roughly 500 / 1000 / 2000 / 4000 / 8000 back cover 16x the distance,
+          keep undo near the head as
+
+          cheap as it is now, and cap a deep one at a few thousand replayed
+          entries (~50ms).
+
+
+          **Proposed shape.** Raise the log bound from 2000 to something like
+          100k rather than going
+
+          unbounded - caps storage near 40MB and still makes essentially any
+          real project recoverable - then
+
+          switch the ring to exponential spacing. The two hot paths that read
+          the whole log
+          (`recomputeHead`, `canHonourUndo`) need bounding to "above the base"
+          either way. A cheaper variant
+
+          if the storage is unwelcome: keep pruning the WORKING log but archive
+          pruned edits to a cold bundle
+
+          file nothing reads on the hot path - recovery reads it, undo does not.
+
+
+          **What would settle it: count the edits in a real project.** Cheap to
+          instrument, and it turns all of
+
+          the above from arithmetic into a fact. Stage F's phone measurement is
+          the other half.
 
 
           ### Stage E is done; what is left is stage F
