@@ -17,6 +17,16 @@ import { projectId, filePath } from "./errors";
 
 const fileParams = z.object({ id: projectId, path: filePath });
 
+/** Bundle paths under this prefix hold raw bytes (audio samples); everything else is JSON. */
+export const SAMPLES_PREFIX = "samples/";
+
+/**
+ * Whether a bundle path stores binary bytes (a sample) vs a validated JSON document. The
+ * server decides by PATH, not by the client's Content-Type header, so a JSON document can
+ * never be smuggled in as opaque bytes to skip shape validation.
+ */
+export const isBinaryPath = (path: string): boolean => path.startsWith(SAMPLES_PREFIX);
+
 export const routes = {
   /** List the caller's (non-deleted) project ids. */
   listProjects: {

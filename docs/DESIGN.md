@@ -1717,19 +1717,18 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
 
 **Security hardening (from a review of the sync service):**
 
-- **Close the three code-level gaps** (small, worth doing regardless of deploy):
-  1. **Validation is bypassable via `Content-Type`.** The PUT decides JSON-vs-binary from the
-     client-supplied header, so `Content-Type: application/octet-stream` stores any path (even
-     `project.json`) as raw `bytea`, skipping `validateBundleFile`. Fix: decide by **path**
-     (`samples/*` = binary, else JSON-to-validate) so validation is not opt-out. Still open after the
-     contract-first rewrite (which preserved the Content-Type dispatch); the file-route descriptor is
-     the natural home to make the json-vs-binary decision by path.
-  2. **No request body size limit** - PUT buffers the whole body in memory (`arrayBuffer`/`text`)
-     with no cap: a large upload is a memory/storage DoS. Fix: cap body size (a higher cap for
-     `samples/*` than for JSON docs).
-  3. **Write-once history is not race-safe** - the commit guard is `fileExists` then an
-     `onConflictDoUpdate` upsert, so concurrent writes to a new commit path can overwrite an
-     "immutable" commit. Fix: `onConflictDoNothing` for commit paths (never update).
+- **The three code-level gaps - _closed_ (slice 65):**
+  1. **Validation is no longer bypassable via `Content-Type`.** The PUT now decides JSON-vs-binary by
+     **path** (`isBinaryPath` in the contract: `samples/*` = binary, everything else = JSON-to-validate)
+     rather than the client-supplied header, so a JSON path can never be smuggled in as opaque `bytea`
+     to skip `validateBundleFile`.
+  2. **Request body size is capped** - `hono/body-limit` on the PUT route with per-path limits (a
+     larger cap for `samples/*` than for JSON docs, both overridable via `AppOptions`), so an oversized
+     upload is refused with 413 before the body is buffered whole.
+  3. **Write-once history is race-safe** - the commit guard is now an atomic
+     `insert(...).onConflictDoNothing().returning()`: the `(projectId, path)` unique constraint lets
+     exactly one concurrent insert win, and the loser (no row returned) is a 409 - no check-then-upsert
+     for two writers to race.
 - **Before any deploy / multi-user (a coherent "harden for hosting" slice):** the token **defaults
   to open** (empty = no auth), is a single shared secret with **no rate-limiting / brute-force
   protection** and a timing-unsafe compare, and the owner is a hardcoded `"local"` (any caller can

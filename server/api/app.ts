@@ -15,15 +15,21 @@
  * `createApp(db)` takes the database so tests can pass a pglite-backed handle
  * (test/syncApi.test.ts) while production passes postgres.js.
  */
-import { Hono } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { zValidator } from "@hono/zod-validator";
 import type { Db } from "../db/types";
 import { listProjectIds, readFile, fileExists, writeFile, softDeleteProject, type FilePayload } from "../db/store";
 import { validateBundleFile } from "../../src/audio/project/schema";
-import { routes } from "../../src/contract/http";
+import { routes, isBinaryPath } from "../../src/contract/http";
 
 type Env = { Variables: { ownerId: string } };
+
+/** Body-size caps (a memory/storage DoS guard on the buffered PUT body). Generous defaults:
+ *  a large project.json vs a long audio sample. Overridable per deployment. */
+const DEFAULT_MAX_JSON_BYTES = 8 * 1024 * 1024;
+const DEFAULT_MAX_SAMPLE_BYTES = 64 * 1024 * 1024;
 
 export interface AppOptions {
   /** Shared bearer token. When empty/unset, the API runs open (local dev). The entry
@@ -35,12 +41,27 @@ export interface AppOptions {
   /** Allowed CORS origin(s). Default "*" (the app runs on a different port in dev, and the
    *  bearer token, not a cookie, is the gate). Narrow this to the app origin on deploy. */
   corsOrigin?: string | string[];
+  /** Max bytes for a JSON document write (default 8 MB). */
+  maxJsonBytes?: number;
+  /** Max bytes for a binary sample write (default 64 MB). */
+  maxSampleBytes?: number;
 }
 
 export function createApp(db: Db, options: AppOptions = {}) {
   const token = options.token ?? "";
   const ownerId = options.ownerId ?? "local";
   const corsOrigin = options.corsOrigin ?? "*";
+  const maxJsonBytes = options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES;
+  const maxSampleBytes = options.maxSampleBytes ?? DEFAULT_MAX_SAMPLE_BYTES;
+
+  // Cap the buffered PUT body, picking the limit by path (samples may be much larger than a
+  // JSON document). Runs before the handler reads the body, so an oversized upload is refused
+  // with 413 rather than buffered whole.
+  const tooLarge = (c: Context) => c.json({ error: "too-large" }, 413);
+  const jsonBodyLimit = bodyLimit({ maxSize: maxJsonBytes, onError: tooLarge });
+  const sampleBodyLimit = bodyLimit({ maxSize: maxSampleBytes, onError: tooLarge });
+  const limitBody: MiddlewareHandler<Env> = (c, next) =>
+    (isBinaryPath(c.req.param("path") ?? "") ? sampleBodyLimit : jsonBodyLimit)(c, next);
 
   return (
     new Hono<Env>()
@@ -83,13 +104,13 @@ export function createApp(db: Db, options: AppOptions = {}) {
         const present = await fileExists(db, c.get("ownerId"), id, path);
         return c.body(null, present ? 200 : 404);
       })
-      .put(routes.putFile.path, zValidator("param", routes.putFile.params), async (c) => {
+      .put(routes.putFile.path, zValidator("param", routes.putFile.params), limitBody, async (c) => {
         const { id, path } = c.req.valid("param");
-        // Binary bundle entries (samples) come as octet-stream; everything else is a JSON text
-        // entry, parsed here so only valid JSON is ever stored (and stored as queryable jsonb).
-        const contentType = c.req.header("Content-Type") ?? "";
+        // Storage kind is decided by PATH, not the client's Content-Type: samples are binary
+        // bytes, everything else is a JSON document parsed + shape-validated here, so a JSON
+        // path can't be smuggled in as opaque bytes to skip validation.
         let payload: FilePayload;
-        if (contentType.includes("application/octet-stream")) {
+        if (isBinaryPath(path)) {
           payload = { kind: "binary", bytes: new Uint8Array(await c.req.arrayBuffer()) };
         } else {
           let json: unknown;

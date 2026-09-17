@@ -133,6 +133,43 @@ describe("sync API routes", () => {
     expect((await put(app, "p1/files/project.json", PROJECT)).status).toBe(204);
   });
 
+  it("keeps a committed file immutable: a second, different write is refused and does not overwrite", async () => {
+    const { app } = await makeSyncEnv();
+    const first = JSON.stringify({ ...JSON.parse(commit("c1")), message: "first" });
+    const second = JSON.stringify({ ...JSON.parse(commit("c1")), message: "tampered" });
+    expect((await put(app, "p1/files/history/commits/c1.json", first)).status).toBe(204);
+    expect((await put(app, "p1/files/history/commits/c1.json", second)).status).toBe(409);
+
+    // The stored commit is still the first write - the atomic insert never overwrote it.
+    const read = await (await app.request("/projects/p1/files/history/commits/c1.json")).json();
+    expect(read.message).toBe("first");
+  });
+
+  it("validates by path, not Content-Type: a JSON doc can't be smuggled in as opaque bytes", async () => {
+    const { app } = await makeSyncEnv();
+    // Claiming octet-stream must NOT skip shape validation for a JSON path.
+    const res = await app.request("/projects/p1/files/project.json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: '{"tracks":"not an array"}',
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects an oversized body with 413 (json + sample caps)", async () => {
+    const jsonEnv = await makeSyncEnv({ maxJsonBytes: 50 });
+    // PROJECT is well over 50 bytes, so the JSON cap trips before the handler reads it.
+    expect((await put(jsonEnv.app, "p1/files/project.json", PROJECT)).status).toBe(413);
+
+    const sampleEnv = await makeSyncEnv({ maxSampleBytes: 3 });
+    const big = await sampleEnv.app.request("/projects/p1/files/samples/abc", {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: new Uint8Array([1, 2, 3, 4]),
+    });
+    expect(big.status).toBe(413);
+  });
+
   it("never writes a traversal path as a normal file", async () => {
     const { app } = await makeSyncEnv();
     // `..` is normalized away by URL parsing before routing (so it unroutes -> not a write);
