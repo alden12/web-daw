@@ -113,6 +113,7 @@ export function PianoRoll({
   scheduler,
   recorder,
   trackId,
+  clipId,
   dispatch,
   projectStore,
   rows = CHROMATIC_ROWS,
@@ -121,6 +122,9 @@ export function PianoRoll({
   scheduler: Scheduler;
   recorder: Recorder;
   trackId: string;
+  /** The clip these edits target. Sent explicitly (not left to the receiver's active clip) so note
+   *  edits address the same clip on every replica in a shared session, whatever each has selected. */
+  clipId: string;
   dispatch: Dispatch;
   /** Supplies per-note last-editor authorship for the voice tint; omit to leave notes untinted. */
   projectStore?: ProjectStore;
@@ -263,7 +267,7 @@ export function PianoRoll({
         setSelection(new Set());
       } else if ((e.key === "Delete" || e.key === "Backspace") && ids.length) {
         e.preventDefault();
-        dispatch({ type: "removeNotes", trackId, ids });
+        dispatch({ type: "removeNotes", trackId, clipId, ids });
         setSelection(new Set());
       } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
@@ -279,7 +283,7 @@ export function PianoRoll({
           velocity: note.velocity,
         }));
         if (e.key === "x") {
-          dispatch({ type: "removeNotes", trackId, ids });
+          dispatch({ type: "removeNotes", trackId, clipId, ids });
           setSelection(new Set());
         }
       } else if (mod && e.key === "v" && clipboard.current.length) {
@@ -292,7 +296,7 @@ export function PianoRoll({
           length: entry.length,
           velocity: entry.velocity,
         }));
-        dispatch({ type: "addNotes", trackId, notes });
+        dispatch({ type: "addNotes", trackId, clipId, notes });
         setSelection(new Set(notes.map((note) => note.id)));
       }
     };
@@ -334,7 +338,7 @@ export function PianoRoll({
           const original = d.origin.get(id)!;
           return { ...original, start: clampStart(original.start + dB), pitch: clampPitch(original.pitch + dP) };
         });
-        dispatch({ type: "editNotes", trackId, notes });
+        dispatch({ type: "editNotes", trackId, clipId, notes });
       } else {
         if (!d.moved && dB === 0) return;
         d.moved = true;
@@ -343,7 +347,7 @@ export function PianoRoll({
           return { ...original, length: clampLen(original.length + dB, original.start) };
         });
         if (notes.length === 1) lastLen.current = notes[0].length;
-        dispatch({ type: "editNotes", trackId, notes });
+        dispatch({ type: "editNotes", trackId, clipId, notes });
       }
     };
     beginPointerDrag(onMove, () => {
@@ -404,7 +408,12 @@ export function PianoRoll({
       }
       const id = newNoteId();
       const start = clampStart(floorBeat(beat, snapOn ? snapDiv : GRID));
-      dispatch({ type: "addNote", trackId, note: { id, pitch, start, length: lastLen.current, velocity: 0.8 } });
+      dispatch({
+        type: "addNote",
+        trackId,
+        clipId,
+        note: { id, pitch, start, length: lastLen.current, velocity: 0.8 },
+      });
       setSelection(new Set([id]));
     });
   };
@@ -422,7 +431,7 @@ export function PianoRoll({
       const rect = velRef.current!.getBoundingClientRect();
       const v = clamp(1 - (clientY - rect.top) / rect.height, 0, 1);
       const notes = ids.map((id) => ({ ...origin.get(id)!, velocity: v }));
-      dispatch({ type: "editNotes", trackId, notes });
+      dispatch({ type: "editNotes", trackId, clipId, notes });
     };
     apply(e.clientY);
     beginPointerDrag(
@@ -454,7 +463,7 @@ export function PianoRoll({
   const quantize = () => {
     if (!targets.length) return;
     const notes = quantizeNotes(targets, { gridBeats: snapDiv, strength: quantStrength, ends: quantEnds });
-    dispatch({ type: "editNotes", trackId, notes });
+    dispatch({ type: "editNotes", trackId, clipId, notes });
   };
 
   const settingsItems: MenuItem[] = [

@@ -12,6 +12,7 @@ import {
   switchProject,
   renameProject,
   deleteProject,
+  forkProjectFromSnapshot,
 } from "../src/audio/projects/operations";
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -88,6 +89,27 @@ describe("project library operations", () => {
     const id = currentProjectId();
     await renameProject(id, "My Beat");
     expect(listProjects().find((meta) => meta.id === id)?.name).toBe("My Beat");
+  });
+
+  it("forks a copy from a snapshot without switching the current project", async () => {
+    const d = deps();
+    await initProjects(d);
+    const original = currentProjectId();
+
+    // A snapshot carrying an edit the original bundle doesn't have (the "my offline state").
+    d.editLog.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-mine" });
+    const myState = d.projectStore.snapshot();
+    // Rewind the live store so the original bundle is WITHOUT that track (simulating "take theirs" locally).
+    d.editLog.undo();
+
+    const copyId = await forkProjectFromSnapshot(myState, "My Track (copy)");
+    expect(copyId).not.toBe(original);
+    expect(currentProjectId()).toBe(original); // fork does NOT switch the current project
+    expect(listProjects().find((meta) => meta.id === copyId)?.name).toBe("My Track (copy)");
+
+    // Opening the copy shows the forked state (the edit that was only in the snapshot).
+    await switchProject(d, copyId);
+    expect(d.projectStore.getTracks().some((track) => track.id === "t-mine")).toBe(true);
   });
 
   it("deleting the current project falls back to another", async () => {

@@ -21,7 +21,9 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `yarn dev --port ${PORT}`,
+    // `--mode test` loads `.env.test`, which blanks the auth + remote vars so a local `.env` can't
+    // flip the login gate on and strand every test at the sign-in screen (no more moving `.env` aside).
+    command: `yarn dev --port ${PORT} --mode test`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

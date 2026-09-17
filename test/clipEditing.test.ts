@@ -152,3 +152,27 @@ describe("setLoopStart", () => {
     expect(project.loopStart).toBe(0);
   });
 });
+
+describe("note edits target an explicit clipId", () => {
+  it("addNote / removeNotes hit the named clip, not whichever clip is active", () => {
+    const { project, log } = setup();
+    // A second clip in the pool. The roll now sends an explicit clipId, so an edit must land in the
+    // named clip even when a replica (or the local view) has a different clip active - the multiplayer
+    // correctness this guards (a peer's active clip must not steer where the edit lands).
+    log.dispatch({ type: "addClip", trackId: "t-1", id: "c-2", empty: true });
+    const active = project.getTrack("t-1")!.activeClipId!;
+    const other = active === "c-2" ? "c-t-1" : "c-2"; // the non-active clip
+    const notesIn = (clipId: string) =>
+      project
+        .getClipStore("t-1", clipId)!
+        .getClip()
+        .notes.map((n) => n.id);
+
+    log.dispatch({ type: "addNote", trackId: "t-1", clipId: other, note: note({ id: "n-1" }) });
+    expect(notesIn(other)).toEqual(["n-1"]); // landed in the named clip
+    expect(notesIn(active)).toEqual([]); // NOT in the active one
+
+    log.dispatch({ type: "removeNotes", trackId: "t-1", clipId: other, ids: ["n-1"] });
+    expect(notesIn(other)).toEqual([]);
+  });
+});

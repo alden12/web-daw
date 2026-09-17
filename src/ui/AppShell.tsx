@@ -15,12 +15,18 @@ import { Recorder } from "../audio/recording/recorder";
 import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
-import { initProjects } from "../audio/projects/operations";
-import { patchProjectName } from "../audio/projects/library";
-import { currentProjectId } from "../audio/projectRepository";
+import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operations";
+import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
+import { currentProjectId, setCurrentProject } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
-import { createWsClient, wsBaseFromApiUrl } from "../contract/client";
+import type { ConflictInfo } from "../audio/sync/conflict";
+import type { ProjectData } from "../audio/project/types";
+import { bundleLocalMirror } from "../audio/sync/localMirror";
+import { getLocalCacheBundle, requestPersistentStorage } from "../audio/bundleStore";
+import { createWsClient, wsBaseFromApiUrl, type WsStatus } from "../contract/client";
+import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
+import { ConflictDialog } from "./ConflictDialog";
 import { getAccessToken } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
@@ -107,6 +113,20 @@ export function AppShell() {
       }),
   );
   const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
+  // Sync-connection state (remote mode only; null in local/no-sync mode). `projectLoaded` gates the
+  // load overlay; `sawPeerEdit` marks the project as collaborative so the offline banner warns.
+  const [syncStatus, setSyncStatus] = useState<WsStatus | null>(null);
+  const [projectLoaded, setProjectLoaded] = useState(false);
+  const [sawPeerEdit, setSawPeerEdit] = useState(false);
+  // A reconnect conflict awaiting the user's choice (remote mode only). Held by the shared session; the
+  // dialog resolves it. `sessionRef` lets the dialog call back into the live session.
+  const [conflict, setConflict] = useState<{ info: ConflictInfo; myState: ProjectData } | null>(null);
+  const sessionRef = useRef<SharedSession | null>(null);
+  const projectList = useSyncExternalStore(subscribeProjects, listProjects);
+  // Shared = someone shared it with us (role "editor") or we have seen a peer edit this session (so an
+  // owner with active collaborators warns too). Owner-with-idle-members isn't caught yet - a cheap
+  // server "shared" flag on the listing would close that; deferred to the conflict-flow increment.
+  const isSharedProject = sawPeerEdit || projectList.find((meta) => meta.id === currentProjectId())?.role === "editor";
   const dispatch = editLog.dispatch;
 
   // Resizable, persisted side panels + collapse state. The activity rail chooses
@@ -197,41 +217,66 @@ export function AppShell() {
     let active = true;
     let disposePersistence = () => {};
     let disposeCheckpoints = () => {};
-    void initProjects({ projectStore, editLog, versionStore }).then(() => {
-      if (!active) return;
-      // With a remote backend, edits ride the live WS channel and the authority persists them (the
-      // client no longer appends over HTTP): open a shared session and route each dispatched edit to it.
-      // Local-only backend keeps the HTTP/OPFS autosave. Version-history checkpoints stay client-side
-      // either way until Phase B moves them server-side.
-      const apiUrl = import.meta.env?.VITE_DAW_API_URL;
-      if (apiUrl) {
-        const entries = editLog.getEntries();
-        const notes = editLog.getNotes();
-        const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
-        const transport = createWsClient({
-          baseUrl: wsBaseFromApiUrl(apiUrl),
-          token: getAccessToken, // the live session token (getter), so a reconnect uses a refreshed one
-        });
-        const session = new SharedSession({
-          projectStore,
-          editLog,
-          transport,
-          projectId: currentProjectId(),
-          baseSeq,
-          onError: (message) => console.warn(`[web-daw] sync: ${message}`),
-          // A peer renaming the project: update our library-list label straight from the edit (the store
-          // already applied it), so the dropdown reflects it live without a reload.
-          onRemoteEdit: (command) => {
-            if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
-          },
-        });
-        session.attach();
-        disposePersistence = () => session.close();
-      } else {
-        disposePersistence = attachAutosave(projectStore, editLog);
-      }
-      disposeCheckpoints = versionStore.attach();
-    });
+    // Best-effort: keep the offline cache + write-queue from being evicted under storage pressure.
+    void requestPersistentStorage();
+    void initProjects({ projectStore, editLog, versionStore })
+      .then(() => {
+        if (!active) return;
+        // With a remote backend, edits ride the live WS channel and the authority persists them (the
+        // client no longer appends over HTTP): open a shared session and route each dispatched edit to it.
+        // Local-only backend keeps the HTTP/OPFS autosave. Version-history checkpoints stay client-side
+        // either way until Phase B moves them server-side.
+        const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+        if (apiUrl) {
+          const entries = editLog.getEntries();
+          const notes = editLog.getNotes();
+          const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
+          const transport = createWsClient({
+            baseUrl: wsBaseFromApiUrl(apiUrl),
+            token: getAccessToken, // the live session token (getter), so a reconnect uses a refreshed one
+          });
+          transport.onStatus((status) => {
+            if (active) setSyncStatus(status);
+          });
+          // Durable OPFS mirror (cache-only) so offline edits survive a reload and the confirmed stream
+          // replays offline. Null when OPFS is unavailable (remote-only, no offline durability).
+          const cacheBundle = getLocalCacheBundle(currentProjectId());
+          const session = new SharedSession({
+            projectStore,
+            editLog,
+            transport,
+            projectId: currentProjectId(),
+            baseSeq,
+            localMirror: cacheBundle ? bundleLocalMirror(cacheBundle) : undefined,
+            onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+            // A peer's edit: mark the project collaborative (so the offline banner warns), and on a rename
+            // update our library-list label straight from the edit (the store already applied it) so the
+            // dropdown reflects it live without a reload.
+            onRemoteEdit: (command) => {
+              if (active) setSawPeerEdit(true);
+              if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
+            },
+            // A reconnect clash: the session is holding our offline edits and showing the peer's state.
+            // Raise it to the dialog, which resolves via `discardPending` (take theirs) or a fork (keep mine).
+            onConflict: (info, myState) => {
+              if (active) setConflict({ info, myState });
+            },
+          });
+          session.attach();
+          sessionRef.current = session;
+          disposePersistence = () => {
+            sessionRef.current = null;
+            session.close();
+          };
+        } else {
+          disposePersistence = attachAutosave(projectStore, editLog);
+        }
+        disposeCheckpoints = versionStore.attach();
+      })
+      .catch((error) => console.warn("[web-daw] project load failed:", error))
+      .finally(() => {
+        if (active) setProjectLoaded(true);
+      });
     return () => {
       active = false;
       disposePersistence();
@@ -323,6 +368,7 @@ export function AppShell() {
   return (
     <AuthorColorsProvider value={{ config: authorColors, self: currentUser }}>
       <div className="flex flex-col h-screen overflow-hidden bg-ground text-ink">
+        {syncStatus === "offline" && <OfflineBanner shared={!!isSharedProject} />}
         <div
           ref={bodyRef}
           className="app-body flex-1 min-h-0 relative"
@@ -360,6 +406,7 @@ export function AppShell() {
             selectedTrack={selectedTrack}
             onRevealSamples={() => selectView("samples")}
             mcpStatus={mcpStatus}
+            syncStatus={syncStatus}
             agentCollapsed={agentCollapsed}
             onExpandAgent={() => setAgentCollapsed(false)}
           />
@@ -426,6 +473,31 @@ export function AppShell() {
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
         {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} />}
+        {!projectLoaded && <LoadingOverlay />}
+        {conflict && (
+          <ConflictDialog
+            info={conflict.info}
+            onTakeTheirs={() => {
+              sessionRef.current?.discardPending(); // drop our held edits; converge on the peer's version
+              setConflict(null);
+            }}
+            onKeepMine={() => {
+              const { myState } = conflict;
+              void (async () => {
+                try {
+                  // Fork a copy carrying our offline edits, then converge the shared project on the peer's
+                  // version and reload into the copy (a fresh session attaches to the new project).
+                  const id = await forkProjectFromSnapshot(myState, `${myState.name} (copy)`);
+                  await sessionRef.current?.discardPending(); // durably clear the original's held queue first
+                  setCurrentProject(id);
+                  window.location.reload();
+                } catch (error) {
+                  console.warn("[web-daw] keep-mine fork failed:", error);
+                }
+              })();
+            }}
+          />
+        )}
       </div>
     </AuthorColorsProvider>
   );

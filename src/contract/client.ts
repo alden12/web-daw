@@ -14,6 +14,7 @@ import type { z } from "zod";
 import { routes } from "./http";
 import { channels, parseServerMessage, type ClientMessage, type ServerMessage } from "./ws";
 import type { ErrorBody } from "./errors";
+import { IdleController } from "./idleController";
 
 type ProjectList = z.infer<(typeof routes.listProjects)["response"]>;
 /** One project in the library listing (id + name + modifiedAt + the caller's role). */
@@ -196,53 +197,176 @@ export function wsBaseFromApiUrl(apiUrl: string): string {
  *  its unconfirmed edits. Thin transport glue over the contract's message unions. The token rides the
  *  query string because a browser `WebSocket` cannot set an Authorization header (the server reads
  *  `?token=` at the upgrade, mirroring the HTTP bearer gate). */
-export function createWsClient(config: { baseUrl: string; token?: TokenSource }): {
+/**
+ * The live connection state, surfaced to the UI (loading spinner + connection chip + offline warning):
+ * - `connecting` - the first connect is in flight (never been open yet).
+ * - `online` - the socket is open.
+ * - `offline` - was online, then dropped unexpectedly; reconnecting in the background.
+ * - `idle` - deliberately suspended (idle timeout / tab hidden); wakes on activity or when shown again.
+ * `idle` is a benign paused state (edits still save locally and it self-heals on wake), distinct from the
+ * `offline` state that warrants a warning on a shared project.
+ */
+export type WsStatus = "connecting" | "online" | "offline" | "idle";
+
+export function createWsClient(config: {
+  baseUrl: string;
+  token?: TokenSource;
+  /** Override the idle / hidden-grace suspend thresholds (defaults live in `idleController.ts`). */
+  idleMs?: number;
+  hiddenGraceMs?: number;
+  /** Heartbeat cadence and the grace before a missing pong is treated as a dead socket. */
+  heartbeatMs?: number;
+  pongTimeoutMs?: number;
+}): {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   onOpen(handler: () => void): void;
+  /** Fires when the socket drops or is suspended (idle), so the session can stop sending and hold edits. */
+  onClose(handler: () => void): void;
+  /** Subscribe to connection-state changes; the handler fires immediately with the current status. */
+  onStatus(handler: (status: WsStatus) => void): void;
   close(): void;
 } {
   const base = `${config.baseUrl.replace(/\/$/, "")}${channels.main.path}`;
   const RECONNECT_BASE_MS = 500;
   const RECONNECT_MAX_MS = 10_000;
+  // Heartbeat: periodically ping and expect a pong, so a *half-open* socket (dead but never cleanly
+  // closed - laptop sleep, NAT/proxy timeout, a network drop with no FIN) is detected and treated as a
+  // disconnect. Without it we only notice a clean close. Pings are liveness, NOT activity: they never
+  // reset the idle countdown, so the idle/hidden suspend (and scale-to-zero) is unaffected.
+  const HEARTBEAT_MS = config.heartbeatMs ?? 25_000;
+  const PONG_TIMEOUT_MS = config.pongTimeoutMs ?? 5_000;
 
   // Handlers registered once, re-bound onto each socket instance across reconnects.
   const messageHandlers: Array<(message: ServerMessage) => void> = [];
   const openHandlers: Array<() => void> = [];
+  const closeHandlers: Array<() => void> = [];
+  const statusHandlers: Array<(status: WsStatus) => void> = [];
+  let status: WsStatus = "connecting";
+  const setStatus = (next: WsStatus): void => {
+    if (next === status) return;
+    status = next;
+    for (const handler of statusHandlers) handler(status);
+  };
   // Sends made while the socket is not open queue here and flush once it opens (after the open handlers,
   // so a re-subscribe always precedes any queued edit).
   const backlog: ClientMessage[] = [];
   let socket: WebSocket;
   let closed = false;
   let retries = 0;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let pongTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const stopHeartbeat = (): void => {
+    if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
+    if (pongTimer !== undefined) clearTimeout(pongTimer);
+    heartbeatTimer = pongTimer = undefined;
+  };
+
+  const startHeartbeat = (): void => {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      try {
+        socket.send(JSON.stringify({ type: "ping" })); // direct send: deliberately NOT via idle.activity()
+      } catch {
+        drop(); // a throwing send means the socket is unusable - treat as dead immediately
+        return;
+      }
+      if (pongTimer !== undefined) return; // already awaiting a pong from the previous tick
+      pongTimer = setTimeout(() => {
+        pongTimer = undefined;
+        drop(); // no pong within the grace: the socket is dead - go offline now, don't wait for `close`
+      }, PONG_TIMEOUT_MS);
+    }, HEARTBEAT_MS);
+  };
+
+  // Suspend the socket when the session goes idle or the tab is hidden, so an open connection does not
+  // pin the scale-to-zero server awake. `onWake` reopens; the open handler re-runs `resync`, so a
+  // suspend/resume is just a short-lived disconnect the session already self-heals from.
+  const idle = new IdleController({
+    idleMs: config.idleMs,
+    hiddenGraceMs: config.hiddenGraceMs,
+    onSuspend: () => {
+      setStatus("idle");
+      socket?.close();
+    },
+    onWake: () => {
+      retries = 0;
+      setStatus("connecting");
+      connect();
+    },
+  });
+
+  // Whether the current socket has already been given up on, so a dead-socket `drop()` and the socket's
+  // later `close` event don't reconnect twice. Reset per connect.
+  let dropped = false;
+
+  /**
+   * Give up on the current socket - a clean `close`, or a heartbeat that found it dead - and, unless we
+   * deliberately suspended it (idle/hidden), go **offline immediately** and schedule a reconnect. Setting
+   * `offline` here rather than waiting for the `close` event is deliberate: a half-open socket's `close`
+   * can be deferred by the browser until connectivity returns (e.g. DevTools "Offline"), so relying on it
+   * would leave the UI stuck on "online" until the network came back.
+   */
+  const drop = (): void => {
+    if (dropped || closed) return;
+    dropped = true;
+    for (const handler of closeHandlers) handler(); // let the session stop sending / hold edits
+    stopHeartbeat();
+    try {
+      socket.close();
+    } catch {
+      // already closing/closed
+    }
+    if (!idle.shouldReconnectAfterClose()) return; // suspended (idle) or hidden: stay put, wake later
+    setStatus("offline");
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** retries);
+    retries += 1;
+    setTimeout(connect, delay);
+  };
 
   const connect = (): void => {
+    dropped = false;
     // Rebuild the URL per (re)connect so a refreshed token is picked up (the reconnect from slice 76
     // is also what re-applies it after a token rotation).
     const token = resolveToken(config.token);
     const url = token ? `${base}?token=${encodeURIComponent(token)}` : base;
-    socket = new WebSocket(url);
-    socket.addEventListener("open", () => {
+    const ws = new WebSocket(url);
+    socket = ws;
+    // Each listener guards `socket !== ws`, so a *previous* socket firing a deferred event (a late close
+    // after we already reconnected) can't disturb the current connection.
+    ws.addEventListener("open", () => {
+      if (socket !== ws) return;
       retries = 0;
+      setStatus("online");
+      idle.onOpen(); // fresh idle countdown per connection
+      startHeartbeat();
       for (const handler of openHandlers) handler();
-      for (const message of backlog) socket.send(JSON.stringify(message));
+      for (const message of backlog) ws.send(JSON.stringify(message));
       backlog.length = 0;
     });
-    socket.addEventListener("message", (event) => {
+    ws.addEventListener("message", (event) => {
+      if (socket !== ws) return;
       const parsed = parseServerMessage(JSON.parse(String(event.data)));
-      if (parsed.success) for (const handler of messageHandlers) handler(parsed.data);
+      if (!parsed.success) return;
+      // A pong clears the outstanding liveness deadline. (Still forwarded; SharedSession no-ops it.)
+      if (parsed.data.type === "pong" && pongTimer !== undefined) {
+        clearTimeout(pongTimer);
+        pongTimer = undefined;
+      }
+      for (const handler of messageHandlers) handler(parsed.data);
     });
-    socket.addEventListener("close", () => {
-      if (closed) return; // deliberate close(): do not reconnect
-      const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** retries);
-      retries += 1;
-      setTimeout(connect, delay);
+    ws.addEventListener("close", () => {
+      if (socket !== ws) return;
+      drop();
     });
   };
   connect();
 
   return {
     send(message) {
+      idle.activity(); // reset the idle countdown; reopens the socket first if it was suspended
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
       else backlog.push(message);
     },
@@ -252,8 +376,17 @@ export function createWsClient(config: { baseUrl: string; token?: TokenSource })
     onOpen(handler) {
       openHandlers.push(handler);
     },
+    onClose(handler) {
+      closeHandlers.push(handler);
+    },
+    onStatus(handler) {
+      statusHandlers.push(handler);
+      handler(status); // fire immediately with the current state
+    },
     close() {
       closed = true;
+      stopHeartbeat();
+      idle.dispose();
       socket.close();
     },
   };
