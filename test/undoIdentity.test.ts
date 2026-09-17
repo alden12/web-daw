@@ -17,6 +17,7 @@ import { readEdits } from "../server/db/store";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
 import { SharedSession, type SyncTransport } from "../src/audio/sync/sharedSession";
+import { rebuildWithout } from "../src/audio/commands/replay";
 import type { ClientMessage, ServerMessage } from "../src/contract/ws";
 import type { EditCommand, EditEntry } from "../src/audio/commands/types";
 
@@ -107,6 +108,75 @@ describe("undo survives the authority renumbering the log", () => {
     reloadedLog.restoreCheckpoints(stack);
 
     expect(reloadedLog.getCheckpoints().undo).toEqual(["e-1"]);
+  });
+});
+
+/**
+ * A shared session's project is written by the authority, not by this client, and an undo is not
+ * forwarded to it - so the log comes back on reload with the undone edit still applied. Restoring
+ * the stacks used to assume the loaded project already reflected them, which is true only of a
+ * project the local autosave wrote.
+ */
+describe("a restored stack is made true, not assumed true", () => {
+  /** The state the authority would hand back: every edit applied, no exclusions. */
+  const asAuthority = (entries: readonly EditEntry[]): ProjectStore => {
+    const store = new ProjectStore(false);
+    store.load(rebuildWithout(new ProjectStore(false).snapshot(), -1, entries, new Set()));
+    return store;
+  };
+
+  /** Three edits with the last one undone, plus the log the authority would hold. */
+  const undoneThenReloaded = () => {
+    const { log } = seededLog();
+    log.dispatch(track("t-1"));
+    log.resetCoalescing();
+    log.dispatch(track("t-2"));
+    log.resetCoalescing();
+    log.dispatch({ type: "setTempo", bpm: 140 });
+    log.undo(); // takes back the tempo edit, locally: nothing is forwarded
+
+    const stack = log.getCheckpoints();
+    const entries = log.getEntries().filter((entry) => entry.kind === "edit");
+    const reloaded = asAuthority(entries);
+    const reloadedLog = new EditLog(reloaded);
+    reloadedLog.restore(entries);
+    reloadedLog.setRebuildBase(new ProjectStore(false).snapshot(), -1);
+    reloadedLog.restoreCheckpoints(stack);
+    return { reloaded, reloadedLog, stack };
+  };
+
+  it("applies what was undone before the reload, rather than trusting the loaded project", () => {
+    const { reloaded, stack } = undoneThenReloaded();
+
+    expect(stack.redo).toHaveLength(1);
+    // The authority's copy had 140 in it, because it never heard about the undo.
+    expect(reloaded.tempoBpm).toBe(120);
+  });
+
+  // The bug this closes: one press of undo took back two edits, the one pressed and the one undone
+  // before the reload, because the excluded set was believed rather than applied. So the assertion
+  // has to be about the CHANGE the press made - a test that only reads the state afterwards passes
+  // either way, since the bug and the fix agree on where it ends up.
+  it("takes back exactly one edit when undo is pressed after such a reload", () => {
+    const { reloaded, reloadedLog } = undoneThenReloaded();
+    const before = reloaded.snapshot();
+
+    reloadedLog.undo(); // the user takes back t-2, and only t-2
+    const after = reloaded.snapshot();
+
+    expect(after.tracks.map((each) => each.id)).toEqual(
+      before.tracks.filter((each) => each.id !== "t-2").map((each) => each.id),
+    );
+    // The tempo edit was already undone before the press, so the press must not move it.
+    expect(after.tempoBpm).toBe(before.tempoBpm);
+  });
+
+  it("puts the pre-reload edit back on redo, so nothing is stranded", () => {
+    const { reloaded, reloadedLog } = undoneThenReloaded();
+
+    expect(reloadedLog.getState().canRedo).toBe(true);
+    reloadedLog.redo();
+    expect(reloaded.tempoBpm).toBe(140);
   });
 });
 

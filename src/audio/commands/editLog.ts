@@ -521,9 +521,20 @@ export class EditLog {
     this.undoStack = keep(stored?.undo);
     this.redoStack = keep(stored?.redo);
     // A redo step is an edit currently left OUT of the project, so the excluded set is the redo
-    // stack. The project was loaded from storage already reflecting that, so nothing is rebuilt.
+    // stack. Then MAKE that true rather than assuming it.
+    //
+    // It used to assume: locally the project is saved after the undo, so it already reflected the
+    // exclusions. That does not hold in a shared session, where the client never writes the project
+    // at all - the authority does, and an undo is not forwarded to it (see `remote`), so the log
+    // comes back with the edit still applied. The stack then claimed edits were absent that were
+    // present, and the next undo rebuilt with both excluded: one press, two edits gone.
+    //
+    // Rebuilding here costs one replay of the retained window on a reload, and only when something
+    // was undone before it. It also keeps the promise the stack is making: what you undid stays
+    // undone across a reload, in either mode.
     this.undone = new Set(this.redoStack);
     this.dropUnreachable();
+    if (this.undone.size > 0) this.rebuildProject();
     this.emit();
   }
 

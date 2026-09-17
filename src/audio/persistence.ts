@@ -188,7 +188,8 @@ export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository
     const active = targetRepo();
     if (!active) return;
     // Failures are the caller's business to notice, not this timer's to crash on: a stack that did
-    // not land is caught by its state stamp on the next load and discarded rather than misapplied.
+    // not land just means the previous one is read back, and a step naming an entry the log no
+    // longer holds is dropped on restore rather than misapplied.
     void active.writeUndo(editLog.getCheckpoints()).catch(() => {});
   };
 
