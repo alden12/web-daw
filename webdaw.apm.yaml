@@ -8913,10 +8913,12 @@ projects:
           another 10-50k, so a
 
           heavily-worked project is order **100k edits** and a pathological one
-          maybe 500k. At ~400 bytes a
+          maybe 500k. At 405 bytes a row
 
-          row that is **~40MB** and **~200MB** against a ~5MB ring - 8x to 40x
-          the storage, per project.
+          (measured, see DAW-38) that is **~40MB** and **~200MB** against a
+          ~5MB ring - 8x to 40x the
+
+          storage, per project.
 
 
           **Speed does favour it.** The stage-B measurements say replaying the
@@ -9666,9 +9668,10 @@ projects:
           project is order **100k edits**,
 
           and a pathological one (years, or agent-driven) maybe 500k. A row is
-          ~400 bytes (command JSON, a
+          **405 bytes, measured** (command
 
-          uuid id, author/time/kind/seq, jsonb overhead).
+          JSON, a uuid id, author/time/kind/seq, plus indexes and toast - see
+          below).
 
 
           | | today | proposed |
@@ -9772,7 +9775,10 @@ projects:
           turns every figure above from
 
           arithmetic into a fact - in particular whether 100k is generous or
-          mean. Stage F's phone
+          mean. (The per-row cost is
+
+          measured now; the COUNT for a real project is the half still open.)
+          Stage F's phone
 
           measurement is the other half of the same question: if a rebuild is
           much slower on a phone than 4x,
@@ -9801,15 +9807,26 @@ projects:
           rather than a generous one.
 
 
-          **Still worth measuring: bytes per row**, which is what the ~400-byte
-          estimate above (and so the
+          **Bytes per row, measured** (Alden, same day): 4160 rows occupying
+          1,687,552 bytes including
 
-          40MB figure) hangs on. `select count(*), pg_total_relation_size('edits'),
-          pg_total_relation_size('edits') / nullif(count(*),0) from edits;` gives
-          the honest cost including
+          indexes and toast = **405 bytes a row**, against the 400 this
+          ticket's arithmetic assumed. So the
 
-          indexes and toast. Near 400 and the numbers hold; nearer 1KB and the
-          cap comes down.
+          40MB cap figure stands as written, and it is a measurement rather
+          than an estimate.
+
+
+          One shape could skew it upward on a real project: a plural command
+          (`addNotes`, `editNotes`) carries
+
+          an array and can run to several KB in one row - though it also
+          replaces the rows the individual
+
+          edits would have been, so it roughly cancels. Worth re-running the
+          query once a real track exists
+
+          rather than assuming it does.
 
 
           ## Not this ticket
