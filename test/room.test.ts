@@ -7,6 +7,7 @@ import { edits, files, projects } from "../server/db/schema";
 import type { ServerMessage } from "../src/contract/ws";
 import type { EditCommand } from "../src/audio/commands/types";
 import type { ProjectData } from "../src/audio/project/types";
+import { KEYFRAME_INDEX_PATH, retainedKeyframePath } from "../src/audio/history/keyframes";
 
 // A client stub that just records what the room pushes to it.
 const collector = () => {
@@ -32,6 +33,19 @@ const readKeyframe = async (db: Awaited<ReturnType<typeof makeSyncEnv>>["db"], p
     .from(files)
     .where(and(eq(files.projectId, projectId), eq(files.path, "project.json")));
   return rows[0]?.json as (ProjectData & { headSeq?: number }) | undefined;
+};
+
+// Any JSON file in the project's bundle, by path.
+const readBundleFile = async (
+  db: Awaited<ReturnType<typeof makeSyncEnv>>["db"],
+  projectId: string,
+  path: string,
+): Promise<unknown> => {
+  const rows = await db
+    .select({ json: files.json })
+    .from(files)
+    .where(and(eq(files.projectId, projectId), eq(files.path, path)));
+  return rows[0]?.json;
 };
 
 // The commit-pinned keyframe written at a commit marker's seq (history/keyframes/<seq>.json).
@@ -140,6 +154,26 @@ describe("Room (realtime authority)", () => {
     const keyframe = await readKeyframe(db, "p1");
     expect(keyframe?.headSeq).toBe(99);
     expect(keyframe?.tracks).toHaveLength(100);
+  });
+
+  // DAW-34 stage B. The interval rule itself is unit-tested in keyframes.test.ts; this is the wiring:
+  // the authority keeps a copy in the ring, and a reloaded room picks the index back up rather than
+  // starting a fresh ring and overwriting slot 0 on its next keyframe.
+  it("keeps a retained copy of the keyframe, and re-reads the ring on reload", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await fillTracks(room, 100);
+
+    const index = await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH);
+    expect(index).toEqual([99, null, null, null, null]);
+    const retained = (await readBundleFile(db, "p1", retainedKeyframePath(0))) as ProjectData & { headSeq?: number };
+    expect(retained?.headSeq).toBe(99);
+    expect(retained?.tracks).toHaveLength(100);
+
+    // A fresh room for the same project continues the ring instead of restarting it.
+    const reloaded = await Room.load(db, "local", "p1");
+    await fillTracks(reloaded, 100, 100);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([99, null, null, null, null]);
   });
 
   it("reloads from the keyframe + tail, so a compacted log still reconstructs exact HEAD", async () => {

@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { instrumentDefSchema, effectDefSchema } from "../graph/zod";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { KEYFRAME_INDEX_PATH } from "../history/keyframes";
 
 /* -------------------------------------------------------------------------- */
 /* Leaves                                                                     */
@@ -330,6 +331,9 @@ export type ProjectData = z.infer<typeof projectDataSchema>;
 /* Path -> schema dispatch (the shared "what a valid bundle file is")         */
 /* -------------------------------------------------------------------------- */
 
+/** The retained keyframe ring's slot -> seq map: one entry per slot, null where never written. */
+const keyframeIndexSchema = z.array(z.number().nullable());
+
 /** Exact-path schemas; commits are matched by prefix in `bundleSchemaForPath`. */
 const byPath: Record<string, z.ZodType> = {
   "manifest.json": manifestSchema,
@@ -339,6 +343,7 @@ const byPath: Record<string, z.ZodType> = {
   "notes.json": notesSchema,
   "undo.json": undoStateSchema,
   "history/refs.json": refsSchema,
+  [KEYFRAME_INDEX_PATH]: keyframeIndexSchema,
 };
 
 /** The schema for a bundle path, or null for JSON paths we don't model (accepted as-is). */
@@ -348,6 +353,9 @@ export function bundleSchemaForPath(path: string): z.ZodType | null {
   // Server-authoritative commit-pinned keyframes (Phase B2): a ProjectData snapshot + a headSeq marker
   // (projectDataSchema is non-strict, so it tolerates the extra key), NOT a Commit DAG node.
   if (path.startsWith("history/keyframes/") && path.endsWith(".json")) return projectDataSchema;
+  // The retained keyframe ring (DAW-34 stage B): same snapshot shape, addressed by ring slot. The
+  // index beside them is matched exactly, above.
+  if (path.startsWith("keyframes/") && path.endsWith(".json")) return projectDataSchema;
   return null;
 }
 
