@@ -4179,6 +4179,12 @@ projects:
             related to what is being worked on. Raising the priority of the cheap diagnostic below.
 
 
+          - Sixth sighting, 2026-09-17, third of the same afternoon: two in
+          `mobile-shell.e2e.ts`. Isolated:
+            60/60. Re-run: 153/153. Three occurrences in one session means it now fires on roughly
+            half of full runs, which is past the point where re-running is a reasonable answer.
+
+
           ## Why it matters
 
 
@@ -7905,6 +7911,90 @@ projects:
 
           the bug and the fix agree on where the project ends up, and differ
           only in what the press moved.
+
+
+          ### E2 done on slice-122: the tombstone entry
+
+
+          An undo was an exclusion set the client held in memory and persisted
+          to `undo.json`. The log
+
+          recorded that an undo had *happened* - a feed row reading "Undid: ..."
+          - but not which edit it took
+
+          back, so nothing reading the log could work out what the project was
+          meant to be.
+
+
+          **`EditEntry.undoes`** names it. The reflog marker was already being
+          appended; carrying the id turns
+
+          it from a note about an undo into the record OF one. `replayEntries`
+          honours them by default, so a
+
+          stream of entries is now a complete account: replay every edit except
+          the ones a tombstone above
+
+          them takes back.
+
+
+          **The ordering property is what makes past states stay true.**
+          `tombstonedIds(entries, upTo)` walks
+
+          in order and honours only the tombstones at or below `upTo`, so
+          replaying to an older point does not
+
+          hand it undos made after it. Worth noting the version timeline never
+          needed this: a commit
+
+          materialises from a write-once pinned keyframe, not from replay, so it
+          was already safe.
+
+
+          **The case that is easy to miss:** a tombstone can take back an edit
+          already baked into the keyframe
+
+          beneath it, and replaying forward cannot remove it. So the exclusions
+          are worked out over the whole
+
+          log BEFORE a base is chosen, and `load` walks back to an older
+          retained keyframe when it has to. If
+
+          the ring does not reach that far the undo is lost and the edit stays
+          applied - unavailable rather
+
+          than wrong, the same call the rebuild path makes when it has no base.
+          `attachAutosave` still forces a
+
+          keyframe when the tail carries an undo, which keeps the common case
+          off that path entirely.
+
+
+          **Two sources of exclusion, and they are different things rather than
+          a duplication.** The log's
+
+          tombstones are the CONFIRMED undos, which every reader agrees on.
+          `undo.json`'s redo list is this
+
+          client's OPTIMISTIC ones - undone here and not yet in any log - which
+          is the same base-plus-pending
+
+          split the shared session already makes for edits. A reload unions
+          them. Once undo forwards, a
+
+          hosted client's optimistic set drains into the log the same way a
+          pending edit does.
+
+
+          **Not forwarded yet, so the authority's log still holds no
+          tombstones.** A hosted session's undo
+
+          therefore still rides `undo.json` alone across a reload, which is why
+          the union above is load-bearing
+
+          rather than transitional. `Room.load` carries a note about what it
+          will need: the same
+            work-out-the-exclusions-before-choosing-a-base order the client now uses.
 
 
           ### Still open in stage E
