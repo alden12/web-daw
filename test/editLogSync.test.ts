@@ -64,6 +64,22 @@ describe("edit log endpoints (server delta stream)", () => {
     expect((await readEntries(app, "p1", 1)).map((e) => e.seq)).toEqual([2, 3]);
   });
 
+  it("?limit= returns the most recent N, oldest-first (bounded feed window)", async () => {
+    const { app } = await makeSyncEnv();
+    await append(app, "p1", [entry(0), entry(1), entry(2), entry(3), entry(4)]);
+    const url = "/projects/p1/edits?limit=2";
+    const recent = ((await (await app.request(url)).json()).entries as Array<{ seq: number }>).map((e) => e.seq);
+    expect(recent).toEqual([3, 4]); // the two most recent, still ascending
+  });
+
+  it('accepts and round-trips a kind:"note" entry (feed notes ride the one stream)', async () => {
+    const { app } = await makeSyncEnv();
+    const note = { seq: 0, command: { type: "note", text: "warming up" }, author: "claude", time: 1, kind: "note" };
+    expect((await append(app, "p1", [note])).status).toBe(200);
+    const entries = await readEntries(app, "p1");
+    expect(entries[0]).toMatchObject({ kind: "note", command: { type: "note", text: "warming up" } });
+  });
+
   it("rejects an oversized append body with 413", async () => {
     const { app } = await makeSyncEnv({ maxJsonBytes: 50 });
     expect((await append(app, "p1", [entry(0), entry(1), entry(2), entry(3), entry(4)])).status).toBe(413);

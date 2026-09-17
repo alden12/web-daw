@@ -70,12 +70,13 @@ export const routes = {
     body: z.object({ entries: z.array(editEntrySchema) }),
     response: z.object({ maxSeq: z.number() }),
   },
-  /** Fetch the edit tail with `seq > since` (default: from the start), oldest first. */
+  /** Fetch the edit stream with `seq > since` (default: from the start), oldest first. `limit` caps
+   *  the result to the most recent N (for a bounded feed window); omit it for the full tail. */
   getEdits: {
     method: "GET",
     path: "/projects/:id/edits",
     params: idParams,
-    query: z.object({ since: z.coerce.number().optional() }),
+    query: z.object({ since: z.coerce.number().optional(), limit: z.coerce.number().optional() }),
     response: z.object({ entries: z.array(editEntrySchema) }),
   },
 } as const;

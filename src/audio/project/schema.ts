@@ -206,7 +206,9 @@ export const editEntrySchema = z.object({
   command: editCommandSchema,
   author: authorSchema,
   time: z.number(),
-  kind: z.enum(["edit", "undo", "redo"]).optional(),
+  // "note" is a feed-only annotation folded into the one authored stream (its text rides `command`
+  // as {type:"note", text}); it is skipped by forward replay. undo/redo are the reflog markers.
+  kind: z.enum(["edit", "undo", "redo", "note"]).optional(),
   label: z.string().optional(),
 });
 

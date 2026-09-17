@@ -156,8 +156,8 @@ export function createApp(db: Db, options: AppOptions = {}) {
         zValidator("query", routes.getEdits.query),
         async (c) => {
           const { id } = c.req.valid("param");
-          const { since } = c.req.valid("query");
-          const entries = await readEdits(db, c.get("ownerId"), id, since ?? -1);
+          const { since, limit } = c.req.valid("query");
+          const entries = await readEdits(db, c.get("ownerId"), id, since ?? -1, limit);
           return c.json({ entries });
         },
       )
