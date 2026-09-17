@@ -8623,59 +8623,107 @@ projects:
           mirror is a read-back copy.
 
 
-          ### Still open in stage E
+          ### E6: the offline cases, which closes stage E
 
 
-          **A pending tombstone is replayed FORWARD, which resurrects the edit
-          it took back.** Found while
+          **The bug the other two items were hiding.** `rebuildLive` is `base`
+          + every pending op applied
 
-          sizing the offline work. `SharedSession.rebuildLive` is `base` +
-          every pending op applied forward,
+          FORWARD, and a tombstone's `command` is the command of the edit being
+          taken back - so replaying
 
-          and a tombstone's `command` is the command of the edit being taken
-          back - so an undo made offline
+          one forward re-applied the very edit the undo removed. Every rebuild
+          was a chance to do it: a
 
-          comes back the moment anything rebuilds the live store: a peer edit,
-          a reconnect, or an offline
+          peer's edit, a reconnect, an offline reload replaying its saved queue.
+          `EditLog.undo` gets the
 
-          reload replaying its saved queue. `EditLog.undo` gets the project
-          right at the moment it is pressed,
+          project right at the moment it is pressed, which is why nothing
+          noticed until an undo made offline
 
-          which is why nothing noticed. This is the substance of the remaining
-          offline work, not the ring depth.
-
-
-          The other two of the original three offline cases did collapse into
-          it: an unsent tombstone is
-
-          dropped from `pending` like any unsent op, and sent-but-unacked and
-          confirmed are now the same
-
-          lookup, because an id no longer depends on whether a seq has been
-          assigned.
+          came back from the dead.
 
 
-          **The offline ring gap** - the mirror only holds the keyframe slots
-          it happened to fetch (reads are
+          The fix keeps the cheap path for the common case. With no tombstone in
+          the queue - nearly every
 
-          read-through, so a slot is cached only once an undo needed it), so
-          offline undo depth is luck. The
+          rebuild - `base` is already tombstone-aware and the forward replay is
+          correct. With one, the live
 
-          fix is to warm the ring into the cache while online, skipping slots
-          already held at the right seq.
+          project is replayed from the seed over the confirmed log AND the
+          queue as one stream, and
+
+          `replayEntries` works the tombstones out over everything it is given,
+          so an undo of either is
+
+          honoured. An edit folded into the seed still cannot be excluded,
+          which costs undo depth exactly as
+
+          folding already does for `base`.
 
 
-          **Stale comment:** `SharedSession.enqueue` still says "Undo/redo do
-          not route here - they are local
+          **Three tests that each failed before it:** an undo survives a peer's
+          edit rebuilding the project,
 
-          best-effort in a shared session". E3 made them route here.
+          survives an offline reload replaying the saved queue, and still
+          reaches the authority on reconnect.
 
 
-          **F. Measure on a phone.** The gate on whether any of `invert.ts`
-          comes back. Not a blocker on
+          **The two original offline cases were already right, and now they are
+          pinned.** Undoing an edit
 
-          anything; it decides whether this item is finished or grows a fast
-          path.
+          the authority has not seen sends BOTH the edit and a tombstone for
+          it. Dropping the edit from the
+
+          queue instead is tempting and wrong: `pending` holds unsent ops and
+          sent-but-unacked ones alike, so
+
+          dropping one the authority already had would leave it holding an edit
+          nothing would ever take back.
+
+          Two log rows is the price of not guessing. And taking the peer's side
+          at a conflict discards a held
+
+          tombstone with the rest of the queue, since it is just another unsent
+          op.
+
+
+          **The ring gap is closed by warming, not by luck.** `warmRebuildBases`
+          pulls every live ring slot
+
+          into the offline cache while there is still a network. It skips a slot
+          the cache already holds at
+
+          the seq the index claims (so a reload costs one index read), skips one
+          below the retention floor
+
+          (its edits are pruned, so it is a base nothing can replay from), and
+          re-fetches a slot the ring has
+
+          overwritten since. It asks the cache again after each fetch rather
+          than trusting the read, because
+
+          a read-through serves its own cache when the remote is unreachable -
+          so a non-null answer can be
+
+          the very copy that needed replacing.
+
+
+          **A harness extraction, for the reason E3's bug gave us.** Three test
+          files kept their own copy of
+
+          the sync harness, and a copy of a boundary tests the copy. One home
+          now (`test/support/syncHarness.ts`).
+
+
+          ### Stage E is done; what is left is stage F
+
+
+          **F. Measure on a phone.** Not building - measuring. The gate on
+          whether any of `invert.ts` comes
+
+          back. Not a blocker on anything; it decides whether this item is
+          finished or grows a fast path.
 
 
           ## Dropped

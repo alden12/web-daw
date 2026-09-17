@@ -21,6 +21,7 @@ import { initProjects, forkProjectFromSnapshot } from "../audio/projects/operati
 import { patchProjectName, listProjects, subscribeProjects } from "../audio/projects/library";
 import {
   currentProjectId,
+  getRepository,
   loadedProjectId,
   setCurrentProject,
   subscribeCurrentProject,
@@ -282,6 +283,13 @@ export function AppShell() {
             onConfirmed: () => void versionStore.onLogAdvanced(),
           });
           session.attach();
+          // Pull the retained keyframe ring into the offline cache while there IS a network (DAW-34
+          // stage E). Reads are read-through, so without this the cache holds whichever ring slots an
+          // undo happened to need online, and offline undo depth comes down to what you did first.
+          // Fire-and-forget and skips what the cache already holds, so a reload costs nothing.
+          void getRepository()
+            .warmRebuildBases(baseSeq, cacheBundle)
+            .catch(() => {});
           // Server-authoritative history: author commits/reverts through the session and derive the
           // version list from the log (not the client file-DAG). Set before `attach()` below so the
           // client-side auto-checkpoint no-ops in remote mode.

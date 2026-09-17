@@ -26,6 +26,7 @@ import { commitKeyframePath } from "./history/paths";
 import {
   emptyKeyframeIndex,
   KEYFRAME_INDEX_PATH,
+  KEYFRAME_RETAIN_WINDOW,
   oldestBase,
   planKeyframes,
   rebuildBase,
@@ -38,6 +39,19 @@ import { randomUuid } from "./randomUuid";
  *  knows which log tail to replay on top. A persistence detail (the domain ignores it); the
  *  server's non-strict `projectDataSchema` tolerates the extra key. */
 type PersistedProject = ProjectData & { headSeq?: number };
+
+/** Whether the offline cache already holds this keyframe slot at the seq the ring index claims - the
+ *  question the read-through store cannot answer, since it tries the remote first. A slot at another
+ *  seq was overwritten since, so it needs fetching again. */
+async function cachedAtSeq(cache: BundleStore, path: string, seq: number): Promise<boolean> {
+  try {
+    const raw = await cache.readText(path);
+    if (!raw) return false;
+    return (JSON.parse(raw) as { headSeq?: number }).headSeq === seq;
+  } catch {
+    return false; // absent or unparseable reads as "not held", so it is fetched
+  }
+}
 
 /** Fold the edit log's high-water seq (edits + feed notes share the counter). */
 const highWaterSeq = (log: { seq: number }[], notes: { seq: number }[]): number =>
@@ -361,6 +375,54 @@ export class ProjectRepository {
     if (seqs.length === 0) return null;
     const base = await this.rebuildBaseFor(Math.min(...seqs), headSeq);
     return base ? rebuildWithout(base.project, base.seq, entries, excluding) : null;
+  }
+
+  /**
+   * Pull the retained keyframe ring into the offline cache, so offline undo depth is the ring rather
+   * than luck (DAW-34 stage E).
+   *
+   * Reads are read-through: a slot lands in the cache the first time something reads it, and the only
+   * thing that reads one is an undo that needs exactly that base. So going offline, the cache held
+   * whichever slots an undo had happened to want while online - undo depth decided by what you did
+   * beforehand rather than by the ring. This reads the ones it is missing, once, while there is still
+   * a network.
+   *
+   * `cache` is the raw cache bundle for this project (`getLocalCacheBundle`), used only to ask what is
+   * already held: the read-through store cannot answer that, because it tries the remote first. A slot
+   * the cache holds at the seq the index claims is skipped, so this costs nothing on a reload and at
+   * most one ring's worth of snapshots the first time.
+   *
+   * Best-effort, like the ring itself: a fetch that fails costs undo depth, never data. Returns how
+   * many slots a rebuild could now use offline, which is the one number that says whether this
+   * worked - the caller fires and forgets, so it is read by the tests.
+   */
+  async warmRebuildBases(headSeq: number, cache: BundleStore | null): Promise<number> {
+    if (!cache) return 0; // no offline cache to warm (local-only mode, or no OPFS)
+    const index = await this.readKeyframeIndex();
+    this.keyframeIndex = index;
+    const floor = headSeq - KEYFRAME_RETAIN_WINDOW;
+    // Slots the ring says hold a keyframe a rebuild could still start from. One below the floor has
+    // had the edits above it pruned, so fetching it would buy nothing.
+    const live = index
+      .map((seq, slot) => ({ seq, slot }))
+      .filter((entry): entry is { seq: number; slot: number } => entry.seq !== null && entry.seq >= floor);
+    const held = await Promise.all(
+      live.map(async (entry) => {
+        const path = retainedKeyframePath(entry.slot);
+        if (await cachedAtSeq(cache, path, entry.seq)) return true;
+        // The read-through fetch IS the warm: reading through the store mirrors the value into the
+        // cache on the way past. Then ask the cache again rather than trusting the read, because a
+        // read-through serves its own cache when the remote is unreachable - so a non-null answer can
+        // be the very copy that needed replacing. The count means "slots a rebuild could use".
+        try {
+          await this.store.readText(path);
+        } catch {
+          return false;
+        }
+        return cachedAtSeq(cache, path, entry.seq);
+      }),
+    );
+    return held.filter(Boolean).length;
   }
 
   /** The oldest retained keyframe still usable, which is how far back undo can reach after a
