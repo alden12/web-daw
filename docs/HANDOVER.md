@@ -15,8 +15,11 @@ Now a hosted, multi-user web app with real sign-in.
 ## Where the canonical docs are (source of truth, all in git)
 
 - `docs/BRIEF.md` - original project brief + v1 scope.
-- `docs/DESIGN.md` - the big one: architecture, UI direction, persistence + semantic VCS, multiplayer,
-  hosting/scaling, migrations, licensing/business model, and the full roadmap. Read this first.
+- `webdaw.apm.yaml` - the big one: architecture, UI direction, persistence + semantic VCS, multiplayer,
+  hosting/scaling, migrations, licensing/business model, and the full roadmap. Read this first, starting
+  with its `protocol` section; it is plain YAML holding markdown, so an editor is enough. The `apm` MCP
+  server in `.mcp.json` renders and queries it (that server lives outside this repo, so the entry only
+  resolves if it is checked out alongside). It replaced `docs/DESIGN.md`, whose text is in git history.
 - `docs/AGENT.md` - the agent architecture (one action space / three clients; ReAct now, actor model +
   "ears" audio-analysis later; provider/BYOK).
 - `docs/DEPLOY.md` - the deploy + operations runbook (Fly + Neon, secrets, invite-only auth, migrations).
@@ -32,7 +35,7 @@ Now a hosted, multi-user web app with real sign-in.
   (email identity, retire DAW_API_TOKEN, live rename, account panel), **#90 deploy** (this slice). Current
   branch: `slice-81-deploy`. Merging the stack into `main` is a pending step.
 - The auth epic (Supabase JWT verification, per-user data, sharing-by-email) and the deploy slice are the
-  most recent work; both are described in `docs/DESIGN.md` and `docs/DEPLOY.md`.
+  most recent work; both are described in the apm project (HOST-2, HOST-3) and `docs/DEPLOY.md`.
 
 ## Live deployment - accounts and config (the bits not in code)
 
@@ -66,7 +69,7 @@ Now a hosted, multi-user web app with real sign-in.
 - **Local dev loop is unchanged by the deploy:** `yarn db:up` + `yarn dev` (Vite :5155) + `yarn api`
   (:5170). `yarn start` is the single-origin production entry (serves the pre-built `dist/`), not a dev loop.
 
-## Open threads / near-term roadmap (full detail in DESIGN.md)
+## Open threads / near-term roadmap (full detail in the apm project)
 
 - **Merge the PR stack** (#82-#90) into `main`.
 - **Auth follow-ups:** re-enable GitHub once stable; a server-side `ALLOWED_EMAILS` allowlist

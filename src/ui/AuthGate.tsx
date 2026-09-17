@@ -9,6 +9,7 @@
  * that store, so nothing else needs to know about the session.
  */
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { BRAND_MARK } from "./brand";
 import { authEnabled, readAuthState, subscribeAuth, signInWithProvider } from "../auth/session";
 import { writeCurrentUser, DEFAULT_USER } from "./currentUser";
 
@@ -50,10 +51,7 @@ function GateCard({ children }: { children: ReactNode }) {
       aria-labelledby="auth-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <span
-          className="w-9 h-9 rounded-full"
-          style={{ background: "conic-gradient(from 200deg, var(--color-you), var(--color-claude), var(--color-you))" }}
-        />
+        <span className="w-9 h-9 rounded-full" style={{ background: BRAND_MARK }} />
         {children}
       </div>
     </div>
@@ -61,7 +59,7 @@ function GateCard({ children }: { children: ReactNode }) {
 }
 
 // Invite-only during the deploy/dev window. GitHub OAuth accepts any GitHub user, which is an open-signup
-// surface while the app is still unhardened (no per-owner quotas / rate-limiting yet - see DESIGN.md). So
+// surface while the app is still unhardened (no per-owner quotas / rate-limiting yet - see HOST-8). So
 // we ship Google-only: Google's "Testing" publishing mode is itself a whitelist (only test-user emails
 // added in the Google Cloud console can sign in). To re-enable GitHub once things are verified: flip this
 // flag AND re-enable the GitHub provider in the Supabase dashboard (both are needed).
@@ -70,7 +68,7 @@ const GITHUB_ENABLED = false;
 function LoginScreen() {
   return (
     <GateCard>
-      <h2 id="auth-title" className="text-lg font-semibold text-bright">
+      <h2 id="auth-title" className="text-lg font-semibold text-strong">
         Sign in to web-daw
       </h2>
       <p className="text-sm text-muted leading-relaxed">

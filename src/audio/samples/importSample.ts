@@ -11,8 +11,9 @@
 import { audioStorageAvailable, putAudio } from "../audioStore";
 import { assetRef, type SampleAsset } from "./catalog";
 import type { Dispatch } from "../commands/types";
+import { randomUuid } from "../randomUuid";
 
-const newSampleId = () => `smp-${crypto.randomUUID().slice(0, 8)}`;
+const newSampleId = () => `smp-${randomUuid().slice(0, 8)}`;
 const baseName = (fileName: string) => fileName.replace(/\.[^.]+$/, "") || fileName;
 
 /**

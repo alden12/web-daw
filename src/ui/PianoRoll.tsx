@@ -19,7 +19,7 @@
  * arrangement loop region lives in the timeline). The grid is drawn past the clip
  * end so you can scroll there and drag the end out.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { noteKey } from "../audio/commands/authorship";
 import { authorNoteStyle } from "./authorStyle";
@@ -38,14 +38,21 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "./timeline/timeGrid";
+import { anchorZoomX, anchorZoomY } from "./timeline/anchoredZoom";
+import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
+import { Button } from "./controls/Button";
+import { IconButton } from "./controls/IconButton";
+import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { isBlackKey, pitchName } from "./noteNames";
 
 const MIN_PITCH = 24; // C1
 const MAX_PITCH = 96; // C7
 const ROWS = MAX_PITCH - MIN_PITCH + 1;
+/** How long the roll waits for a run of resizes to stop before re-centring on the notes. */
+const FIT_SETTLE_MS = 150;
 const RESIZE_PX = 6; // grab zone on a note's right edge
 const DRAG_THRESH = 4; // px before an empty-grid press becomes a marquee
 const TRAIL_BEATS = 8; // empty grid drawn past the loop end (room to expand into)
@@ -71,21 +78,36 @@ export type RollRows = {
   label: (pitch: number) => string | null;
   /** Rows to tint (black keys, or loaded pads). */
   highlight: (pitch: number) => boolean;
+  /**
+   * How much room a label needs before it earns its place: 0 = always (the octave
+   * landmarks), 1 = once rows are comfortable, 2 = only when they are roomy. The pitched
+   * roll names all 128 rows, so it sheds the accidentals and then the naturals as you zoom
+   * out rather than stacking 9px text into 7px rows. Priority 0 also styles as a landmark.
+   * Omitted = every label always shows (a drum kit's pads are sparse and already spaced).
+   */
+  labelPriority?: (pitch: number) => number;
   /** Pitch range to scroll into view when the clip is empty. */
   frame: { lo: number; hi: number };
   /**
-   * Width (px) of a reserved left gutter for the row labels. 0/undefined = labels float
-   * over the grid at the left edge (the chromatic default); a drum kit reserves a column
-   * so the pad names sit beside the notes rather than on top of them.
+   * Width (px) of a reserved left gutter for the row labels. Both rolls reserve one, so a
+   * label never sits on top of a note it is meant to be describing: the pitched roll needs
+   * ~34px for "C4", a drum kit needs far more for "C4 Kick". 0/undefined falls back to
+   * floating the labels over the grid at the left edge.
    */
   gutter?: number;
 };
 
 const CHROMATIC_ROWS: RollRows = {
-  label: (pitch) => (pitch % 12 === 0 ? pitchName(pitch) : null),
+  label: pitchName,
   highlight: isBlackKey,
   frame: { lo: 57, hi: 64 }, // around middle C
+  labelPriority: (pitch) => (pitch % 12 === 0 ? 0 : isBlackKey(pitch) ? 2 : 1),
+  // Wide enough for the longest name the range produces, "C#-1".
+  gutter: 38,
 };
+
+/** Row heights at which the roll starts showing the next tier of labels down. */
+const LABEL_TIERS = { naturals: 11, all: 16 };
 
 type Drag =
   | {
@@ -106,6 +128,13 @@ type Drag =
       base: Set<string>;
       additive: boolean;
       moved: boolean;
+      /**
+       * Whether this press may become a marquee. False for touch: a rubber-band selection
+       * needs a pointer you can place precisely and a second one to modify with, and on a
+       * phone the same drag is how you pan and half of how you pinch - so it fought both.
+       * The press still counts as a tap on release, which is what deselects (MOBILE-7).
+       */
+      allowMarquee: boolean;
     };
 
 export function PianoRoll({
@@ -117,6 +146,7 @@ export function PianoRoll({
   dispatch,
   projectStore,
   rows = CHROMATIC_ROWS,
+  compact = false,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
@@ -130,6 +160,12 @@ export function PianoRoll({
   projectStore?: ProjectStore;
   /** Row labelling/tinting/framing; defaults to the chromatic keyboard. */
   rows?: RollRows;
+  /**
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its controls to the shell's
+   * single ⋮ instead. A 390px screen has no room for snap, grid, quantize and four zoom
+   * buttons in a row, and every surface having its own toolbar would stack three of them.
+   */
+  compact?: boolean;
 }) {
   const clip = useClip(clipStore);
   const presence = useAuthorPresence();
@@ -146,12 +182,35 @@ export function PianoRoll({
   const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
   const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
+  // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
+  // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
+  // Toggled from the roll's settings menu, so it is reachable in both shells.
+  //
+  // **Closed by default on touch**, where the roll is sharing a sheet with the pads and 56px
+  // is a whole row of them. Velocity is not lost by hiding it: it renders as note fill
+  // strength, and editing it per note belongs in the note's own menu on touch (MOBILE-7).
+  const [velOpen, setVelOpen] = usePersistentBoolean("web-daw:roll-vel-open", !compact);
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
   const [quantStrength, setQuantStrength] = usePersistentNumber(QUANT_KEYS.strength, 1, 0, 1);
   const [quantEnds, setQuantEnds] = usePersistentBoolean(QUANT_KEYS.ends, false);
   const [quantOnRecord, setQuantOnRecord] = usePersistentBoolean(QUANT_KEYS.onRecord, false);
+
+  // Measure the scroll viewport so the velocity lane can never take most of it. Same
+  // guard as the workbench puts on the device rack: a persisted size competing with a
+  // flexible one has to be clamped, or a short window lets it win outright.
+  const [viewH, setViewH] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewH(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const effVelH = viewH ? Math.min(velH, Math.max(VEL.min, Math.round(viewH * 0.4))) : velH;
 
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -170,6 +229,9 @@ export function PianoRoll({
   const height = ROWS * rowH;
   const cellW = pxPerBeat * snapDiv;
   const gutter = rows.gutter ?? 0; // reserved left column for row labels (0 = float over the grid)
+  // How many names the current row height can carry: all of them, the naturals, or just
+  // the octave landmarks. Labels are 9px, so 128 of them only fit once rows are roomy.
+  const labelTier = rowH >= LABEL_TIERS.all ? 2 : rowH >= LABEL_TIERS.naturals ? 1 : 0;
 
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const clampStart = (b: number) => clamp(b, 0, Math.max(0, len - GRID));
@@ -185,19 +247,112 @@ export function PianoRoll({
   // Fit the clip's notes into view on first load of this track (the component
   // remounts per track, so this runs once each time). Scrolls only - zoom is the
   // user's. Empty clip -> center on middle C.
+  //
+  // Re-fits on **every** resize until the user scrolls, rather than once on mount, because
+  // under the editor sheet (MOBILE-5) the roll is never the right size at mount and is
+  // lied to twice on the way up. Parked, its scroller is 0px tall, and centring on no
+  // height degenerates to "put the middle row at the top edge". Mid-throw the sheet is
+  // held at `height: 100%` and translated (cheap, no relayout), so the roll briefly reads
+  // the *whole workspace* - fitting there centres for a viewport twice the one you end up
+  // with, which put the notes below the fold at Half while Full stayed tall enough to hide
+  // the mistake. Only the settled height is true, and the settle is the last resize.
+  //
+  // Handing over on the first real scroll is what keeps this from fighting anybody: after
+  // that the roll stays exactly where it was put, however the sheet moves.
+  //
+  // Two guards keep "re-fit on resize" from becoming a scroll generator, because a scroll is
+  // not a private event: `Menu` closes on any of them, captured at the window, so a stray
+  // fit dismisses whatever popover happens to be opening. Both were found by a CI failure in
+  // an unrelated test that opens the roll's settings menu right after expanding the agent
+  // panel, which transitions its width over several frames.
+  //
+  // - **Only a materially changed height re-fits.** Changing the height by `delta` moves the
+  //   centred row by `delta / 2`, so the honest test is whether that shift is big enough to
+  //   see: more than a row. Expanding the agent panel moved the roll 323 -> 317px, a 3px
+  //   shift nobody could notice; a detent change moves it 319 -> 566px. One threshold, in
+  //   the unit the thing is actually measured in, separates them.
+  // - **Resizes are coalesced.** A transition resizes every frame, so waiting for the burst
+  //   to stop means one decision on the final size rather than a scroll per frame. The very
+  //   first fit skips the wait, since there is nothing to settle and delaying it would show
+  //   the roll uncentred.
+  const handedOver = useRef(false);
+  const fittedAt = useRef(0);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const notes = clipStore.getClip().notes;
-    const pitches = notes.map((note) => note.pitch);
-    const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
-    const lo = pitches.length ? Math.min(...pitches) : rows.frame.lo;
-    const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
-    requestAnimationFrame(() => {
+    let selfScroll = false;
+    let settle = 0;
+    let coalesce: ReturnType<typeof setTimeout> | undefined;
+    const fit = () => {
+      if (handedOver.current || !el.clientHeight) return;
+      if (Math.abs(el.clientHeight - fittedAt.current) < rowH * 2) return;
+      fittedAt.current = el.clientHeight;
+      const notes = clipStore.getClip().notes;
+      const pitches = notes.map((note) => note.pitch);
+      const hi = pitches.length ? Math.max(...pitches) : rows.frame.hi;
+      const lo = pitches.length ? Math.min(...pitches) : rows.frame.lo;
+      const centerRow = (MAX_PITCH - hi + (MAX_PITCH - lo)) / 2;
+      selfScroll = true;
       el.scrollTop = clamp(centerRow * rowH + rowH / 2 - el.clientHeight / 2, 0, height - el.clientHeight);
-    });
+      // Our own write lands as a scroll event within the frame; anything after is the user.
+      // Same tell as `useSharedGridScroll` uses to part a restore from a real scroll.
+      cancelAnimationFrame(settle);
+      settle = requestAnimationFrame(() => {
+        selfScroll = false;
+      });
+    };
+    const onScroll = () => {
+      if (!selfScroll) handedOver.current = true;
+    };
+    // The observer reports the initial size too, so a roll that already has a height (every
+    // desktop mount) fits immediately and behaves exactly as it did before.
+    const onResize = () => {
+      if (!fittedAt.current) return fit();
+      clearTimeout(coalesce);
+      coalesce = setTimeout(fit, FIT_SETTLE_MS);
+    };
+    const observer = new ResizeObserver(onResize);
+    observer.observe(el);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(coalesce);
+      cancelAnimationFrame(settle);
+      observer.disconnect();
+      el.removeEventListener("scroll", onScroll);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Zoom the time axis about a fixed point. Beat 0 sits at content-x = `gutter` (the reserved
+   * label column), so that is the lead.
+   */
+  const zoomTime = useCallback(
+    (factor: number, clientX: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
+      setPxPerBeat(next);
+      anchorZoomX({ element, clientPosition: clientX, leadPx: gutter, from: pxPerBeat, to: next, panPx });
+    },
+    [pxPerBeat, gutter, setPxPerBeat],
+  );
+
+  /**
+   * Zoom the pitch axis. Anchored too, unlike the old wheel path which only rescaled: with a
+   * pinch you are holding the rows you are scaling, so an unanchored one slides them out from
+   * between your fingers. The ruler is the lead, being the scrollable content above row 0.
+   */
+  const zoomPitch = useCallback(
+    (factor: number, clientY: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(rowH * factor, ZOOM_Y.min, ZOOM_Y.max);
+      setRowH(next);
+      anchorZoomY({ element, clientPosition: clientY, leadPx: RULER_H, from: rowH, to: next, panPx });
+    },
+    [rowH, setRowH],
+  );
 
   // Cursor-anchored wheel zoom (non-passive, so we can preventDefault).
   useEffect(() => {
@@ -208,24 +363,29 @@ export function PianoRoll({
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.0015);
       if (e.metaKey && !e.ctrlKey) {
-        setRowH(rowH * factor);
+        zoomPitch(factor, e.clientY);
         return;
       }
-      // ctrl (pinch) zooms both axes; shift zooms horizontal only.
-      if (e.ctrlKey) setRowH(rowH * factor);
-      const rect = el.getBoundingClientRect();
-      // Beat 0 sits at content-x = gutter (the reserved label column), so anchor off that.
-      const contentX = e.clientX - rect.left + el.scrollLeft - gutter;
-      const beatAtCursor = contentX / pxPerBeat;
-      const next = clamp(pxPerBeat * factor, ZOOM_X.min, ZOOM_X.max);
-      setPxPerBeat(next);
-      requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next + gutter - (e.clientX - rect.left);
-      });
+      // ctrl (trackpad pinch) zooms both axes; shift zooms horizontal only.
+      if (e.ctrlKey) zoomPitch(factor, e.clientY);
+      zoomTime(factor, e.clientX);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, rowH, gutter, setPxPerBeat, setRowH]);
+  }, [zoomTime, zoomPitch]);
+
+  // Both axes, because both are continuous scales here: spreading horizontally stretches
+  // time, vertically stretches pitch, and a diagonal pinch does each by its own amount.
+  // Called on both axes unconditionally, even where the scale is 1: two fingers reposition as
+  // well as resize, and skipping an axis whose scale did not change would drop its pan too.
+  const onPinch = useCallback(
+    ({ scaleX, scaleY, clientX, clientY, panX, panY }: PinchGesture) => {
+      zoomTime(scaleX, clientX, panX);
+      zoomPitch(scaleY, clientY, panY);
+    },
+    [zoomTime, zoomPitch],
+  );
+  usePinchZoom(scrollRef, onPinch);
 
   // Drive the playhead off the audio clock (already wrapped to the loop region).
   // While a MIDI take records into this track, also grow the held-note ghosts from
@@ -370,13 +530,19 @@ export function PianoRoll({
       base: new Set(selection),
       additive: e.shiftKey,
       moved: false,
+      allowMarquee: e.pointerType === "mouse",
     };
 
     const onMove = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d || (d.kind !== "empty" && d.kind !== "marquee")) return;
       if (!d.moved && Math.hypot(ev.clientX - d.cX, ev.clientY - d.cY) < DRAG_THRESH) return;
+      // `moved` is recorded whatever the pointer was, and *before* the marquee gate. It is
+      // what tells the release handler this was a drag rather than a tap, so gating it too
+      // turned every touch drag - including each finger of a pinch - into a tap, which
+      // creates a note. Suppressing the marquee is not the same as pretending nothing moved.
       d.moved = true;
+      if (!d.allowMarquee) return;
       d.kind = "marquee";
       const x = ev.clientX - rect.left;
       const y = ev.clientY - rect.top;
@@ -447,14 +613,14 @@ export function PianoRoll({
     e.preventDefault();
     e.stopPropagation();
     const startY = e.clientY;
-    const startH = velH;
+    const startH = effVelH; // drag from where it actually is, not the unclamped preference
     beginPointerDrag((ev) => setVelH(startH + (startY - ev.clientY)));
   };
 
   const gridBg = [
     `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${pxPerBeat}px)`,
-    `repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${cellW}px)`,
-    `repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 1px, transparent 1px ${rowH}px)`,
+    `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${cellW}px)`,
+    `repeating-linear-gradient(0deg, var(--color-line-soft) 0 1px, transparent 1px ${rowH}px)`,
   ].join(", ");
 
   // Quantize the selection (or the whole clip if nothing is selected) to the snap grid,
@@ -466,7 +632,34 @@ export function PianoRoll({
     dispatch({ type: "editNotes", trackId, clipId, notes });
   };
 
-  const settingsItems: MenuItem[] = [
+  /**
+   * Snap, quantize and the velocity lane, as data - built as clusters so the same controls
+   * can be laid out two ways: flat in the toolbar's kebab on desktop, and folded into named
+   * submenus in the shell's single ⋮ on touch, where this list is one of three sharing a
+   * menu and every row it does not spend is a row another surface can have.
+   *
+   * They live in a menu rather than on the toolbar because the toolbar could not hold
+   * them: with the agent panel open the row overflowed below ~1150px and pushed the zoom
+   * cluster clean out of view, so the controls that got hidden were the ones you reach
+   * for most. The toolbar now keeps only the label, this menu and zoom.
+   */
+  const gridItems: MenuItem[] = [
+    { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
+    {
+      label: "Grid",
+      submenu: GRID_DIVISIONS.map((division) => ({
+        label: division.label,
+        checked: snapDiv === division.beats,
+        onClick: () => setSnapDiv(division.beats),
+      })),
+    },
+  ];
+  const quantizeItems: MenuItem[] = [
+    {
+      label: selection.size ? `Quantize ${selection.size} selected` : "Quantize all notes",
+      disabled: !targets.length,
+      onClick: quantize,
+    },
     {
       label: "Strength",
       submenu: STRENGTH_OPTIONS.map((value) => ({
@@ -476,78 +669,90 @@ export function PianoRoll({
       })),
     },
     { label: "Quantize note ends", checked: quantEnds, onClick: () => setQuantEnds(!quantEnds) },
-    { separator: true },
     { label: "Auto-quantize recordings", checked: quantOnRecord, onClick: () => setQuantOnRecord(!quantOnRecord) },
   ];
+  const velocityItem: MenuItem = { label: "Velocity lane", checked: velOpen, onClick: () => setVelOpen(!velOpen) };
 
-  const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
-  const toolBtn =
-    "font-mono text-[11px] leading-none px-2 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
+  const rollControls: MenuItem[] = [
+    ...gridItems,
+    { separator: true },
+    ...quantizeItems,
+    { separator: true },
+    velocityItem,
+  ];
+
+  // Touch gets the zoom buttons as menu entries too, since the toolbar is gone there.
+  // Each closes the menu, so they are a fallback rather than the gesture: pinch-zoom is
+  // the real answer and belongs to MOBILE-2.
+  usePublishSurfaceControls(
+    "notes",
+    [
+      ...gridItems,
+      { label: "Quantize", submenu: quantizeItems },
+      velocityItem,
+      {
+        label: "Zoom",
+        submenu: [
+          { label: "Zoom in", onClick: () => setPxPerBeat(Math.round(pxPerBeat * 1.25)) },
+          { label: "Zoom out", onClick: () => setPxPerBeat(Math.round(pxPerBeat / 1.25)) },
+          { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
+          { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
+        ],
+      },
+    ],
+    compact,
+  );
 
   return (
-    <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-ground overflow-hidden">
-      {/* toolbar */}
-      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail shrink-0 text-muted">
+    <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-stage overflow-hidden">
+      {/* toolbar - replaced by the shell's ⋮ when compact (see compactControls above) */}
+      <div
+        hidden={compact}
+        className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-panel shrink-0 text-muted"
+      >
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Piano roll</span>
-        <label className="flex items-center gap-1.5 font-mono text-[11px]">
-          <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
-          Snap
-        </label>
-        <select
-          value={snapDiv}
-          onChange={(e) => setSnapDiv(Number(e.target.value))}
-          className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
-        >
-          {GRID_DIVISIONS.map((division) => (
-            <option key={division.label} value={division.beats}>
-              {division.label}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
+        <Menu items={rollControls} label="Roll settings" align="left" />
+        {/* Quantize keeps a button as well as its menu entry: it is the one action here
+            you repeat, and it reads the selection, so its label is worth seeing. */}
+        <Button
+          variant="ghost"
+          size="sm"
           title={selection.size ? "Quantize selected notes to the grid" : "Quantize all notes to the grid"}
-          className={toolBtn}
+          className="font-mono"
           disabled={!targets.length}
           onClick={quantize}
         >
           Quantize{selection.size ? " sel" : ""}
-        </button>
-        <button
-          type="button"
-          title="Auto-quantize notes as they're recorded"
-          aria-pressed={quantOnRecord}
-          className={`${toolBtn} ${quantOnRecord ? "border-you text-you" : ""}`}
-          onClick={() => setQuantOnRecord(!quantOnRecord)}
-        >
-          Auto-Q
-        </button>
-        <Menu items={settingsItems} label="Quantize settings" align="left" />
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button
-            type="button"
-            title="Zoom out (time)"
-            className={zoomBtn}
+        </Button>
+        <div className="ml-auto flex items-center gap-0.5">
+          <span className="font-mono text-[10px] text-faint mr-1">zoom</span>
+          <IconButton
+            label="Zoom out (time)"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.round(pxPerBeat / 1.25))}
           >
             −
-          </button>
-          <button
-            type="button"
-            title="Zoom in (time)"
-            className={zoomBtn}
+          </IconButton>
+          <IconButton
+            label="Zoom in (time)"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.round(pxPerBeat * 1.25))}
           >
             +
-          </button>
-          <button type="button" title="Shorter rows" className={zoomBtn} onClick={() => setRowH(rowH - 2)}>
+          </IconButton>
+          <IconButton
+            label="Shorter rows"
+            size="sm"
+            className="font-mono text-[11px]"
+            onClick={() => setRowH(rowH - 2)}
+          >
             ↕−
-          </button>
-          <button type="button" title="Taller rows" className={zoomBtn} onClick={() => setRowH(rowH + 2)}>
+          </IconButton>
+          <IconButton label="Taller rows" size="sm" className="font-mono text-[11px]" onClick={() => setRowH(rowH + 2)}>
             ↕+
-          </button>
+          </IconButton>
         </div>
       </div>
 
@@ -555,25 +760,34 @@ export function PianoRoll({
           label gutter is reserved (drum kits), a sticky-left column holds the row labels
           beside the notes; otherwise the labels float over the grid (display:contents,
           so the layout is identical to a plain roll). */}
-      <div ref={scrollRef} data-testid="roll-scroll" className="flex-1 min-h-0 overflow-auto">
+      {/* See the arrangement: pinch is ours, one-finger panning stays the browser's. */}
+      <div
+        ref={scrollRef}
+        data-testid="roll-scroll"
+        className="flex-1 min-h-0 overflow-auto [touch-action:pan-x_pan-y]"
+      >
         <div className={gutter ? "flex" : "contents"} style={gutter ? { width: gutter + width } : undefined}>
           {gutter > 0 && (
-            <div className="sticky left-0 z-6 shrink-0 bg-rail border-r border-line" style={{ width: gutter }}>
+            <div className="sticky left-0 z-20 shrink-0 bg-panel border-r border-line" style={{ width: gutter }}>
               <div style={{ height: RULER_H }} />
               <div className="relative" style={{ height }}>
                 {Array.from({ length: ROWS }, (_unused, row) => {
                   const pitch = MAX_PITCH - row;
                   const rowLabel = rows.label(pitch);
-                  return rowLabel ? (
+                  const priority = rows.labelPriority?.(pitch) ?? 0;
+                  if (!rowLabel || priority > labelTier) return null;
+                  return (
                     <div
                       key={pitch}
                       title={rowLabel}
-                      className="absolute left-0 right-0 flex items-center truncate px-1.5 font-mono text-[9px] leading-none text-muted"
+                      className={`absolute left-0 right-0 flex items-center overflow-hidden truncate px-1.5 font-mono text-[9px] leading-none ${
+                        rows.labelPriority ? (priority === 0 ? "text-ink" : "text-faint") : "text-muted"
+                      }`}
                       style={{ top: row * rowH, height: rowH }}
                     >
                       {rowLabel}
                     </div>
-                  ) : null;
+                  );
                 })}
               </div>
             </div>
@@ -597,7 +811,7 @@ export function PianoRoll({
             >
               {/* dim the grid past the clip's end (drag the ruler handle to extend) */}
               <div
-                className="absolute top-0 bottom-0 bg-black/25 pointer-events-none"
+                className="absolute top-0 bottom-0 bg-recess pointer-events-none"
                 style={{ left: beatToX(len, pxPerBeat), width: beatToX(viewBeats - len, pxPerBeat) }}
               />
 
@@ -607,7 +821,7 @@ export function PianoRoll({
                 return (
                   <div
                     key={pitch}
-                    className={`absolute left-0 right-0 pointer-events-none ${rows.highlight(pitch) ? "bg-white/[0.035]" : ""}`}
+                    className={`absolute left-0 right-0 pointer-events-none ${rows.highlight(pitch) ? "bg-row-tint" : ""}`}
                     style={{ top: row * rowH, height: rowH }}
                   >
                     {rowLabel && gutter === 0 && (
@@ -626,8 +840,8 @@ export function PianoRoll({
                     key={note.id}
                     data-testid="note"
                     onPointerDown={(e) => onNoteDown(note, e)}
-                    className={`absolute rounded-sm box-border cursor-grab border ${
-                      selected ? "bg-bright" : "hover:brightness-125"
+                    className={`absolute rounded-sm box-border cursor-grab border touch-none ${
+                      selected ? "bg-strong" : "hover:brightness-125"
                     }`}
                     style={{
                       ...authorNoteStyle(author, selected, presence),
@@ -646,6 +860,7 @@ export function PianoRoll({
 
               {marquee && (
                 <div
+                  data-testid="roll-marquee"
                   className="absolute border border-you/70 bg-you/10 pointer-events-none"
                   style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
                 />
@@ -694,11 +909,12 @@ export function PianoRoll({
               />
             </div>
 
-            {/* velocity lane */}
+            {/* velocity lane (collapsible - see velOpen) */}
             <div
               ref={velRef}
-              className="sticky bottom-0 z-10 border-t border-line bg-rail"
-              style={{ width, height: velH }}
+              hidden={!velOpen}
+              className="sticky bottom-0 z-10 border-t border-line bg-panel"
+              style={{ width, height: effVelH }}
               title="Velocity - drag a bar"
             >
               {/* resize the lane by dragging its top edge */}
@@ -706,7 +922,7 @@ export function PianoRoll({
                 role="separator"
                 aria-label="Resize velocity lane"
                 onPointerDown={onVelResize}
-                className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10"
+                className="absolute top-0 left-0 right-0 h-1.5 -mt-0.5 cursor-row-resize hover:bg-you/40 z-10 touch-none"
               />
               {clip.notes.map((note) => {
                 const selected = selection.has(note.id);
@@ -714,11 +930,11 @@ export function PianoRoll({
                   <div
                     key={note.id}
                     onPointerDown={(e) => onVelDown(note, e)}
-                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize ${selected ? "bg-bright" : "bg-you/80 hover:bg-you"}`}
+                    className={`absolute bottom-0 rounded-t-sm cursor-ns-resize touch-none ${selected ? "bg-strong" : "bg-you/80 hover:bg-you"}`}
                     style={{
                       left: beatToX(note.start, pxPerBeat),
                       width: VEL_BAR_W,
-                      height: Math.max(2, note.velocity * (velH - 3)),
+                      height: Math.max(2, note.velocity * (effVelH - 3)),
                     }}
                   />
                 );

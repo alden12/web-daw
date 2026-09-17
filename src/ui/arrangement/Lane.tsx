@@ -49,7 +49,10 @@ function Block({
       data-testid="placement"
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
-      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab ${
+      // Square, unlike the pill-shaped clips on the rail. A block here is a span of time
+      // whose ends are edges you line up against the grid, so it has to end where it ends;
+      // a round cap would round off the only thing the shape is for.
+      className={`absolute top-1.5 bottom-1.5 rounded border overflow-hidden cursor-grab touch-none ${
         selected ? "" : "border-t-2 border-line bg-card hover:bg-card/70"
       }`}
       style={{ ...authorBlockStyle(author, selected, presence), left, width: Math.max(3, width) }}
@@ -391,11 +394,11 @@ export function Lane({
       )}
       {markerBeat !== null && (
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-bright pointer-events-none"
+          className="absolute top-0 bottom-0 w-0.5 bg-strong pointer-events-none"
           style={{ left: beatToX(markerBeat, pxPerBeat) }}
           title="Paste marker"
         >
-          <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-bright" />
+          <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-strong" />
         </div>
       )}
       {track.launchedClipId && (

@@ -3,6 +3,16 @@
     "web-daw": {
       "command": "npx",
       "args": ["tsx", "server/index.ts"]
+    },
+    "apm": {
+      "command": "../ai-project-manager/node_modules/.bin/vite-node",
+      "args": [
+        "--root",
+        "../ai-project-manager",
+        "../ai-project-manager/src/mcp/server.ts",
+        "--store",
+        "webdaw.apm.yaml"
+      ]
     }
   }
 }

@@ -9,8 +9,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { EditLog } from "../audio/commands/editLog";
 import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
+import { Select } from "./controls/Select";
 import { VersionTimeline } from "./VersionTimeline";
-import { colorForAuthor } from "./authorColors";
+import { authorHex } from "./authorStyle";
 import { authorLabel } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 
@@ -18,7 +19,8 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
   const { entries, notes } = useEditLog(editLog);
   // Per-author accent (hex), perspective-relative: my own edits read teal, every collaborator in their
   // own stable hue (not collapsed to one of three voice classes).
-  const { config, self } = useAuthorPresence();
+  const presence = useAuthorPresence();
+  const { self } = presence;
   // The author id is now an email; show "You" for my own edits rather than my raw address.
   const label = (author: string) => (author === self ? "You" : authorLabel(author));
   const [tab, setTab] = useState<"activity" | "versions">("activity");
@@ -52,15 +54,16 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-2 px-3.5 py-2 shrink-0">
-        <select
+        <Select
           aria-label="Activity view"
           value={tab}
           onChange={(e) => setTab(e.target.value as "activity" | "versions")}
-          className="text-[12.5px] font-semibold text-bright bg-card border border-line rounded-md px-1.5 py-0.5 cursor-pointer"
+          size="md"
+          className="font-semibold text-strong"
         >
           <option value="activity">Activity</option>
           <option value="versions">Versions</option>
-        </select>
+        </Select>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-3.5 pb-4">
         {tab === "versions" ? (
@@ -94,7 +97,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   <li
                     key={`n-${n.seq}`}
                     className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-card/40 border-l-2"
-                    style={{ borderLeftColor: colorForAuthor(n.author, config, self) }}
+                    style={{ borderLeftColor: authorHex(n.author, presence) }}
                   >
                     <span className="text-[11px] shrink-0 text-muted">“</span>
                     <span className="text-[11.5px] italic text-muted min-w-0 wrap-break-word">{n.text}</span>
@@ -107,11 +110,11 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                 <li
                   key={entry.seq}
                   className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-card/60 border-l-2"
-                  style={{ borderLeftColor: colorForAuthor(entry.author, config, self) }}
+                  style={{ borderLeftColor: authorHex(entry.author, presence) }}
                 >
                   <span
                     className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ background: colorForAuthor(entry.author, config, self) }}
+                    style={{ background: authorHex(entry.author, presence) }}
                   />
                   <span className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}>
                     {editLog.describe(entry)}

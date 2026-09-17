@@ -38,10 +38,10 @@ export function MidiDeviceChain({
         // instrument) in one flex group, so the arrow stays glued to its right edge on wrap.
         return (
           <div key={device.id} className="flex items-stretch shrink-0">
-            <div className={`shrink-0 border border-line rounded-xl bg-card ${device.bypassed ? "opacity-50" : ""}`}>
+            <div className={`shrink-0 border border-line rounded-xl bg-ground ${device.bypassed ? "opacity-50" : ""}`}>
               <div className="flex items-center gap-1.5 px-3 py-2 border-b border-line">
                 <span
-                  className="font-mono text-[12px] font-semibold text-bright mr-1 truncate"
+                  className="font-mono text-[12px] font-semibold text-strong mr-1 truncate"
                   title={midiDeviceCatalogEntry(device.type).label}
                 >
                   {midiDeviceCatalogEntry(device.type).label}

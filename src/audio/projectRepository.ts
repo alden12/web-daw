@@ -1,7 +1,7 @@
 /**
  * The project repository: the one seam the app uses to load/save the project
  * document and its audio samples. It reads/writes a *bundle* (see `bundleStore.ts`)
- * with this layout - the v1 of the on-disk format in docs/DESIGN.md section 10:
+ * with this layout - the v1 of the on-disk format in apm: "Project format and local-first data":
  *
  *   project.daw/
  *     manifest.json     formatVersion, project id, project-schema version
@@ -23,6 +23,7 @@ import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
 import { applyEdit } from "./commands/applyEdit";
 import { commitKeyframePath } from "./history/paths";
+import { randomUuid } from "./randomUuid";
 
 /** `project.json` carries this keyframe marker: the edit `seq` the snapshot reflects, so load
  *  knows which log tail to replay on top. A persistence detail (the domain ignores it); the
@@ -278,7 +279,7 @@ export class ProjectRepository {
   }
 
   private async writeKeyframeNow(project: ProjectData, headSeq: number): Promise<void> {
-    if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
+    if (!this.projectId) this.projectId = `p-${randomUuid().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
       projectId: this.projectId,
@@ -325,7 +326,7 @@ export class ProjectRepository {
    * live snapshot + log + notes so it is always current.
    */
   async exportBundle(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<BundleFiles> {
-    if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
+    if (!this.projectId) this.projectId = `p-${randomUuid().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
       projectId: this.projectId,
@@ -462,10 +463,45 @@ function readCurrentId(): string {
   return stored || "default";
 }
 
+const currentListeners = new Set<() => void>();
+
 /** Point the app-wide repository at project `id` (rebuilds it over that bundle). */
 export function setCurrentProject(id: string): void {
   if (typeof localStorage !== "undefined") localStorage.setItem(CURRENT_PROJECT_KEY, id);
   current = { id, repo: new ProjectRepository(getProjectStorage().bundle(id), id) };
+  for (const listener of currentListeners) listener();
+}
+
+/** Subscribe to project switches. Returns an unsubscribe fn. */
+export function subscribeCurrentProject(listener: () => void): () => void {
+  currentListeners.add(listener);
+  return () => currentListeners.delete(listener);
+}
+
+/**
+ * The project whose *contents* are in the live store, which is not the same thing as the
+ * current id.
+ *
+ * `setCurrentProject` repoints the repository synchronously, but the store keeps the previous
+ * project until a load finishes several `await`s later (two OPFS writes, for a new project).
+ * In that window the current id and anything read off the live store belong to different
+ * projects, so pairing them produces a URL, or a header, naming one project with another's
+ * name. Reported from CI, where the gap is wide enough to see.
+ *
+ * Read this rather than a "switching" flag: a flag has to be cleared, and a path that
+ * repoints without loading would leave it stuck. A last-loaded id just stays stale, which
+ * degrades to "do not update yet" rather than "never update again".
+ */
+let loadedId: string | null = null;
+
+export function markProjectLoaded(id: string): void {
+  loadedId = id;
+  for (const listener of currentListeners) listener();
+}
+
+/** The id of the project the live store actually holds, or null before the first load. */
+export function loadedProjectId(): string | null {
+  return loadedId;
 }
 
 /** The id of the project the app is currently working on. */

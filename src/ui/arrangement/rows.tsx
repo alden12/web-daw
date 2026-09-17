@@ -54,7 +54,7 @@ export function GroupHeader({
       <InlineRename
         value={group.name}
         onCommit={(name) => dispatch({ type: "setGroup", groupId: group.id, name })}
-        className="font-mono text-[11px] tracking-wide uppercase text-bright flex-1 min-w-0"
+        className="font-mono text-[11px] tracking-wide uppercase text-strong flex-1 min-w-0"
       />
       <Fader
         value={group.volume}
@@ -149,7 +149,7 @@ function TrackHeader({
       <InlineRename
         value={track.name}
         onCommit={(name) => dispatch({ type: "setTrack", trackId: track.id, name })}
-        className="font-mono text-[13px] text-bright flex-1 min-w-0"
+        className="font-mono text-[13px] text-strong flex-1 min-w-0"
       />
       <Fader
         value={track.volume}
@@ -192,6 +192,7 @@ export function TrackRow({
   onSelect,
   onMark,
   onHover,
+  stickyHeader = true,
 }: {
   meta: TrackMeta;
   depth: number;
@@ -201,6 +202,9 @@ export function TrackRow({
   projectStore: ProjectStore;
   dispatch: Dispatch;
   headerW: number;
+  /** Pin the header to the left edge while the lane scrolls. False on touch, where a
+   *  pinned column would eat most of a phone's width (MOBILE-1). */
+  stickyHeader?: boolean;
   laneWidth: number;
   pxPerBeat: number;
   beatsPerBar: number;
@@ -216,7 +220,7 @@ export function TrackRow({
   const track = projectStore.getTrack(meta.id);
   return (
     <div className="flex" data-track-id={meta.id}>
-      <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
+      <div className={`shrink-0 ${stickyHeader ? "sticky left-0 z-10" : ""}`} style={{ width: headerW }}>
         <TrackHeader
           track={meta}
           depth={depth}

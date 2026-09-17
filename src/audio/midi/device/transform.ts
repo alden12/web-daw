@@ -32,13 +32,24 @@ export interface NoteTap {
 
 /**
  * A note transform. Extensible union of kinds; each kind selects a runtime strategy in the
- * interpreter (GraphMidiDevice). `tap` is a stateless fan-out; `arpeggiate` is a stateful,
- * clock-driven generator. The fields on `arpeggiate` name the schema param ids the strategy
- * reads (rate/pattern/octaves/gate), so the def stays pure data like the tap devices.
+ * interpreter (GraphMidiDevice). `tap` is a stateless fan-out; `arpeggiate` and `euclid` are
+ * stateful, clock-driven generators. The fields on the generators name the schema param ids
+ * their strategy reads, so the def stays pure data like the tap devices.
  */
 export type MidiTransform =
   | { kind: "tap"; taps: NoteTap[] }
-  | { kind: "arpeggiate"; rate: string; pattern: string; octaves: string; gate: string };
+  | { kind: "arpeggiate"; rate: string; pattern: string; octaves: string; gate: string }
+  | {
+      kind: "euclid";
+      rate: string;
+      steps: string;
+      pulses: string;
+      rotate: string;
+      repeats: string;
+      gate: string;
+      accent: string;
+      voicing: string;
+    };
 
 /** A MIDI device as data: its schema (the keystone) + a note transform. */
 export interface MidiDeviceDef {

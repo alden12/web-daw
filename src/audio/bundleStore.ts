@@ -4,7 +4,7 @@
  * `project.json`, `samples/<hash>`). The bundle layout lives one level up in
  * `projectRepository.ts`; this seam only knows how to read/write paths, so the
  * same repository logic runs over OPFS today and a real disk folder or a remote
- * later (see docs/DESIGN.md sections 8, 10). Everything is async, because OPFS is.
+ * later (see apm: "Project format and local-first data"). Everything is async, because OPFS is.
  *
  * Multi-project: every project is its own bundle under `projects/<id>/`. A
  * `ProjectStorage` hands out a rooted `BundleStore` per project id and can

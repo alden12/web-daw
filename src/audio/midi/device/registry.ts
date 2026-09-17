@@ -12,6 +12,7 @@ import { GraphMidiDevice, type NoteTarget } from "./GraphMidiDevice";
 import type { TransportClock } from "./clock";
 import { octavator } from "./devices/octavator";
 import { arpeggiator } from "./devices/arpeggiator";
+import { euclidean } from "./devices/euclidean";
 import { DEFAULT_MIDI_DEVICE } from "./catalog";
 
 type MidiDeviceFactory = (store: ParamStore, next: NoteTarget, clock: TransportClock) => GraphMidiDevice;
@@ -35,12 +36,10 @@ export function createMidiDevice(
 
 // --- built-in factories (self-registered) ---------------------------------
 // Every device is the one GraphMidiDevice interpreter over a data def; the def's
-// transform kind (tap / arpeggiate) selects the runtime strategy.
-registerMidiDeviceFactory(octavator.type, (store, next, clock) => new GraphMidiDevice(octavator, store, next, clock));
-registerMidiDeviceFactory(
-  arpeggiator.type,
-  (store, next, clock) => new GraphMidiDevice(arpeggiator, store, next, clock),
-);
+// transform kind (tap / arpeggiate / euclid) selects the runtime strategy.
+for (const def of [octavator, arpeggiator, euclidean]) {
+  registerMidiDeviceFactory(def.type, (store, next, clock) => new GraphMidiDevice(def, store, next, clock));
+}
 
 export {
   midiDeviceInfos,

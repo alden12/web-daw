@@ -1,7 +1,19 @@
 # web-daw - conventions
 
-Architecture and project direction live in `docs/DESIGN.md`. This file is the
-short list of coding conventions to follow throughout the codebase.
+Architecture and project direction live in **`webdaw.apm.yaml`** - the project map
+(tickets, statuses, dependencies) plus the design narrative as context sections.
+It is committed, and it is plain YAML holding markdown, so **read it directly** if
+you have no tooling; start with its `protocol` section. This file is the short list
+of coding conventions to follow throughout the codebase.
+
+That file is the store of an **apm** project, and the `apm` MCP server in
+`.mcp.json` is the nicer way in (`get_project`, `list_items`, `open_viewer`
+for the dependency graph). The server lives outside this repo, so that entry only
+resolves on a machine that has it checked out alongside - the YAML is the portable
+copy and stays the thing of record.
+
+Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.2`,
+`INST-4`) or `apm: "<section>"` for one of its context sections.
 
 ## Validation
 
@@ -70,6 +82,24 @@ short list of coding conventions to follow throughout the codebase.
   forward-only - we don't support downgrades or reading arbitrarily old shapes, just a
   continuous upgrade path. The "discard on change" shortcut is retired.
 
+## Running locally
+
+- **`yarn dev:all` is the one command for local dev.** It brings up Postgres
+  (`docker compose up -d`, idempotent), then runs the sync API and the Vite client
+  together under `concurrently`, prefixed `[api]` / `[web]`. Ctrl-C stops all of them.
+  Client on **:5155**, API on **:5170**.
+- There is **no separate migrate step**. `server/api/index.ts` calls `applyMigrations`
+  on boot, so starting the API is what brings the schema up to date.
+- Four entry points that are easy to confuse:
+  - **`yarn dev`** - Vite client only. Enough on its own if `VITE_DAW_API_URL` is unset
+    (projects then live in the browser's OPFS).
+  - **`yarn api`** - the sync API + WebSocket + Postgres, with reload. The one you pair
+    with `yarn dev`.
+  - **`yarn start`** - the *same server as `yarn api`* with no watch. Production entry
+    (Fly runs this). Not for local work.
+  - **`yarn server`** - the **MCP** server, spawned by Claude Code over stdio per
+    `.mcp.json`. Never run by hand; it talks MCP on stdout and would just sit there.
+
 ## CI
 
 - `build`, `test`, `test:e2e`, and `tsc` (via `build` + `check:server`) run in GitHub
@@ -83,15 +113,15 @@ short list of coding conventions to follow throughout the codebase.
 
 ## Roadmap
 
-- `docs/DESIGN.md` is the **single source of truth for the project map.** Every ticket carries an
-  inline `` `AREA-N` `status` `` marker right beside its prose (syntax + the fixed status vocab are
-  documented in the doc's "Roadmap markers" section). `yarn roadmap:view` renders them as a graph;
-  `yarn roadmap:check` validates them (run it after touching a marker).
-- **Keep markers current - nothing moves them automatically, it is a manual discipline.** When you
-  open a PR that implements a ticket, flip its marker to `review` in the *same* change (`review` =
-  built and working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And
-  whenever you notice a stale status (a ticket really done/merged/in-progress/abandoned but marked
-  otherwise), fix it right away in whatever change you are already making - don't wait to be asked.
+- **`webdaw.apm.yaml`** is the **single source of truth for the project map.** Tickets carry their own
+  status and dependency edges; `open_viewer` (via the `apm` MCP server) renders the graph. Ticket refs
+  match the old `docs/DESIGN.md` markers exactly (including dotted sub-tickets like `DAW-8.1` /
+  `HOST-6.2`), so references in older commits and comments still resolve.
+- **Keep statuses current - nothing moves them automatically, it is a manual discipline.** When you
+  open a PR that implements a ticket, set it to `review` in the *same* change (`review` = built and
+  working, in an open PR, not yet on `main`); it becomes `done` when the PR merges. And whenever you
+  notice a stale status (a ticket really done/merged/in-progress/abandoned but marked otherwise), fix
+  it right away in whatever change you are already making - don't wait to be asked.
 
 - The parameter schema is the keystone: UI, MCP, automation, and persistence are
   projections of it. Don't add per-parameter or per-type UI/branching - map over

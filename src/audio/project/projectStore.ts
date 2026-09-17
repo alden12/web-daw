@@ -40,6 +40,7 @@ import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import {
   DEFAULT_TIME_SIGNATURE,
+  TEMPO_BPM_RANGE,
   TIME_SIGNATURE_NUMERATOR_RANGE,
   TIME_SIGNATURE_DENOMINATORS,
   beatsPerBar,
@@ -47,6 +48,7 @@ import {
 } from "./schema";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
+import { randomUuid } from "../randomUuid";
 import type {
   ProjectData,
   TrackMeta,
@@ -60,8 +62,7 @@ import type {
   TimeSignature,
 } from "./types";
 
-const MIN_BPM = 20;
-const MAX_BPM = 300;
+const { min: MIN_BPM, max: MAX_BPM } = TEMPO_BPM_RANGE;
 // Time-signature bounds are shared with the zod schema (the one source), so the store's coercion
 // and the schema's validation can't drift. The guard narrows a number to the denominator union.
 const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>
@@ -209,22 +210,22 @@ export class ProjectStore {
 
   /** Short but globally unique, so server- and browser-created ids never collide. */
   private nextId(): string {
-    return `t-${crypto.randomUUID().slice(0, 8)}`;
+    return `t-${randomUuid().slice(0, 8)}`;
   }
   private nextGroupId(): string {
-    return `g-${crypto.randomUUID().slice(0, 8)}`;
+    return `g-${randomUuid().slice(0, 8)}`;
   }
   private nextEffectId(): string {
-    return `fx-${crypto.randomUUID().slice(0, 8)}`;
+    return `fx-${randomUuid().slice(0, 8)}`;
   }
   private nextMidiDeviceId(): string {
-    return `md-${crypto.randomUUID().slice(0, 8)}`;
+    return `md-${randomUuid().slice(0, 8)}`;
   }
   private nextClipId(): string {
-    return `c-${crypto.randomUUID().slice(0, 8)}`;
+    return `c-${randomUuid().slice(0, 8)}`;
   }
   private nextPlacementId(): string {
-    return `p-${crypto.randomUUID().slice(0, 8)}`;
+    return `p-${randomUuid().slice(0, 8)}`;
   }
 
   private rebuild(): void {

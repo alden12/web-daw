@@ -19,7 +19,7 @@
  * is one undo step and one feed entry. Geometry is shared with the piano roll via
  * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -27,8 +27,8 @@ import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
 import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
-import { Menu } from "./Menu";
-import { GROOVES } from "../audio/grooves/catalog";
+import { Menu, type MenuItem } from "./Menu";
+import { useCountInBars, useProjectSettingItems } from "./projectSettings";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { clamp } from "../util";
@@ -37,15 +37,22 @@ import { useAnimationFrame } from "./useAnimationFrame";
 import { TransportBar } from "./TransportBar";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX } from "./timeline/timeGrid";
+import { anchorZoomX } from "./timeline/anchoredZoom";
+import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
+import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
+import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
+import { IconButton } from "./controls/IconButton";
+import { Select } from "./controls/Select";
 import {
   ROW,
   ROW_PX,
   DEFAULT_HEADER_W,
   HEADER_MIN,
   HEADER_MAX,
+  pinHeaders,
   RULER_H,
   TRAIL_BEATS,
   ZOOM,
@@ -81,6 +88,9 @@ export function ArrangementTimeline({
   dispatch,
   isPlaying,
   started,
+  showTransport = true,
+  pinSelectedTrack = false,
+  compact = false,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -88,30 +98,58 @@ export function ArrangementTimeline({
   dispatch: Dispatch;
   isPlaying: boolean;
   started: boolean;
+  /**
+   * Whether the toolbar carries the transport. False in the touch shell (MOBILE-1),
+   * which pins one transport above every view, so this would be a second copy.
+   */
+  showTransport?: boolean;
+  /**
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
+   * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
+   */
+  compact?: boolean;
+  /**
+   * Pin the selected track's row to the top rather than merely scrolling it into view
+   * (MOBILE-5). At the editor sheet's Full detent only a sliver of arrangement shows, and
+   * it should be the lane being edited - which is the job `LaneStrip` used to do from a
+   * separate copy of the grid. Doing it by scroll position instead means there is one
+   * arrangement rather than two that have to be kept in step.
+   */
+  pinSelectedTrack?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
   const scrollRef = useRef<HTMLDivElement>(null);
   const playheadRef = useRef<HTMLDivElement>(null);
 
-  // Bring the selected track's row into view (e.g. when selection is driven from the
-  // project tree). `nearest` is a no-op when the row is already visible.
+  // Bring the selected track's row into view vertically (e.g. when selection is driven
+  // from the project tree), without touching the time axis. `scrollIntoView` won't do:
+  // giving it only `block` leaves `inline` defaulting to "nearest", so it also nudges the
+  // view sideways - which quietly moved the timeline off the offset just restored for it.
   const selectedTrackId = project.selectedTrackId;
   useEffect(() => {
     if (!selectedTrackId) return;
-    scrollRef.current
-      ?.querySelector(`[data-track-id="${CSS.escape(selectedTrackId)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [selectedTrackId]);
+    const scroller = scrollRef.current;
+    const row = scroller?.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(selectedTrackId)}"]`);
+    if (!scroller || !row) return;
+    const above = row.offsetTop - RULER_H; // the ruler is sticky, so it covers this much
+    if (pinSelectedTrack) {
+      scroller.scrollTop = above;
+      return;
+    }
+    const below = row.offsetTop + row.offsetHeight - scroller.clientHeight;
+    if (above < scroller.scrollTop) scroller.scrollTop = above;
+    else if (below > scroller.scrollTop) scroller.scrollTop = below;
+  }, [selectedTrackId, pinSelectedTrack]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
   const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
   const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
-  // Recording settings live in the toolbar's settings menu (right). The count-in is
-  // a persisted preference pushed to the recorder; the device list/selection are
-  // recorder state. (The Record button itself stays in the transport.)
-  const [countInBars, setCountInBars] = usePersistentNumber("web-daw:count-in-bars", 1, 0, 2);
+  // The count-in is a persisted preference pushed to the recorder from here, because this
+  // component is mounted in both shells; the rows that *set* it are project settings and are
+  // built alongside groove in `projectSettings.ts`. (The Record button stays in the transport.)
+  const [countInBars] = useCountInBars();
   useEffect(() => {
     recorder.setCountInBars(countInBars);
   }, [recorder, countInBars]);
@@ -145,6 +183,10 @@ export function ArrangementTimeline({
     ...project.tracks.flatMap((track) => track.placements.map((placement) => placement.startBeat + placement.length)),
     0,
   );
+  // Pinned or scrolling with the lanes, decided by the room this timeline actually has
+  // rather than by which shell is hosting it - see `pinHeaders`. Measured in pixels rather
+  // than beats on purpose: a zoom change must not make the headers pin and unpin.
+  const stickyHeaders = pinHeaders(viewportW, headerW);
   const minViewBeats = pxPerBeat > 0 ? Math.max(0, viewportW - headerW) / pxPerBeat : 0;
   const viewBeats = Math.max(arrangedEnd + TRAIL_BEATS, Math.ceil(minViewBeats));
   const laneWidth = beatToX(viewBeats, pxPerBeat);
@@ -277,6 +319,22 @@ export function ArrangementTimeline({
     return () => ro.disconnect();
   }, [rows.length]);
 
+  /**
+   * Zoom the time axis about a fixed point. Shared by the wheel and the pinch, which differ
+   * only in where the factor comes from - so the clamp and the anchoring are written once and
+   * the two gestures cannot drift apart.
+   */
+  const zoomTimeAxis = useCallback(
+    (factor: number, clientX: number, panPx = 0) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
+      setPxPerBeat(next);
+      anchorZoomX({ element, clientPosition: clientX, leadPx: headerW, from: pxPerBeat, to: next, panPx });
+    },
+    [pxPerBeat, setPxPerBeat, headerW],
+  );
+
   // Cursor-anchored wheel zoom on the time axis (modifier held); plain wheel scrolls.
   useEffect(() => {
     const el = scrollRef.current;
@@ -284,19 +342,30 @@ export function ArrangementTimeline({
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
       e.preventDefault();
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const rect = el.getBoundingClientRect();
-      const contentX = e.clientX - rect.left + el.scrollLeft - headerW;
-      const beatAtCursor = contentX / pxPerBeat;
-      const next = clamp(pxPerBeat * factor, ZOOM.min, ZOOM.max);
-      setPxPerBeat(next);
-      requestAnimationFrame(() => {
-        el.scrollLeft = beatAtCursor * next - (e.clientX - rect.left) + headerW;
-      });
+      zoomTimeAxis(Math.exp(-e.deltaY * 0.0015), e.clientX);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [pxPerBeat, setPxPerBeat, headerW]);
+  }, [zoomTimeAxis]);
+
+  // One zoom axis here: the arrangement's vertical is a list of tracks with their own heights,
+  // not a continuous scale, so there is nothing for a vertical pinch to *scale*. It still
+  // pans, because the lanes scroll vertically and two fingers should move the view they are
+  // resizing.
+  const onPinch = useCallback(
+    ({ scaleX, clientX, panX, panY }: PinchGesture) => {
+      zoomTimeAxis(scaleX, clientX, panX);
+      const element = scrollRef.current;
+      if (element) element.scrollTop -= panY;
+    },
+    [zoomTimeAxis],
+  );
+  usePinchZoom(scrollRef, onPinch);
+
+  // Keep the time-axis offset across remounts (a shell swap, or a phone rotated into the
+  // tablet tier). A sticky header column does not consume scroll, so beat 0 is at the
+  // content's left edge; once it scrolls away with the lanes it leads by headerW.
+  useSharedGridScroll(scrollRef, pxPerBeat, stickyHeaders ? 0 : headerW);
 
   // Drive the playhead off the audio clock (0 when stopped).
   useAnimationFrame(() => {
@@ -316,9 +385,6 @@ export function ArrangementTimeline({
     beginPointerDrag((ev) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX)));
   };
 
-  const zoomBtn =
-    "font-mono text-[12px] leading-none w-6 h-6 rounded border border-line bg-card text-ink cursor-pointer hover:text-bright";
-
   // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
   // caller supplies how to create the track (MIDI vs audio) given a destination group.
   const newTrackSubmenu = (createTrack: (groupId: string) => void) => [
@@ -335,73 +401,84 @@ export function ArrangementTimeline({
   const createMidiTrack = (groupId: string) =>
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
+  const projectSettingItems = useProjectSettingItems(project, dispatch);
 
+  /**
+   * What this surface adds to a project - the only things in the toolbar's menu that are
+   * really about the arrangement.
+   */
+  const trackItems: MenuItem[] = [
+    {
+      label: "Add group",
+      onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
+    },
+    // Every track lives in a group, so adding one picks the destination group
+    // (or a fresh group). Nested as submenus so the menu stays short.
+    { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
+    { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
+  ];
+  /**
+   * The desktop toolbar's kebab keeps count-in and groove: there is no other menu on this
+   * screen, and one kebab beats two. On touch they go to the shell's *project* group instead
+   * of being published with the rows above - they are project settings, and a menu that
+   * groups by surface would be filing them under a heading that is not true (MOBILE-11).
+   */
+  const optionItems: MenuItem[] = [...trackItems, { separator: true }, ...projectSettingItems];
+
+  // On touch the toolbar row goes away and its contents move to the shell's ⋮: the
+  // options above, plus the snap and zoom controls that sit on the toolbar's right. Zoom
+  // folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2), and
+  // this list shares one menu with the roll's and the project's.
+  usePublishSurfaceControls(
+    "arrangement",
+    [
+      { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
+      {
+        label: "Snap to",
+        submenu: SNAP_OPTIONS.map((option) => ({
+          label: option.label,
+          checked: snapDiv === option.value,
+          onClick: () => setSnapDiv(option.value),
+        })),
+      },
+      {
+        label: "Zoom",
+        submenu: [
+          { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
+          { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
+        ],
+      },
+      { separator: true },
+      ...trackItems,
+    ],
+    compact,
+  );
+
+  // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
+  // column; as a grid item on desktop it is ignored, so the grid row decides the height.
   return (
-    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col min-h-0">
-      <div className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-rail">
-        <TransportBar
-          projectStore={projectStore}
-          scheduler={scheduler}
-          recorder={recorder}
-          dispatch={dispatch}
-          isPlaying={isPlaying}
-          started={started}
-        />
-        <span className="w-px h-5 bg-line shrink-0" />
-        <Menu
-          label="Timeline options"
-          align="left"
-          items={[
-            {
-              label: "Add group",
-              onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
-            },
-            // Every track lives in a group, so adding one picks the destination group
-            // (or a fresh group). Nested as submenus so the menu stays short.
-            { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
-            { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
-            { separator: true },
-            // Recording settings live here too (one toolbar menu, not a second kebab).
-            {
-              label: "Count-in",
-              submenu: [
-                {
-                  label: "No count-in",
-                  checked: countInBars === 0,
-                  onClick: () => setCountInBars(0),
-                },
-                {
-                  label: "1 bar",
-                  checked: countInBars === 1,
-                  onClick: () => setCountInBars(1),
-                },
-                {
-                  label: "2 bars",
-                  checked: countInBars === 2,
-                  onClick: () => setCountInBars(2),
-                },
-              ],
-            },
-            { separator: true },
-            // Groove: project-wide swing/feel applied at playback (non-destructive).
-            {
-              label: "Groove",
-              submenu: GROOVES.map((groove) => ({
-                label: groove.name,
-                checked: project.grooveId === groove.id,
-                onClick: () => dispatch({ type: "setGroove", grooveId: groove.id }),
-              })),
-            },
-            {
-              label: "Groove amount",
-              submenu: [0.25, 0.5, 0.75, 1].map((value) => ({
-                label: `${Math.round(value * 100)}%`,
-                checked: project.grooveAmount === value,
-                onClick: () => dispatch({ type: "setGroove", amount: value }),
-              })),
-            },
-          ]}
-        />
+    <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col flex-1 min-h-0">
+      {/* The whole toolbar row goes when compact - the shell owns the transport and the ⋮ -
+          except the clip-mode indicator, which is live state you need to be able to see. */}
+      <div
+        className={`flex items-center gap-3 px-2.5 border-b border-line bg-rail ${
+          compact ? (clipMode ? "py-1.5" : "hidden") : "py-1.5"
+        }`}
+      >
+        {!compact && showTransport && (
+          <>
+            <TransportBar
+              projectStore={projectStore}
+              scheduler={scheduler}
+              recorder={recorder}
+              dispatch={dispatch}
+              isPlaying={isPlaying}
+              started={started}
+            />
+            <span className="w-px h-5 bg-line shrink-0" />
+          </>
+        )}
+        {!compact && <Menu label="Timeline options" align="left" items={optionItems} />}
         {clipMode && (
           <button
             type="button"
@@ -415,40 +492,41 @@ export function ArrangementTimeline({
             Back to timeline
           </button>
         )}
-        <div className="ml-auto flex items-center gap-2 text-muted">
+        <div hidden={compact} className="ml-auto flex items-center gap-2 text-muted">
           <label className="flex items-center gap-1.5 font-mono text-[11px]">
             <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} />
             Snap
           </label>
-          <select
+          <Select
             value={snapDiv}
             onChange={(e) => setSnapDiv(Number(e.target.value))}
             title="Snap division"
-            className="font-mono text-[11px] px-1 py-0.5 rounded border border-line bg-card text-ink"
+            aria-label="Snap division"
+            className="font-mono"
           >
             {SNAP_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
-          </select>
+          </Select>
           <span className="font-mono text-[10px] text-faint">zoom</span>
-          <button
-            type="button"
-            title="Zoom out"
-            className={zoomBtn}
+          <IconButton
+            label="Zoom out"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25)))}
           >
             −
-          </button>
-          <button
-            type="button"
-            title="Zoom in"
-            className={zoomBtn}
+          </IconButton>
+          <IconButton
+            label="Zoom in"
+            size="sm"
+            className="font-mono"
             onClick={() => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25)))}
           >
             +
-          </button>
+          </IconButton>
         </div>
       </div>
 
@@ -458,12 +536,23 @@ export function ArrangementTimeline({
         </div>
       ) : (
         <div className="relative flex-1 min-h-0">
-          <div ref={scrollRef} data-testid="arr-scroll" className="absolute inset-0 overflow-auto">
+          {/* `pan-x pan-y` keeps native one-finger scrolling - which `useSharedGridScroll` reads -
+              while taking pinch away from the browser, which otherwise zooms the whole page and
+              scales the app's own chrome. Not a viewport-meta fix: page zoom stays available
+              everywhere else, being the only way to read small text. */}
+          <div
+            ref={scrollRef}
+            data-testid="arr-scroll"
+            className="absolute inset-0 overflow-auto [touch-action:pan-x_pan-y]"
+          >
             <div className="relative" style={{ width: headerW + laneWidth, height: contentH }}>
-              {/* ruler row: sticky top; the corner cell is sticky on both axes */}
+              {/* ruler row: sticky top; the corner cell is sticky on both axes (on touch
+                  it scrolls horizontally with the headers, so only the top pin remains) */}
               <div className="sticky top-0 z-20 flex" style={{ height: RULER_H }}>
                 <div
-                  className="sticky left-0 z-10 shrink-0 bg-rail border-r border-b border-line"
+                  className={`shrink-0 bg-rail border-r border-b border-line ${
+                    stickyHeaders ? "sticky left-0 z-10" : ""
+                  }`}
                   style={{ width: headerW, height: RULER_H }}
                 />
                 <Ruler
@@ -480,7 +569,7 @@ export function ArrangementTimeline({
               {rows.map((row) =>
                 row.kind === "group" ? (
                   <div key={row.group.id} className="flex">
-                    <div className="sticky left-0 z-10 shrink-0" style={{ width: headerW }}>
+                    <div className={`shrink-0 ${stickyHeaders ? "sticky left-0 z-10" : ""}`} style={{ width: headerW }}>
                       <GroupHeader
                         group={row.group}
                         depth={row.depth}
@@ -488,7 +577,7 @@ export function ArrangementTimeline({
                         dispatch={dispatch}
                       />
                     </div>
-                    <div className={`${ROW} border-b border-line bg-center/40`} style={{ width: laneWidth }} />
+                    <div className={`${ROW} border-b border-line bg-panel/40`} style={{ width: laneWidth }} />
                   </div>
                 ) : (
                   <TrackRow
@@ -512,6 +601,7 @@ export function ArrangementTimeline({
                     onSelect={selectPlacement}
                     onMark={placeMarker}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
+                    stickyHeader={stickyHeaders}
                   />
                 ),
               )}
@@ -522,20 +612,25 @@ export function ArrangementTimeline({
               />
             </div>
           </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize the header column"
-            onPointerDown={onHeaderResize}
-            // Start below the ruler row: the divider overlaps the loop-start handle
-            // (both land at x = headerW when the loop starts at beat 0), and at z-30
-            // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
-            // px free keeps the marker row draggable.
-            className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
-            style={{ left: headerW, top: RULER_H }}
-          >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
-          </div>
+          {/* The header-column divider is pinned at x = headerW, which only lines up while
+              the headers are pinned there too - and a 2px drag target is not a touch
+              affordance anyway, so it goes with them. */}
+          {stickyHeaders && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize the header column"
+              onPointerDown={onHeaderResize}
+              // Start below the ruler row: the divider overlaps the loop-start handle
+              // (both land at x = headerW when the loop starts at beat 0), and at z-30
+              // it would swallow the ruler's loop-marker drags. Leaving the top RULER_H
+              // px free keeps the marker row draggable.
+              className="group absolute bottom-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+              style={{ left: headerW, top: RULER_H }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:w-0.5 group-hover:bg-you" />
+            </div>
+          )}
         </div>
       )}
     </div>

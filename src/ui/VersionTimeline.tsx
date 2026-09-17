@@ -1,5 +1,5 @@
 /**
- * The version timeline: the commit DAG as a readable history (DESIGN.md section 7).
+ * The version timeline: the commit DAG as a readable history (see apm: "History and versioning").
  * Save a named version, see the chain newest-first (two-voice colored, auto vs
  * named), expand a commit to see its semantic diff, and revert to it (which lands
  * a new commit - history stays append-only). The list is async (commits live in
@@ -90,7 +90,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
             if (e.key === "Enter" && hasUncommitted) save();
           }}
           placeholder="Name this version…"
-          className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-bright placeholder:text-faint"
+          className="flex-1 min-w-0 font-mono text-[11.5px] px-2 py-1.5 rounded-md border border-line bg-ground text-strong placeholder:text-faint"
         />
         <button
           type="button"

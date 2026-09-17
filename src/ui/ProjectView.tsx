@@ -114,7 +114,7 @@ export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectS
                   align="left"
                   trigger="+"
                   label={`Add a track to ${row.group.name}`}
-                  triggerClassName="w-5 text-center text-[14px] leading-none text-faint hover:text-bright cursor-pointer"
+                  triggerClassName="w-5 text-center text-[14px] leading-none text-faint hover:text-strong cursor-pointer"
                   items={[
                     {
                       label: "New MIDI track",
@@ -174,7 +174,7 @@ export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectS
                     selected ? "bg-you" : "bg-line"
                   }`}
                 />
-                <span className={`truncate text-[12.5px] ${selected ? "text-bright" : "text-ink"}`}>{track.name}</span>
+                <span className={`truncate text-[12.5px] ${selected ? "text-strong" : "text-ink"}`}>{track.name}</span>
                 {track.muted && <span className="shrink-0 font-mono text-[9px] text-claude">M</span>}
                 {track.solo && <span className="shrink-0 font-mono text-[9px] text-warn">S</span>}
                 <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">

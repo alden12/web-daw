@@ -2,7 +2,7 @@
  * The client half of realtime multiplayer: an optimistic, total-order sync session against the
  * server-authoritative `Room` (server/api/rooms.ts). It rides the WS message contract (src/contract/ws.ts).
  *
- * The model (decided in docs/DESIGN.md, sync-service roadmap): the authority assigns a single monotonic
+ * The model (decided in the apm project, HOST-1): the authority assigns a single monotonic
  * `seq` to every edit; the client applies its own edits *immediately* (optimistically) and reconciles off
  * the authority's echo. We keep two views:
  *   - `base`  - the confirmed, server-ordered state (a headless ProjectStore advanced by `applyEdit` in
@@ -28,6 +28,7 @@ import type { EditLog } from "../commands/editLog";
 import type { Author, EditCommand, EditEntry } from "../commands/types";
 import type { ProjectData } from "../project/types";
 import type { ClientMessage, ServerMessage } from "../../contract/ws";
+import { randomUuid } from "../randomUuid";
 
 /** A typed, ordered message pipe to the authority. `createWsClient` (src/contract/client.ts) is one. */
 export interface SyncTransport {
@@ -126,7 +127,7 @@ export class SharedSession {
     this.editLog = options.editLog;
     this.transport = options.transport;
     this.projectId = options.projectId;
-    this.newOpId = options.newOpId ?? (() => crypto.randomUUID());
+    this.newOpId = options.newOpId ?? (() => randomUuid());
     this.onError = options.onError;
     this.onRemoteEdit = options.onRemoteEdit;
     this.onConflict = options.onConflict;

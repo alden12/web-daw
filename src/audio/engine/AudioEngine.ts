@@ -485,7 +485,7 @@ export class AudioEngine {
   /**
    * Best-effort round-trip latency estimate (seconds) for recording compensation:
    * output + base latency. The browser does not expose input latency, so this is
-   * a v1 estimate; a loopback calibration would make it exact (see DESIGN.md 14).
+   * a v1 estimate; a loopback calibration would make it exact (see apm: "Recording and input (design)").
    */
   inputLatencySec(): number {
     const ctx = this.ctx;

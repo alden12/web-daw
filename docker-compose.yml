@@ -1,4 +1,4 @@
-# Local Postgres for the sync service (see docs/DESIGN.md + the sync-service slice).
+# Local Postgres for the sync service (see the apm project, HOST-1).
 # `yarn db:up` starts it; the named volume keeps project data across restarts, which
 # is the whole point - the DB, not evictable browser storage, is now the durable store.
 services:
