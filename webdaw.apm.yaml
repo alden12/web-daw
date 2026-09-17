@@ -7794,6 +7794,24 @@ projects:
             id: 01a0afc6-adc0-76be-a474-f3066928ee87
             at: 2026-09-17T14:30:28.544Z
             actor: claude
+          - body: >-
+              **Stage D built, `6f556c1`.** A step is now a `seq`; `invert.ts`,
+              the checkpoint union, the authorship capture, the pack/unpack
+              delta encoding, `PERSIST_UNDO_MAX_BYTES`, `undoConflictKeys` and
+              the `state` fingerprint are all gone. Net -946 lines. `MAX_DEPTH`
+              100 -> 500. Recovery for the inverters is still `3ebd825`.
+
+
+              **Known regression, and stage E's first job:** a hosted session's
+              log is renumbered by the authority, so a stack persisted against
+              client seqs is dropped on reload and undo-across-reload is
+              unavailable there. Local projects unaffected; unavailable rather
+              than wrong. Found by the test DAW-8.15 added for exactly that
+              seq-space divergence.
+            audience: user
+            id: 01a0afda-50c3-756c-8818-1f6b51e13ec9
+            at: 2026-09-17T14:51:55.459Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"
