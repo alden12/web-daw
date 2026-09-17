@@ -31,7 +31,7 @@
     "preview": "vite preview",
     "worktree:new": "bash scripts/worktree.sh new",
     "worktree:rm": "bash scripts/worktree.sh rm",
-    "worktree:list": "bash scripts/worktree.sh list"
+    "worktree:list": "bash scripts/worktree.sh list",
     "roadmap:check": "tsx scripts/roadmap.ts --check",
     "roadmap:list": "tsx scripts/roadmap.ts",
     "roadmap:view": "vite tools/roadmap"
