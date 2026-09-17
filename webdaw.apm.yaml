@@ -9780,6 +9780,38 @@ projects:
           the cap comes down.
 
 
+          **The one real datapoint so far** (Alden, 2026-09-18): the deployed
+          Neon database holds **4160 edit
+
+          rows in total, across a few projects** - and no real track has been
+          written with the tool yet, so
+
+          that is incidental testing. It settles one thing: the current 2000
+          window is the same order as
+
+          CASUAL use, so it would be pruning real history rather than ancient
+          history the moment anyone
+
+          writes something. It says nothing yet about the shape of a real
+          project, since a test project is a
+
+          handful of gestures rather than months of arranging - but it makes
+          100k look like the right order
+
+          rather than a generous one.
+
+
+          **Still worth measuring: bytes per row**, which is what the ~400-byte
+          estimate above (and so the
+
+          40MB figure) hangs on. `select count(*), pg_total_relation_size('edits'),
+          pg_total_relation_size('edits') / nullif(count(*),0) from edits;` gives
+          the honest cost including
+
+          indexes and toast. Near 400 and the numbers hold; nearer 1KB and the
+          cap comes down.
+
+
           ## Not this ticket
 
 
