@@ -8987,6 +8987,15 @@ projects:
           the other half.
 
 
+          **Agreed and written up as DAW-38** (2026-09-18): cap the log at 100k
+          rather than going unbounded,
+
+          make the ring geometric (9 slots covering 128k edits for ~2x the
+          storage), bound the two hot paths,
+
+          and offer a fork if a rebuild still cannot produce a usable project.
+
+
           ### Stage E is done; what is left is stage F
           ### Stage E is done; what is left is stage F
 
@@ -9616,6 +9625,174 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-38
+        area: DAW
+        title: A project can always be rebuilt from its log, and deep undo stays fast
+        status: to-do
+        sort_path: "000038"
+        deps:
+          - DAW-34
+        body: >
+          Agreed with Alden 2026-09-18, out of DAW-34 stage E. Two changes that
+          are really one idea: **keep
+
+          enough log to rebuild anything, and enough bases that rebuilding is
+          quick at any depth.**
+
+
+          Replay from empty is already exact (DAW-36 made commands
+          self-contained) and already the mechanism
+
+          - `recomputeHead` starts from an empty store at seq -1 when a project
+          has no keyframe, and stage E
+
+          wrote that state into the ring as a real base. So a complete log can
+          reconstruct any state a corrupt
+
+          or unreachable keyframe leaves behind, which no snapshot can do
+          unless it happens to sit before the
+
+          damage. What stops it today is that the log is pruned to the last
+          2000 edits.
+
+
+          ## The numbers, done before committing to any of it
+
+
+          One edit is one gesture after coalescing. A dense arrangement is
+          10-20k note edits; weeks of
+
+          automation and mixing on top another 10-50k. So a heavily-worked
+          project is order **100k edits**,
+
+          and a pathological one (years, or agent-driven) maybe 500k. A row is
+          ~400 bytes (command JSON, a
+
+          uuid id, author/time/kind/seq, jsonb overhead).
+
+
+          | | today | proposed |
+
+          |---|---|---|
+
+          | log retained | 2000 edits | **100k edits** (~40MB worst case) |
+
+          | ring slots | 5, fixed 500 apart | **9, geometric** |
+
+          | ring storage | 5MB large / 250KB normal | 9MB large / 450KB normal |
+
+          | range the ring covers | 2000 edits | 128k edits |
+
+
+          **~2x the ring storage to cover 50x the range**, because the rungs go
+          500, 1000, 2000, 4000, 8000,
+
+          16000, 32000, 64000, 128000 rather than five fixed steps.
+
+
+          Replay costs come from the stage-B measurements (23.7ms for 2000
+          edits on a large project, ~12us an
+
+          edit), a phone taken as 4x a laptop:
+
+
+          - **deepest undo** replays at most the rung below it, 64k entries:
+          **0.8s laptop, ~3s phone**
+          - **full recovery** replays at most 100k entries: **1.2s laptop, ~5s
+          phone**
+
+
+          Both sit well inside the 30s Alden set as acceptable for an edge
+          failure case.
+
+
+          ## The work
+
+
+          **1. Raise the server log cap** from `SNAPSHOT_WINDOW` (2000) to
+          ~100k. **Leave the client mirror at
+
+          `MAX_PERSISTED_ENTRIES` (2000)** - 40MB of edits in a browser cache
+          is not a trade worth making for
+
+          offline, and recovery is an online action. The deep log is the
+          authority's.
+
+
+          **2. Make the ring geometric.** Today `planKeyframes` evicts the
+          OLDEST slot, which gives fixed
+
+          spacing and a fixed reach. Evict the **most redundant** slot instead
+          - the one closest to a
+
+          neighbour in log-distance - and the surviving set settles into a
+          geometric ladder on its own, with
+
+          old keyframes promoted up the rungs as the head advances rather than
+          rewritten. `KEYFRAME_RING_SIZE`
+
+          becomes 9. `rebuildBase`/`oldestBase` need no change: they already
+          ask for the newest base below a
+
+          seq, which is exactly right for an uneven ladder.
+
+
+          **3. Bound the two paths that read the whole log.**
+          `Room.recomputeHead` and `Room.canHonourUndo`
+
+          both call `readEdits(-1)`. That is capped at 2000 rows today only by
+          the pruning; at 100k it is a
+
+          per-undo cost nobody should pay. Both want "above the base" instead.
+          This is a prerequisite, not a
+
+          nice-to-have.
+
+
+          **4. The recovery action.** "Rebuild project state?" with a progress
+          indicator rather than a
+
+          several-minutes warning - the numbers above say seconds. If the
+          rebuild itself cannot produce a
+
+          usable project, offer **fork to a new project** from the current
+          state. Alden's read, and it is
+
+          right: the user in that position has been offline for weeks or months
+          and then reconnected into a
+
+          project that moved on, so a fork is close to what they expected
+          anyway.
+
+
+          ## Measure first
+
+
+          **Count the edits in a real project.** Cheap to instrument, and it
+          turns every figure above from
+
+          arithmetic into a fact - in particular whether 100k is generous or
+          mean. Stage F's phone
+
+          measurement is the other half of the same question: if a rebuild is
+          much slower on a phone than 4x,
+
+          the cap comes down.
+
+
+          ## Not this ticket
+
+
+          A **cold archive** - pruning the working log but writing pruned edits
+          to a bundle file nothing reads
+
+          on the hot path - is the variant to reach for if 40MB a project turns
+          out to be unwelcome. It buys
+
+          the same recovery without touching either hot path, at the cost of a
+          second storage shape. Recorded
+
+          rather than chosen, because the simple cap is worth trying first.
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"
