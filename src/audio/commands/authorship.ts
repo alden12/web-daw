@@ -49,8 +49,17 @@ const EFFECTS: EffectMap = {
   }),
   createAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
   addAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
+  // The `midiDeviceParam:` prefix was missing, which left stamps behind on a track that no longer
+  // existed. Still incomplete: the things inside a track that are NOT keyed by track id (its
+  // effects, MIDI devices, clips, notes and placements) cannot be reached by a prefix, so their
+  // stamps still outlive it. Tracked as DAW-34.1.
   removeTrack: (command) => ({
-    removed: [trackKey(command.trackId), `param:${command.trackId}:`, `effectParam:${command.trackId}:`],
+    removed: [
+      trackKey(command.trackId),
+      `param:${command.trackId}:`,
+      `effectParam:${command.trackId}:`,
+      `midiDeviceParam:${command.trackId}:`,
+    ],
   }),
   setTrack: (command) => ({ touched: [trackKey(command.trackId)] }),
   setInstrument: (command) => ({ touched: [trackKey(command.trackId)], removed: [`param:${command.trackId}:`] }),

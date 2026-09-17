@@ -21,7 +21,12 @@ type ApplyMap = {
 
 const APPLY: ApplyMap = {
   createTrack: (project, command) =>
-    void project.addTrack(command.instrumentType, { name: command.name, id: command.id, groupId: command.groupId }),
+    void project.addTrack(command.instrumentType, {
+      name: command.name,
+      id: command.id,
+      groupId: command.groupId,
+      lengthBeats: command.lengthBeats,
+    }),
   createTrackFromPatch: (project, command) => void project.addTrackFromPatch(command),
   applyPatch: (project, command) =>
     project.applyPatchToTrack({
@@ -41,6 +46,7 @@ const APPLY: ApplyMap = {
         durationSec: command.durationSec,
         startBeat: command.startBeat,
         gain: command.gain,
+        length: command.length,
       },
       { id: command.id, groupId: command.groupId },
     ),
@@ -97,9 +103,11 @@ const APPLY: ApplyMap = {
     project.setMidiDeviceBypass(command.trackId, command.deviceId, command.bypassed),
   setMidiDeviceParam: (project, command) =>
     project.getMidiDevice(command.trackId, command.deviceId)?.params.set(command.id, command.value),
-  // Note edits target a specific clip (defaulting to the active one). addNotes /
-  // editNotes both insert-or-replace by id (putNote): a new id adds, an existing
-  // id moves/resizes/re-velocities in place. One call, one edit.
+  // Note edits name the clip they target. `EditLog.dispatch` resolves it (DAW-36), so a dispatched
+  // command always carries one; the active-clip fallback inside `getClipStore` is now only reached
+  // by log entries written before that, which replay as they always did. addNotes / editNotes both
+  // insert-or-replace by id (putNote): a new id adds, an existing id moves/resizes/re-velocities in
+  // place. One call, one edit.
   addNote: (project, command) => project.getClipStore(command.trackId, command.clipId)?.putNote(command.note),
   addNotes: (project, command) => {
     const store = project.getClipStore(command.trackId, command.clipId);
@@ -140,7 +148,11 @@ const APPLY: ApplyMap = {
     }),
   movePlacement: (project, command) => project.movePlacement(command.trackId, command.placementId, command.startBeat),
   resizePlacement: (project, command) =>
-    project.resizePlacement(command.trackId, command.placementId, { offset: command.offset, length: command.length }),
+    project.resizePlacement(command.trackId, command.placementId, {
+      startBeat: command.startBeat,
+      offset: command.offset,
+      length: command.length,
+    }),
   removePlacement: (project, command) => project.removePlacement(command.trackId, command.placementId),
   splitPlacement: (project, command) =>
     project.splitPlacement(command.trackId, command.placementId, command.atBeat, command.newId),
@@ -173,7 +185,8 @@ export function applyEdit(project: ProjectStore, command: EditCommand, author: A
   const effect = authorshipEffect(command);
   if (effect.removed) project.dropAuthors(effect.removed);
   if (effect.touched) for (const key of effect.touched) project.setAuthor(key, author);
-  // Note edits also stamp their (possibly active) clip, so its timeline block tracks note authorship.
+  // Note edits also stamp the clip they targeted, so its timeline block tracks note authorship. The
+  // `activeClipId` fallback is for pre-DAW-36 entries, which carry no clip id of their own.
   const noteTarget = noteEditClipTarget(command);
   if (noteTarget) {
     const clipId = noteTarget.clipId ?? project.getTrack(noteTarget.trackId)?.activeClipId ?? undefined;

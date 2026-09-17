@@ -51,6 +51,7 @@ import type { PatchValues } from "../params/types";
 import { randomUuid } from "../randomUuid";
 import type {
   ProjectData,
+  TrackData,
   TrackMeta,
   GroupMeta,
   AudioClipData,
@@ -67,6 +68,10 @@ const { min: MIN_BPM, max: MAX_BPM } = TEMPO_BPM_RANGE;
 // and the schema's validation can't drift. The guard narrows a number to the denominator union.
 const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>
   (TIME_SIGNATURE_DENOMINATORS as readonly number[]).includes(value);
+/** A record with its keys in sorted order, so serializing it is deterministic. */
+const sortedByKey = <Value>(record: Record<string, Value>): Record<string, Value> =>
+  Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));
+
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
@@ -306,6 +311,11 @@ export class ProjectStore {
 
   // --- groups ---------------------------------------------------------------
   /** Create a group (no emit). Reuses an existing group if `id` already exists. */
+  /** The name a new group would take. Counted, so a dispatch pins it (DAW-36). */
+  defaultGroupName(): string {
+    return `Group ${this.groups.length + 1}`;
+  }
+
   private createGroup(opts: { id?: string; name?: string; parentId?: string | null } = {}): Group {
     if (opts.id) {
       const existing = this.getGroup(opts.id);
@@ -313,7 +323,7 @@ export class ProjectStore {
     }
     const group: Group = {
       id: opts.id ?? this.nextGroupId(),
-      name: opts.name ?? `Group ${this.groups.length + 1}`,
+      name: opts.name ?? this.defaultGroupName(),
       parentId: opts.parentId ?? null,
       collapsed: false,
       muted: false,
@@ -429,7 +439,25 @@ export class ProjectStore {
   }
 
   // --- tracks ---------------------------------------------------------------
-  addTrack(instrumentType: string, opts: { name?: string; id?: string; groupId?: string } = {}): Track {
+  /**
+   * The name `addTrack` would choose for a new track of this type. Public because a dispatch pins it
+   * into the command (DAW-36): the default counts the tracks that exist, so leaving it to apply time
+   * means a replayed `createTrack` can name itself differently than it did the first time.
+   */
+  defaultTrackName(instrumentType: string): string {
+    const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
+    return `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`;
+  }
+
+  /** The name a new audio track would take. Same counting problem as `defaultTrackName`. */
+  defaultAudioTrackName(): string {
+    return `Audio ${this.tracks.length + 1}`;
+  }
+
+  addTrack(
+    instrumentType: string,
+    opts: { name?: string; id?: string; groupId?: string; lengthBeats?: number } = {},
+  ): Track {
     const type = hasInstrument(instrumentType) ? instrumentType : DEFAULT_INSTRUMENT;
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)!;
     const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
@@ -440,11 +468,11 @@ export class ProjectStore {
     // side, and divergent ids would make clip/placement tools address something
     // the other end doesn't have. Forks/new placements get communicated random ids.
     const clipId = `c-${trackId}`;
-    const clip = new ClipStore({ lengthBeats: this.lengthBeats });
+    const clip = new ClipStore({ lengthBeats: opts.lengthBeats ?? this.lengthBeats });
     const track: InstrumentTrack = {
       kind: "instrument",
       id: trackId,
-      name: opts.name ?? `${type === EMPTY_INSTRUMENT ? "Track" : catalogEntry(type).label} ${this.tracks.length + 1}`,
+      name: opts.name ?? this.defaultTrackName(type),
       instrumentType: type,
       parentId,
       muted: false,
@@ -499,13 +527,19 @@ export class ProjectStore {
     id: string;
     name?: string;
     groupId?: string;
+    lengthBeats?: number;
     instrumentType: string;
     params: PatchValues;
     effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
     midiDevices?: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
   }): Track {
     if (spec.id && this.getTrack(spec.id)) return this.getTrack(spec.id)!;
-    const track = this.addTrack(spec.instrumentType, { name: spec.name, id: spec.id, groupId: spec.groupId });
+    const track = this.addTrack(spec.instrumentType, {
+      name: spec.name,
+      id: spec.id,
+      groupId: spec.groupId,
+      lengthBeats: spec.lengthBeats,
+    });
     if (track.kind === "instrument") {
       track.params.load(spec.params);
       for (const device of spec.midiDevices ?? []) {
@@ -590,7 +624,7 @@ export class ProjectStore {
     const track: AudioTrack = {
       kind: "audio",
       id: trackId,
-      name: opts.name ?? `Audio ${this.tracks.length + 1}`,
+      name: opts.name ?? this.defaultAudioTrackName(),
       parentId,
       muted: false,
       solo: false,
@@ -609,13 +643,13 @@ export class ProjectStore {
 
   /** Add an audio track for an imported/recorded clip (filed into the Audio group). */
   addAudioTrack(
-    clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number },
+    clip: { fileId: string; name?: string; durationSec?: number; startBeat?: number; gain?: number; length?: number },
     opts: { name?: string; id?: string; groupId?: string } = {},
   ): AudioTrack {
     if (opts.id && this.getTrack(opts.id)) return this.getTrack(opts.id)! as AudioTrack;
     const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
-    const name = opts.name ?? clip.name ?? `Audio ${this.tracks.length + 1}`;
+    const name = opts.name ?? clip.name ?? this.defaultAudioTrackName();
     const clipId = `c-${trackId}`;
     const durationSec = clip.durationSec ?? 0;
     const track: AudioTrack = {
@@ -637,7 +671,7 @@ export class ProjectStore {
           clipId,
           startBeat: clip.startBeat ?? 0,
           offset: 0,
-          length: this.naturalBeats(durationSec),
+          length: clip.length ?? this.naturalBeats(durationSec),
         },
       ],
       launchedClipId: null,
@@ -663,6 +697,7 @@ export class ProjectStore {
     durationSec?: number;
     gain?: number;
     startBeat?: number;
+    length?: number;
   }): void {
     const t = this.getTrack(spec.trackId);
     if (!t || t.kind !== "audio" || t.clips.some((clip) => clip.id === spec.id)) return;
@@ -678,7 +713,7 @@ export class ProjectStore {
     t.activeClipId = spec.id;
     if (!t.placements.some((placement) => placement.id === spec.placementId)) {
       const startBeat = Math.max(0, spec.startBeat ?? 0);
-      const length = this.naturalBeats(durationSec);
+      const length = spec.length ?? this.naturalBeats(durationSec);
       // A recorded take punches in over the lane: replace whatever it overlaps.
       this.replaceRegion(t, startBeat, startBeat + length, spec.placementId);
       t.placements.push({ id: spec.placementId, clipId: spec.id, startBeat, offset: 0, length });
@@ -761,8 +796,9 @@ export class ProjectStore {
     });
   }
 
-  /** Natural length of `durationSec` in beats at the current tempo (>= 1 beat). */
-  private naturalBeats(durationSec: number): number {
+  /** Natural length of `durationSec` in beats at the CURRENT tempo (>= 1 beat). Public because a
+   *  dispatch pins the result into the command (DAW-36) - the tempo moves, the placement should not. */
+  naturalBeats(durationSec: number): number {
     return Math.max(1, secondsToBeats(durationSec, this.tempoBpm));
   }
 
@@ -847,8 +883,29 @@ export class ProjectStore {
   setTempo(bpm: number): void {
     const next = clamp(bpm, MIN_BPM, MAX_BPM);
     if (next === this.tempoBpm) return;
+    const ratio = next / this.tempoBpm;
     this.tempoBpm = next;
+    this.rescaleAudioPlacements(ratio);
     this.emit();
+  }
+
+  /**
+   * Audio does not follow the tempo - there is no warp yet (INST-7) - so an audio placement's length
+   * in BEATS is really a fixed duration in seconds wearing beats. Rescale those lengths when the
+   * tempo changes, or the same audio is truncated at a faster tempo and repeats at a slower one, in
+   * silence (DAW-35). Note clips need none of this: their lengths are musical to begin with.
+   *
+   * Scaled by the ratio rather than recomputed from `durationSec`, so a placement the user trimmed
+   * stays trimmed. It is the same seconds of audio either way, which is the whole idea.
+   *
+   * This makes `setTempo` destructive, so its inverse restores these lengths explicitly rather than
+   * trusting the scale to reverse exactly (see `invert.ts`).
+   */
+  private rescaleAudioPlacements(ratio: number): void {
+    for (const track of this.tracks) {
+      if (track.kind !== "audio") continue;
+      for (const placement of track.placements) placement.length = Math.max(GRID, placement.length * ratio);
+    }
   }
 
   /** Set the project time signature. Numerator clamps to a whole beats-per-bar; omitted or invalid
@@ -928,6 +985,30 @@ export class ProjectStore {
 
   // --- clip pool + arrangement (instrument & audio) -------------------------
   /** A unique, human clip name (A, B, C, ... AA) not already used on the track. */
+  /** The name `addClip` would give the next clip in a track's pool (A, B, C...). Pinned at dispatch
+   *  (DAW-36) because it depends on which names are already taken. */
+  defaultClipName(trackId: string): string | undefined {
+    const track = this.getTrack(trackId);
+    return track ? this.nextClipName(track) : undefined;
+  }
+
+  /**
+   * What `addClip` would seed a new clip from: the clip it forks (none when `empty`) and the length
+   * it starts at. Both are ambient - the fork follows the track's ACTIVE clip, and an empty clip
+   * takes the PROJECT length - so a dispatch pins them into the command (DAW-36).
+   */
+  clipSeed(
+    trackId: string,
+    opts: { fromClipId?: string; empty?: boolean },
+  ): { fromClipId?: string; lengthBeats: number } | undefined {
+    const track = this.getTrack(trackId);
+    if (track?.kind !== "instrument") return undefined;
+    const source = opts.empty
+      ? undefined
+      : (track.clips.find((clip) => clip.id === (opts.fromClipId ?? track.activeClipId)) ?? track.clips[0]);
+    return { fromClipId: source?.id, lengthBeats: source ? source.store.getClip().lengthBeats : this.lengthBeats };
+  }
+
   private nextClipName(t: Track): string {
     const used = new Set(t.clips.map((clip) => clip.name));
     for (let i = 0; ; i++) {
@@ -968,11 +1049,20 @@ export class ProjectStore {
     });
   }
 
-  /** The ClipStore for an instrument track's clip (the active one if `clipId` omitted). */
+  /** The ClipStore for an instrument track's clip. `clipId` is omitted only by log entries written
+   *  before DAW-36 (a dispatch resolves it now), and by direct callers that mean "whatever is open";
+   *  both fall back to the active clip. */
   getClipStore(trackId: string, clipId?: string): ClipStore | undefined {
     const t = this.getTrack(trackId);
     if (t?.kind !== "instrument") return undefined;
     return t.clips.find((clip) => clip.id === (clipId ?? t.activeClipId))?.store;
+  }
+
+  /** The length `addPlacement` would give a placement of this clip: its natural length. Tempo-derived
+   *  for audio, so a dispatch pins it into the command (DAW-36). */
+  defaultPlacementLength(trackId: string, clipId: string): number | undefined {
+    const track = this.getTrack(trackId);
+    return track ? this.naturalLength(track, clipId) : undefined;
   }
 
   /** Natural length (beats) of a clip in a track's pool: notes length, or audio duration. */
@@ -1000,18 +1090,19 @@ export class ProjectStore {
   ): NoteClip | undefined {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== "instrument") return undefined;
-    const source = opts.empty
-      ? undefined
-      : (t.clips.find((clip) => clip.id === (opts.fromClipId ?? t.activeClipId)) ?? t.clips[0]);
-    const id = opts.id && !t.clips.some((clip) => clip.id === opts.id) ? opts.id : this.nextClipId();
-    const seed = source ? source.store.snapshot() : { notes: [], lengthBeats: this.lengthBeats };
+    // A given id that is already taken is refused, not renamed (DAW-36): minting a fresh one makes
+    // the created id unknowable in advance, so nothing downstream can name what the command made.
+    if (opts.id && t.clips.some((clip) => clip.id === opts.id)) return undefined;
+    const seed = this.clipSeed(trackId, opts);
+    const source = seed?.fromClipId ? t.clips.find((clip) => clip.id === seed.fromClipId) : undefined;
+    const id = opts.id ?? this.nextClipId();
     const clip: NoteClip = {
       id,
       name: opts.name ?? this.nextClipName(t),
       author: opts.author ?? "you",
       store: new ClipStore({
-        notes: seed.notes.map((note) => ({ ...note })),
-        lengthBeats: opts.lengthBeats ?? seed.lengthBeats,
+        notes: source ? source.store.snapshot().notes.map((note) => ({ ...note })) : [],
+        lengthBeats: opts.lengthBeats ?? seed?.lengthBeats ?? this.lengthBeats,
       }),
     };
     t.clips.push(clip);
@@ -1029,7 +1120,8 @@ export class ProjectStore {
   pasteClip(trackId: string, id: string, content: ClipContent, author: ClipAuthor = "you"): void {
     const t = this.getTrack(trackId);
     if (!t || t.kind !== content.kind) return;
-    const clipId = id && !t.clips.some((clip) => clip.id === id) ? id : this.nextClipId();
+    if (id && t.clips.some((clip) => clip.id === id)) return; // a taken id is refused, not renamed (DAW-36)
+    const clipId = id ?? this.nextClipId();
     if (t.kind === "instrument" && content.kind === "instrument") {
       t.clips.push({
         id: clipId,
@@ -1097,8 +1189,8 @@ export class ProjectStore {
     if (!t) return undefined;
     const clipId = opts.clipId ?? t.activeClipId;
     if (!t.clips.some((clip) => clip.id === clipId)) return undefined;
-    const id =
-      opts.id && !t.placements.some((placement) => placement.id === opts.id) ? opts.id : this.nextPlacementId();
+    if (opts.id && t.placements.some((placement) => placement.id === opts.id)) return undefined; // DAW-36
+    const id = opts.id ?? this.nextPlacementId();
     const placement: Placement = {
       id,
       clipId,
@@ -1118,9 +1210,21 @@ export class ProjectStore {
     this.emit();
   }
 
-  resizePlacement(trackId: string, placementId: string, patch: { offset?: number; length?: number }): void {
+  /**
+   * Change a placement's extent. `startBeat` is here rather than on `movePlacement` because
+   * **trimming the left edge is one gesture and has to be one command**: it moves the start,
+   * pulls the offset the same distance so the clip's content stays put under the window, and
+   * shortens the length to match. Split across two commands it would be two undo steps per drag
+   * frame, since they coalesce under different keys.
+   */
+  resizePlacement(
+    trackId: string,
+    placementId: string,
+    patch: { startBeat?: number; offset?: number; length?: number },
+  ): void {
     const p = this.getTrack(trackId)?.placements.find((placement) => placement.id === placementId);
     if (!p) return;
+    if (patch.startBeat !== undefined) p.startBeat = Math.max(0, patch.startBeat);
     if (patch.offset !== undefined) p.offset = Math.max(0, patch.offset);
     if (patch.length !== undefined) p.length = Math.max(GRID, patch.length);
     this.emit();
@@ -1311,7 +1415,12 @@ export class ProjectStore {
       grooveId: this.grooveId,
       grooveAmount: this.grooveAmount,
       samples: this.samples,
-      authorship: this.authorship,
+      // Key-sorted, so the document is canonical. The record is keyed by object id and written in
+      // whatever order edits happened, so removing and re-adding an object (exactly what an undo by
+      // inverse does) reorders the keys without changing the project. `fingerprintProject` is a
+      // stringify, so that reordering would otherwise read as "a different project" and discard a
+      // perfectly good undo stack (DAW-34). Sorting also hands out a copy rather than the live map.
+      authorship: sortedByKey(this.authorship),
       customInstruments: this.customInstrumentDefs,
       customEffects: this.customEffectDefs,
     });
@@ -1320,6 +1429,12 @@ export class ProjectStore {
   /** The author who last edited a given object key (`track:<id>`, `note:<id>`, ...), or undefined. */
   authorOf(key: string): ClipAuthor | undefined {
     return this.authorship[key];
+  }
+
+  /** Every stamped key under a `prefix:` (the same prefix form `dropAuthors` accepts). An inverse
+   *  captures these before a command clears them, so undo can put the stamps back (DAW-34). */
+  authorKeysUnder(prefix: string): string[] {
+    return Object.keys(this.authorship).filter((key) => key.startsWith(prefix));
   }
 
   /** Record who last edited an object key. Emits only when the author actually changes, so the
@@ -1408,6 +1523,62 @@ export class ProjectStore {
     this.emit();
   }
 
+  /**
+   * Build a live `Track` from its persisted form. Extracted from `load` so a single track can be
+   * rebuilt on its own.
+   *
+   * `reuse` is the same-id track from before a load, if any: reusing its `ParamStore` and device
+   * instances keeps the engine's per-track bindings live, where replacing them would orphan the
+   * bound instrument. Pass nothing when there is no prior track.
+   */
+  private hydrateTrack(stored: TrackData, projLen: number, reuse?: Track): Track {
+    const base = {
+      id: stored.id,
+      name: stored.name,
+      parentId: stored.parentId,
+      muted: stored.muted ?? false,
+      solo: stored.solo ?? false,
+      volume: stored.volume ?? 0.8,
+    };
+    if (stored.kind === "audio") {
+      const pool = audioClipPool(stored);
+      const launchedClipId =
+        stored.launchedClipId && pool.clips.some((clip) => clip.id === stored.launchedClipId)
+          ? stored.launchedClipId
+          : null;
+      return { ...base, kind: "audio", effects: loadEffectInstances(stored.effects), ...pool, launchedClipId };
+    }
+    // Instrument track: the sound (params + effects) is track-level; the clip
+    // pool + placements come from the stored clips/placements.
+    const sound = instrumentSound(stored);
+    const { clips, activeClipId, placements } = noteClipPool(stored, projLen, {
+      clipId: () => this.nextClipId(),
+      placementId: () => this.nextPlacementId(),
+    });
+    // Reuse the prior track's ParamStore + effect instances by id so the engine's
+    // per-track bindings stay live across the load (clips are not engine-bound).
+    const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
+    const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
+    params.load(sound.params);
+    const launchedClipId =
+      stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;
+    const track: InstrumentTrack = {
+      ...base,
+      kind: "instrument",
+      instrumentType: stored.instrumentType,
+      params,
+      effects: reused?.effects ?? [],
+      midiDevices: reused?.midiDevices ?? [],
+      clips,
+      activeClipId,
+      placements,
+      launchedClipId,
+    };
+    this.loadEffectsInPlace(track, sound.effects);
+    this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
+    return track;
+  }
+
   load(data: ProjectData): void {
     // Register the project's custom device schemas first, so tracks resolve them below.
     this.syncCustomDevices(data);
@@ -1427,54 +1598,7 @@ export class ProjectStore {
     // valid across load (undo/redo) - replacing a ParamStore would orphan the
     // bound instrument. Stores are mutated in place below.
     const prev = new Map(this.tracks.map((track) => [track.id, track] as const));
-    this.tracks = (data.tracks ?? []).map((stored): Track => {
-      const base = {
-        id: stored.id,
-        name: stored.name,
-        parentId: stored.parentId,
-        muted: stored.muted ?? false,
-        solo: stored.solo ?? false,
-        volume: stored.volume ?? 0.8,
-      };
-      if (stored.kind === "audio") {
-        const pool = audioClipPool(stored);
-        const launchedClipId =
-          stored.launchedClipId && pool.clips.some((clip) => clip.id === stored.launchedClipId)
-            ? stored.launchedClipId
-            : null;
-        return { ...base, kind: "audio", effects: loadEffectInstances(stored.effects), ...pool, launchedClipId };
-      }
-      // Instrument track: the sound (params + effects) is track-level; the clip
-      // pool + placements come from the stored clips/placements.
-      const sound = instrumentSound(stored);
-      const { clips, activeClipId, placements } = noteClipPool(stored, projLen, {
-        clipId: () => this.nextClipId(),
-        placementId: () => this.nextPlacementId(),
-      });
-      // Reuse the prior track's ParamStore + effect instances by id so the engine's
-      // per-track bindings stay live across the load (clips are not engine-bound).
-      const reuse = prev.get(stored.id);
-      const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
-      const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
-      params.load(sound.params);
-      const launchedClipId =
-        stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;
-      const track: InstrumentTrack = {
-        ...base,
-        kind: "instrument",
-        instrumentType: stored.instrumentType,
-        params,
-        effects: reused?.effects ?? [],
-        midiDevices: reused?.midiDevices ?? [],
-        clips,
-        activeClipId,
-        placements,
-        launchedClipId,
-      };
-      this.loadEffectsInPlace(track, sound.effects);
-      this.loadMidiDevicesInPlace(track, stored.midiDevices ?? []);
-      return track;
-    });
+    this.tracks = (data.tracks ?? []).map((stored) => this.hydrateTrack(stored, projLen, prev.get(stored.id)));
     // Invariant: every track must belong to a real group; file any orphan into main.
     for (const track of this.tracks) {
       if (!track.parentId || !this.getGroup(track.parentId)) track.parentId = this.ensureMainGroup().id;

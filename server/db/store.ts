@@ -313,6 +313,11 @@ export async function deleteEditsBelow(db: Db, projectId: string, uptoSeq: numbe
       eq(edits.projectId, projectId),
       lte(edits.seq, uptoSeq),
       // Constants, not user input, so inlining is safe (and dodges array-param binding differences).
+      // Unindexed: the `(project_id, seq)` primary key serves the seq range, but nothing indexes a value
+      // *inside* the jsonb, so this reads every retained row for the project and tests each one. Fine for
+      // now (pruning runs once per KEYFRAME_INTERVAL, and HOST-21 cut the client's log queries to almost
+      // nothing). If a markers-only route lands, or this scan shows up in practice, the fix is an
+      // expression index: `create index on edits (project_id, (command->>'type'))`. See DAW-34.
       sql`${edits.command}->>'type' not in ('commit', 'loadSnapshot')`,
     ),
   );
