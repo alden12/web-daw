@@ -4137,7 +4137,7 @@ projects:
       - ref: ARCH-5
         area: ARCH
         title: "E2E: a whole spec file's clicks time out under full-suite parallelism"
-        status: to-do
+        status: done
         sort_path: "000005"
         body: >
           Intermittently, every test in **one** e2e spec file fails on a click
