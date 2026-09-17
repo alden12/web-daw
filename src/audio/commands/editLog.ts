@@ -500,12 +500,13 @@ export class EditLog {
     if (!reflog || (reflog.kind !== "undo" && reflog.kind !== "redo")) return;
     const target = reflog.undoes as string;
     this.entries.splice(index, 1);
-    // The step goes back on the stack it came off, so the button says what it did before the press.
-    const [from, to] = reflog.kind === "undo" ? [this.redoStack, this.undoStack] : [this.undoStack, this.redoStack];
-    const held = from.lastIndexOf(target);
-    if (held >= 0) {
-      from.splice(held, 1);
-      to.push(target);
+    // The step is DROPPED, not put back on the stack it came off. The authority refuses an undo it
+    // cannot rebuild without, and that is permanent - the retained bases only move forward, so an
+    // edit out of reach never comes back into it. Restoring the step would leave a button that fails
+    // identically every time it is pressed, which is worse than one that is greyed out.
+    for (const stack of [this.undoStack, this.redoStack]) {
+      const held = stack.lastIndexOf(target);
+      if (held >= 0) stack.splice(held, 1);
     }
     this.undone = new Set([...tombstonedIds(this.entries), ...this.redoStack]);
     this.dropUnreachable();

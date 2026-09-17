@@ -162,18 +162,19 @@ describe("Room (realtime authority)", () => {
   it("keeps a retained copy of the keyframe, and re-reads the ring on reload", async () => {
     const { db } = await makeSyncEnv();
     const room = await Room.load(db, "local", "p1");
-    await fillTracks(room, 100);
+    // Slot 0 is the base at the project's start (`seedStartKeyframe`), and the retain interval counts
+    // from it - so the first copy of a real keyframe lands at seq 499, not at the first keyframe.
+    await fillTracks(room, 600);
 
-    const index = await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH);
-    expect(index).toEqual([99, null, null, null, null]);
-    const retained = (await readBundleFile(db, "p1", retainedKeyframePath(0))) as ProjectData & { headSeq?: number };
-    expect(retained?.headSeq).toBe(99);
-    expect(retained?.tracks).toHaveLength(100);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 499, null, null, null]);
+    const retained = (await readBundleFile(db, "p1", retainedKeyframePath(1))) as ProjectData & { headSeq?: number };
+    expect(retained?.headSeq).toBe(499);
+    expect(retained?.tracks).toHaveLength(500);
 
     // A fresh room for the same project continues the ring instead of restarting it.
     const reloaded = await Room.load(db, "local", "p1");
-    await fillTracks(reloaded, 100, 100);
-    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([99, null, null, null, null]);
+    await fillTracks(reloaded, 100, 600);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 499, null, null, null]);
   });
 
   it("reloads from the keyframe + tail, so a compacted log still reconstructs exact HEAD", async () => {

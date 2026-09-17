@@ -15,16 +15,19 @@ import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
 import { Harness } from "./support/syncHarness";
 import { Room } from "../server/api/rooms";
-import { readEdits } from "../server/db/store";
+import { deleteEditsBelow, readEdits } from "../server/db/store";
 import type { EditCommand } from "../src/audio/commands/types";
 
 const track = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
 
 /**
- * A client whose own edit has been left behind by the authority: the project moved on past the
- * keyframe interval while it was away, so `project.json` was rewritten ABOVE that edit, baking it
- * into the replay floor. The retained ring only takes a slot every 500 edits, so there is nothing
- * older to drop back to.
+ * A client whose own edit has been left behind by the authority: the project moved on while it was
+ * away, and compaction then pruned that edit out of the retained log altogether. With no entry left
+ * there is nothing for a rebuild to leave out, however far back the bases reach.
+ *
+ * Compaction is the honest way to reach this state now that a room retains a base at its start
+ * (`seedStartKeyframe`): an edit inside the retention window IS reachable, which is the point of
+ * that fix. What stays out of reach is an edit the window no longer covers.
  */
 async function leftBehind() {
   const { db } = await makeSyncEnv();
@@ -42,6 +45,8 @@ async function leftBehind() {
   for (let index = 0; index < 120; index += 1) {
     await room.applyIncoming({ command: track(`t-${index}`), opId: `bg-${index}` });
   }
+  // The authority's own compaction, run early: everything below seq 1 goes, taking our edit with it.
+  await deleteEditsBelow(db, "p1", 1);
   return { db, room, harness, author };
 }
 
@@ -87,27 +92,23 @@ describe("an undo of an edit the authority has moved past", () => {
 
   // The local reflog entry has to go with it. Dropping the op puts the edit back in the live
   // project, but an entry still saying it was undone would take it out again on the next rebuild.
-  it("takes the undo off the feed and puts the step back on the undo stack", async () => {
+  it("takes the undo off the feed", async () => {
     const { harness, author } = await leftBehind();
     author.editLog.undo();
     await resync(harness, author);
 
     expect(author.editLog.getEntries().filter((entry) => entry.undoes !== undefined)).toEqual([]);
-    expect(author.editLog.getCheckpoints().redo).toEqual([]);
-    expect(author.editLog.getCheckpoints().undo).toHaveLength(1);
   });
 
-  // The undo is offered again, and pressing it a second time must not resurrect the split.
-  it("stays converged when the user presses undo again", async () => {
-    const { room, harness, author } = await leftBehind();
+  // The refusal is permanent - retained bases only move forward, so an edit out of reach never comes
+  // back into it. A button that fails identically every press is worse than one that is greyed out.
+  it("drops the step rather than offering an undo that can only fail again", async () => {
+    const { harness, author } = await leftBehind();
     author.editLog.undo();
     await resync(harness, author);
 
-    author.editLog.undo();
-    await resync(harness, author);
-
-    expect(author.trackIds()).toContain("t-mine");
-    expect(room.snapshot().tracks.map((each) => each.id)).toContain("t-mine");
+    expect(author.editLog.getCheckpoints()).toEqual({ undo: [], redo: [] });
+    expect(author.editLog.getState().canUndo).toBe(false);
   });
 });
 

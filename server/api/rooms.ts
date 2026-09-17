@@ -49,6 +49,9 @@ const SNAPSHOT_WINDOW = 2000;
  *  compaction only ever prunes once a project's log exceeds the retained feed window. */
 const KEYFRAME_INTERVAL = 100;
 
+/** The seq a project's starting state reflects: before its first edit. See `seedStartKeyframe`. */
+const START_SEQ = -1;
+
 /** A connected client - anything the room can push a server message to. */
 export interface RoomClient {
   send(message: ServerMessage): void;
@@ -160,7 +163,39 @@ export class Room {
     // tombstones honoured. `lastKeyframeSeq` comes back from it so the cadence carries across
     // reloads, which is what the separate `headSeq` read here used to be for.
     room.lastKeyframeSeq = await room.recomputeHead();
+    await room.seedStartKeyframe();
     return room;
+  }
+
+  /**
+   * Keep a rebuild base at the project's START, so an edit made in its first window is undoable
+   * (DAW-34 stage E).
+   *
+   * Without it the oldest base a hosted project has is its first keyframe, written 100 edits in - so
+   * nothing sat below edits 0..99 and they could never be rebuilt without. A client saw undo greyed
+   * out for them online, and offline (where its cached ring is more generous than the authority's
+   * current one) saw the undo refused on reconnect instead. A local project has always had this: its
+   * first save retains a keyframe at `START_SEQ`, which is the behaviour this brings across.
+   *
+   * The base is the empty project, because that IS what replay starts from - `recomputeHead` uses
+   * exactly this when a project has no keyframe yet. It stays valid only while the log still reaches
+   * back to seq 0, which is the same window `rebuildBase`'s floor enforces, so a project past that
+   * is skipped rather than given a base its own floor would refuse.
+   */
+  private async seedStartKeyframe(): Promise<void> {
+    if (this.keyframeIndex.includes(START_SEQ)) return;
+    if (this.maxSeq >= SNAPSHOT_WINDOW) return; // the log no longer reaches seq 0
+    const slot = this.keyframeIndex.indexOf(null);
+    if (slot < 0) return; // the ring is full, so it already reaches as far back as it can
+    const index = this.keyframeIndex.map((seq, each) => (each === slot ? START_SEQ : seq));
+    this.keyframeIndex = index;
+    const who = { userId: this.ownerId };
+    const empty = { ...new ProjectStore(false).snapshot(), headSeq: START_SEQ };
+    await writeFile(this.db, who, this.projectId, retainedKeyframePath(slot), { kind: "json", json: empty });
+    await writeFile(this.db, who, this.projectId, KEYFRAME_INDEX_PATH, {
+      kind: "json",
+      json: index as (number | null)[],
+    });
   }
 
   get connectionCount(): number {

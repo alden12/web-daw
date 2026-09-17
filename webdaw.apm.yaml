@@ -8824,6 +8824,113 @@ projects:
           is id strings, not behaviour.
 
 
+          ### E8: a base at the project's start
+
+
+          Found while answering Alden on the refusal above. The oldest base a
+          hosted project had was its
+
+          first keyframe, written 100 edits in - so nothing sat below edits
+          0..99 and no rebuild could leave
+
+          one of them out. Ring after 120 edits: `[99, null, null, null,
+          null]`. A LOCAL project has always
+
+          retained one at seq -1 on its first save (`[-1, null, null, null,
+          null]`), so the two disagreed
+
+          about how far back undo reaches, and the comment beside the client's
+          version already claimed the
+
+          behaviour the authority did not have.
+
+
+          `seedStartKeyframe` writes it when a room loads. The base is the
+          empty project, because that IS
+
+          what replay starts from - `recomputeHead` uses exactly this when a
+          project has no keyframe yet. It
+
+          is skipped once the log no longer reaches seq 0, which is the same
+          window `rebuildBase`'s floor
+
+          enforces, so a project past that is never given a base its own floor
+          would refuse.
+
+
+          **A knock-on worth knowing:** the retain interval counts from the
+          newest base, so seeding the start
+
+          also moves the cadence - the next slot is taken 500 edits after the
+          START rather than 500 after the
+
+          first keyframe. Same spacing, one base earlier, and the opening edits
+          covered instead of stranded.
+
+          Two existing room tests asserted the old numbers.
+
+
+          ### E9: a refused undo drops its step
+
+
+          Also Alden's: what does a user see when an undo turns out to be
+          impossible? A rejection - and then
+
+          the same rejection again on every press, because `revokeReflog` put
+          the step back on the stack it
+
+          came off. The refusal is permanent (retained bases only move
+          forward, so an edit out of reach never
+
+          comes back into it), so the step is DROPPED now and the button greys
+          out. A button that fails
+
+          identically every time is worse than one that is not offered.
+
+
+          ### Open question: keep every edit instead of keyframes
+
+
+          Raised by Alden, and it is a good one. Replay from empty is already
+          exact and already the mechanism
+
+          (see E8), so a complete log can rebuild any state - including one a
+          corrupt keyframe broke, which no
+
+          snapshot can do unless it happens to sit before the damage. Storage
+          favours it too: an edit row is a
+
+          couple of hundred bytes, so ~100k edits is ~20MB against ~25MB for
+          five keyframes of a large project.
+
+
+          Two costs, and the second is the real one:
+
+
+          - **Two hot paths read the whole log.** `recomputeHead` and
+          `canHonourUndo` both `readEdits(-1)`,
+            bounded today only by the pruning. Both can be bounded to "above the base" - contained, not free.
+          - **It makes the command vocabulary a forever-compatible format.** A
+          command type has to mean the
+            same thing for 2000 edits today; keep the log and it has to mean the same thing forever, or
+            command upcasters join the document ones. Keyframes have no such problem - they are data, and
+            `documentMigration` upgrades them. This is a commitment rather than a change.
+
+
+          **Recommendation: let stage F settle it.** F already measures rebuild
+          cost on a real phone, which is
+
+          exactly the number that says whether full-log replay is a usable
+          recovery path or a theoretical one.
+
+          A cheap middle option if it is not: keep pruning the WORKING log but
+          archive pruned edits to a cold
+
+          bundle file nothing reads on the hot path - recovery reads it, undo
+          does not.
+
+
+          ### Stage E is done; what is left is stage F
           ### Stage E is done; what is left is stage F
 
 
