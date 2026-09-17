@@ -1,18 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Edit-log persistence: an authored edit shows in the agent-pane activity feed,
  * and the feed survives a reload (the log is persisted alongside the project
  * snapshot). Mirrors the other reload-persist specs.
  */
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
-  }
-}
 
 test("the activity feed records an edit and survives a reload", async ({ page }) => {
   await page.goto("/");

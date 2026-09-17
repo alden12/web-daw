@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Editable arrangement timeline: the default project seeds one instrument track
@@ -13,14 +14,6 @@ import { test, expect, type Page } from "@playwright/test";
 // A wide, tall viewport so the lanes have room to the right of the seed block and
 // the timeline panel is not cramped.
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
-  }
-}
 
 const placements = (page: Page) => page.getByTestId("placement");
 

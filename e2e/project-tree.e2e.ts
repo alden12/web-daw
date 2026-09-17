@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The Project view is a project explorer: a tree of the current project's tracks.
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 const openProjects = (page: Page) => page.getByRole("button", { name: "Project", exact: true }).click();
 

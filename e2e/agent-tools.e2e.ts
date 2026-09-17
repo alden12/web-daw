@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The agent's reason-act loop with tools, end to end. The provider (Gemini's
@@ -21,14 +22,6 @@ async function seedKey(page: Page) {
     },
     [AGENT_CONFIG_KEY],
   );
-}
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
 }
 
 test("runs a tool call from the model and edits the project", async ({ page }) => {

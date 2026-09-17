@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Clip copy/paste in the clip rail (like the timeline's placement copy/paste):
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
-  }
-}
 
 const chips = (page: Page) => page.getByTitle(/drag onto the lane/);
 

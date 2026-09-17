@@ -4260,14 +4260,32 @@ projects:
           failure.
 
 
-          **Fix: wait for the dialog rather than sampling for it**, and do it in
-          ONE place. There are 27
+          **Fixed on slice-123.** `dismissStart` moved to `e2e/support/app.ts`
+          and waits for the dialog
 
-          copies of the helper, which is why this survived six sightings - each
-          one looked like a different
+          (`start.waitFor({ state: "visible" })`) instead of sampling for it.
+          All 27 copies are gone; the
 
-          test being flaky. Extract it to `e2e/support/` and have every spec
-          call it.
+          153 call sites all run straight after a `goto` or `reload`, so the
+          dialog is always freshly
+
+          mounted and waiting for it is safe. If a future flow starts the engine
+          without it, this fails
+
+          saying so rather than silently skipping - the better way round, since
+          that is a change worth
+
+          noticing.
+
+
+          Measured after: 6 full runs, 5 clean. The one failure happened before
+          I started preserving
+
+          artifacts, so it is unidentified and this is NOT proof - but the rate
+          was roughly half of runs
+
+          before, so it is a large move in the right direction. Any recurrence
+          now leaves a trace.
 
 
           ## What the evidence points at (superseded by the diagnosis above -
@@ -8097,18 +8115,69 @@ projects:
           author-scoped: your replayable entries, not tombstoned, in seq order.
 
 
-          **Two semantics have to be decided before deriving it, and they are
-          why this is not automatic.**
+          **Decided 2026-09-17 (Alden): redo is session state, not project
+          state.** It settles both of the
+
+          problems deriving it would have raised.
 
 
-          - **Redo clearing.** A new edit clears the redo stack today, which is
-          what every editor does. A
-            derived stack has no "clear": a tombstoned edit stays tombstoned and would stay redoable
-            forever. Either the rule becomes "tombstones with no intervening edit of your own", or the
-            clearing needs its own marker in the log.
-          - **Redo order across users.** Today it is a stack. Derived, it is
-          "tombstones in order", which is
-            the same thing until two people's undos interleave, and then it is not.
+          A redo can never be invalid, which is the observation the rest follows
+          from. It names a tombstone,
+
+          and lifting one is always well-defined; if the tombstone is not there
+          (someone lifted it already,
+
+          or the entry was pruned) the redo is a no-op. It cannot produce a
+          wrong project - unlike the
+
+          snapshot checkpoints it replaced, which is exactly why those needed a
+          fingerprint guard.
+
+
+          So redo does not have to be durable or shared, and putting it in
+          per-tab storage dissolves both:
+
+
+          - **Redo clearing stops being a log question.** A new edit clears the
+          redo stack, which is what
+            every editor does. Derived from the log there is no "clear" and a tombstoned edit would stay
+            redoable forever. As session state it is just in-memory behaviour, needing no marker in the
+            log at all.
+          - **Redo order across users stops existing.** Derived it would be
+          "tombstones in order", which
+            matches a stack right up until two people's undos interleave. Your redo stack being yours
+            means there is nothing to interleave.
+
+
+          **`sessionStorage`, not `localStorage`**: `localStorage` is shared
+          across every tab on the origin,
+
+          so two tabs on one project would fight over a single redo list.
+          `sessionStorage` is per-tab,
+
+          survives a reload, and dies with the tab, which matches "put back the
+          thing I just undid".
+
+
+          The tradeoff to name: `undo.json` keeps redo across a tab close too,
+          and this does not. Judged
+
+          correct rather than a regression, but it is a change.
+
+
+          **What each piece then owns, with no overlap:** the LOG is the only
+          durable account of the project
+
+          (edits, plus tombstones saying which are taken back); UNSENT
+          tombstones live in the shared
+
+          session's `pending` queue like any other unsent op, needing no
+          separate mechanism; REDO is a
+
+          per-tab affordance in `sessionStorage`. The undo list is derivable
+          from the log once undo is
+
+          author-scoped, so nothing needs `undo.json` and it goes.
 
 
           ### Still open in stage E

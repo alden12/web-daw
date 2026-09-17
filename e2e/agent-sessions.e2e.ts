@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Agent chat sessions: a conversation is saved, "New chat" starts a fresh one, the
@@ -19,14 +20,6 @@ async function seedKey(page: Page) {
     },
     [AGENT_CONFIG_KEY],
   );
-}
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
 }
 
 async function stubReply(page: Page, text: string) {
