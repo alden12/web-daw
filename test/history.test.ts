@@ -418,7 +418,7 @@ describe("VersionStore (remote / server-authoritative history)", () => {
     await bundle.writeText(commitKeyframePath(1), JSON.stringify({ ...snapshotWithTrack("t-old", "Old"), headSeq: 1 }));
 
     const dispatched: EditEntry["command"][] = [];
-    log.setRemote((command) => dispatched.push(command));
+    log.setRemote((edit) => dispatched.push(edit.command));
     await vs.revertTo("1", "you");
 
     // Optimistically applied: the live project jumped to v1's state.

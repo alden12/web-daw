@@ -91,6 +91,41 @@ export function replayEntries(project: ProjectStore, entries: readonly EditEntry
 }
 
 /**
+ * HEAD as the log says it is: a base keyframe, the entries above it replayed, and the log's own
+ * tombstones honoured (DAW-34 stage E).
+ *
+ * The awkward part, and the reason this is shared rather than written twice: **a tombstone can take
+ * back an edit that is already baked into the base**, and replaying forward cannot remove it. So the
+ * exclusions are worked out over the whole log BEFORE the base is settled, and a base that turns out
+ * to be too new is swapped for an older retained keyframe.
+ *
+ * `olderBase` is how the caller fetches one, because where they live differs: the client reads a
+ * bundle file, the authority reads the `files` table. Returning null means the ring does not reach
+ * that far, and then those undos are lost and their edits stay applied - unavailable rather than
+ * wrong, the same call every other rebuild path here makes when it has no base.
+ */
+export async function headFromLog(options: {
+  readonly base: { readonly project: ProjectData; readonly seq: number };
+  readonly entries: readonly EditEntry[];
+  readonly olderBase: (belowSeq: number) => Promise<{ project: ProjectData; seq: number } | null>;
+}): Promise<ProjectData> {
+  const { entries, olderBase } = options;
+  const tombstoned = tombstonedIds(entries);
+  let base = options.base;
+  const bakedIn = entries.filter(
+    (entry) => entry.id !== undefined && tombstoned.has(entry.id) && entry.seq <= base.seq,
+  );
+  if (bakedIn.length > 0) {
+    const older = await olderBase(Math.min(...bakedIn.map((entry) => entry.seq)));
+    if (older) base = older;
+  }
+  const store = new ProjectStore(false);
+  store.load(base.project);
+  replayEntries(store, entries, { above: base.seq, excluding: tombstoned, ignoreTombstones: true });
+  return store.snapshot();
+}
+
+/**
  * The project as it would be if `excluding` had never been dispatched: the base snapshot, then every
  * entry above it replayed except those (DAW-34 stage C).
  *

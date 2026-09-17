@@ -22,7 +22,7 @@
  */
 import { ProjectStore } from "../project/projectStore";
 import { applyEdit } from "../commands/applyEdit";
-import { isReplayable } from "../commands/replay";
+import { isReplayable, replayEntries } from "../commands/replay";
 import { describeCommand } from "../commands/describe";
 import { detectConflict, type ConflictInfo } from "./conflict";
 import type { EditLog } from "../commands/editLog";
@@ -50,7 +50,18 @@ export interface PendingOp {
   opId: string;
   command: EditCommand;
   author: Author;
+  /** Set on a tombstone (DAW-34 stage E): this takes back (`undo`) or puts back (`redo`) the entry
+   *  `undoes` names, rather than applying `command`. */
+  kind?: "undo" | "redo";
+  undoes?: string;
 }
+
+/**
+ * How many confirmed entries the session replays from, before the oldest are folded into the base
+ * snapshot they sit on. Generous: it only has to span one editing session, and folding is what
+ * costs - an edit folded in can no longer be taken back (see `foldConfirmed`).
+ */
+const CONFIRMED_WINDOW = 2000;
 
 /**
  * The durable local mirror (OPFS, cache-only) that makes offline work survive a reload:
@@ -108,6 +119,19 @@ export class SharedSession {
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
   private readonly base: ProjectStore;
+  /**
+   * The snapshot `base` is replayed from, and the confirmed entries replayed onto it (DAW-34 stage E).
+   *
+   * `base` was a forward-only accumulator, which is fine until a tombstone arrives: taking an edit
+   * back OUT is not something any forward apply can do. Keeping what it was built from means it can
+   * be rebuilt instead - the same move undo makes locally, one level down.
+   *
+   * The seed starts as the client's loaded HEAD, so entries from before this session are already in
+   * it and cannot be tombstoned. That is the usual "unavailable rather than wrong": the edit stays
+   * applied rather than the project going somewhere it never was.
+   */
+  private seed: ProjectData;
+  private confirmed: EditEntry[] = [];
   /** This client's optimistic edits not yet confirmed, in dispatch order. */
   private pending: PendingOp[] = [];
   /** Highest `seq` folded into `base`. */
@@ -137,7 +161,8 @@ export class SharedSession {
     // Seed `base` from the client's already-loaded HEAD, so a peer rebase replays onto real state
     // (not from empty). The live store == base at start (no pending yet).
     this.base = new ProjectStore(false);
-    this.base.load(this.projectStore.snapshot());
+    this.seed = this.projectStore.snapshot();
+    this.base.load(this.seed);
 
     this.transport.onMessage((message) => this.onMessage(message));
     // Every (re)open re-runs `resync`: subscribe so the authority replies with a `snapshot` folding any
@@ -171,7 +196,7 @@ export class SharedSession {
   /** Attach to an `EditLog` as its remote sink: every locally-dispatched edit is enqueued for the
    *  authority (after `EditLog` has already applied it optimistically). Detaches on `close()`. */
   attach(): void {
-    this.editLog.setRemote((command, author, id) => this.enqueue(command, author, id));
+    this.editLog.setRemote((edit) => this.enqueue(edit.command, edit.author, edit));
   }
 
   /**
@@ -179,12 +204,21 @@ export class SharedSession {
    * `EditLog` has already applied it to the live store; the `editApplied` echo (matched by `opId`)
    * confirms it. Undo/redo do NOT route here - they are local best-effort in a shared session.
    */
-  enqueue(command: EditCommand, author: Author, id?: string): void {
+  enqueue(
+    command: EditCommand,
+    author: Author,
+    forwarded?: { id: string; kind?: "undo" | "redo"; undoes?: string },
+  ): void {
     if (this.closed) return;
     // The log's entry id IS the opId (DAW-34 stage E): one identity for the edit, from the client
     // that made it through to the authority's stored log, so an undo step names the same edit
     // everywhere. Only an edit with no log entry of its own (a commit marker) needs a minted id.
-    const op: PendingOp = { opId: id ?? this.newOpId(), command, author };
+    const op: PendingOp = {
+      opId: forwarded?.id ?? this.newOpId(),
+      command,
+      author,
+      ...(forwarded?.kind ? { kind: forwarded.kind, undoes: forwarded.undoes } : {}),
+    };
     this.pending.push(op);
     this.persistPending(); // durable before send, so an offline edit survives a reload
     // Send only when synced with the authority. While disconnected (or awaiting a conflict choice) the op
@@ -211,8 +245,8 @@ export class SharedSession {
 
   /** Append a confirmed authoritative entry to the local edit-log mirror, so an offline reload replays
    *  it back into `base`. Best-effort; `appendEdits` is idempotent by seq so a re-append is a no-op. */
-  private mirrorConfirmed(command: EditCommand, author: Author, seq: number): void {
-    void this.localMirror?.appendConfirmed({ seq, command, author, time: Date.now(), kind: "edit" }).catch(() => {});
+  private mirrorConfirmed(entry: EditEntry): void {
+    void this.localMirror?.appendConfirmed(entry).catch(() => {});
   }
 
   /** Wire one pending op to the authority. `baseSeq` reflects the latest confirmed head (informational
@@ -225,6 +259,7 @@ export class SharedSession {
       opId: op.opId,
       baseSeq: this.headSeq,
       author: op.author,
+      ...(op.kind ? { kind: op.kind, undoes: op.undoes } : {}),
     });
   }
 
@@ -263,8 +298,8 @@ export class SharedSession {
     const missed: { command: EditCommand; author: Author }[] = [];
     for (const entry of message.entries) {
       if (entry.seq <= this.headSeq) continue;
-      if (isReplayable(entry.kind)) applyEdit(this.base, entry.command as EditCommand, entry.author);
-      this.mirrorConfirmed(entry.command as EditCommand, entry.author, entry.seq); // persist for offline reload
+      this.foldConfirmed(entry as EditEntry);
+      this.mirrorConfirmed(entry as EditEntry); // persist for offline reload
       this.headSeq = entry.seq;
       missed.push({ command: entry.command as EditCommand, author: entry.author });
     }
@@ -328,8 +363,17 @@ export class SharedSession {
   private onEditApplied(message: Extract<ServerMessage, { type: "editApplied" }>): void {
     const isNew = message.seq > this.headSeq;
     if (isNew) {
-      applyEdit(this.base, message.command as EditCommand, message.author);
-      this.mirrorConfirmed(message.command as EditCommand, message.author, message.seq); // persist for offline reload
+      const entry: EditEntry = {
+        seq: message.seq,
+        id: message.opId,
+        command: message.command as EditCommand,
+        author: message.author,
+        time: Date.now(),
+        kind: message.kind ?? "edit",
+        undoes: message.undoes,
+      };
+      this.foldConfirmed(entry);
+      this.mirrorConfirmed(entry); // persist for offline reload
       this.headSeq = message.seq;
     }
     const index = this.pending.findIndex((op) => op.opId === message.opId);
@@ -339,8 +383,15 @@ export class SharedSession {
       if (!isNew) this.rebuildLive(); // already in `base` (snapshot-recovered): drop the redundant pending copy
     } else if (isNew) {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
-      // Narrate it in the feed, keeping the peer's edit id, so an undo here can name their edit.
-      this.editLog.recordRemote(message.command as EditCommand, message.author, message.opId);
+      // Narrate it in the feed, keeping the peer's edit id, so an undo here can name their edit -
+      // and, for a tombstone, so the local excluded set agrees with the project we just rebuilt.
+      this.editLog.recordRemote({
+        command: message.command as EditCommand,
+        author: message.author,
+        id: message.opId,
+        kind: message.kind,
+        undoes: message.undoes,
+      });
       this.onRemoteEdit?.(message.command as EditCommand, message.author); // let the UI react (e.g. list label)
     }
     // The authoritative log advanced (ours or a peer's): let history re-read the freshly-mirrored markers.
@@ -355,6 +406,47 @@ export class SharedSession {
     this.persistPending(); // drop the rejected op from the durable queue too
     this.rebuildLive();
     this.onError?.(`Edit rejected: ${message.reason}`);
+  }
+
+  /**
+   * Record a confirmed entry and advance `base` with it.
+   *
+   * An ordinary edit applies forward, which is cheap. A tombstone cannot, so `base` is rebuilt from
+   * the seed with the confirmed log replayed and its tombstones honoured (DAW-34 stage E) - the
+   * same rebuild undo makes locally, one level down.
+   */
+  private foldConfirmed(entry: EditEntry): void {
+    this.confirmed.push(entry);
+    if (entry.undoes !== undefined && (entry.kind === "undo" || entry.kind === "redo")) {
+      this.rebuildBase();
+      return;
+    }
+    if (isReplayable(entry.kind)) applyEdit(this.base, entry.command, entry.author);
+  }
+
+  /** `base` as the confirmed log says it is: the seed, replayed, with its tombstones honoured. */
+  private rebuildBase(): void {
+    this.trimConfirmed();
+    const scratch = new ProjectStore(false);
+    scratch.load(this.seed);
+    replayEntries(scratch, this.confirmed);
+    this.base.load(scratch.snapshot());
+  }
+
+  /**
+   * Keep the replayable window finite by folding the oldest confirmed entries into the seed.
+   *
+   * What folding costs is undo depth: an edit inside the seed can no longer be taken back, because
+   * there is nothing left to replay without. The window is wide enough that only a very long single
+   * session reaches it, and the alternative is a list that grows for as long as the tab is open.
+   */
+  private trimConfirmed(): void {
+    if (this.confirmed.length <= CONFIRMED_WINDOW) return;
+    const fold = this.confirmed.splice(0, this.confirmed.length - CONFIRMED_WINDOW);
+    const scratch = new ProjectStore(false);
+    scratch.load(this.seed);
+    replayEntries(scratch, fold);
+    this.seed = scratch.snapshot();
   }
 
   /** Rebuild the live store as `base` with `pending` replayed on top (leaving `base` pristine). During a

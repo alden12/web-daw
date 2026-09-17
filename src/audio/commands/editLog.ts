@@ -153,6 +153,24 @@ export interface FeedNote {
   time: number;
 }
 
+/**
+ * One edit on its way to the authority (DAW-34 stage E).
+ *
+ * `id` is the log entry's own id, which the session sends as the edit's `opId` - one identity for
+ * the edit from here to the authority's stored log and on to every peer.
+ *
+ * With `kind` set it is a TOMBSTONE rather than an edit: `undoes` names the entry it takes back or
+ * puts back, and `command` is the command of THAT entry, carried only so the feed can say what was
+ * undone. Nothing applies it forward.
+ */
+export interface ForwardedEdit {
+  command: EditCommand;
+  author: Author;
+  id: string;
+  kind?: "undo" | "redo";
+  undoes?: string;
+}
+
 export interface EditLogState {
   entries: EditEntry[];
   notes: FeedNote[];
@@ -197,7 +215,7 @@ export class EditLog {
    *  `id` as well, which the session sends as the edit's `opId` - so the authority stores the same
    *  identity this log holds and an undo step means the same edit on every machine (DAW-34 stage E).
    *  Undo/redo do NOT forward - they are local best-effort in a shared session. */
-  private remote: ((command: EditCommand, author: Author, id: string) => void) | null = null;
+  private remote: ((edit: ForwardedEdit) => void) | null = null;
 
   /**
    * Mints an entry's `id`. Injectable so a test can read the log back without a uuid in the
@@ -332,7 +350,7 @@ export class EditLog {
     // sending the held one first is what keeps the authority's order the same as the log's.
     if (!coalesced) this.sendHeld();
     if (key === null) {
-      this.remote?.(command, author, id);
+      this.remote?.({ command, author, id });
       return;
     }
     this.heldForward = { command, author, id };
@@ -361,7 +379,7 @@ export class EditLog {
     this.clearForwardTimer();
     const held = this.heldForward;
     this.heldForward = null;
-    if (held) this.remote?.(held.command, held.author, held.id);
+    if (held) this.remote?.({ command: held.command, author: held.author, id: held.id });
   }
 
   /**
@@ -381,7 +399,7 @@ export class EditLog {
 
   /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority.
    *  Flushes first, so a held edit reaches the outgoing sink rather than dying with it. */
-  setRemote = (sink: ((command: EditCommand, author: Author, id: string) => void) | null): void => {
+  setRemote = (sink: ((edit: ForwardedEdit) => void) | null): void => {
     this.sendHeld();
     this.remote = sink;
   };
@@ -401,8 +419,33 @@ export class EditLog {
    * anyone else, but the id is the edit's identity everywhere, so holding it is what lets one machine
    * name an edit another machine made.
    */
-  recordRemote = (command: EditCommand, author: Author, id?: string): void => {
-    this.entries.push({ seq: this.seq++, id, command, author, time: Date.now(), kind: "edit" });
+  recordRemote = (entry: {
+    command: EditCommand;
+    author: Author;
+    id?: string;
+    kind?: "undo" | "redo";
+    undoes?: string;
+  }): void => {
+    const tombstone = entry.undoes !== undefined && (entry.kind === "undo" || entry.kind === "redo");
+    this.entries.push({
+      seq: this.seq++,
+      id: entry.id,
+      command: entry.command,
+      author: entry.author,
+      time: Date.now(),
+      kind: entry.kind ?? "edit",
+      undoes: entry.undoes,
+      ...(tombstone
+        ? { label: `${entry.kind === "undo" ? "Undid" : "Redid"}: ${describeCommand(entry.command)}` }
+        : {}),
+    });
+    // A peer's tombstone has to reach the excluded set too, not just the feed. The session has
+    // already taken the edit out of the live project; without this the NEXT local undo would rebuild
+    // from a set that never heard of it and put it straight back (DAW-34 stage E).
+    if (tombstone) {
+      if (entry.kind === "undo") this.undone.add(entry.undoes as string);
+      else this.undone.delete(entry.undoes as string);
+    }
     this.emit();
   };
 
@@ -440,9 +483,10 @@ export class EditLog {
    *  pressed it rather than by whoever made the edit. */
   private noteReflog(id: string, kind: "undo" | "redo"): void {
     const command = this.entries.find((entry) => entry.id === id)?.command;
+    const reflogId = this.newEntryId();
     this.entries.push({
       seq: this.seq++,
-      id: this.newEntryId(),
+      id: reflogId,
       command: command ?? ({ type: "commit" } as EditCommand),
       author: this.localAuthor,
       time: Date.now(),
@@ -453,11 +497,14 @@ export class EditLog {
       undoes: id,
     });
     this.lastKey = null;
-    // Undo/redo do not forward (they are local best-effort in a shared session), but a held edit
-    // still has to go: every peer that sees the log has to see the same entries in the same order,
-    // and dropping it here would make the authority disagree about what was ever dispatched.
-    // Reconciling undo with the authority is DAW-34 stage E.
+    // The held edit goes FIRST, so the authority never sees a tombstone for an edit it has not been
+    // told about yet.
     this.sendHeld();
+    // Then the tombstone itself (DAW-34 stage E). This is what makes undo a shared fact rather than
+    // a local one: the authority records it, rebuilds without the edit, and every peer folds the
+    // same. With no `command` to show there is no entry to take back either, so there is nothing to
+    // forward - the undo was a no-op here too.
+    if (command) this.remote?.({ command, author: this.localAuthor, id: reflogId, kind, undoes: id });
     this.emit();
   }
 
