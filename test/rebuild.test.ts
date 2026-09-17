@@ -31,9 +31,9 @@ describe("rebuildWithout", () => {
       const after = fingerprintProject(project.snapshot());
       // A sample that changes nothing would pass everything below without testing anything.
       expect(after).not.toBe(before);
-      const seq = log.getEntries().at(-1)!.seq;
+      const id = log.getEntries().at(-1)!.id!;
 
-      const rebuilt = rebuildWithout(emptyProject(), -1, log.getEntries(), new Set([seq]));
+      const rebuilt = rebuildWithout(emptyProject(), -1, log.getEntries(), new Set([id]));
       expect(fingerprintProject(rebuilt)).toBe(before);
     });
 
@@ -82,9 +82,9 @@ describe("ProjectRepository.rebuildExcluding", () => {
     const before = fingerprintProject(project.snapshot());
 
     log.dispatch({ type: "setTempo", bpm: 155 });
-    const seq = log.getEntries().at(-1)!.seq;
+    const { seq, id } = log.getEntries().at(-1)!;
 
-    const rebuilt = await repo.rebuildExcluding(new Set([seq]), log.getEntries(), seq);
+    const rebuilt = await repo.rebuildExcluding(new Set([id!]), log.getEntries(), seq);
     expect(rebuilt).not.toBeNull();
     expect(fingerprintProject(rebuilt!)).toBe(before);
   });
@@ -92,12 +92,26 @@ describe("ProjectRepository.rebuildExcluding", () => {
   it("refuses rather than guesses when the ring does not reach back", async () => {
     const repo = repoWith();
     const { log } = seeded();
-    // No keyframe written at all, so there is no base below the edit.
-    expect(await repo.rebuildExcluding(new Set([0]), log.getEntries(), 10)).toBeNull();
+    log.dispatch({ type: "setTempo", bpm: 155 });
+    const { seq, id } = log.getEntries().at(-1)!;
+    // No keyframe written at all, so there is no base below the edit - and the id names a real
+    // entry, so this refuses for want of a base rather than for want of anything to exclude.
+    expect(await repo.rebuildExcluding(new Set([id!]), log.getEntries(), seq)).toBeNull();
   });
 
   it("has nothing to do when nothing is excluded", async () => {
     const repo = repoWith();
     expect(await repo.rebuildExcluding(new Set(), [], 10)).toBeNull();
+  });
+
+  // An id with no entry cannot be placed in the log, so there is no telling how far back a base
+  // would have to reach. Refusing beats picking the oldest keyframe and rebuilding from there.
+  it("refuses an id the log does not hold, rather than reaching back to the beginning", async () => {
+    const repo = repoWith();
+    const { project, log } = seeded();
+    await repo.save(project.snapshot(), log.getEntries(), log.getNotes());
+    log.dispatch({ type: "setTempo", bpm: 155 });
+
+    expect(await repo.rebuildExcluding(new Set(["not-an-entry"]), log.getEntries(), 1)).toBeNull();
   });
 });

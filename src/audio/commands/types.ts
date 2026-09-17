@@ -170,6 +170,18 @@ export type EditCommand = ProtocolEdit | LocalEdit;
 /** One entry in the append-only activity log: an authored, timestamped command. */
 export interface EditEntry {
   seq: number;
+  /**
+   * Stable identity of the edit, minted by whoever made it (DAW-34 stage E).
+   *
+   * `seq` is an ORDER, and in a shared session it is the authority's to assign, so it is not an
+   * identity: the client numbers its own entries optimistically and the authority renumbers them.
+   * An undo step has to name one edit and keep naming it - across a reload, across a renumbering,
+   * and on a peer's machine - so it names this instead.
+   *
+   * Optional because logs written before it exist. Such an entry cannot be undone (nothing can name
+   * it), which is why `EditLog` always sets one on anything it creates.
+   */
+  id?: string;
   command: EditCommand;
   author: Author;
   time: number;

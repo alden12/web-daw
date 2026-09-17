@@ -21,34 +21,44 @@ import { normalizeCommand } from "./normalize";
 import { isReplayable, rebuildWithout } from "./replay";
 import { describeCommand, type DescribeContext } from "./describe";
 import type { Author, EditCommand, EditEntry } from "./types";
+import { randomUuid } from "../randomUuid";
 
 /**
- * An undo step is the `seq` of the log entry it takes back, and nothing else (DAW-34).
+ * An undo step is the `id` of the log entry it takes back, and nothing else (DAW-34).
  *
- * Undo rebuilds the project from a retained keyframe with the excluded seqs left out, so a step has
- * only to name an edit: no snapshot to hold, no inverse to compute, no authorship to capture and
- * put back. The command and its author are read out of the log when the feed wants to describe what
- * was undone, rather than copied into the step and kept in sync.
+ * Undo rebuilds the project from a retained keyframe with the excluded entries left out, so a step
+ * has only to name an edit: no snapshot to hold, no inverse to compute, no authorship to capture
+ * and put back. The command and its author are read out of the log when the feed wants to describe
+ * what was undone, rather than copied into the step and kept in sync.
+ *
+ * It names the entry's `id`, not its `seq`, because `seq` is an order rather than an identity: the
+ * authority assigns it and reassigns it, so a step written against a client seq means nothing once
+ * the log comes back renumbered (DAW-34 stage E).
  */
 
 /**
  * Persisted undo/redo stacks, so undo survives a reload (see apm: "History and versioning").
  *
- * Two lists of `seq`, which is the whole file. It used to carry a base snapshot plus a command and
- * an inverse per step, which is why it needed a byte budget and a fingerprint of the project it was
- * captured against: a checkpoint held a whole-project state, so applying a stale one threw the
+ * Two lists of entry *ids*, which is the whole file. It used to carry a base snapshot plus a command
+ * and an inverse per step, which is why it needed a byte budget and a fingerprint of the project it
+ * was captured against: a checkpoint held a whole-project state, so applying a stale one threw the
  * project back to that state instead of taking back one edit (DAW-8.15).
  *
  * **That failure is now impossible, so the guard is gone.** A step names a log entry; if the entry
  * is not there, excluding it changes nothing and the undo is a no-op. `restoreCheckpoints` drops
- * seqs the log does not have and keeps the rest, which is the per-entry answer the fingerprint's
+ * ids the log does not have and keeps the rest, which is the per-entry answer the fingerprint's
  * all-or-nothing discard could never give.
+ *
+ * **Ids rather than seqs (DAW-34 stage E).** A hosted session's entries are renumbered by the
+ * authority, so a stack written against client seqs named nothing after a reload and the whole
+ * stack was dropped. An id is minted by whoever made the edit and never changes, so the same file
+ * means the same thing in both persistence modes.
  */
 export interface UndoState {
-  /** Seqs that can still be taken back, oldest first. */
-  undo: number[];
-  /** Seqs taken back and not yet re-applied, in the order they were undone. */
-  redo: number[];
+  /** Entry ids that can still be taken back, oldest first. */
+  undo: string[];
+  /** Entry ids taken back and not yet re-applied, in the order they were undone. */
+  redo: string[];
 }
 
 /** How long two edits to the same target may be apart and still fold into one entry, when nothing
@@ -154,12 +164,12 @@ export class EditLog {
   private readonly project: ProjectStore;
   private entries: EditEntry[] = [];
   private feedNotes: FeedNote[] = [];
-  /** Seqs that can be taken back (most recent last), and seqs taken back and re-appliable. */
-  private undoStack: number[] = [];
-  private redoStack: number[] = [];
-  /** Seqs currently left out of the project. The live project is always the base replayed with
+  /** Entry ids that can be taken back (most recent last), and ids taken back and re-appliable. */
+  private undoStack: string[] = [];
+  private redoStack: string[] = [];
+  /** Entry ids currently left out of the project. The live project is always the base replayed with
    *  these excluded, which is what makes undo a rebuild rather than a reversal. */
-  private undone = new Set<number>();
+  private undone = new Set<string>();
   /** The snapshot a rebuild starts from, and the seq it reflects. Seeded to wherever the project is
    *  when the log is built, and replaced by `setRebuildBase` with an older retained keyframe once
    *  persistence has one - which is what makes edits from before a reload undoable. */
@@ -178,17 +188,30 @@ export class EditLog {
   private gestureOpen = false;
   /** The settled command of the entry not yet forwarded, and the timer that sends it if no gesture
    *  end arrives. One entry, one authoritative edit - see `forward`. */
-  private heldForward: { command: EditCommand; author: Author } | null = null;
+  private heldForward: { command: EditCommand; author: Author; id: string } | null = null;
   private forwardTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: EditLogState;
   /** Optional realtime sink: when a shared session is live, each dispatched edit is forwarded to the
-   *  authority after being applied optimistically here (see SharedSession). Undo/redo do NOT forward -
-   *  they are local best-effort in a shared session. */
-  private remote: ((command: EditCommand, author: Author) => void) | null = null;
+   *  authority after being applied optimistically here (see SharedSession). It is handed the entry's
+   *  `id` as well, which the session sends as the edit's `opId` - so the authority stores the same
+   *  identity this log holds and an undo step means the same edit on every machine (DAW-34 stage E).
+   *  Undo/redo do NOT forward - they are local best-effort in a shared session. */
+  private remote: ((command: EditCommand, author: Author, id: string) => void) | null = null;
 
-  constructor(project: ProjectStore) {
+  /**
+   * Mints an entry's `id`. Injectable so a test can read the log back without a uuid in the
+   * assertion; defaults to `crypto.randomUUID` via `randomUuid`.
+   *
+   * It must be globally unique, not merely unique in this log: in a shared session this id becomes
+   * the edit's identity at the authority and on every peer, so two clients minting the same one
+   * would have them naming each other's edits.
+   */
+  private readonly newEntryId: () => string;
+
+  constructor(project: ProjectStore, newEntryId: () => string = randomUuid) {
     this.project = project;
+    this.newEntryId = newEntryId;
     this.base = { project: project.snapshot(), seq: -1 };
     this.rebuild();
   }
@@ -213,10 +236,17 @@ export class EditLog {
    * pressed, which is the one outcome worse than a greyed-out button.
    */
   private dropUnreachable(): void {
-    const reachable = (seqs: number[]) => seqs.filter((seq) => seq > this.base.seq);
-    this.undoStack = reachable(this.undoStack);
-    this.redoStack = reachable(this.redoStack);
-    this.undone = new Set([...this.undone].filter((seq) => seq > this.base.seq));
+    // A step names an id, so "above the base" is a question about the entry it names. One pass to
+    // index the log, because this runs on a reload with a full window of entries and a stack up to
+    // MAX_DEPTH deep, and a scan per step would be the product of the two.
+    const seqById = new Map(
+      this.entries.filter((entry) => entry.id !== undefined).map((entry) => [entry.id, entry.seq]),
+    );
+    // An id with no entry is unreachable by the same argument: nothing to exclude, nothing to undo.
+    const above = (id: string) => (seqById.get(id) ?? -Infinity) > this.base.seq;
+    this.undoStack = this.undoStack.filter(above);
+    this.redoStack = this.redoStack.filter(above);
+    this.undone = new Set([...this.undone].filter(above));
   }
 
   /** Apply + log an edit. UI edits are authored by the current user (default 'you'); MCP edits 'claude'. */
@@ -237,24 +267,27 @@ export class EditLog {
       // have to go on.
       (this.gestureOpen || now - this.lastTime < COALESCE_MS);
 
+    let id: string;
     if (coalesce) {
       // Same target, same gesture (or same window): fold into the last entry, so the drag is one
       // undo step and one log entry.
       applyEdit(this.project, command, author);
       const last = this.entries[this.entries.length - 1];
-      // The gesture keeps its seq, so the undo step already points at it and needs no updating.
-      this.entries[this.entries.length - 1] = { ...last, command, time: now };
+      // The gesture keeps its id, so the undo step already points at it and needs no updating. A
+      // restored entry has none, but cannot be folded into either: `restore` clears `lastKey`.
+      id = last.id ?? this.newEntryId();
+      this.entries[this.entries.length - 1] = { ...last, id, command, time: now };
     } else {
-      const seq = this.seq++;
-      this.undoStack.push(seq);
+      id = this.newEntryId();
+      this.undoStack.push(id);
       if (this.undoStack.length > MAX_DEPTH) this.undoStack.shift();
       this.redoStack = [];
       applyEdit(this.project, command, author);
-      this.entries.push({ seq, command, author, time: now, kind: "edit" });
+      this.entries.push({ seq: this.seq++, id, command, author, time: now, kind: "edit" });
     }
     this.lastKey = key;
     this.lastTime = now;
-    this.forward(command, author, key, coalesce);
+    this.forward(command, author, key, coalesce, id);
     this.emit();
   };
 
@@ -278,7 +311,7 @@ export class EditLog {
     if (!this.gestureOpen) return;
     this.gestureOpen = false;
     this.lastKey = null;
-    this.flushForward();
+    this.sendHeld();
   };
 
   /**
@@ -294,31 +327,42 @@ export class EditLog {
    * The live local project still updates every frame - that is what makes the roll and the
    * arrangement redraw together. This is only about what crosses the wire.
    */
-  private forward(command: EditCommand, author: Author, key: string | null, coalesced: boolean): void {
+  private forward(command: EditCommand, author: Author, key: string | null, coalesced: boolean, id: string): void {
     // A fresh entry settles the one before it, and a non-coalescable edit settles immediately, so
     // sending the held one first is what keeps the authority's order the same as the log's.
-    if (!coalesced) this.flushForward();
+    if (!coalesced) this.sendHeld();
     if (key === null) {
-      this.remote?.(command, author);
+      this.remote?.(command, author, id);
       return;
     }
-    this.heldForward = { command, author };
+    this.heldForward = { command, author, id };
     this.armForward();
   }
 
   /**
-   * Send the held forward, if there is one.
+   * Send the held forward, if there is one, and start a fresh entry after it.
    *
    * Public because the shared session needs it: its pending queue is what the live project is
    * rebuilt from when a peer's edit arrives, so a held edit has to reach the queue before any
    * rebuild or the drag in progress would be rebuilt away.
+   *
+   * **It breaks the coalesce chain, which is not incidental.** The edit is forwarded under its
+   * entry's id, and the authority dedups by that id, so a further edit folded into the same entry
+   * would be sent under an id already applied and silently dropped. Ending the entry here keeps one
+   * entry to one authoritative row, at the cost of a drag interrupted this way becoming two of each.
    */
   flushForward = (): void => {
+    this.sendHeld();
+    this.lastKey = null;
+  };
+
+  /** Hand the held edit to the sink. Used where the chain is already being broken by the caller. */
+  private sendHeld(): void {
     this.clearForwardTimer();
     const held = this.heldForward;
     this.heldForward = null;
-    if (held) this.remote?.(held.command, held.author);
-  };
+    if (held) this.remote?.(held.command, held.author, held.id);
+  }
 
   /**
    * (Re-)arm the trailing send. Inside a gesture the end is the real trigger and this is only the
@@ -337,8 +381,8 @@ export class EditLog {
 
   /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority.
    *  Flushes first, so a held edit reaches the outgoing sink rather than dying with it. */
-  setRemote = (sink: ((command: EditCommand, author: Author) => void) | null): void => {
-    this.flushForward();
+  setRemote = (sink: ((command: EditCommand, author: Author, id: string) => void) | null): void => {
+    this.sendHeld();
     this.remote = sink;
   };
 
@@ -352,28 +396,32 @@ export class EditLog {
    * applied it to the project). Append-only, like a reflog entry, so the feed narrates who-did-what
    * across users. Gets a fresh local `seq` (the feed's own ordering); the caller (SharedSession) already
    * dedups each authoritative edit once, so no seq-space mixing here.
+   *
+   * It keeps the peer's `id` though (DAW-34 stage E). The seq is local ordering and means nothing to
+   * anyone else, but the id is the edit's identity everywhere, so holding it is what lets one machine
+   * name an edit another machine made.
    */
-  recordRemote = (command: EditCommand, author: Author): void => {
-    this.entries.push({ seq: this.seq++, command, author, time: Date.now(), kind: "edit" });
+  recordRemote = (command: EditCommand, author: Author, id?: string): void => {
+    this.entries.push({ seq: this.seq++, id, command, author, time: Date.now(), kind: "edit" });
     this.emit();
   };
 
   undo = (): void => {
-    const seq = this.undoStack.pop();
-    if (seq === undefined) return;
-    this.redoStack.push(seq);
-    this.undone.add(seq);
+    const id = this.undoStack.pop();
+    if (id === undefined) return;
+    this.redoStack.push(id);
+    this.undone.add(id);
     this.rebuildProject();
-    this.noteReflog(seq, "undo");
+    this.noteReflog(id, "undo");
   };
 
   redo = (): void => {
-    const seq = this.redoStack.pop();
-    if (seq === undefined) return;
-    this.undoStack.push(seq);
-    this.undone.delete(seq);
+    const id = this.redoStack.pop();
+    if (id === undefined) return;
+    this.undoStack.push(id);
+    this.undone.delete(id);
     this.rebuildProject();
-    this.noteReflog(seq, "redo");
+    this.noteReflog(id, "redo");
   };
 
   /**
@@ -390,10 +438,11 @@ export class EditLog {
 
   /** Record an undo/redo in the activity feed: append-only, like a reflog, authored by whoever
    *  pressed it rather than by whoever made the edit. */
-  private noteReflog(seq: number, kind: "undo" | "redo"): void {
-    const command = this.entries.find((entry) => entry.seq === seq)?.command;
+  private noteReflog(id: string, kind: "undo" | "redo"): void {
+    const command = this.entries.find((entry) => entry.id === id)?.command;
     this.entries.push({
       seq: this.seq++,
+      id: this.newEntryId(),
       command: command ?? ({ type: "commit" } as EditCommand),
       author: this.localAuthor,
       time: Date.now(),
@@ -405,7 +454,7 @@ export class EditLog {
     // still has to go: every peer that sees the log has to see the same entries in the same order,
     // and dropping it here would make the authority disagree about what was ever dispatched.
     // Reconciling undo with the authority is DAW-34 stage E.
-    this.flushForward();
+    this.sendHeld();
     this.emit();
   }
 
@@ -415,7 +464,7 @@ export class EditLog {
    *  reason: the edit belongs on the near side of the boundary, not after it. */
   resetCoalescing = (): void => {
     this.lastKey = null;
-    this.flushForward();
+    this.sendHeld();
   };
 
   /** Post a feed-only annotation (intent narration). Not an edit; not undoable. */
@@ -448,7 +497,7 @@ export class EditLog {
     return this.entries;
   }
 
-  /** The undo/redo stacks for persistence: two lists of seqs. */
+  /** The undo/redo stacks for persistence: two lists of entry ids. */
   getCheckpoints(): UndoState {
     return { undo: this.undoStack.slice(), redo: this.redoStack.slice() };
   }
@@ -456,17 +505,19 @@ export class EditLog {
   /**
    * Restore persisted undo/redo stacks.
    *
-   * **Per entry, not all-or-nothing.** A seq the restored log does not have as a replayable edit is
+   * **Per entry, not all-or-nothing.** An id the restored log does not have as a replayable edit is
    * dropped and the rest are kept, because a step that names a missing entry cannot do harm - a
    * rebuild that excludes nothing produces the project unchanged. That is what replaced DAW-8.15's
    * fingerprint-and-discard, which had to throw away a whole working stack to avoid one that could
    * have rolled the project back.
    *
-   * Call it after the project and the log have been restored, or every seq looks unknown.
+   * Call it after the project and the log have been restored, or every id looks unknown.
    */
   restoreCheckpoints(stored: UndoState | null): void {
-    const known = new Set(this.entries.filter((entry) => isReplayable(entry.kind)).map((entry) => entry.seq));
-    const keep = (seqs: number[] | undefined) => (seqs ?? []).filter((seq) => known.has(seq));
+    const known = new Set(
+      this.entries.filter((entry) => isReplayable(entry.kind) && entry.id !== undefined).map((entry) => entry.id),
+    );
+    const keep = (ids: string[] | undefined) => (ids ?? []).filter((id) => known.has(id));
     this.undoStack = keep(stored?.undo);
     this.redoStack = keep(stored?.redo);
     // A redo step is an edit currently left OUT of the project, so the excluded set is the redo

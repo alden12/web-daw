@@ -342,12 +342,17 @@ export class ProjectRepository {
    * created, so a young project is covered from its first edit.
    */
   async rebuildExcluding(
-    excluding: ReadonlySet<number>,
+    excluding: ReadonlySet<string>,
     entries: readonly EditEntry[],
     headSeq: number,
   ): Promise<ProjectData | null> {
     if (excluding.size === 0) return null;
-    const base = await this.rebuildBaseFor(Math.min(...excluding), headSeq);
+    // The base has to sit below the EARLIEST excluded edit, and the ids say nothing about order, so
+    // the seqs come from the log. An id the log does not hold excludes nothing, so it is skipped
+    // rather than treated as reaching back to the beginning of time.
+    const seqs = entries.filter((entry) => entry.id !== undefined && excluding.has(entry.id)).map((e) => e.seq);
+    if (seqs.length === 0) return null;
+    const base = await this.rebuildBaseFor(Math.min(...seqs), headSeq);
     return base ? rebuildWithout(base.project, base.seq, entries, excluding) : null;
   }
 
@@ -492,7 +497,7 @@ export class ProjectRepository {
     if (!raw) return null;
     try {
       const parsed = undoStateSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? (parsed.data as UndoState) : null;
+      return parsed.success ? parsed.data : null;
     } catch {
       return null; // not JSON at all
     }

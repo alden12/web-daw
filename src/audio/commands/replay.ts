@@ -28,8 +28,14 @@ import type { Author, EditCommand, EditEntry } from "./types";
 export const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
 
 export interface ReplayOptions {
-  /** Entry seqs to leave out: the edits being undone. Everything else replays as usual. */
-  readonly excluding?: ReadonlySet<number>;
+  /**
+   * Entry *ids* to leave out: the edits being undone. Everything else replays as usual.
+   *
+   * Ids rather than seqs, because `seq` is an order the authority reassigns while an undo step has
+   * to keep naming the same edit (see `EditEntry.id`). An entry with no id can never be excluded,
+   * which is the safe direction: it replays, so the project is what the log says.
+   */
+  readonly excluding?: ReadonlySet<string>;
   /** Replay only entries above this seq - the base snapshot already reflects the rest. */
   readonly above?: number;
 }
@@ -39,7 +45,7 @@ export function replayEntries(project: ProjectStore, entries: readonly EditEntry
   const { excluding, above } = options;
   for (const entry of entries) {
     if (above !== undefined && entry.seq <= above) continue;
-    if (excluding?.has(entry.seq)) continue;
+    if (entry.id !== undefined && excluding?.has(entry.id)) continue;
     if (!isReplayable(entry.kind)) continue;
     applyEdit(project, entry.command as EditCommand, entry.author as Author);
   }
@@ -60,7 +66,7 @@ export function rebuildWithout(
   base: ProjectData,
   baseSeq: number,
   entries: readonly EditEntry[],
-  excluding: ReadonlySet<number>,
+  excluding: ReadonlySet<string>,
 ): ProjectData {
   const project = new ProjectStore(false);
   project.load(base);

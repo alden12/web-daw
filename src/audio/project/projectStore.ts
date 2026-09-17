@@ -1416,10 +1416,10 @@ export class ProjectStore {
       grooveAmount: this.grooveAmount,
       samples: this.samples,
       // Key-sorted, so the document is canonical. The record is keyed by object id and written in
-      // whatever order edits happened, so removing and re-adding an object (exactly what an undo by
-      // inverse does) reorders the keys without changing the project. `fingerprintProject` is a
-      // stringify, so that reordering would otherwise read as "a different project" and discard a
-      // perfectly good undo stack (DAW-34). Sorting also hands out a copy rather than the live map.
+      // whatever order edits happened, so removing and re-adding an object reorders the keys
+      // without changing the project. Two snapshots of the same project must serialize identically
+      // - the rebuild tests assert exactly that, and a keyframe's bytes should not churn on a
+      // reordering either (DAW-34). Sorting also hands out a copy rather than the live map.
       authorship: sortedByKey(this.authorship),
       customInstruments: this.customInstrumentDefs,
       customEffects: this.customEffectDefs,

@@ -464,9 +464,9 @@ describe("project + edit-log persistence", () => {
   });
 
   // The byte budget that used to live here is gone with the snapshots it guarded: `undo.json` is
-  // now two lists of edit seqs, which cannot outgrow the server's JSON cap however big the project
+  // now two lists of edit ids, which cannot outgrow the server's JSON cap however big the project
   // gets (DAW-34). What is left worth asserting is that the file stays that small.
-  it("persists undo as seqs, not state, so the file cannot outgrow the project", () => {
+  it("persists undo as entry ids, not state, so the file cannot outgrow the project", () => {
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
@@ -489,9 +489,11 @@ describe("project + edit-log persistence", () => {
     log.dispatch({ type: "setTempo", bpm: 132 });
 
     const packed = log.getCheckpoints();
-    expect(packed.undo).toEqual([0, 1, 2]);
+    // One step per edit, each naming the entry it takes back.
+    expect(packed.undo).toEqual(log.getEntries().map((entry) => entry.id));
     expect(packed.redo).toEqual([]);
-    // A megabyte of notes in the project; a few dozen bytes of undo state beside it.
+    // A megabyte of notes in the project; three uuids beside it. The cost per step is a constant,
+    // which is the whole claim: it is a function of the edit count, never of the project's size.
     expect(JSON.stringify(packed).length).toBeLessThan(200);
   });
 
