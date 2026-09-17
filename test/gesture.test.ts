@@ -19,7 +19,7 @@ function seeded() {
   const project = new ProjectStore(false);
   const log = new EditLog(project);
   const forwarded: EditCommand[] = [];
-  log.setRemote((command) => forwarded.push(command));
+  log.setRemote((edit) => forwarded.push(edit.command));
   /** Just the tempo entries, so the seed edits a case needs do not have to be counted around. */
   const tempoEntries = () => log.getEntries().filter((entry) => entry.command.type === "setTempo");
   return { project, log, forwarded, tempoEntries };

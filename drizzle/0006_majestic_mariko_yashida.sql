@@ -1,0 +1,1 @@
+ALTER TABLE "edits" ADD COLUMN "undoes" text;

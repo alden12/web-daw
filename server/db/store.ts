@@ -61,6 +61,8 @@ export type EditEntryInput = {
   time: number;
   kind?: string;
   label?: string;
+  /** On an undo/redo entry: the id of the edit it takes back or puts back. */
+  undoes?: string;
 };
 
 const isCommitPath = (path: string) => path.startsWith("history/commits/");
@@ -225,6 +227,7 @@ export async function appendEdits(
             time: entry.time,
             kind: entry.kind ?? null,
             label: entry.label ?? null,
+            undoes: entry.undoes ?? null,
           })),
         )
         .onConflictDoUpdate({
@@ -236,6 +239,7 @@ export async function appendEdits(
             time: sql`excluded."time"`,
             kind: sql`excluded."kind"`,
             label: sql`excluded."label"`,
+            undoes: sql`excluded."undoes"`,
           },
         });
     }
@@ -270,6 +274,7 @@ export async function readEdits(
         time: edits.time,
         kind: edits.kind,
         label: edits.label,
+        undoes: edits.undoes,
       })
       .from(edits)
       .innerJoin(projects, eq(edits.projectId, projects.id))
@@ -287,6 +292,7 @@ export async function readEdits(
     ...(row.id != null ? { id: row.id } : {}),
     ...(row.kind != null ? { kind: row.kind } : {}),
     ...(row.label != null ? { label: row.label } : {}),
+    ...(row.undoes != null ? { undoes: row.undoes } : {}),
   }));
 }
 

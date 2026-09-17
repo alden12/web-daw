@@ -4200,6 +4200,70 @@ projects:
           causal and had to be chased down before it could be dismissed.
 
 
+          ## CORRECTION, 2026-09-17 (slice-124): there were TWO causes, and the
+          bigger one was self-inflicted
+
+
+          The diagnosis below is real but it was not what was firing all
+          afternoon. **Editing any file
+
+          while the suite runs makes Vite full-reload every open page**, and a
+          reload remounts `AppShell`,
+
+          which resets `started` and puts the start-audio overlay back over
+          tests that had already dismissed
+
+          it. Both causes leave the same fingerprint - the overlay up,
+          intercepting clicks - which is why the
+
+          trace pointed at the helper and the helper looked like the whole
+          answer.
+
+
+          Proven, rather than reasoned about, with three runs of the full suite
+          on one tree:
+
+
+          - touching nothing, HMR on: **153/153**
+
+          - touching one non-source file every five seconds, HMR on: **7
+          failures across 3 spec files**, and
+            every one had the overlay in its page snapshot
+          - touching a file every five seconds, HMR off: **153/153**
+
+
+          So a good share of the six sightings recorded above were caused by me
+          editing the roadmap while a
+
+          background e2e run was going. The tally is not evidence of one flake
+          getting worse; it is two
+
+          things, one of which was an artefact of how the work was being done.
+          Worth remembering when a
+
+          count of sightings starts to feel like data.
+
+
+          **Fixed by turning HMR off for e2e runs**: `playwright.config.ts`
+          starts the dev server with
+
+          `E2E=1` and `vite.config.ts` sets `hmr: false` under it. A test run
+          wants a frozen server. Note CI
+
+          never had this cause at all - it starts a fresh server and nobody
+          edits files mid-run - which is
+
+          exactly why it stayed unexplained while being reproducible on demand
+          here.
+
+
+          The helper fix below still stands on its own: the `count()` race is a
+          real latent bug, it is the
+
+          one that can bite in CI (where `retries: 1` exists), and it is
+          unaffected by any of this.
+
+
           ## DIAGNOSED, 2026-09-17 (slice-122), on the first run after the
           trace was turned on
 
@@ -4278,14 +4342,17 @@ projects:
           noticing.
 
 
-          Measured after: 6 full runs, 5 clean. The one failure happened before
-          I started preserving
+          Measured after: 6 full runs, 5 clean. **That measurement was
+          confounded** - see the correction
 
-          artifacts, so it is unidentified and this is NOT proof - but the rate
-          was roughly half of runs
+          above - because some of those runs had me editing files mid-run and
+          some did not, so the numbers
 
-          before, so it is a large move in the right direction. Any recurrence
-          now leaves a trace.
+          say nothing about this fix either way. It is still the right fix for
+          the race it addresses, and
+
+          that race is the one that can reach CI. Any recurrence now leaves a
+          trace.
 
 
           ## What the evidence points at (superseded by the diagnosis above -
@@ -8180,17 +8247,131 @@ projects:
           author-scoped, so nothing needs `undo.json` and it goes.
 
 
+          ### E3 done on slice-124: undo forwards
+
+
+          **An undo is now a shared fact.** It was local best-effort: your
+          project dropped the edit, the
+
+          authority's kept it, and the next thing that made the client
+          re-derive its state from the server -
+
+          any peer edit, since `rebuildLive` rebuilds from `base` + `pending` -
+          put the edit straight back.
+
+
+          **Both halves had to land together**, which is what the note in
+          `Room.load` was there to say:
+
+          forwarding alone would have looked like it worked while the
+          `undoes` column was missing and the
+
+          tombstone silently failed to round-trip. So: `edits.undoes`
+          (migration `0006`), `kind`/`undoes` on
+
+          both the `edit` and `editApplied` messages, and the forward itself
+          from `noteReflog`.
+
+
+          **The tombstone carries the undone edit's `command`**, which the
+          authority never applies. It is
+
+          there so a feed can say "Undid: Added note" without looking the
+          entry up, and it keeps both wire
+
+          messages one shape rather than two.
+
+
+          **The authority rebuilds rather than applying.** Taking an edit back
+          OUT is not something any
+
+          forward apply can do, so `recomputeHead` re-reads the log and
+          replays it from the keyframe with
+
+          tombstones honoured - the same `headFromLog` the client's load runs,
+          which is now shared code
+
+          rather than two copies. A room cold-starting goes through the same
+          path, so an evicted room comes
+
+          back agreeing with the client that pressed undo.
+
+
+          **Ordering needed care.** The room assigns `seq`, applies and
+          broadcasts with no `await` between
+
+          them, so concurrent edits are ordered by arrival and peers see seqs
+          in order. A rebuild is several
+
+          awaits, and it must not interleave with the persist of an edit that
+          arrived a moment later - the
+
+          rebuild would read a log missing that edit and then overwrite the
+          store with a state that never
+
+          heard of it. All post-broadcast work now runs through one serial
+          queue (`queueAfterWork`).
+
+
+          **`SharedSession.base` stopped being a forward-only accumulator.**
+          For the same reason: it now
+
+          keeps the seed it started from plus the confirmed entries, so it can
+          be REBUILT when a tombstone
+
+          arrives. The oldest entries fold into the seed past
+          `CONFIRMED_WINDOW`, and what folding costs is
+
+          undo depth, since an edit inside the seed has nothing left to replay
+          without.
+
+
+          **The subtlest bit, and the one with a test named after it:** a
+          peer's tombstone has to reach the
+
+          local `EditLog`'s excluded set, not just the feed. The session takes
+          the edit out of the live
+
+          project, but the next LOCAL undo rebuilds from `EditLog`'s own set -
+          which, without this, never
+
+          heard of the peer's undo and would put their edit straight back.
+
+
+          Covered by `test/forwardUndo.test.ts` (6 cases, two clients against a
+          real room). Each mechanism
+
+          verified by breaking it: dropping the forward fails all six, dropping
+          the authority's rebuild fails
+
+          two, and dropping the excluded-set wiring fails exactly the
+          resurrection case.
+
+
           ### Still open in stage E
 
 
-          The tombstone entry, forwarding undo/redo to peers, author-scoped
-          undo, and the three offline cases
+          **Author-scoped undo**, so your undo takes back YOUR last edit
+          rather than whoever's happened to
 
-          (unsent: drop from `pending`; sent-but-unacked and confirmed: tombstone
-          by id, which is now the same
+          be most recent. Without it, two people editing makes pressing undo a
+          coin toss - and it is also
 
-          lookup for both, since the id no longer depends on whether a seq has
-          been assigned).
+          what makes the undo stack derivable, and so what retires
+          `undo.json` (see above).
+
+
+          **The three offline cases**, which E1 collapsed into fewer than three:
+          an unsent tombstone is
+
+          dropped from `pending` like any unsent op, and sent-but-unacked and
+          confirmed are now the same
+
+          lookup, because an id no longer depends on whether a seq has been
+          assigned. Also the offline ring
+
+          gap - the mirror only holds the keyframe slots it happened to fetch,
+          so offline undo depth is luck.
 
 
           **F. Measure on a phone.** The gate on whether any of `invert.ts`

@@ -39,7 +39,10 @@ export default defineConfig({
   webServer: {
     // `--mode test` loads `.env.test`, which blanks the auth + remote vars so a local `.env` can't
     // flip the login gate on and strand every test at the sign-in screen (no more moving `.env` aside).
-    command: `yarn dev --port ${PORT} --mode test`,
+    // `E2E=1` turns Vite's HMR off (see the note in vite.config.ts): editing any file while the
+    // suite runs would otherwise full-reload every page, remount the app, and put the start-audio
+    // overlay back over tests that had already dismissed it (ARCH-5).
+    command: `E2E=1 yarn dev --port ${PORT} --mode test`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

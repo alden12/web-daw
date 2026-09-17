@@ -21,8 +21,7 @@ import type { Author, EditCommand, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
-import { ProjectStore } from "./project/projectStore";
-import { isReplayable, rebuildWithout, replayEntries, tombstonedIds } from "./commands/replay";
+import { headFromLog, rebuildWithout } from "./commands/replay";
 import { commitKeyframePath } from "./history/paths";
 import {
   emptyKeyframeIndex,
@@ -230,31 +229,12 @@ export class ProjectRepository {
     // The tombstones are worked out over the WHOLE log before a base is chosen, because one of them
     // can take back an edit that is already baked into the keyframe, and replaying forward from that
     // keyframe cannot remove it (DAW-34 stage E).
-    const tombstoned = tombstonedIds(entries);
-    let rebuildFrom = { project: baseProject, seq: headSeq ?? -1 };
-    const bakedIn = entries.filter(
-      (entry) => entry.id !== undefined && tombstoned.has(entry.id) && entry.seq <= rebuildFrom.seq,
-    );
-    if (bakedIn.length > 0) {
-      // Go back to a retained keyframe from before the earliest of them. Failing that the ring does
-      // not reach that far, and those undos are simply lost - the edits stay applied, which is the
-      // same "unavailable rather than wrong" the rebuild path takes when it has no base.
-      const older = await this.rebuildBaseFor(Math.min(...bakedIn.map((entry) => entry.seq)), rebuildFrom.seq);
-      if (older) rebuildFrom = older;
-    }
-    let project = rebuildFrom.project;
-    const replayable = entries.filter((entry) => entry.seq > rebuildFrom.seq && isReplayable(entry.kind));
-    // Moving the base back always leaves entries above it, so this one condition covers both cases.
-    if (replayable.length > 0) {
-      const replayStore = new ProjectStore(false);
-      replayStore.load(rebuildFrom.project);
-      replayEntries(replayStore, entries, {
-        above: rebuildFrom.seq,
-        excluding: tombstoned,
-        ignoreTombstones: true,
-      });
-      project = replayStore.snapshot();
-    }
+    const keyframe = { project: baseProject, seq: headSeq ?? -1 };
+    const project = await headFromLog({
+      base: keyframe,
+      entries,
+      olderBase: (belowSeq) => this.rebuildBaseFor(belowSeq, keyframe.seq),
+    });
     this.lastKeyframeSeq = headSeq ?? -1;
     // Everything on disk is already sealed history, so nothing at/below the max needs re-sending.
     this.syncedThroughSeq = Math.max(headSeq ?? -1, highWaterSeq(entries, notes));

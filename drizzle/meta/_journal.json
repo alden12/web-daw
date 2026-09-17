@@ -43,6 +43,13 @@
       "when": 1789671978349,
       "tag": "0005_bouncy_starbolt",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789677836425,
+      "tag": "0006_majestic_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

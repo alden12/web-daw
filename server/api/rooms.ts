@@ -13,12 +13,13 @@
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { applyEdit } from "../../src/audio/commands/applyEdit";
-import { replayEntries } from "../../src/audio/commands/replay";
+import { headFromLog } from "../../src/audio/commands/replay";
 import { commitKeyframePath } from "../../src/audio/history/paths";
 import {
   emptyKeyframeIndex,
   KEYFRAME_INDEX_PATH,
   planKeyframes,
+  rebuildBase,
   retainedKeyframePath,
   type KeyframeIndex,
 } from "../../src/audio/history/keyframes";
@@ -58,6 +59,10 @@ export interface IncomingEdit {
   command: EditCommand;
   opId: string;
   author?: Author;
+  /** Set on a tombstone (DAW-34 stage E): this takes back (`undo`) or puts back (`redo`) the entry
+   *  `undoes` names, rather than applying `command` forward. */
+  kind?: "undo" | "redo";
+  undoes?: string;
 }
 
 /** Version-history markers that pin a keyframe at their seq (a diff / revert-to base): a named `commit`
@@ -82,6 +87,16 @@ export class Room {
   /** The retained-keyframe ring's slot -> seq map (DAW-34 stage B), cached for the room's life so the
    *  cadence check costs no read. Seeded from the bundle on load. */
   private keyframeIndex: KeyframeIndex;
+  /**
+   * Everything that happens after an edit is broadcast, run strictly in order (DAW-34 stage E).
+   *
+   * A tombstone cannot be applied forward, so the store is brought up to date by re-reading the log
+   * and rebuilding. That is several awaits, and it must not interleave with the persist of an edit
+   * that arrived a moment later - the rebuild would read a log missing that edit and then overwrite
+   * the store with a state that has never heard of it. Chaining the after-work keeps the ordering
+   * the synchronous section establishes, without holding a lock across the broadcast.
+   */
+  private afterWork: Promise<unknown> = Promise.resolve();
 
   // Explicit field assignment (no constructor parameter-properties: erasableSyntaxOnly forbids them).
   private constructor(
@@ -112,24 +127,6 @@ export class Room {
     // for any caller (and idempotent).
     await ensureUser(db, ownerId);
     const owner: Accessor = { userId: ownerId };
-    const store = new ProjectStore(false);
-    const projectFile = await readFile(db, owner, projectId, "project.json");
-    let headSeq = -1;
-    if (projectFile?.kind === "json" && projectFile.json) {
-      const { headSeq: reflected, ...base } = projectFile.json as ProjectData & { headSeq?: number };
-      headSeq = reflected ?? -1;
-      store.load(base as ProjectData);
-    }
-    const tail = await readEdits(db, owner, projectId, headSeq);
-    // Tombstones (DAW-34 stage E) cannot reach here yet, for two reasons rather than one: an undo is
-    // not forwarded, AND `edits` has no column for `undoes`, so a forwarded one would not round-trip
-    // either. Both have to land before this tail can carry one - which is worth knowing, because
-    // adding the forwarding alone would leave this looking like it worked.
-    //
-    // When they do arrive this needs what the client's `load` already does: work the exclusions out
-    // over the whole log BEFORE choosing a base, because a tombstone in the tail can take back an
-    // edit baked into the keyframe below it, and replaying forward cannot remove it.
-    replayEntries(store, tail as unknown as EditEntry[]);
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
     // A missing or malformed ring index reads as empty: it costs undo depth, never data.
     const indexFile = await readFile(db, owner, projectId, KEYFRAME_INDEX_PATH);
@@ -137,7 +134,12 @@ export class Room {
       indexFile?.kind === "json" && Array.isArray(indexFile.json)
         ? (indexFile.json as KeyframeIndex)
         : emptyKeyframeIndex();
-    return new Room(db, ownerId, projectId, store, maxSeq, headSeq, keyframeIndex);
+    const room = new Room(db, ownerId, projectId, new ProjectStore(false), maxSeq, -1, keyframeIndex);
+    // One reconstruction, shared with the tombstone path: keyframe + the whole retained log with its
+    // tombstones honoured. `lastKeyframeSeq` comes back from it so the cadence carries across
+    // reloads, which is what the separate `headSeq` read here used to be for.
+    room.lastKeyframeSeq = await room.recomputeHead();
+    return room;
   }
 
   get connectionCount(): number {
@@ -198,6 +200,23 @@ export class Room {
   }
 
   /**
+   * The newest retained keyframe from strictly below `belowSeq`, or null when the ring does not
+   * reach that far back (DAW-34 stage E).
+   *
+   * The authority's half of what `ProjectRepository.rebuildBaseFor` does for a client, reading the
+   * same ring this room writes in `retainKeyframe`. A slot whose stored `headSeq` disagrees with
+   * the index was overwritten under us, so it reads as absent rather than as the wrong base.
+   */
+  async retainedBaseFor(belowSeq: number): Promise<{ project: ProjectData; seq: number } | null> {
+    const slot = rebuildBase(this.keyframeIndex, belowSeq, this.maxSeq);
+    if (!slot) return null;
+    const file = await readFile(this.db, { userId: this.ownerId }, this.projectId, retainedKeyframePath(slot.slot));
+    if (file?.kind !== "json" || !file.json) return null;
+    const { headSeq, ...project } = file.json as ProjectData & { headSeq?: number };
+    return headSeq === slot.seq ? { project: project as ProjectData, seq: slot.seq } : null;
+  }
+
+  /**
    * Pin a keyframe at a commit's seq: write its full HEAD snapshot to the write-once `history/commits/*`
    * path, keyed by seq. Materialising a commit (diff / revert-to) then loads this snapshot directly - zero
    * replay, exact, and durable however old the commit is. Self-contained, so log compaction never affects
@@ -251,14 +270,18 @@ export class Room {
       return reEcho;
     }
     const seq = ++this.maxSeq;
-    applyEdit(this.store, edit.command, author);
+    // A tombstone takes an edit back OUT, which nothing applied forward can do, so the store is
+    // brought up to date by the rebuild queued below rather than here. Its `command` is the command
+    // of the edit being undone and is carried only so the feed can name it (DAW-34 stage E).
+    const tombstone = edit.kind === "undo" || edit.kind === "redo";
+    if (!tombstone) applyEdit(this.store, edit.command, author);
     this.appliedOps.set(edit.opId, seq);
     // A version-history marker pins a keyframe AT its own seq (time-travel base). Snapshot HEAD
     // synchronously here - before any `await` - so a concurrent edit crossing this section can't advance
     // the store first and make the keyframe reflect a later seq. `commit` is a no-op (snapshot = HEAD);
     // `loadSnapshot` (revert) has already loaded its target into the store above (snapshot = that target).
     // Written to storage below (never broadcast); materialising any marker just loads its keyframe.
-    const markerSnapshot = isHistoryMarker(edit.command.type) ? this.store.snapshot() : null;
+    const markerSnapshot = !tombstone && isHistoryMarker(edit.command.type) ? this.store.snapshot() : null;
     const applied: ServerMessage = {
       type: "editApplied",
       projectId: this.projectId,
@@ -266,6 +289,7 @@ export class Room {
       command: edit.command,
       author,
       opId: edit.opId,
+      ...(tombstone ? { kind: edit.kind, undoes: edit.undoes } : {}),
     };
     // Broadcast before the persist await, so broadcast order == seq order across concurrent edits.
     this.broadcast(applied);
@@ -278,21 +302,59 @@ export class Room {
       command: edit.command,
       author,
       time: Date.now(),
-      kind: "edit",
+      kind: edit.kind ?? "edit",
+      undoes: edit.undoes,
     };
-    await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
-    // Keep the queryable index name current on a rename, so every collaborator's listing reflects it
-    // without the renamer pushing meta.json (a peer never writes the owner's meta.json).
-    if (edit.command.type === "renameProject") await setProjectName(this.db, this.projectId, this.store.name);
-    if (markerSnapshot) await this.persistCommitKeyframe(seq, markerSnapshot);
-    // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a bounded
-    // tail. Runs after the broadcast, so it never delays peers seeing the edit.
-    if (this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
+    // Serialized, so a rebuild cannot read a log that a concurrently-arriving edit has not reached
+    // yet and then overwrite the store with a state that never heard of it.
+    await this.queueAfterWork(async () => {
+      await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
+      // The tombstone is in the log now, so HEAD is whatever the log says with it honoured.
+      if (tombstone) await this.recomputeHead();
+      // Keep the queryable index name current on a rename, so every collaborator's listing reflects
+      // it without the renamer pushing meta.json (a peer never writes the owner's meta.json).
+      if (!tombstone && edit.command.type === "renameProject") {
+        await setProjectName(this.db, this.projectId, this.store.name);
+      }
+      if (markerSnapshot) await this.persistCommitKeyframe(seq, markerSnapshot);
+      // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a
+      // bounded tail. Runs after the broadcast, so it never delays peers seeing the edit.
+      if (this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
+    });
     return applied;
   }
 
   private broadcast(message: ServerMessage): void {
     for (const client of this.clients) client.send(message);
+  }
+
+  /** Run `task` after every task queued before it, whether those succeeded or not. */
+  private queueAfterWork(task: () => Promise<unknown>): Promise<unknown> {
+    this.afterWork = this.afterWork.then(task, task);
+    return this.afterWork;
+  }
+
+  /**
+   * Re-read the log and rebuild HEAD, honouring its tombstones (DAW-34 stage E).
+   *
+   * The keyframe is the base, not the live store: the store is HEAD and already has the undone edit
+   * in it, and nothing applied forward can take it back out. Returns the keyframe's seq so a cold
+   * start can seed its cadence from it.
+   */
+  private async recomputeHead(): Promise<number> {
+    const owner: Accessor = { userId: this.ownerId };
+    const projectFile = await readFile(this.db, owner, this.projectId, "project.json");
+    let base: { project: ProjectData; seq: number } = { project: new ProjectStore(false).snapshot(), seq: -1 };
+    if (projectFile?.kind === "json" && projectFile.json) {
+      const { headSeq, ...project } = projectFile.json as ProjectData & { headSeq?: number };
+      base = { project: project as ProjectData, seq: headSeq ?? -1 };
+    }
+    // The whole retained log, not just the tail above the keyframe: a tombstone up there can take
+    // back an edit baked INTO the keyframe, which `headFromLog` handles by dropping to an older
+    // retained one. Same code the client's `ProjectRepository.load` runs.
+    const log = (await readEdits(this.db, owner, this.projectId, -1)) as unknown as EditEntry[];
+    this.store.load(await headFromLog({ base, entries: log, olderBase: (below) => this.retainedBaseFor(below) }));
+    return base.seq;
   }
 }
 

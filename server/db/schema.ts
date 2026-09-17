@@ -121,6 +121,14 @@ export const edits = pgTable(
     time: bigint("time", { mode: "number" }).notNull(),
     /** "edit" | "undo" | "redo"; absent = a normal edit. */
     kind: text("kind"),
+    /**
+     * On an undo/redo row: the `entry_id` of the edit it takes back or puts back (DAW-34 stage E).
+     *
+     * This is the tombstone, and it is why an undo can be shared at all: the log alone then says
+     * what the project is, so a room cold-starting and a peer catching up reach the same state as
+     * the client that pressed undo, without either being told the resulting project.
+     */
+    undoes: text("undoes"),
     /** Optional display override for non-edit (undo/redo) entries. */
     label: text("label"),
   },

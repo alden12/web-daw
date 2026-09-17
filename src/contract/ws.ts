@@ -27,7 +27,12 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   /** Join a project's room; the server replies with a `snapshot`. */
   z.object({ type: z.literal("subscribe"), projectId: z.string() }),
   /** An optimistically-applied local edit. `opId` (client uuid) matches the echo and dedups a
-   *  resend; `baseSeq` is the last authoritative seq the client had; `author` defaults to "you". */
+   *  resend; `baseSeq` is the last authoritative seq the client had; `author` defaults to "you".
+   *
+   *  With `kind` "undo" or "redo" it is a TOMBSTONE rather than an edit (DAW-34 stage E): `undoes`
+   *  names the entry it takes back or puts back, and the authority records it without applying
+   *  anything forward. `command` still carries the command of the edit being undone, which is what
+   *  the feed shows ("Undid: Added note") - the authority never applies it. */
   z.object({
     type: z.literal("edit"),
     projectId: z.string(),
@@ -35,6 +40,8 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
     opId: z.string(),
     baseSeq: z.number(),
     author: authorSchema.optional(),
+    kind: z.enum(["undo", "redo"]).optional(),
+    undoes: z.string().optional(),
   }),
 ]);
 
@@ -49,7 +56,12 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
     entries: z.array(editEntrySchema),
   }),
   /** An edit the authority ordered + applied. Broadcast to every peer; the originator recognises
-   *  it by `opId`. `seq` is the assigned order; `author` is who made it. */
+   *  it by `opId`. `seq` is the assigned order; `author` is who made it.
+   *
+   *  `kind` "undo"/"redo" with `undoes` echoes a tombstone: the authority has recorded that the
+   *  named entry is taken back (or put back) and rebuilt its own state without it. A peer folds it
+   *  the same way - by rebuilding - rather than by applying `command`, which is only there so the
+   *  feed can say what was undone. */
   z.object({
     type: z.literal("editApplied"),
     projectId: z.string(),
@@ -57,6 +69,8 @@ export const serverMessageSchema = z.discriminatedUnion("type", [
     command: editCommandSchema,
     author: authorSchema,
     opId: z.string(),
+    kind: z.enum(["undo", "redo"]).optional(),
+    undoes: z.string().optional(),
   }),
   /** The authority refused an edit (e.g. not the owner); the client drops the optimistic op. */
   z.object({ type: z.literal("editRejected"), opId: z.string(), reason: z.string() }),
