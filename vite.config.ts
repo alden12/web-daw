@@ -20,6 +20,26 @@ import { PWA_MANIFEST } from "./src/pwa/manifest";
  */
 const mobileHttps = process.env.MOBILE_HTTPS === "1";
 
+/**
+ * `E2E=1` (set by `playwright.config.ts` when it starts this server) turns HMR OFF.
+ *
+ * Not a tidiness measure - it fixes a whole class of e2e failure (ARCH-5). Locally the suite
+ * reuses a running dev server, which is watching the project. Editing ANY file mid-run makes
+ * Vite full-reload every open page, and a reload remounts `AppShell`, which resets `started` and
+ * puts the "Start the audio engine" overlay back over tests that had already dismissed it. Every
+ * subsequent click hits the overlay and the whole worker's file times out.
+ *
+ * It is not hypothetical and it is easy to do by accident: a suite runs for a minute, and editing
+ * a doc or a roadmap file in that minute is enough. Proven by running the suite twice, once
+ * touching nothing (153/153) and once touching one non-source file every five seconds (7 failures
+ * across 3 spec files, every one of them with the overlay in its page snapshot).
+ *
+ * An e2e run wants a frozen server, so it gets one. CI never had this problem - it starts a fresh
+ * server and nobody edits files during the run - which is exactly why it went unexplained for so
+ * long while being reproducible on demand here.
+ */
+const e2e = process.env.E2E === "1";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -85,6 +105,8 @@ export default defineConfig({
   ],
   server: {
     port: 5155,
+    // See the note on `e2e` above: a test run must not be live-reloaded out from under itself.
+    ...(e2e ? { hmr: false as const } : {}),
     ...(mobileHttps
       ? {
           // Tunnels (cloudflared, ngrok) address the dev server by hostname rather than
