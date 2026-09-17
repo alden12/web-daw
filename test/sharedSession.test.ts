@@ -652,16 +652,20 @@ const applied = (seq: number, command: EditCommand, opId: string): ServerMessage
 describe("SharedSession durable offline mirror", () => {
   function makeSession(mirror: FakeMirror) {
     const store = new ProjectStore(false);
-    const editLog = new EditLog(store);
     const transport = new StubTransport();
     let counter = 0;
+    // One id generator for both: an edit's opId IS its log entry id (DAW-34 stage E), so a
+    // predictable mint on the log is what makes the echoes below predictable. `newOpId` is left
+    // wired for the edits that have no log entry of their own, like a commit marker.
+    const nextId = () => `op-${counter++}`;
+    const editLog = new EditLog(store, nextId);
     const session = new SharedSession({
       projectStore: store,
       editLog,
       transport,
       projectId: "p1",
       localMirror: mirror,
-      newOpId: () => `op-${counter++}`,
+      newOpId: nextId,
     });
     session.attach();
     return { store, editLog, transport, session };

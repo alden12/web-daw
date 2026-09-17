@@ -171,7 +171,7 @@ export class SharedSession {
   /** Attach to an `EditLog` as its remote sink: every locally-dispatched edit is enqueued for the
    *  authority (after `EditLog` has already applied it optimistically). Detaches on `close()`. */
   attach(): void {
-    this.editLog.setRemote((command, author) => this.enqueue(command, author));
+    this.editLog.setRemote((command, author, id) => this.enqueue(command, author, id));
   }
 
   /**
@@ -179,9 +179,12 @@ export class SharedSession {
    * `EditLog` has already applied it to the live store; the `editApplied` echo (matched by `opId`)
    * confirms it. Undo/redo do NOT route here - they are local best-effort in a shared session.
    */
-  enqueue(command: EditCommand, author: Author): void {
+  enqueue(command: EditCommand, author: Author, id?: string): void {
     if (this.closed) return;
-    const op: PendingOp = { opId: this.newOpId(), command, author };
+    // The log's entry id IS the opId (DAW-34 stage E): one identity for the edit, from the client
+    // that made it through to the authority's stored log, so an undo step names the same edit
+    // everywhere. Only an edit with no log entry of its own (a commit marker) needs a minted id.
+    const op: PendingOp = { opId: id ?? this.newOpId(), command, author };
     this.pending.push(op);
     this.persistPending(); // durable before send, so an offline edit survives a reload
     // Send only when synced with the authority. While disconnected (or awaiting a conflict choice) the op
@@ -336,7 +339,8 @@ export class SharedSession {
       if (!isNew) this.rebuildLive(); // already in `base` (snapshot-recovered): drop the redundant pending copy
     } else if (isNew) {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
-      this.editLog.recordRemote(message.command as EditCommand, message.author); // narrate it in the feed
+      // Narrate it in the feed, keeping the peer's edit id, so an undo here can name their edit.
+      this.editLog.recordRemote(message.command as EditCommand, message.author, message.opId);
       this.onRemoteEdit?.(message.command as EditCommand, message.author); // let the UI react (e.g. list label)
     }
     // The authoritative log advanced (ours or a peer's): let history re-read the freshly-mirrored markers.

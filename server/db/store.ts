@@ -54,6 +54,8 @@ export type FilePayload = { kind: "json"; json: unknown } | { kind: "binary"; by
 /** One authored edit as appended/read over the wire (structural; the command stays opaque here). */
 export type EditEntryInput = {
   seq: number;
+  /** The edit's identity, minted by the client that made it; the same value as its `opId`. */
+  id?: string;
   command: unknown;
   author: string;
   time: number;
@@ -217,6 +219,7 @@ export async function appendEdits(
           entries.map((entry) => ({
             projectId,
             seq: entry.seq,
+            entryId: entry.id ?? null,
             command: entry.command,
             author: entry.author,
             time: entry.time,
@@ -227,6 +230,7 @@ export async function appendEdits(
         .onConflictDoUpdate({
           target: [edits.projectId, edits.seq],
           set: {
+            entryId: sql`excluded."entry_id"`,
             command: sql`excluded."command"`,
             author: sql`excluded."author"`,
             time: sql`excluded."time"`,
@@ -260,6 +264,7 @@ export async function readEdits(
     db
       .select({
         seq: edits.seq,
+        id: edits.entryId,
         command: edits.command,
         author: edits.author,
         time: edits.time,
@@ -273,12 +278,13 @@ export async function readEdits(
     limit != null
       ? (await select().orderBy(desc(edits.seq)).limit(limit)).reverse()
       : await select().orderBy(edits.seq);
-  // Drop null kind/label so the entries match the wire schema (optional, not nullable).
+  // Drop null id/kind/label so the entries match the wire schema (optional, not nullable).
   return rows.map((row) => ({
     seq: row.seq,
     command: row.command,
     author: row.author,
     time: row.time,
+    ...(row.id != null ? { id: row.id } : {}),
     ...(row.kind != null ? { kind: row.kind } : {}),
     ...(row.label != null ? { label: row.label } : {}),
   }));

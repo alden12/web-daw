@@ -249,6 +249,9 @@ export const editCommandSchema = z.object({ type: z.string() }).catchall(z.unkno
 
 export const editEntrySchema = z.object({
   seq: z.number(),
+  /** Stable identity of the edit, minted by whoever made it - what an undo step names, since `seq`
+   *  is an order the authority reassigns (DAW-34 stage E). Optional: older logs have none. */
+  id: z.string().optional(),
   command: editCommandSchema,
   author: authorSchema,
   time: z.number(),
@@ -283,18 +286,22 @@ export const commitSchema = z.object({
 });
 
 /**
- * `undo.json`: two lists of edit `seq`, which is the whole file now that undo rebuilds the project
- * from a keyframe with those seqs left out (DAW-34).
+ * `undo.json`: two lists of edit `id`, which is the whole file now that undo rebuilds the project
+ * from a keyframe with those entries left out (DAW-34).
  *
- * The old shape - a base snapshot plus a command and an inverse per step, with a `state`
- * fingerprint guarding against applying a stale one - fails this schema and is discarded on load,
- * which is the intended outcome rather than a migration to write: the file holds session-scoped
- * undo state, never user work, and one reload with undo unavailable is what an unreadable stack
- * should cost.
+ * Ids rather than seqs since stage E. A `seq` is an order the authority assigns, so a hosted
+ * session's log comes back renumbered and a stack written against client seqs named nothing; an id
+ * is minted by whoever made the edit and never changes.
+ *
+ * Neither the old seq shape nor the older one before it - a base snapshot plus a command and an
+ * inverse per step, with a `state` fingerprint guarding against applying a stale one - parses here,
+ * and both are discarded on load. That is the intended outcome rather than a migration to write:
+ * the file holds session-scoped undo state, never user work, and one reload with undo unavailable
+ * is what an unreadable stack should cost.
  */
 export const undoStateSchema = z.object({
-  undo: z.array(z.number()),
-  redo: z.array(z.number()),
+  undo: z.array(z.string()),
+  redo: z.array(z.string()),
 });
 
 /* -------------------------------------------------------------------------- */

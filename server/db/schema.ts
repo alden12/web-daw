@@ -104,6 +104,17 @@ export const edits = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
     seq: integer("seq").notNull(),
+    /**
+     * The edit's own identity, minted by the client that made it (DAW-34 stage E).
+     *
+     * `seq` is this authority's ORDER for the edit and is not stable across clients: each one
+     * numbers its edits optimistically and gets renumbered here. An undo step has to name one edit
+     * and keep naming it, on any machine and after any reload, so it names this. It is the same
+     * value as the `opId` the edit arrived with, so the authority's dedup map and the log agree.
+     *
+     * Nullable: rows written before it exist have none, and such an edit simply cannot be undone.
+     */
+    entryId: text("entry_id"),
     command: jsonb("command").notNull(),
     author: text("author").notNull(),
     /** Client edit timestamp (ms since epoch); well within a JS-number-safe bigint. */

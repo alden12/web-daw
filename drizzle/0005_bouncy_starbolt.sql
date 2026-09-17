@@ -1,0 +1,1 @@
+ALTER TABLE "edits" ADD COLUMN "entry_id" text;

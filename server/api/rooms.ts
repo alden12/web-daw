@@ -261,7 +261,17 @@ export class Room {
     };
     // Broadcast before the persist await, so broadcast order == seq order across concurrent edits.
     this.broadcast(applied);
-    const entry: EditEntryInput = { seq, command: edit.command, author, time: Date.now(), kind: "edit" };
+    // The opId is the edit's identity, minted by the client that made it, so it is what the log
+    // stores and what an undo step on any machine names (DAW-34 stage E). `seq` stays this
+    // authority's order for it.
+    const entry: EditEntryInput = {
+      seq,
+      id: edit.opId,
+      command: edit.command,
+      author,
+      time: Date.now(),
+      kind: "edit",
+    };
     await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
     // Keep the queryable index name current on a rename, so every collaborator's listing reflects it
     // without the renamer pushing meta.json (a peer never writes the owner's meta.json).

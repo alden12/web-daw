@@ -1,16 +1,16 @@
 /**
- * A short, stable fingerprint of a project snapshot (DAW-8.15).
+ * A short, stable fingerprint of a project snapshot: "are these two projects the same?" in one value.
  *
- * Used to stamp the persisted undo stacks with the state they were captured against, so a later load
- * can tell whether they still apply. The obvious stamp - the edit log's high-water `seq` - does not
- * work in a hosted session: the client coalesces a gesture into one local entry (one `seq`) while
- * forwarding every dispatch to the authority, which numbers them all, so the two counters drift apart
- * by design and the comparison never matches. The project state itself is the thing undo actually
- * needs to line up with, and it means the same thing in both persistence modes.
+ * **It is a test helper now.** It was written for DAW-8.15, to stamp the persisted undo stacks with
+ * the state they were captured against so a later load could tell whether they still applied. That
+ * guard is gone: an undo step is the id of a log entry (DAW-34 stages C and E), so a step that
+ * names nothing excludes nothing and the stack needs no vouching for. What is left is the use the
+ * rebuild suite makes of it - apply an edit, rebuild without it, assert the project came back to
+ * the same place - where comparing one value beats comparing two deep objects field by field.
  *
  * Not a cryptographic hash and not a checksum for storage integrity: it only has to change when the
- * project does. A collision means restoring a stack captured against a different state, so it is
- * widened to 64 bits (two FNV-1a passes with different offset bases) plus the byte length.
+ * project does. Widened to 64 bits (two FNV-1a passes with different offset bases) plus the byte
+ * length, so a collision does not quietly pass a rebuild that went wrong.
  */
 import type { ProjectData } from "./types";
 
