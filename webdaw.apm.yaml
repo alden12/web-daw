@@ -8348,17 +8348,83 @@ projects:
           resurrection case.
 
 
+          ### E4 done on slice-125: author-scoped undo, and `undo.json` retired
+
+
+          **Author-scoped undo was already the behaviour**, which was the
+          surprise. `recordRemote` never
+
+          pushed a peer's edit onto the local stack, so your undo has always
+          taken back your own last edit
+
+          rather than whoever edited most recently. It was true by accident
+          rather than by design though -
+
+          undocumented, untested, and one careless line from breaking - so it
+          is pinned now by two tests
+
+          that would have caught it.
+
+
+          **`undo.json` is gone**, per the decision recorded above. The stacks
+          are per-tab
+
+          `sessionStorage` (`src/audio/undoSession.ts`): they survive a reload,
+          which is what DAW-8.15
+
+          promised, and die with the tab. Removed with it: `readUndo`,
+          `writeUndo`, `undoStateSchema`, the
+
+          bundle-path entry, and the `writeUndo` in the project-switch flush.
+
+
+          **A tab with no stacks of its own derives what it can**
+          (`EditLog.deriveUndoStack`): your
+
+          replayable, non-tombstoned entries above the rebuild base, in seq
+          order. That is what makes undo
+
+          work in a fresh tab or on another device, which is the benefit stage
+          D's note promised from having
+
+          a shared log. Exact where the exact answer exists, approximate only
+          where the alternative is no
+
+          undo at all.
+
+
+          **The approximation, stated so nobody rediscovers it as a bug.**
+          "Mine" is my author id plus the
+
+          two AI voices, because an agent edits on behalf of whoever is driving
+          it. In a shared session
+
+          where two people each drive an agent, the log does not record which
+          of them drove it, so an agent
+
+          edit lands in both users' DERIVED stacks and undoing it could take
+          back the other person's agent
+
+          work. In-tab this cannot happen - the exact stack only ever holds
+          what this client dispatched.
+
+          Fixing it properly means an agent edit carrying the user who drove
+          it, which is a change to the
+
+          author model rather than to undo.
+
+
+          Note the storage is injectable (`SessionStore`), because the unit
+          suite has no DOM - without
+
+          that seam the whole file would have been untestable, which for
+          something with four
+            swallow-everything catch blocks is not acceptable. Covered by
+            `test/undoSession.test.ts`, including a store that throws on every access, as a private
+            window does.
+
+
           ### Still open in stage E
-
-
-          **Author-scoped undo**, so your undo takes back YOUR last edit
-          rather than whoever's happened to
-
-          be most recent. Without it, two people editing makes pressing undo a
-          coin toss - and it is also
-
-          what makes the undo stack derivable, and so what retires
-          `undo.json` (see above).
 
 
           **The three offline cases**, which E1 collapsed into fewer than three:
