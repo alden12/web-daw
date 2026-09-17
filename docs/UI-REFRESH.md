@@ -72,7 +72,7 @@ All values in `src/index.css:14-37`.
 | `--color-faint` | `#5c626e` | `#5f656f` | `#98a0ac` | 99 | Tertiary text, inactive icons |
 | `--color-you` | `#56c7c2` | unchanged | re-lit, see below | - | Your edits, playhead, selection, primary accent |
 | `--color-agent` | `#a884f3` | unchanged | re-lit, see below | - | Built-in agent |
-| `--color-claude` | `#d9775a` | unchanged | re-lit, see below | - | MCP / Claude driver, record |
+| `--color-hot` | `#d9775a` | unchanged | re-lit, see below | - | record, clipping, failed (was the MCP voice) |
 | `--color-good` | `#2ecc71` | unchanged | `#15a34a` | - | Success |
 | `--color-warn` | `#f1c40f` | unchanged | `#b07908` | - | Warning, solo |
 

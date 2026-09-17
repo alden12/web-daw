@@ -13,6 +13,7 @@
 import { ParamStore } from "../params/store";
 import { ClipStore } from "../sequencer/clipStore";
 import { effectSchema } from "../effects/catalog";
+import { authorSchema } from "./schema";
 import type { PatchValues } from "../params/types";
 import type {
   ProjectData,
@@ -158,9 +159,17 @@ export function loadEffectInstances(effects: ProjectData["tracks"][number]["effe
   });
 }
 
-/** Normalize a stored author tag (defaults to the local user). */
+/**
+ * Normalize a stored author tag: any author the schema accepts passes through, anything else reads
+ * as the default user.
+ *
+ * It used to collapse everything but two AI voices to "you", which quietly erased a collaborator's
+ * id from a clip they authored - and would have erased the driving user out of an agent author too.
+ * A stamp is a display key, so an unrecognised one costs a colour; a rewritten one costs the truth.
+ */
 export function clipAuthor(author: unknown): ClipAuthor {
-  return author === "agent" ? "agent" : author === "claude" ? "claude" : "you";
+  const parsed = authorSchema.safeParse(author);
+  return parsed.success ? parsed.data : "you";
 }
 
 /** Id minters the clip-pool builder needs for its empty-clip / default-placement fallbacks. */

@@ -132,7 +132,7 @@ export function LibraryHeader({
           items={items}
         />
       </div>
-      {error && <p className="shrink-0 text-claude text-[11px] px-3.5 py-1">{error}</p>}
+      {error && <p className="shrink-0 text-hot text-[11px] px-3.5 py-1">{error}</p>}
       <input
         ref={importRef}
         type="file"

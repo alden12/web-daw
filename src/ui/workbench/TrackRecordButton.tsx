@@ -23,7 +23,7 @@ export function TrackRecordButton({
       title={recording ? "Stop recording" : "Record a new take into this track"}
       // A pill, to match the clips it sits under: what it makes is another one of them.
       className={`w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] px-2 py-1 rounded-full border cursor-pointer ${
-        recording ? "text-claude bg-claude/15 border-claude/55" : "text-claude/85 border-claude/40 hover:bg-claude/10"
+        recording ? "text-hot bg-hot/15 border-hot/55" : "text-hot/85 border-hot/40 hover:bg-hot/10"
       }`}
     >
       <span className={`w-2.5 h-2.5 rounded-full bg-current ${recording ? "animate-pulse" : ""}`} />

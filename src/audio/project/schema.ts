@@ -27,10 +27,14 @@ import { KEYFRAME_INDEX_PATH } from "../history/keyframes";
 /* -------------------------------------------------------------------------- */
 
 /** Who authored a piece of durable state (mirrors commands `Author` + project `ClipAuthor`). A bounded
- *  free string, not an enum: `"claude"` / `"agent"` are reserved AI voices and `"you"` is the default
- *  solo user, but any other value is a human user id (multi-user - the id is a display handle until real
- *  auth supplies a stable one). The colour layer (authorColors.ts) resolves any id to a stable hue. */
-export const authorSchema = z.string().min(1).max(64);
+ *  free string, not an enum: `"you"` is the default solo user, `agent:<userId>` is an AI agent's edit
+ *  made for that user (see commands/authors.ts), and any other value is a human user id (multi-user -
+ *  the id is a display handle until real auth supplies a stable one). The colour layer
+ *  (authorColors.ts) resolves any id to a stable hue.
+ *
+ *  The bound is 128 rather than 64 because an agent author is a prefix PLUS a user id, and a user id
+ *  may itself run to 64. */
+export const authorSchema = z.string().min(1).max(128);
 
 /** A single parameter value (the union a ParamStore holds). */
 export const paramValueSchema = z.union([z.number(), z.string(), z.boolean()]);

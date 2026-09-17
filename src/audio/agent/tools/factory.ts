@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { AgentTool } from "../types";
 import type { ProjectStore, InstrumentTrack, Track, EffectInstance } from "../../project/projectStore";
-import type { Dispatch } from "../../commands/types";
+import type { Author, Dispatch } from "../../commands/types";
 import type { Scheduler } from "../../sequencer/scheduler";
 import type { ParamSpec, ParamValue } from "../../params/types";
 
@@ -16,6 +16,9 @@ export interface AgentToolDeps {
   projectStore: ProjectStore;
   dispatch: Dispatch;
   scheduler: Scheduler;
+  /** Who the agent's edits belong to: `agent:<userId>` for the user driving it (see
+   *  `commands/authors.ts`). The context stamps it on every dispatch, so no tool names an author. */
+  author: Author;
 }
 
 export interface ToolContext extends AgentToolDeps {
@@ -28,6 +31,10 @@ export interface ToolContext extends AgentToolDeps {
  *  behaviour and error messages. */
 export function makeContext(deps: AgentToolDeps): ToolContext {
   const { projectStore } = deps;
+  // Every tool edit is the agent's, stamped once here rather than at each of the forty call sites
+  // that used to name a voice - so a new tool cannot forget to, and there is one place to change if
+  // who an agent edits for ever changes again.
+  const dispatch: Dispatch = (command) => deps.dispatch(command, deps.author);
   const resolveTrack = (trackId?: string): Track => {
     const id = trackId ?? projectStore.selectedId ?? undefined;
     if (!id) throw new Error("No track given and none is selected. Call list_tracks and pass a track id.");
@@ -46,7 +53,7 @@ export function makeContext(deps: AgentToolDeps): ToolContext {
     if (!effect) throw new Error(`No effect "${effectId}" on track "${track.id}". Call list_effects for its chain.`);
     return { track, effect };
   };
-  return { ...deps, resolveTrack, resolveInstrumentTrack, resolveEffect };
+  return { ...deps, dispatch, resolveTrack, resolveInstrumentTrack, resolveEffect };
 }
 
 export function defineTool<Schema extends z.ZodType>(def: {

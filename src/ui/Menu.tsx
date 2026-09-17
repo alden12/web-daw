@@ -112,7 +112,7 @@ let closeActiveMenu: (() => void) | null = null;
 
 const itemClass = (danger?: boolean) =>
   `flex items-center gap-2 w-full text-left whitespace-nowrap px-3 py-1.5 text-[12.5px] cursor-pointer hover:bg-you/10 disabled:opacity-40 disabled:cursor-not-allowed ${
-    danger ? "text-claude" : "text-ink"
+    danger ? "text-hot" : "text-ink"
   }`;
 
 /**

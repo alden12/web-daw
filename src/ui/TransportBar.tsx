@@ -60,7 +60,7 @@ export function TransportBar({
           way a grey one does not, and it is the one control here you look for rather than at. */}
       <IconButton
         label="Record"
-        tone="claude"
+        tone="hot"
         toneAtRest
         size={compact ? "lg" : "md"}
         // Only while compact, where a bar button sits immediately to the left and the dot's
@@ -82,7 +82,7 @@ export function TransportBar({
       </IconButton>
 
       {rec.status === "error" && rec.error && (
-        <span className="font-mono text-[10.5px] text-claude" role="alert">
+        <span className="font-mono text-[10.5px] text-hot" role="alert">
           {rec.error}
         </span>
       )}

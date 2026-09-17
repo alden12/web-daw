@@ -11,6 +11,7 @@
  */
 import type { CSSProperties } from "react";
 import { colorForAuthor } from "./authorColors";
+import { agentDriver, isAgentAuthor } from "../audio/commands/authors";
 import { withLightness } from "./oklch";
 import type { AuthorPresence } from "./authorColorsContext";
 
@@ -88,6 +89,17 @@ export const authorMiniStyle = (author: string, presence: AuthorPresence): CSSPr
   background: withAlpha(authorHex(author, presence), 0.85),
 });
 
-/** Display label for an author: the reserved voices get a friendly name; a user id shows as-is. */
-export const authorLabel = (author: string): string =>
-  author === "claude" ? "Claude" : author === "agent" ? "Agent" : author === "you" ? "You" : author;
+/**
+ * Display label for an author: the reserved voices get a friendly name; a user id shows as-is.
+ *
+ * An agent edit names the user who drove it, so the label says whose agent it was - except when it
+ * was the viewer's own, where "Agent" is what they mean by it. That is the one place the driver is
+ * visible: every agent shares the one violet, so the label is what tells two of them apart.
+ */
+export const authorLabel = (author: string, self = "you"): string => {
+  if (author === "you") return "You";
+  const driver = agentDriver(author);
+  if (driver !== null) return driver === self ? "Agent" : `Agent (${driver})`;
+  if (isAgentAuthor(author)) return "Agent";
+  return author;
+};

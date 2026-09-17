@@ -183,15 +183,33 @@ describe("deriving the undo stack from the log", () => {
     expect(log.deriveUndoStack()).toEqual(["e-0"]);
   });
 
-  // An agent edits on behalf of whoever is driving it, so its work is yours to take back. The
-  // alternative is a fresh tab being unable to undo anything the agent did.
-  it("keeps the AI voices, which act on your behalf", () => {
+  // An agent edits on behalf of whoever drove it, so its work is theirs to take back - which the
+  // author says outright now that it names the driver (DAW-34).
+  it("keeps an edit made by an agent you drove", () => {
     const { log } = seededLog();
-    log.dispatch(track("t-1"), "claude");
-    log.resetCoalescing();
-    log.dispatch(track("t-2"), "agent");
+    log.dispatch(track("t-1"), log.agentAuthor);
 
-    expect(log.deriveUndoStack()).toEqual(["e-0", "e-1"]);
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
+  });
+
+  // The case the old bare voice got wrong: it made one agent edit belong to everybody, so undoing
+  // it could take back the work another person's agent had just done.
+  it("leaves out an edit made by someone else's agent", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    log.recordRemote({ command: track("t-peer"), author: "agent:someone-else", id: "peer-0" });
+
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
+  });
+
+  // An agent edit from before the driver was recorded belongs to nobody, for the same reason: with
+  // no driver there is no way to know it was not made for someone else.
+  it("leaves out an agent edit with no driver recorded", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    log.recordRemote({ command: track("t-old"), author: "agent", id: "old-0" });
+
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
   });
 
   it("leaves out the reflog markers, which are not edits", () => {

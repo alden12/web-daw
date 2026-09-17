@@ -1,7 +1,8 @@
 /**
  * The agent's whole toolset - what it can do to a project - aggregated from the domain
  * modules. Read tools query the live `projectStore`; edit tools go through
- * `dispatch(command, "agent")`, the exact path the UI and MCP use, so the agent inherits
+ * `dispatch`, the exact path the UI and MCP use (authored as the agent by the tool
+ * context, so no tool names a voice), so the agent inherits
  * undo, the activity feed, history, and engine reconciliation for free. Argument sets
  * that reference instruments/effects/params validate against the catalogs (never a
  * hardcoded list). Adding a tool is one `defineTool` entry in the relevant module.

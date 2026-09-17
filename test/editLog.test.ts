@@ -12,20 +12,20 @@ describe("EditLog", () => {
   it("applies a command and records an authored, ordered entry", () => {
     const { project, log } = setup();
     log.dispatch({ type: "setTempo", bpm: 90 });
-    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" }, "claude");
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" }, "agent:you");
 
     expect(project.tempo).toBe(90);
     expect(project.getTrack("t-1")?.kind).toBe("instrument");
 
     const { entries } = log.getState();
     expect(entries.map((e) => e.command.type)).toEqual(["setTempo", "createTrack"]);
-    expect(entries.map((e) => e.author)).toEqual(["you", "claude"]);
+    expect(entries.map((e) => e.author)).toEqual(["you", "agent:you"]);
     expect(entries.map((e) => e.seq)).toEqual([0, 1]);
   });
 
   it("applies setTimeSignature and describes it for the activity feed", () => {
     const { project, log } = setup();
-    log.dispatch({ type: "setTimeSignature", numerator: 3, denominator: 4 }, "claude");
+    log.dispatch({ type: "setTimeSignature", numerator: 3, denominator: 4 }, "agent:you");
     expect(project.timeSignature).toEqual({ numerator: 3, denominator: 4 });
     expect(log.describe(log.getEntries()[0])).toBe("Set time signature 3/4");
   });
@@ -33,7 +33,7 @@ describe("EditLog", () => {
   it("note() posts a feed annotation that is not an edit (stays out of the replay stream)", () => {
     const { log } = setup();
     log.dispatch({ type: "setTempo", bpm: 100 });
-    log.note("building the demo", "claude");
+    log.note("building the demo", "agent:you");
 
     // The note shows in the feed but never in the replayable edit entries.
     expect(log.getNotes().map((n) => n.text)).toEqual(["building the demo"]);

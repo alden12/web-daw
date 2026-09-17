@@ -29,6 +29,7 @@ import {
 import { effectInfos, hasEffect, effectSchema } from "../src/audio/effects/catalog";
 import { midiDeviceInfos, hasMidiDevice, midiDeviceSchema } from "../src/audio/midi/device/catalog";
 import { validateParam } from "../src/audio/params/validate";
+import { UNATTRIBUTED_AGENT } from "../src/audio/commands/authors";
 import type { NoteEvent } from "../src/audio/sequencer/types";
 import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequencer/quantize";
 import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
@@ -1218,7 +1219,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
   // --- Clip pool ------------------------------------------------------------
   // A track owns a pool of note clips (patterns); the active one is edited by the
   // note tools and shown in the roll. Arrange them along time with the placement
-  // tools below. Clips you create are tagged 'claude'.
+  // tools below. Clips you create are tagged as the agent.
   const clipIdArg = { clip_id: z.string().describe("clip id (see list_clips)") };
 
   server.registerTool(
@@ -1273,7 +1274,17 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
         lengthBeats: length_beats,
       };
       if (!sendToTab(msg)) return fail("No DAW tab connected.");
-      mirror.addClip(r.id, { id, name, fromClipId: from, empty, lengthBeats: length_beats, author: "claude" });
+      // The mirror is this server's read-back copy; the real edit is authored in the tab, which is
+      // the only side that knows which user is driving the agent. So the shadow stamp is an agent
+      // with no driver recorded rather than a guess at one.
+      mirror.addClip(r.id, {
+        id,
+        name,
+        fromClipId: from,
+        empty,
+        lengthBeats: length_beats,
+        author: UNATTRIBUTED_AGENT,
+      });
       return ok(`Added clip on ${r.id} (id ${id}); it is now active.`);
     },
   );
@@ -1593,7 +1604,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
   // A commit is a durable, named snapshot of the whole project. The history is a
   // DAG: list_history walks it newest-first, diff reads the musical changes
   // between two commits, commit stamps a new version, revert_to rolls back
-  // (append-only, git-revert style). Claude's commits/reverts are authored coral.
+  // (append-only, git-revert style). An agent's commits/reverts are authored as the agent.
   type HistoryEntry = { id: string; message: string; author: string; time: number; auto: boolean; entryCount: number };
 
   /** Run a history RPC; map transport/tab errors to a tool failure. */

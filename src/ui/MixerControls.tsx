@@ -72,7 +72,7 @@ export function Fader({
       {/* Meter overlay (future): a level bar behind the line, red when clipping. */}
       {level !== undefined && (
         <div
-          className={`absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-sm ${clip ? "bg-claude" : "bg-good/70"}`}
+          className={`absolute left-0 top-1/2 -translate-y-1/2 h-1.5 rounded-sm ${clip ? "bg-hot" : "bg-good/70"}`}
           style={{ width: `${Math.min(1, Math.max(0, level)) * 100}%` }}
         />
       )}
@@ -119,7 +119,7 @@ export function MuteSolo({
           e.stopPropagation();
           onMute();
         }}
-        className={`${btn} ${muted ? "bg-claude/20 text-claude" : resting}`}
+        className={`${btn} ${muted ? "bg-hot/20 text-hot" : resting}`}
       >
         M
       </button>

@@ -51,10 +51,11 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
 
-  // Inbound from the server (Claude). Durable edits route through the shared edit
-  // log authored 'claude' (so they are logged, undoable, two-voice) via the same
-  // applyEdit path the UI uses. Navigation / live notes / transport are not edits
-  // and are applied directly. The mapped type keeps the live set exhaustive.
+  // Inbound from the MCP server. Durable edits route through the shared edit log as the AGENT,
+  // authored for the user driving it (`editLog.agentAuthor`, see commands/authors.ts), so they are
+  // logged, undoable by that person, and coloured as the agent voice - via the same applyEdit path
+  // the UI uses. Navigation / live notes / transport are not edits and are applied directly. The
+  // mapped type keeps the live set exhaustive.
   type LiveType = "selectTrack" | "selectClip" | "noteOn" | "noteOff" | "allNotesOff" | "transport" | "note";
   type LiveHandlers = { [K in LiveType]: (msg: Extract<ServerToBrowser, { type: K }>) => void };
   const live: LiveHandlers = {
@@ -64,8 +65,8 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     noteOff: (msg) => engine.getNoteTarget(msg.trackId)?.noteOff(msg.midi),
     allNotesOff: () => projectStore.getTracks().forEach((track) => engine.getNoteTarget(track.id)?.allNotesOff()),
     transport: (msg) => (msg.action === "play" ? scheduler.play() : scheduler.stop()),
-    // Feed annotation from Claude: a line of intent narration in the activity feed.
-    note: (msg) => editLog.note(msg.text, "claude"),
+    // Feed annotation from the agent: a line of intent narration in the activity feed.
+    note: (msg) => editLog.note(msg.text, editLog.agentAuthor),
   };
   const liveTypes = new Set<string>([
     "selectTrack",
@@ -77,13 +78,13 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     "note",
   ]);
 
-  // Version-history RPC. Each method maps to a VersionStore call; Claude's commits
-  // and reverts are authored 'claude'. `diff` defaults `fromId` to the commit's
+  // Version-history RPC. Each method maps to a VersionStore call; the agent's commits and reverts
+  // are authored as the agent, for the user driving it. `diff` defaults `fromId` to the commit's
   // parent ("what changed in this version"). Results are sent back as historyReply.
   const p = (params: Record<string, unknown> | undefined) => params ?? {};
   const historyMethods: { [K in HistoryMethod]: (params: Record<string, unknown>) => Promise<unknown> } = {
-    commit: (params) => versionStore.commit(params.message as string | undefined, "claude"),
-    revert: (params) => versionStore.revertTo(params.commitId as string, "claude"),
+    commit: (params) => versionStore.commit(params.message as string | undefined, editLog.agentAuthor),
+    revert: (params) => versionStore.revertTo(params.commitId as string, editLog.agentAuthor),
     history: (params) => versionStore.history(params.limit as number | undefined),
     state: async () => versionStore.getState(),
     diff: async (params) => {
@@ -106,8 +107,8 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
 
   // Patch-library RPC. Patches live in this tab (localStorage), so the server can
   // only reach them through us. `save` captures a track's live sound; `apply`
-  // dispatches a createTrackFromPatch edit authored 'claude' (coral, undoable,
-  // replayable - effect ids minted here and carried in the command).
+  // dispatches a createTrackFromPatch edit authored as the agent (violet, undoable by the user
+  // driving it, replayable - effect ids minted here and carried in the command).
   const patchMethods: { [K in PatchMethod]: (params: Record<string, unknown>) => unknown } = {
     list: () =>
       allPatches().map((pt) => ({
@@ -150,7 +151,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
       const patch = {
         id: newPatchId(),
         name: (params.name as string | undefined)?.trim() || track.name,
-        author: "claude" as const,
+        author: editLog.agentAuthor,
         instrumentType: track.instrumentType,
         params: track.params.snapshot(),
         midiDevices: track.midiDevices.map((device) => ({
@@ -187,7 +188,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
           params: fx.params,
         })),
       };
-      editLog.dispatch(command, "claude");
+      editLog.dispatchAsAgent(command);
       return { trackId: command.id, name: command.name };
     },
   };
@@ -206,7 +207,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
     if (msg.type === "historyRequest") void handleHistoryRequest(msg);
     else if (msg.type === "patchRequest") handlePatchRequest(msg);
     else if (liveTypes.has(msg.type)) (live[msg.type as LiveType] as (m: ServerToBrowser) => void)(msg);
-    else editLog.dispatch(msg as EditCommand, "claude");
+    else editLog.dispatchAsAgent(msg as EditCommand);
   };
 
   // Per-track/group param/clip subscriptions, rebuilt whenever structure changes.

@@ -11,11 +11,13 @@
  *
  * Colouring is PERSPECTIVE-RELATIVE: `colorForAuthor` takes the viewer's own id (`self`) and paints
  * the viewer's own edits with the "you" hue (teal), so on every screen "my edits" read teal and
- * everyone else reads in their own colour - symmetric, with no single privileged identity. `agent` /
- * `claude` are absolute voices (same colour for everyone); every other id (including a peer who
- * happens to be the default `you`) gets its configured or hashed hue.
+ * everyone else reads in their own colour - symmetric, with no single privileged identity. An agent
+ * is an absolute voice (violet for everyone, whoever drove it - the driver shows in the label, not
+ * the hue); every other id (including a peer who happens to be the default `you`) gets its
+ * configured or hashed hue.
  */
 import { DEFAULT_VOICE_COLORS } from "./authorVoice";
+import { isAgentAuthor } from "../audio/commands/authors";
 
 /** A pickable colour. `hex` is what lands in the CSS var / inline style. */
 export interface Swatch {
@@ -26,13 +28,13 @@ export interface Swatch {
 
 /**
  * The palette a user picks from: a curated set that stays legible on the dark theme and
- * mutually distinguishable (so two authors rarely read as the same). The three voice
- * defaults lead so they are always present as swatches.
+ * mutually distinguishable (so two authors rarely read as the same). The voice defaults lead so
+ * they are always present as swatches.
  */
 export const SWATCHES: Swatch[] = [
   { id: "teal", hex: DEFAULT_VOICE_COLORS.you, name: "Teal" },
   { id: "violet", hex: DEFAULT_VOICE_COLORS.agent, name: "Violet" },
-  { id: "coral", hex: DEFAULT_VOICE_COLORS.claude, name: "Coral" },
+  { id: "coral", hex: "#d9775a", name: "Coral" },
   { id: "sky", hex: "#5aa9e6", name: "Sky" },
   { id: "mint", hex: "#5fd0a0", name: "Mint" },
   { id: "lime", hex: "#9ecb64", name: "Lime" },
@@ -107,15 +109,16 @@ function hashString(value: string): number {
 /**
  * The colour (hex) for an author, from the viewer's perspective. A configured override wins; then the
  * viewer's own id (`self`) takes the "you" hue (teal), so my edits always read teal on my screen; then
- * the absolute AI voices (agent / claude); otherwise the id is hashed deterministically into the palette
+ * the agent voice, whoever drove it; otherwise the id is hashed deterministically into the palette
  * - so every collaborator (including a peer whose id is the default "you", when it is not me) gets a
  * stable, distinct hue. `self` defaults to "you" (solo/back-compat: the lone user's edits are teal).
  */
 export function colorForAuthor(author: string, config: AuthorColorConfig = cached, self = "you"): string {
-  const override = config[author];
+  // An override is configured per VOICE, so every agent reads the one agent colour however many
+  // people are driving one - the settings panel offers one agent row, not one per collaborator.
+  const override = config[isAgentAuthor(author) ? "agent" : author];
   if (override) return override;
   if (author === self) return DEFAULT_VOICE_COLORS.you; // my own edits: the "you" hue, whoever I am
-  if (author === "agent") return DEFAULT_VOICE_COLORS.agent;
-  if (author === "claude") return DEFAULT_VOICE_COLORS.claude;
+  if (isAgentAuthor(author)) return DEFAULT_VOICE_COLORS.agent;
   return SWATCHES[hashString(author) % SWATCHES.length].hex;
 }

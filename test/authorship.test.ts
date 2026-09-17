@@ -57,7 +57,7 @@ describe("authorship through dispatch + snapshot", () => {
   it("records the dispatching author per object and reads it back", () => {
     const store = new ProjectStore();
     const log = new EditLog(store);
-    log.dispatch({ type: "createTrack", id: "t1", instrumentType: "subtractive" }, "claude");
+    log.dispatch({ type: "createTrack", id: "t1", instrumentType: "subtractive" }, "agent:you");
     log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "you");
 
     expect(store.authorOf(trackKey("t1"))).toBe("you"); // last touch on the track was the param edit
@@ -91,8 +91,8 @@ describe("authorship through dispatch + snapshot", () => {
     const store = new ProjectStore();
     const log = new EditLog(store);
     log.dispatch({ type: "createTrack", id: "t1", instrumentType: "subtractive" }, "you");
-    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "claude");
-    expect(store.authorOf(paramKey("t1", "amp.level"))).toBe("claude");
+    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "agent:you");
+    expect(store.authorOf(paramKey("t1", "amp.level"))).toBe("agent:you");
 
     log.undo();
     // The param edit is undone, so its authorship is gone (restored to the pre-edit snapshot).
@@ -109,7 +109,7 @@ describe("authorship reactivity - the tint refreshes on a change of voice", () =
     // The agent sets a param; then a human re-sets the same param. The second edit must emit so the
     // slider re-renders with the human colour, rather than staying on the agent colour until an
     // unrelated re-render (e.g. pressing play) happens to refresh it.
-    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "claude");
+    log.dispatch({ type: "setParam", trackId: "t1", id: "amp.level", value: 0.5 }, "agent:you");
 
     let notifications = 0;
     const unsubscribe = store.subscribe(() => (notifications += 1));

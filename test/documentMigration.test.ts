@@ -65,3 +65,50 @@ describe("firstMissingUpcaster (no-gaps guard)", () => {
     expect(firstMissingUpcaster(PROJECT_SCHEMA, DOCUMENT_UPCASTERS)).toBeNull();
   });
 });
+
+// The registry's first real entry (DAW-34). A document written before this holds the retired
+// per-model author voice; after it, an AI edit is the agent's.
+describe("9 -> 10: the model voice is retired", () => {
+  const upcast = (document: unknown) => migrateDocument(document, 9, 10).data as Record<string, unknown>;
+
+  it("rewrites the top-level authorship stamps", () => {
+    const result = upcast({ authorship: { "clip:c-1": "claude", "clip:c-2": "you", "clip:c-3": "alice" } });
+    expect(result.authorship).toEqual({ "clip:c-1": "agent", "clip:c-2": "you", "clip:c-3": "alice" });
+  });
+
+  it("rewrites the stamp on a clip, wherever in the tracks it sits", () => {
+    const result = upcast({
+      tracks: [
+        {
+          id: "t-1",
+          clips: [
+            { id: "c-1", author: "claude" },
+            { id: "c-2", author: "you" },
+          ],
+        },
+        { id: "t-2", clips: [{ id: "c-3", author: "claude", fileId: "f-1" }] },
+      ],
+    });
+    const tracks = result.tracks as { clips: { author: string }[] }[];
+    expect(tracks[0].clips.map((clip) => clip.author)).toEqual(["agent", "you"]);
+    expect(tracks[1].clips[0].author).toBe("agent");
+  });
+
+  // It runs on documents written by code that is gone, so a shape it does not recognise has to pass
+  // through rather than throw or invent fields.
+  it("leaves a document it does not recognise alone", () => {
+    expect(upcast({ tracks: "not an array", authorship: 7 })).toEqual({ tracks: "not an array", authorship: 7 });
+    expect(migrateDocument(null, 9, 10).data).toBeNull();
+  });
+
+  it("does not add an author to a clip that never had one", () => {
+    const result = upcast({ tracks: [{ id: "t-1", clips: [{ id: "c-1" }] }] });
+    expect((result.tracks as { clips: object[] }[])[0].clips[0]).not.toHaveProperty("author");
+  });
+
+  it("carries the rest of the document through untouched", () => {
+    const result = upcast({ tempoBpm: 128, name: "Demo", authorship: { "clip:c-1": "claude" } });
+    expect(result.tempoBpm).toBe(128);
+    expect(result.name).toBe("Demo");
+  });
+});

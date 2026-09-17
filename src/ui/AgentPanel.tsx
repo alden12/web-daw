@@ -6,7 +6,7 @@
  * sessions (persisted). See docs/AGENT.md. Collapsed by default, mounts only when
  * expanded; the expand control lives in the workbench tab bar.
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useAgentChat } from "./useAgentChat";
 import type { AgentStep } from "../audio/agent/loop";
 import { useAgentSessions } from "./agentSessions";
@@ -14,6 +14,8 @@ import { createAgentTools } from "../audio/agent/tools";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Dispatch } from "../audio/commands/types";
+import { agentAuthor } from "../audio/commands/authors";
+import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 
 // Markdown rendering (react-markdown + highlight.js) is a few hundred KB, and only
 // assistant replies need it, so load it lazily - the panel shows the raw text first, then
@@ -153,9 +155,13 @@ export function AgentPanel({
   hasApiKey: boolean;
   onOpenSettings: () => void;
 }) {
+  // The agent edits on behalf of whoever is driving it, so its edits carry that user (DAW-34): their
+  // undo can take them back, and in a shared session nobody else's can.
+  const currentUser = useSyncExternalStore(subscribeCurrentUser, readCurrentUser, readCurrentUser);
+  const author = agentAuthor(currentUser);
   const tools = useMemo(
-    () => createAgentTools({ projectStore, dispatch, scheduler }),
-    [projectStore, dispatch, scheduler],
+    () => createAgentTools({ projectStore, dispatch, scheduler, author }),
+    [projectStore, dispatch, scheduler, author],
   );
   const { sessions, currentId, turns, setTurns, newSession, switchSession, deleteSession } = useAgentSessions();
   const getContext = useCallback(() => selectionContext(projectStore), [projectStore]);

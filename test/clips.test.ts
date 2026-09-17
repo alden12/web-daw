@@ -28,11 +28,11 @@ describe("clip pool", () => {
   it("addClip copies the active clip into a new one (id + author) and makes it active", () => {
     const { project, id, inst } = trackWithClip();
     inst().clips[0].store.addNote({ pitch: 60, start: 0 });
-    const created = project.addClip(id, { author: "claude" });
+    const created = project.addClip(id, { author: "agent:you" });
     const t = inst();
     expect(t.clips).toHaveLength(2);
     expect(t.activeClipId).toBe(created!.id);
-    expect(created!.author).toBe("claude");
+    expect(created!.author).toBe("agent:you");
     expect(created!.name).toBe("B");
     // copied the notes, but into an independent store
     expect(created!.store.getClip().notes).toHaveLength(1);
@@ -203,7 +203,7 @@ describe("clip copy/paste", () => {
 describe("snapshot/load", () => {
   it("round-trips clips + placements + track sound through snapshot/load", () => {
     const { project, id, inst } = trackWithClip();
-    project.addClip(id, { author: "claude" });
+    project.addClip(id, { author: "agent:you" });
     inst().params.set("filter.cutoff", 2200);
     project.addPlacement(id, { startBeat: 8 });
 
@@ -212,7 +212,7 @@ describe("snapshot/load", () => {
     const t = restored.getTrack(id);
     if (t?.kind !== "instrument") throw new Error("expected instrument");
     expect(t.clips).toHaveLength(2);
-    expect(t.clips.some((c) => c.author === "claude")).toBe(true);
+    expect(t.clips.some((c) => c.author === "agent:you")).toBe(true);
     expect(t.params.get("filter.cutoff")).toBe(2200);
     expect(t.placements).toHaveLength(2);
   });

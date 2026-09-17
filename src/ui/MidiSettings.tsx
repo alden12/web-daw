@@ -38,7 +38,7 @@ export function MidiSettings({ midiInput }: { midiInput: MidiInput }) {
           {enabled ? "MIDI input on" : "Enable MIDI input"}
         </button>
         {state.access === "requesting" && <span className="text-[11px] text-faint">Requesting access…</span>}
-        {state.error && <span className="text-[11px] text-claude">{state.error}</span>}
+        {state.error && <span className="text-[11px] text-hot">{state.error}</span>}
       </div>
 
       {enabled && (

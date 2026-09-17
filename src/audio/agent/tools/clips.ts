@@ -1,7 +1,7 @@
 /**
  * Clip + arrangement tools: the notes inside a clip, the clip pool per track, and the
  * placements that lay clips out on the timeline (all in beats, 4 beats = 1 bar). Reads
- * come off the project store; edits dispatch as "agent". Selecting a clip is navigation
+ * come off the project store; edits dispatch as the agent. Selecting a clip is navigation
  * (a direct store call), not a durable edit.
  */
 import { z } from "zod";
@@ -55,7 +55,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
           length: note.length ?? 1,
           velocity: note.velocity ?? 0.8,
         }));
-        dispatch({ type: "addNotes", trackId: instrumentTrack.id, clipId: clip, notes: built }, "agent");
+        dispatch({ type: "addNotes", trackId: instrumentTrack.id, clipId: clip, notes: built });
         return { ok: true, added: built.length, trackId: instrumentTrack.id };
       },
     }),
@@ -81,7 +81,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
           length: note.length ?? 1,
           velocity: note.velocity ?? 0.8,
         }));
-        dispatch({ type: "editNotes", trackId: instrumentTrack.id, clipId: clip, notes: edited }, "agent");
+        dispatch({ type: "editNotes", trackId: instrumentTrack.id, clipId: clip, notes: edited });
         return { ok: true, edited: edited.length, trackId: instrumentTrack.id };
       },
     }),
@@ -92,7 +92,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip: z.string().optional(), ids: z.array(z.string()).min(1) }),
       run: ({ track, clip, ids }) => {
         const instrumentTrack = resolveInstrumentTrack(track);
-        dispatch({ type: "removeNotes", trackId: instrumentTrack.id, clipId: clip, ids }, "agent");
+        dispatch({ type: "removeNotes", trackId: instrumentTrack.id, clipId: clip, ids });
         return { ok: true, removed: ids.length, trackId: instrumentTrack.id };
       },
     }),
@@ -103,7 +103,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip: z.string().optional() }),
       run: ({ track, clip }) => {
         const instrumentTrack = resolveInstrumentTrack(track);
-        dispatch({ type: "clearClip", trackId: instrumentTrack.id, clipId: clip }, "agent");
+        dispatch({ type: "clearClip", trackId: instrumentTrack.id, clipId: clip });
         return { ok: true, trackId: instrumentTrack.id };
       },
     }),
@@ -118,7 +118,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       }),
       run: ({ track, clip, lengthBeats }) => {
         const instrumentTrack = resolveInstrumentTrack(track);
-        dispatch({ type: "setClipLength", trackId: instrumentTrack.id, clipId: clip, lengthBeats }, "agent");
+        dispatch({ type: "setClipLength", trackId: instrumentTrack.id, clipId: clip, lengthBeats });
         return { ok: true, trackId: instrumentTrack.id, lengthBeats };
       },
     }),
@@ -151,18 +151,15 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       run: ({ track, name, from, length_beats }) => {
         const resolved = resolveTrack(track);
         const id = newClipId();
-        dispatch(
-          {
-            type: "addClip",
-            trackId: resolved.id,
-            id,
-            name,
-            fromClipId: from,
-            empty: from === undefined,
-            lengthBeats: length_beats,
-          },
-          "agent",
-        );
+        dispatch({
+          type: "addClip",
+          trackId: resolved.id,
+          id,
+          name,
+          fromClipId: from,
+          empty: from === undefined,
+          lengthBeats: length_beats,
+        });
         return { ok: true, trackId: resolved.id, clipId: id };
       },
     }),
@@ -173,7 +170,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip_id: z.string() }),
       run: ({ track, clip_id }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "removeClip", trackId: resolved.id, clipId: clip_id }, "agent");
+        dispatch({ type: "removeClip", trackId: resolved.id, clipId: clip_id });
         return { ok: true, trackId: resolved.id, clipId: clip_id };
       },
     }),
@@ -184,7 +181,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip_id: z.string(), name: z.string().min(1) }),
       run: ({ track, clip_id, name }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "renameClip", trackId: resolved.id, clipId: clip_id, name }, "agent");
+        dispatch({ type: "renameClip", trackId: resolved.id, clipId: clip_id, name });
         return { ok: true, trackId: resolved.id, clipId: clip_id, name };
       },
     }),
@@ -233,10 +230,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       run: ({ track, start_beat, clip, length }) => {
         const resolved = resolveTrack(track);
         const id = newPlacementId();
-        dispatch(
-          { type: "addPlacement", trackId: resolved.id, id, clipId: clip, startBeat: start_beat, length },
-          "agent",
-        );
+        dispatch({ type: "addPlacement", trackId: resolved.id, id, clipId: clip, startBeat: start_beat, length });
         return { ok: true, trackId: resolved.id, placementId: id };
       },
     }),
@@ -247,10 +241,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), placement_id: z.string(), start_beat: z.number().min(0) }),
       run: ({ track, placement_id, start_beat }) => {
         const resolved = resolveTrack(track);
-        dispatch(
-          { type: "movePlacement", trackId: resolved.id, placementId: placement_id, startBeat: start_beat },
-          "agent",
-        );
+        dispatch({ type: "movePlacement", trackId: resolved.id, placementId: placement_id, startBeat: start_beat });
         return { ok: true, trackId: resolved.id, placementId: placement_id, startBeat: start_beat };
       },
     }),
@@ -261,7 +252,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), placement_id: z.string() }),
       run: ({ track, placement_id }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "removePlacement", trackId: resolved.id, placementId: placement_id }, "agent");
+        dispatch({ type: "removePlacement", trackId: resolved.id, placementId: placement_id });
         return { ok: true, trackId: resolved.id, placementId: placement_id };
       },
     }),
@@ -272,7 +263,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), clip_id: z.string().nullable().optional() }),
       run: ({ track, clip_id }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "launchClip", trackId: resolved.id, clipId: clip_id ?? null }, "agent");
+        dispatch({ type: "launchClip", trackId: resolved.id, clipId: clip_id ?? null });
         return { ok: true, trackId: resolved.id, clipId: clip_id ?? null };
       },
     }),
@@ -282,7 +273,7 @@ export function clipTools(ctx: ToolContext): AgentTool[] {
       description: "Stop all session-launched clips.",
       schema: z.object({}),
       run: () => {
-        dispatch({ type: "stopAllClips" }, "agent");
+        dispatch({ type: "stopAllClips" });
         return { ok: true };
       },
     }),

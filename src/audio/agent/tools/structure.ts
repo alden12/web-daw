@@ -1,6 +1,6 @@
 /**
  * Structural tools: tracks and groups (the bus tree), plus selection. Reads come off
- * the project store; edits dispatch as "agent". Selecting is navigation (a direct store
+ * the project store; edits dispatch as the agent. Selecting is navigation (a direct store
  * call), not a durable edit.
  */
 import { z } from "zod";
@@ -54,7 +54,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
           throw new Error(`Unknown instrument "${instrument}". Valid: ${instrumentTypes().join(", ")}.`);
         }
         const id = newTrackId();
-        dispatch({ type: "createTrack", instrumentType: instrument, name, id, groupId: group }, "agent");
+        dispatch({ type: "createTrack", instrumentType: instrument, name, id, groupId: group });
         return { ok: true, trackId: id, instrument, name: name ?? null };
       },
     }),
@@ -65,7 +65,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional() }),
       run: ({ track }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "removeTrack", trackId: resolved.id }, "agent");
+        dispatch({ type: "removeTrack", trackId: resolved.id });
         return { ok: true, trackId: resolved.id };
       },
     }),
@@ -76,7 +76,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), group: z.string() }),
       run: ({ track, group }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "moveTrack", trackId: resolved.id, groupId: group }, "agent");
+        dispatch({ type: "moveTrack", trackId: resolved.id, groupId: group });
         return { ok: true, trackId: resolved.id, groupId: group };
       },
     }),
@@ -87,7 +87,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), name: z.string().min(1) }),
       run: ({ track, name }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "setTrack", trackId: resolved.id, name }, "agent");
+        dispatch({ type: "setTrack", trackId: resolved.id, name });
         return { ok: true, trackId: resolved.id, name };
       },
     }),
@@ -104,7 +104,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       }),
       run: ({ track, volume, muted, solo }) => {
         const resolved = resolveTrack(track);
-        dispatch({ type: "setTrack", trackId: resolved.id, volume, muted, solo }, "agent");
+        dispatch({ type: "setTrack", trackId: resolved.id, volume, muted, solo });
         return { ok: true, trackId: resolved.id, volume, muted, solo };
       },
     }),
@@ -143,7 +143,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ name: z.string().optional(), parent: z.string().optional() }),
       run: ({ name, parent }) => {
         const id = newGroupId();
-        dispatch({ type: "createGroup", id, name, parentId: parent ?? null }, "agent");
+        dispatch({ type: "createGroup", id, name, parentId: parent ?? null });
         return { ok: true, groupId: id, name: name ?? null };
       },
     }),
@@ -153,7 +153,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       description: "Delete a group bus by id.",
       schema: z.object({ group: z.string() }),
       run: ({ group }) => {
-        dispatch({ type: "removeGroup", groupId: group }, "agent");
+        dispatch({ type: "removeGroup", groupId: group });
         return { ok: true, groupId: group };
       },
     }),
@@ -171,7 +171,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
         collapsed: z.boolean().optional(),
       }),
       run: ({ group, name, volume, muted, solo, collapsed }) => {
-        dispatch({ type: "setGroup", groupId: group, name, volume, muted, solo, collapsed }, "agent");
+        dispatch({ type: "setGroup", groupId: group, name, volume, muted, solo, collapsed });
         return { ok: true, groupId: group };
       },
     }),
@@ -181,7 +181,7 @@ export function structureTools(ctx: ToolContext): AgentTool[] {
       description: "Reparent a group bus. `parent` is the new parent group id, or omit for the top level.",
       schema: z.object({ group: z.string(), parent: z.string().optional() }),
       run: ({ group, parent }) => {
-        dispatch({ type: "moveGroup", groupId: group, parentId: parent ?? null }, "agent");
+        dispatch({ type: "moveGroup", groupId: group, parentId: parent ?? null });
         return { ok: true, groupId: group, parentId: parent ?? null };
       },
     }),

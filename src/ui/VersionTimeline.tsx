@@ -99,7 +99,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
         <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
           {hasUnnamedChanges
             ? "Unsaved changes - save a version to start the history."
-            : "Versions you and Claude save appear here."}
+            : "Versions you and the agent save appear here."}
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
@@ -124,7 +124,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                   {commit.noteCount > 0 && (
                     <span
                       title={`${commit.noteCount} intent ${commit.noteCount === 1 ? "note" : "notes"}`}
-                      className="font-mono text-[10px] text-claude shrink-0"
+                      className="font-mono text-[10px] text-hot shrink-0"
                     >
                       “{commit.noteCount}
                     </span>
@@ -134,7 +134,7 @@ export function VersionTimeline({ versionStore, editLog }: { versionStore: Versi
                 {open && (
                   <div className="px-2.5 pb-2 pt-0.5 flex flex-col gap-1.5">
                     {notes && notes.length > 0 && (
-                      <ul className="flex flex-col gap-0.5 border-l-2 border-claude/50 pl-2">
+                      <ul className="flex flex-col gap-0.5 border-l-2 border-hot/50 pl-2">
                         {notes.map((note) => (
                           <li key={note.seq} className="font-mono text-[10.5px] italic text-muted wrap-break-word">
                             “{note.text}”

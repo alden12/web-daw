@@ -3,8 +3,8 @@
 /* Design tokens. Value hierarchy: ground (darkest) -> card (lightest). The centre
    workbench sits on `ground` and the panels inside it lift to `stage`, so depth reads
    as wells cut into a dark surface rather than a bright table under dim chrome.
-   Voices: you = teal, agent (built-in AI) = violet, claude (the MCP / Claude Code
-   driver) = coral.
+   Voices: you = teal, agent (any AI, in-app or over MCP) = violet. `hot` is coral, and
+   it is a state rather than a voice: recording, clipping, failed.
 
    Name tokens after their ROLE, never after a position, an alignment, or an
    appearance. Tailwind generates a utility per token, so a token named for a
@@ -41,7 +41,7 @@
 
   --color-you: #56c7c2;
   --color-agent: #a884f3;
-  --color-claude: #d9775a;
+  --color-hot: #d9775a;
 
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
@@ -129,7 +129,7 @@
        rest of it. */
     --color-muted: #4f5866;
     --color-faint: #5d6675;
-    /* No `--color-you` / `-agent` / `-claude` here, and it would be dead if there were.
+    /* No `--color-you` / `-agent` here, and it would be dead if there were.
        They are user-configurable, so `useSyncAuthorColorVars` writes them as inline styles
        on <html>, which outrank any stylesheet. They are also resolved a second way, in JS
        (`colorForAuthor`), for the surfaces that tint by author: knob arcs, fader fills,
@@ -390,7 +390,7 @@
 .md .hljs-number,
 .md .hljs-symbol,
 .md .hljs-meta {
-  color: var(--color-claude);
+  color: var(--color-hot);
 }
 .md .hljs-title,
 .md .hljs-name,

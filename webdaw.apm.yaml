@@ -8520,20 +8520,155 @@ projects:
           seq/apply/broadcast section.
 
 
+          ### E5: an agent edit belongs to the user who drove it
+
+
+          Raised by Alden on seeing E4's approximation, and it retires the
+          per-model voice at the same time,
+
+          because both are one change to the author string. An agent edit is
+          authored `agent:<userId>`.
+
+
+          **Two voices now, and neither names a model.** There were three -
+          `you`, `agent` (the in-app one)
+
+          and a per-model one for MCP - and the model one was wrong on its own
+          terms: the MCP server is
+
+          model-agnostic, and which model is behind an agent is provider
+          metadata, never a voice colour. The
+
+          in-app agent and an MCP driver are both "an agent acting for a user",
+          which is one voice.
+
+
+          **Why the driver rides IN the author string** rather than a separate
+          `drivenBy` field: a project's
+
+          authorship stamps are a `Record<objectKey, author>`, one string per
+          object, with nowhere for a
+
+          second field to go. Putting it in the author means every layer that
+          already carries an author
+
+          carries the driver too, at no schema cost - the wire, the `edits`
+          table, the stamps, all untouched.
+
+          `authorSchema`'s bound went 64 -> 128, since an agent author is a
+          prefix plus a user id.
+
+
+          **What it fixes.** `deriveUndoStack` stops approximating: "mine" is
+          `isOwnWork`, my edits plus an
+
+          agent I drove. Two people each driving an agent no longer land in each
+          other's stacks. An agent
+
+          edit from before this belongs to NOBODY rather than to everybody -
+          with no driver recorded there is
+
+          no way to know it was not made for someone else, so no undo reaches
+          it.
+
+
+          **The colour stays two-voice**: every agent is the one violet whoever
+          drove it, and the feed LABEL
+
+          names the driver ("Agent" for mine, "Agent (bob)" for a peer's). One
+          agent row in settings, not one
+
+          per collaborator, so the colour override is keyed on the voice rather
+          than the full author id.
+
+
+          **A found bug, fixed on the way.** `clipAuthor` collapsed every stored
+          stamp to one of three voices,
+
+          so a clip authored by a collaborator came back stamped as the local
+          user - their authorship quietly
+
+          erased on load, and it would have erased the driver out of an agent
+          author too. It validates and
+
+          passes through now.
+
+
+          **Migrations.** The first document upcaster this registry has ever
+          had: `9 -> 10` rewrites the
+
+          retired voice in the `authorship` map and on every clip stamp
+          (`PROJECT_SCHEMA` 9 -> 10). Plus a
+
+          data migration `0007` for `edits.author`, which is the one that
+          matters, since undo scopes off it.
+
+          **Not covered:** a room loads `project.json` without running the
+          upcasters, so a hosted project's
+
+          stamps stay stale until a client load heals them. Display only - undo
+          and colour both read the log -
+
+          so it did not justify threading migration into the authority's load
+          path.
+
+
+          **Not done, and it is the real remainder:** an agent edit made over
+          MCP by the Node server's own
+
+          mirror has no driver to record, because only the tab knows who is
+          driving. It stamps the
+
+          unattributed agent, and the tab authors the real edit correctly - the
+          mirror is a read-back copy.
+
+
           ### Still open in stage E
 
 
-          **The three offline cases**, which E1 collapsed into fewer than three:
-          an unsent tombstone is
+          **A pending tombstone is replayed FORWARD, which resurrects the edit
+          it took back.** Found while
+
+          sizing the offline work. `SharedSession.rebuildLive` is `base` +
+          every pending op applied forward,
+
+          and a tombstone's `command` is the command of the edit being taken
+          back - so an undo made offline
+
+          comes back the moment anything rebuilds the live store: a peer edit,
+          a reconnect, or an offline
+
+          reload replaying its saved queue. `EditLog.undo` gets the project
+          right at the moment it is pressed,
+
+          which is why nothing noticed. This is the substance of the remaining
+          offline work, not the ring depth.
+
+
+          The other two of the original three offline cases did collapse into
+          it: an unsent tombstone is
 
           dropped from `pending` like any unsent op, and sent-but-unacked and
           confirmed are now the same
 
           lookup, because an id no longer depends on whether a seq has been
-          assigned. Also the offline ring
+          assigned.
 
-          gap - the mirror only holds the keyframe slots it happened to fetch,
-          so offline undo depth is luck.
+
+          **The offline ring gap** - the mirror only holds the keyframe slots
+          it happened to fetch (reads are
+
+          read-through, so a slot is cached only once an undo needed it), so
+          offline undo depth is luck. The
+
+          fix is to warm the ring into the cache while online, skipping slots
+          already held at the right seq.
+
+
+          **Stale comment:** `SharedSession.enqueue` still says "Undo/redo do
+          not route here - they are local
+
+          best-effort in a shared session". E3 made them route here.
 
 
           **F. Measure on a phone.** The gate on whether any of `invert.ts`
