@@ -4157,6 +4157,12 @@ projects:
           rail buttons
             (`getByRole("button", { name: "Project", exact: true }).click()` and friends). Isolated: 6/6.
             Re-run: 152/152.
+          - Third sighting, 2026-09-17 on slice-120: three of four in
+          `project-link.e2e.ts`, again on
+            `getByRole("button", { name: "Project", exact: true }).click()`. Isolated: 4/4. Re-run:
+            153/153. Same rail button as the second sighting, which strengthens (2): every
+            `project-link` test switches projects, so the persisted project id and the rail state are
+            exactly what two workers would race over.
 
           ## Why it matters
 
@@ -5275,7 +5281,7 @@ projects:
       - ref: DAW-8.13
         area: DAW
         title: "Bug: a clip-length drag lands several history entries instead of one"
-        status: to-do
+        status: review
         sort_path: "000008.000013"
         parent: DAW-8
         body: >
@@ -5368,6 +5374,82 @@ projects:
           Worth auditing the same way as the local case: any command type that
           can be dispatched from a pointer move or an animation frame needs
           this, not just `setClipLength`.
+
+
+          ## Done on slice-120: the drag says where it is
+
+
+          Option 1, both halves. A drag brackets itself with
+          `EditLog.beginGesture()` / `endGesture()`, and while one is open the
+          400ms window is not consulted at all - the drag's own start and end
+          bound the run. Outside a gesture the window still stands in, for
+          anything that edits without a pointer (keyboard nudges, MCP).
+
+
+          **`forward()` replaced the unconditional `this.remote?.(...)`.** One
+          edit reaches the authority per log entry, carrying what that entry
+          settled on, instead of one per dispatch. Held while the gesture is
+          open; sent at `endGesture`, at a non-coalescable edit (which keeps the
+          authority's order the same as the log's), at a commit boundary, on
+          `setRemote`, and by `flushForward()` on demand. Outside a gesture a
+          trailing 400ms timer sends it, and `GESTURE_IDLE_MS = 5000` is the
+          backstop for a drag whose end never arrives.
+
+
+          **`flushForward()` is public because `SharedSession.rebuildLive()`
+          calls it.** That rebuild replaces the live project with `base` +
+          `pending`, so a held edit has to reach `pending` first or a peer's
+          edit mid-drag would rebuild the drag away. The cost is that such a
+          drag becomes two authoritative rows rather than one, which is correct:
+          the first half really is authoritative by then.
+
+
+          **Wiring, in two places rather than every draggable.**
+          `src/ui/dragGesture.ts` holds a registered scope (the app shell
+          registers the `EditLog`, which satisfies the interface as-is).
+          `beginPointerDrag` brackets every window-tracked drag - notes, clips,
+          placements, resize handles, loop markers - and `capturePointerDrag` /
+          `releasePointerDrag` bracket the pointer-capture controls (both knob
+          variants, both faders, the mixer fader). `releasePointerDrag` checks
+          `hasPointerCapture` first, because `releasePointerCapture` throws on a
+          pointer the element never captured.
+
+
+          **The audit the ticket asked for.** Every coalescable type that can be
+          dispatched from a pointer move now runs inside a gesture: `setParam` /
+          `setEffectParam` through `Knob` and `controls/Fader`, `setTrack`
+          through the mixer fader, and `editNotes` / `setClipLength` /
+          `movePlacement` / `resizePlacement` / `setLength` / `setLoopStart` /
+          `setAudioClip` through `beginPointerDrag`. The rest
+          (`setTempo`, `setTimeSignature`, `setGroove`, renames) are discrete
+          controls - a menu item, a number field - and the 400ms window is the
+          right answer for them. The two remaining raw `setPointerCapture` call
+          sites, `useSheetDrag` and `usePadTouch`, edit nothing: one drags a
+          sheet, the other plays notes.
+
+
+          **`pointercancel` now ends a drag too**, in `beginPointerDrag` and on
+          every capture control. It never did, so a touch the browser took over
+          for a scroll leaked the window listeners; with a gesture on top it
+          would also have left the gesture open until the next drag closed it.
+
+
+          **Undo/redo flush rather than drop the held edit.** They still do not
+          forward (local best-effort in a shared session), but dropping would
+          make the authority disagree about what was ever dispatched. Squaring
+          undo with the authority is DAW-34 stage E.
+
+
+          **Not fixed here:** the client and the authority still number edits in
+          different spaces. This removes the *cause* (the authority no longer
+          counts frames), but a hosted log is still renumbered by the authority,
+          so the `fingerprintProject` workaround stays until stage E.
+
+
+          Covered by `test/gesture.test.ts` (15 cases, and each half of the fix
+          verified to fail without it) plus an e2e in `arrangement.e2e.ts`: a
+          three-hop resize with 600ms pauses is one feed row and one undo step,
+          where it was three rows before.
         id: 01a077a3-ac78-77d0-ab07-b28aa791198b
         created_at: 2026-09-06T16:53:30.360Z
         updated_at: 2026-09-12T22:32:50.062Z

@@ -2,18 +2,17 @@
  * The authored edit log: the single seam every durable edit flows through.
  * `dispatch(command, author)` records an undo checkpoint, applies the command,
  * and appends an authored, timestamped entry to an append-only log. The log is
- * the keystone artifact (it drives the activity feed now and, next slice, the
- * on-disk file format and history); undo/redo is a consumer built on top.
+ * the keystone artifact (it drives the activity feed, the on-disk file format and history);
+ * undo/redo is a consumer built on top.
  *
- * A checkpoint is either a command's *inverse* (cheap, and the direction DAW-34 is taking undo) or a
- * whole-project snapshot, for the command types `invert` cannot reverse yet. Snapshots work because
- * every store has snapshot()/load(), and load() rebuilds child stores + re-emits, so the UI and the
- * MCP mirror stay in sync; they are simply large. Coverage lands command-by-command and both stacks
- * hold a mix meanwhile. Rapid edits to the same target (a knob drag, repeated nudges) coalesce into
- * one checkpoint and one log entry.
+ * An undo step is the `seq` of the entry it takes back, and undo is a rebuild of the project with
+ * that seq left out (DAW-34 stage C). There are no inverses and no snapshot checkpoints: a step
+ * holds no state, so nothing about it can go stale.
  *
- * In-memory for this slice; persisting the log is the next step (the entry type
- * is serializable by construction).
+ * Successive edits to the same target (a knob drag, repeated nudges) coalesce into one checkpoint,
+ * one log entry, and one edit forwarded to the authority. A drag says where it starts and ends
+ * (`beginGesture`/`endGesture`), which is what bounds the run; a 400ms window stands in for
+ * anything that does not say (DAW-8.13).
  */
 import type { ProjectStore } from "../project/projectStore";
 import type { ProjectData } from "../project/types";
@@ -52,7 +51,15 @@ export interface UndoState {
   redo: number[];
 }
 
+/** How long two edits to the same target may be apart and still fold into one entry, when nothing
+ *  has told us where the gesture boundaries are. A drag that says so is not subject to it. */
 const COALESCE_MS = 400;
+/**
+ * A backstop for a gesture that stops sending edits without ever ending - a pointerup lost to a
+ * cancelled touch, an exception in a move handler. Well past any drag's frame interval, so a live
+ * drag never trips it and only a stuck one does.
+ */
+const GESTURE_IDLE_MS = 5000;
 /**
  * How many steps each in-memory stack holds. A step is now a number, so this costs nothing to hold
  * and the real ceiling is elsewhere: undo can only reach back as far as the retained keyframe ring
@@ -163,6 +170,16 @@ export class EditLog {
   private localAuthor: Author = "you";
   private lastKey: string | null = null;
   private lastTime = 0;
+  /**
+   * Whether a drag is open (DAW-8.13). While one is, successive edits to the same target fold into
+   * one entry however long the drag takes, and the forward to the authority waits for it to end.
+   * Opened and closed by the pointer-drag layer, which is the only thing that knows a drag's extent.
+   */
+  private gestureOpen = false;
+  /** The settled command of the entry not yet forwarded, and the timer that sends it if no gesture
+   *  end arrives. One entry, one authoritative edit - see `forward`. */
+  private heldForward: { command: EditCommand; author: Author } | null = null;
+  private forwardTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
   private cached!: EditLogState;
   /** Optional realtime sink: when a shared session is live, each dispatched edit is forwarded to the
@@ -211,11 +228,18 @@ export class EditLog {
     const now = Date.now();
     const key = COALESCABLE.has(command.type) ? `${author}:${coalesceKey(command)}` : null;
     const coalesce =
-      key !== null && key === this.lastKey && now - this.lastTime < COALESCE_MS && this.entries.length > 0;
+      key !== null &&
+      key === this.lastKey &&
+      this.entries.length > 0 &&
+      // A gesture is bounded by its own start and end, so elapsed time says nothing about whether
+      // this edit belongs to it: a finger resting on a resize handle mid-drag used to cross the
+      // window and start a fresh entry, which is DAW-8.13. Outside a gesture the window is all we
+      // have to go on.
+      (this.gestureOpen || now - this.lastTime < COALESCE_MS);
 
     if (coalesce) {
-      // Same target as the last edit, within the window: fold into it (one undo
-      // step, one log entry) - the pre-edit checkpoint already captures "before".
+      // Same target, same gesture (or same window): fold into the last entry, so the drag is one
+      // undo step and one log entry.
       applyEdit(this.project, command, author);
       const last = this.entries[this.entries.length - 1];
       // The gesture keeps its seq, so the undo step already points at it and needs no updating.
@@ -230,12 +254,91 @@ export class EditLog {
     }
     this.lastKey = key;
     this.lastTime = now;
-    this.remote?.(command, author);
+    this.forward(command, author, key, coalesce);
     this.emit();
   };
 
-  /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority. */
+  /**
+   * Open a gesture: every edit until `endGesture` is one drag (DAW-8.13).
+   *
+   * Two things follow. Edits to the same target fold into one entry regardless of how long the drag
+   * takes, so a slow ten-second trim is one undo step and one feed row rather than a dozen. And the
+   * forward to the authority is held until the drag ends, so it is one authoritative edit rather
+   * than one per frame.
+   */
+  beginGesture = (): void => {
+    this.endGesture(); // an unclosed gesture must not swallow the next drag
+    this.gestureOpen = true;
+    // A new gesture never folds into the last one, however fast it follows.
+    this.lastKey = null;
+  };
+
+  /** Close the open gesture, if any, and send what it settled on. */
+  endGesture = (): void => {
+    if (!this.gestureOpen) return;
+    this.gestureOpen = false;
+    this.lastKey = null;
+    this.flushForward();
+  };
+
+  /**
+   * Forward one edit to the authority: once per log entry, carrying what that entry settled on
+   * (DAW-8.13).
+   *
+   * It used to fire on every dispatch, so a two-second knob drag was one local entry and ~120
+   * authoritative rows. That flooded the `edits` table, put the client's seq space (which counts
+   * entries) out of step with the authority's (which counted frames), and sent every peer a message
+   * per frame for information nobody needs at that resolution. Holding the forward until the entry
+   * stops changing sends the same information in one row.
+   *
+   * The live local project still updates every frame - that is what makes the roll and the
+   * arrangement redraw together. This is only about what crosses the wire.
+   */
+  private forward(command: EditCommand, author: Author, key: string | null, coalesced: boolean): void {
+    // A fresh entry settles the one before it, and a non-coalescable edit settles immediately, so
+    // sending the held one first is what keeps the authority's order the same as the log's.
+    if (!coalesced) this.flushForward();
+    if (key === null) {
+      this.remote?.(command, author);
+      return;
+    }
+    this.heldForward = { command, author };
+    this.armForward();
+  }
+
+  /**
+   * Send the held forward, if there is one.
+   *
+   * Public because the shared session needs it: its pending queue is what the live project is
+   * rebuilt from when a peer's edit arrives, so a held edit has to reach the queue before any
+   * rebuild or the drag in progress would be rebuilt away.
+   */
+  flushForward = (): void => {
+    this.clearForwardTimer();
+    const held = this.heldForward;
+    this.heldForward = null;
+    if (held) this.remote?.(held.command, held.author);
+  };
+
+  /**
+   * (Re-)arm the trailing send. Inside a gesture the end is the real trigger and this is only the
+   * stuck-drag backstop; outside one, a quiet coalesce window is the only signal that an edit has
+   * settled.
+   */
+  private armForward(): void {
+    this.clearForwardTimer();
+    this.forwardTimer = setTimeout(this.flushForward, this.gestureOpen ? GESTURE_IDLE_MS : COALESCE_MS);
+  }
+
+  private clearForwardTimer(): void {
+    if (this.forwardTimer !== null) clearTimeout(this.forwardTimer);
+    this.forwardTimer = null;
+  }
+
+  /** Set (or clear with null) the realtime sink that forwards each dispatched edit to the authority.
+   *  Flushes first, so a held edit reaches the outgoing sink rather than dying with it. */
   setRemote = (sink: ((command: EditCommand, author: Author) => void) | null): void => {
+    this.flushForward();
     this.remote = sink;
   };
 
@@ -298,14 +401,21 @@ export class EditLog {
       label: `${kind === "undo" ? "Undid" : "Redid"}: ${command ? describeCommand(command) : "an edit"}`,
     });
     this.lastKey = null;
+    // Undo/redo do not forward (they are local best-effort in a shared session), but a held edit
+    // still has to go: every peer that sees the log has to see the same entries in the same order,
+    // and dropping it here would make the authority disagree about what was ever dispatched.
+    // Reconciling undo with the authority is DAW-34 stage E.
+    this.flushForward();
     this.emit();
   }
 
   /** Break the coalesce chain so the next edit starts a fresh entry. Called at a
    *  boundary (e.g. after a commit) so post-commit edits never fold into a
-   *  committed entry and slip past "uncommitted" tracking. */
+   *  committed entry and slip past "uncommitted" tracking. Sends any held forward for the same
+   *  reason: the edit belongs on the near side of the boundary, not after it. */
   resetCoalescing = (): void => {
     this.lastKey = null;
+    this.flushForward();
   };
 
   /** Post a feed-only annotation (intent narration). Not an edit; not undoable. */

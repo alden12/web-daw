@@ -21,6 +21,7 @@
  */
 import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { clamp } from "../../util";
+import { capturePointerDrag, releasePointerDrag } from "../dragGesture";
 
 /** How far an arrow key moves it: twenty steps end to end, which is fine for every current use. */
 const KEY_STEP = 0.05;
@@ -57,7 +58,7 @@ export function Fader({
   const nudge = (delta: number) => onPosition(clamp(position + delta, 0, 1));
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    capturePointerDrag(event);
     dragging.current = true;
     onPosition(positionAt(event.clientX));
   };
@@ -65,7 +66,7 @@ export function Fader({
     if (dragging.current) onPosition(positionAt(event.clientX));
   };
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    releasePointerDrag(event);
     dragging.current = false;
   };
 
@@ -92,6 +93,7 @@ export function Fader({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onKeyDown={(event) => {
           const handler = KEYS[event.key];
           if (!handler) return;

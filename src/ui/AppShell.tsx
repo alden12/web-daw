@@ -41,6 +41,7 @@ import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { projectIdFromLocation, projectIdFromPath, syncProjectUrl } from "./projectUrl";
 import { EditLog } from "../audio/commands/editLog";
+import { setDragGestureScope } from "./dragGesture";
 import { type LibraryView } from "./ActivityRail";
 import { DesktopShell } from "./shell/DesktopShell";
 import { MobileShell } from "./shell/MobileShell";
@@ -184,6 +185,14 @@ export function AppShell() {
   // Stamp local edits with the current user id, so in a shared session each user's edits carry their
   // identity (and colour). Temporary until real auth supplies the id.
   useEffect(() => editLog.setLocalAuthor(currentUser), [editLog, currentUser]);
+
+  // Tell the drag layer which log a drag belongs to, so a drag is one entry and one authoritative
+  // edit however long it takes (DAW-8.13). Registered here because this is where the log lives;
+  // no draggable component has to know about it.
+  useEffect(() => {
+    setDragGestureScope(editLog);
+    return () => setDragGestureScope(null);
+  }, [editLog]);
 
   const project = useProject(projectStore);
   const selectedTrack = project.selectedTrackId ? projectStore.getTrack(project.selectedTrackId) : undefined;

@@ -298,3 +298,44 @@ test("dragging the start handle trims the clip instead of moving it", async ({ p
     )
     .toEqual({ trimmed: true, right: Math.round(before.x + before.width) });
 });
+
+/**
+ * DAW-8.13: a drag is one entry even when it pauses.
+ *
+ * Coalescing used to be a 400ms window and nothing else, so a finger resting mid-drag - which is
+ * what dragging a handle on a phone looks like - crossed it and started a fresh entry. A slow trim
+ * left a row per pause in the feed and a step per pause in undo. The drag now says where it begins
+ * and ends, so the pauses cost nothing.
+ */
+test("a slow drag is one feed entry and one undo step, not one per pause", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await openActivity(page);
+  await zoomOut(page);
+
+  const seed = (await placements(page).first().boundingBox())!;
+  const y = seed.y + seed.height / 2;
+  const resized = page.getByText("Resized clip", { exact: true });
+
+  // Drag the seed block's right edge out in three hops, pausing well past the coalesce window
+  // between them. Grab it 3px inside the edge, which is the mouse-only grab zone.
+  await page.mouse.move(seed.x + seed.width - 3, y);
+  await page.mouse.down();
+  for (const dx of [40, 80, 120]) {
+    await page.mouse.move(seed.x + seed.width - 3 + dx, y, { steps: 4 });
+    await page.waitForTimeout(600);
+  }
+  await page.mouse.up();
+
+  await expect(resized).toHaveCount(1);
+
+  // And one step to take it back: a single undo returns the block to the width it started at.
+  const widened = (await placements(page).first().boundingBox())!;
+  expect(Math.round(widened.width)).toBeGreaterThan(Math.round(seed.width));
+
+  await page.getByRole("button", { name: "Project menu" }).click();
+  await page.getByRole("menuitem", { name: "Undo" }).click();
+  await expect
+    .poll(async () => Math.round((await placements(page).first().boundingBox())!.width))
+    .toBe(Math.round(seed.width));
+});
