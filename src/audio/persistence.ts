@@ -37,6 +37,11 @@ export async function restoreProject(
   if (!saved || !saved.project.tracks?.length) return;
   project.load(saved.project);
   editLog.restore(saved.log, saved.notes);
+  // Point undo at the oldest retained keyframe (DAW-34 stage B), so edits from before this reload
+  // can be rebuilt without. Without one, undo reaches back only as far as this session's own edits.
+  const headSeq = highWaterSeq(saved.log, saved.notes);
+  const base = await repo.oldestRebuildBase(headSeq);
+  if (base) editLog.setRebuildBase(base.project, base.seq);
   // Layer persisted undo/redo back on, so undo works after a reload.
   const undo = await repo.readUndo();
   if (undo) editLog.restoreCheckpoints(undo);

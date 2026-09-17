@@ -21,6 +21,7 @@ import {
 } from "../projectRepository";
 import { getProjectStorage, type ProjectStorage } from "../bundleStore";
 import { newProjectId, refreshProjects } from "./library";
+import { restoreProject } from "../persistence";
 
 export interface ProjectDeps {
   projectStore: ProjectStore;
@@ -37,13 +38,10 @@ async function flush(deps: ProjectDeps): Promise<void> {
 
 /** Load the current project's bundle into the live objects (+ reload history). */
 async function loadCurrentInto(deps: ProjectDeps): Promise<void> {
-  const repo = getRepository();
-  const saved = await repo.load();
-  if (saved && saved.project.tracks?.length) {
-    deps.projectStore.load(saved.project);
-    deps.editLog.restore(saved.log, saved.notes);
-    deps.editLog.restoreCheckpoints(await repo.readUndo());
-  }
+  // One restore path, shared with the boot one. It used to be a second copy of the same four calls,
+  // which is how a project switch quietly missed the rebuild base undo needs (DAW-34) while boot
+  // had it: the two drifted the moment one of them grew a step.
+  await restoreProject(deps.projectStore, deps.editLog, getRepository());
   await deps.versionStore.reload();
   // The store now holds this project, so anything pairing the current id with what it reads
   // off the store (the URL, the header) can trust the two agree again.

@@ -7755,6 +7755,63 @@ projects:
             id: 01a097e7-d6a4-7465-8d85-83feb4db6326
             at: 2026-09-12T23:15:48.516Z
             actor: claude
+          - body: "**Stage B built, `793e09d` on `slice-119-retained-keyframes`.** Interval
+              **500** over the 2000-edit window, so five snapshots (roughly
+              250KB normal, 5MB large). A **fixed ring of slots**, not a growing
+              set: nothing in the stack can delete one file from a bundle (not
+              `BundleStore`, not the server file store, not the HTTP API), so a
+              new keyframe overwrites the oldest slot and storage is bounded by
+              construction. A keyframe whose edits were pruned is ignored on
+              read instead. `src/audio/history/keyframes.ts` holds the rule; the
+              authority and the repository both write the ring, matching who
+              already writes `project.json`. `rebuildBaseFor` is the read side
+              for stage C. **Open:** the offline mirror only has the ring slots
+              it happened to fetch, so offline undo depth is luck until stage
+              E."
+            audience: user
+            id: 01a0afbc-3b07-7440-8967-91eba27b1340
+            at: 2026-09-17T14:19:03.815Z
+            actor: claude
+          - body: >-
+              **Stage C built, `0a47371`.** `rebuildWithout(base, baseSeq,
+              entries, excluding)` in `src/audio/commands/replay.ts`, plus
+              `ProjectRepository.rebuildExcluding` which fetches the ring base
+              first. Nothing reads it yet - stage D switches over.
+
+
+              **The cross-check passed first time:** all 43 commands with a
+              known inverse rebuild byte-identically to where that inverse
+              lands. `test/rebuild.test.ts` runs off the same table as
+              `invert.test.ts`, now shared at `test/support/commandSamples.ts`,
+              so the two paths check each other until the inverses go.
+
+
+              `replay.ts` also absorbed the three copies of `isReplayable`.
+              Worth knowing for stage D: a project keyframes its initial state
+              at seq **-1** on create, so a young project has a rebuild base
+              from its first edit.
+            audience: user
+            id: 01a0afc6-adc0-76be-a474-f3066928ee87
+            at: 2026-09-17T14:30:28.544Z
+            actor: claude
+          - body: >-
+              **Stage D built, `6f556c1`.** A step is now a `seq`; `invert.ts`,
+              the checkpoint union, the authorship capture, the pack/unpack
+              delta encoding, `PERSIST_UNDO_MAX_BYTES`, `undoConflictKeys` and
+              the `state` fingerprint are all gone. Net -946 lines. `MAX_DEPTH`
+              100 -> 500. Recovery for the inverters is still `3ebd825`.
+
+
+              **Known regression, and stage E's first job:** a hosted session's
+              log is renumbered by the authority, so a stack persisted against
+              client seqs is dropped on reload and undo-across-reload is
+              unavailable there. Local projects unaffected; unavailable rather
+              than wrong. Found by the test DAW-8.15 added for exactly that
+              seq-space divergence.
+            audience: user
+            id: 01a0afda-50c3-756c-8818-1f6b51e13ec9
+            at: 2026-09-17T14:51:55.459Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"

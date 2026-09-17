@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { instrumentDefSchema, effectDefSchema } from "../graph/zod";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
+import { KEYFRAME_INDEX_PATH } from "../history/keyframes";
 
 /* -------------------------------------------------------------------------- */
 /* Leaves                                                                     */
@@ -281,32 +282,19 @@ export const commitSchema = z.object({
   lastSeq: z.number(),
 });
 
-const packedStackSchema = z.object({
-  // Null once every checkpoint in the stack carries its own inverse: there is then nothing to
-  // replay a snapshot from, which is the whole point of DAW-34.
-  base: projectDataSchema.nullable(),
-  steps: z.array(
-    z.object({
-      command: editCommandSchema,
-      author: authorSchema,
-      /** The commands that undo `command`; absent for a checkpoint that still uses a snapshot. */
-      inverse: z.array(editCommandSchema).optional(),
-      /** The authorship those commands restore (null = the key had no author). Travels with them. */
-      authors: z.record(z.string(), authorSchema.nullable()).optional(),
-    }),
-  ),
-});
-
+/**
+ * `undo.json`: two lists of edit `seq`, which is the whole file now that undo rebuilds the project
+ * from a keyframe with those seqs left out (DAW-34).
+ *
+ * The old shape - a base snapshot plus a command and an inverse per step, with a `state`
+ * fingerprint guarding against applying a stale one - fails this schema and is discarded on load,
+ * which is the intended outcome rather than a migration to write: the file holds session-scoped
+ * undo state, never user work, and one reload with undo unavailable is what an unreadable stack
+ * should cost.
+ */
 export const undoStateSchema = z.object({
-  undo: packedStackSchema,
-  redo: packedStackSchema,
-  /**
-   * Required, so an `undo.json` written by an older build fails validation and is discarded on load
-   * (DAW-8.15). That is the intended outcome rather than a migration to write: the file holds
-   * session-scoped undo state, never user work, and one reload with undo unavailable is exactly
-   * what an unverifiable stack should cost.
-   */
-  state: z.string(),
+  undo: z.array(z.number()),
+  redo: z.array(z.number()),
 });
 
 /* -------------------------------------------------------------------------- */
@@ -330,6 +318,9 @@ export type ProjectData = z.infer<typeof projectDataSchema>;
 /* Path -> schema dispatch (the shared "what a valid bundle file is")         */
 /* -------------------------------------------------------------------------- */
 
+/** The retained keyframe ring's slot -> seq map: one entry per slot, null where never written. */
+const keyframeIndexSchema = z.array(z.number().nullable());
+
 /** Exact-path schemas; commits are matched by prefix in `bundleSchemaForPath`. */
 const byPath: Record<string, z.ZodType> = {
   "manifest.json": manifestSchema,
@@ -339,6 +330,7 @@ const byPath: Record<string, z.ZodType> = {
   "notes.json": notesSchema,
   "undo.json": undoStateSchema,
   "history/refs.json": refsSchema,
+  [KEYFRAME_INDEX_PATH]: keyframeIndexSchema,
 };
 
 /** The schema for a bundle path, or null for JSON paths we don't model (accepted as-is). */
@@ -348,6 +340,9 @@ export function bundleSchemaForPath(path: string): z.ZodType | null {
   // Server-authoritative commit-pinned keyframes (Phase B2): a ProjectData snapshot + a headSeq marker
   // (projectDataSchema is non-strict, so it tolerates the extra key), NOT a Commit DAG node.
   if (path.startsWith("history/keyframes/") && path.endsWith(".json")) return projectDataSchema;
+  // The retained keyframe ring (DAW-34 stage B): same snapshot shape, addressed by ring slot. The
+  // index beside them is matched exactly, above.
+  if (path.startsWith("keyframes/") && path.endsWith(".json")) return projectDataSchema;
   return null;
 }
 

@@ -13,8 +13,16 @@
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { applyEdit } from "../../src/audio/commands/applyEdit";
+import { replayEntries } from "../../src/audio/commands/replay";
 import { commitKeyframePath } from "../../src/audio/history/paths";
-import type { Author, EditCommand } from "../../src/audio/commands/types";
+import {
+  emptyKeyframeIndex,
+  KEYFRAME_INDEX_PATH,
+  planKeyframes,
+  retainedKeyframePath,
+  type KeyframeIndex,
+} from "../../src/audio/history/keyframes";
+import type { Author, EditCommand, EditEntry } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
 import type { ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
@@ -52,9 +60,6 @@ export interface IncomingEdit {
   author?: Author;
 }
 
-/** Only pure-forward edits replay through `applyEdit`; notes and undo/redo markers are skipped. */
-const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
-
 /** Version-history markers that pin a keyframe at their seq (a diff / revert-to base): a named `commit`
  *  and a `loadSnapshot` revert. Both are also enumerable history nodes (kept through log compaction). */
 const isHistoryMarker = (type: string): boolean => type === "commit" || type === "loadSnapshot";
@@ -74,6 +79,9 @@ export class Room {
   /** The `seq` the last persisted keyframe (`project.json`) reflects; the replay floor. Seeded from the
    *  loaded keyframe's `headSeq`, advanced when the authority writes a new keyframe. */
   private lastKeyframeSeq: number;
+  /** The retained-keyframe ring's slot -> seq map (DAW-34 stage B), cached for the room's life so the
+   *  cadence check costs no read. Seeded from the bundle on load. */
+  private keyframeIndex: KeyframeIndex;
 
   // Explicit field assignment (no constructor parameter-properties: erasableSyntaxOnly forbids them).
   private constructor(
@@ -83,6 +91,7 @@ export class Room {
     store: ProjectStore,
     maxSeq: number,
     lastKeyframeSeq: number,
+    keyframeIndex: KeyframeIndex,
   ) {
     this.db = db;
     this.ownerId = ownerId;
@@ -90,6 +99,7 @@ export class Room {
     this.store = store;
     this.maxSeq = maxSeq;
     this.lastKeyframeSeq = lastKeyframeSeq;
+    this.keyframeIndex = keyframeIndex;
   }
 
   /** Load a project's current HEAD into a fresh room: keyframe (`project.json`, if any) + replay the
@@ -111,11 +121,15 @@ export class Room {
       store.load(base as ProjectData);
     }
     const tail = await readEdits(db, owner, projectId, headSeq);
-    for (const entry of tail) {
-      if (isReplayable(entry.kind)) applyEdit(store, entry.command as EditCommand, entry.author as Author);
-    }
+    replayEntries(store, tail as unknown as EditEntry[]);
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
-    return new Room(db, ownerId, projectId, store, maxSeq, headSeq);
+    // A missing or malformed ring index reads as empty: it costs undo depth, never data.
+    const indexFile = await readFile(db, owner, projectId, KEYFRAME_INDEX_PATH);
+    const keyframeIndex =
+      indexFile?.kind === "json" && Array.isArray(indexFile.json)
+        ? (indexFile.json as KeyframeIndex)
+        : emptyKeyframeIndex();
+    return new Room(db, ownerId, projectId, store, maxSeq, headSeq, keyframeIndex);
   }
 
   get connectionCount(): number {
@@ -143,11 +157,36 @@ export class Room {
       kind: "json",
       json: { ...snapshot, headSeq },
     });
+    await this.retainKeyframe({ ...snapshot, headSeq }, headSeq);
     // Compact: prune entries at/below the keyframe, but keep the most-recent SNAPSHOT_WINDOW so the
     // catch-up feed still has history. `headSeq - SNAPSHOT_WINDOW` is strictly below the keyframe, so the
     // load replay (which reads seq > headSeq) never needs a pruned entry.
     const pruneFloor = headSeq - SNAPSHOT_WINDOW;
     if (pruneFloor >= 0) await deleteEditsBelow(this.db, this.projectId, pruneFloor);
+  }
+
+  /**
+   * Keep a copy of this keyframe in the retained ring, every `KEYFRAME_RETAIN_INTERVAL` edits, so an
+   * undo has a base from BEFORE an edit rather than only the head snapshot, which is always after it
+   * (DAW-34 stage B). The ring is a fixed set of slots that overwrite in turn, so it never needs the
+   * file delete that neither this store nor the HTTP API has.
+   *
+   * Best-effort, like the keyframe it copies: the edit log is the durable truth, and a missed write
+   * costs undo depth rather than data. The index is cached on the room, which outlives every write.
+   */
+  private async retainKeyframe(keyframe: Record<string, unknown>, headSeq: number): Promise<void> {
+    const plan = planKeyframes(this.keyframeIndex, headSeq);
+    this.keyframeIndex = plan.index;
+    if (!plan.write) return;
+    const who = { userId: this.ownerId };
+    await writeFile(this.db, who, this.projectId, retainedKeyframePath(plan.write.slot), {
+      kind: "json",
+      json: keyframe,
+    });
+    await writeFile(this.db, who, this.projectId, KEYFRAME_INDEX_PATH, {
+      kind: "json",
+      json: plan.index as (number | null)[],
+    });
   }
 
   /**

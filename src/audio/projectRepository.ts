@@ -16,14 +16,23 @@
  * doubles as an integrity check.
  */
 import type { ProjectData } from "./project/types";
-import { undoStateSchema } from "./project/schema";
+import { projectDataSchema, undoStateSchema } from "./project/schema";
 import type { Author, EditCommand, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
-import { applyEdit } from "./commands/applyEdit";
+import { isReplayable, rebuildWithout, replayEntries } from "./commands/replay";
 import { commitKeyframePath } from "./history/paths";
+import {
+  emptyKeyframeIndex,
+  KEYFRAME_INDEX_PATH,
+  oldestBase,
+  planKeyframes,
+  rebuildBase,
+  retainedKeyframePath,
+  type KeyframeIndex,
+} from "./history/keyframes";
 import { randomUuid } from "./randomUuid";
 
 /** `project.json` carries this keyframe marker: the edit `seq` the snapshot reflects, so load
@@ -81,10 +90,6 @@ const fromStream = (stream: EditEntry[]): { entries: EditEntry[]; notes: FeedNot
   }
   return { entries, notes };
 };
-
-/** Whether a stream entry is replayed forward through `applyEdit` (edits only; notes and the
- *  undo/redo reflog markers are not). Absent kind = a legacy edit. */
-const isReplayable = (entry: EditEntry): boolean => entry.kind === undefined || entry.kind === "edit";
 
 const FORMAT_VERSION = 1;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
@@ -150,6 +155,9 @@ export class ProjectRepository {
   private syncedThroughSeq = -1;
   /** Edit seq the last-written `project.json` keyframe reflects (the replay floor). */
   private lastKeyframeSeq = -1;
+  /** The retained-keyframe ring's slot -> seq map, cached so the cadence check costs no read. Null
+   *  until first loaded from the bundle. */
+  private keyframeIndex: KeyframeIndex | null = null;
 
   constructor(store: BundleStore, projectId: string | null = null) {
     this.store = store;
@@ -219,11 +227,11 @@ export class ProjectRepository {
     // and the undo/redo reflog markers are skipped - not pure-forward). A bundle with no `headSeq`
     // has `project.json` authoritative, so this no-ops.
     let project = baseProject;
-    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry));
+    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry.kind));
     if (replayTail.length > 0) {
       const replayStore = new ProjectStore(false);
       replayStore.load(baseProject);
-      for (const entry of replayTail) applyEdit(replayStore, entry.command, entry.author);
+      replayEntries(replayStore, replayTail);
       project = replayStore.snapshot();
     }
     this.lastKeyframeSeq = headSeq ?? -1;
@@ -291,6 +299,98 @@ export class ProjectRepository {
     await this.store.writeText("project.json", JSON.stringify(keyframe));
     await this.store.writeText("meta.json", this.metaJson());
     this.lastKeyframeSeq = headSeq;
+    await this.retainKeyframe(keyframe, headSeq);
+  }
+
+  /**
+   * Keep a copy of this keyframe in the retained ring, every `KEYFRAME_RETAIN_INTERVAL` edits, so
+   * undo has a base from BEFORE an edit rather than only the head snapshot, which is always after it
+   * (DAW-34 stage B). Best-effort, like the keyframe itself: the edit log is the durable truth, and
+   * a ring that missed a write just means an older undo is out of reach.
+   *
+   * Local projects only, in practice. A hosted project's ring is written by the authority, which
+   * owns its log - `attachAutosave` is deliberately not attached there.
+   */
+  private async retainKeyframe(keyframe: PersistedProject, headSeq: number): Promise<void> {
+    const index = this.keyframeIndex ?? (await this.readKeyframeIndex());
+    const plan = planKeyframes(index, headSeq);
+    this.keyframeIndex = plan.index;
+    if (!plan.write) return;
+    await this.store.writeText(retainedKeyframePath(plan.write.slot), JSON.stringify(keyframe));
+    await this.store.writeText(KEYFRAME_INDEX_PATH, JSON.stringify(plan.index));
+  }
+
+  /** The stored ring index, healed to the right shape (absent, truncated or corrupt all read as
+   *  empty rather than throwing - a lost ring costs undo depth, not data). */
+  private async readKeyframeIndex(): Promise<KeyframeIndex> {
+    const raw = await this.store.readText(KEYFRAME_INDEX_PATH);
+    if (!raw) return emptyKeyframeIndex();
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as KeyframeIndex) : emptyKeyframeIndex();
+    } catch {
+      return emptyKeyframeIndex();
+    }
+  }
+
+  /**
+   * The project as it would be if `excluding` had never been dispatched (DAW-34 stage C): the newest
+   * retained keyframe below the earliest excluded edit, with the log above it replayed minus those.
+   *
+   * Null when the ring does not reach back far enough, which is what makes an undo that old
+   * unavailable rather than wrong. A project keyframes its initial state at seq -1 when it is
+   * created, so a young project is covered from its first edit.
+   */
+  async rebuildExcluding(
+    excluding: ReadonlySet<number>,
+    entries: readonly EditEntry[],
+    headSeq: number,
+  ): Promise<ProjectData | null> {
+    if (excluding.size === 0) return null;
+    const base = await this.rebuildBaseFor(Math.min(...excluding), headSeq);
+    return base ? rebuildWithout(base.project, base.seq, entries, excluding) : null;
+  }
+
+  /** The oldest retained keyframe still usable, which is how far back undo can reach after a
+   *  reload. Null when the ring holds nothing that old. */
+  async oldestRebuildBase(headSeq: number): Promise<{ seq: number; project: ProjectData } | null> {
+    const index = this.keyframeIndex ?? (await this.readKeyframeIndex());
+    this.keyframeIndex = index;
+    return this.readRetained(oldestBase(index, headSeq));
+  }
+
+  /**
+   * The base a rebuild should start from when excluding edit `seq`: the newest retained keyframe
+   * strictly below it, with the seq it reflects so the caller knows which tail to replay. Null when
+   * the ring does not reach that far back, which is what makes an undo refused rather than wrong.
+   *
+   * Validated, not cast, for the same reason `readUndo` is: what comes back is fed straight to
+   * `ProjectStore.load`, and the OPFS path is not shape-checked by anything else.
+   */
+  async rebuildBaseFor(seq: number, headSeq: number): Promise<{ seq: number; project: ProjectData } | null> {
+    const index = this.keyframeIndex ?? (await this.readKeyframeIndex());
+    this.keyframeIndex = index;
+    return this.readRetained(rebuildBase(index, seq, headSeq));
+  }
+
+  /** Read one ring slot, checking it still holds the seq the index claims. */
+  private async readRetained(
+    base: { slot: number; seq: number } | null,
+  ): Promise<{ seq: number; project: ProjectData } | null> {
+    if (!base) return null;
+    const raw = await this.store.readText(retainedKeyframePath(base.slot));
+    if (!raw) return null;
+    try {
+      const stored = JSON.parse(raw) as Record<string, unknown>;
+      // A slot whose seq disagrees with the index was overwritten under us: treat it as absent
+      // rather than replaying the wrong tail onto it.
+      if (stored.headSeq !== base.seq) return null;
+      delete stored.headSeq;
+      const parsed = projectDataSchema.safeParse(stored);
+      return parsed.success ? { seq: base.seq, project: parsed.data as ProjectData } : null;
+    } catch {
+      return null; // not JSON at all
+    }
   }
 
   /** A full write (keyframe + the whole stream appended) for non-autosave callers:

@@ -22,6 +22,7 @@
  */
 import { ProjectStore } from "../project/projectStore";
 import { applyEdit } from "../commands/applyEdit";
+import { isReplayable } from "../commands/replay";
 import { describeCommand } from "../commands/describe";
 import { detectConflict, type ConflictInfo } from "./conflict";
 import type { EditLog } from "../commands/editLog";
@@ -93,8 +94,6 @@ export interface SharedSessionOptions {
 }
 
 /** Only pure-forward edits replay through `applyEdit`; notes / undo-redo markers are skipped. */
-const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
-
 export class SharedSession {
   private readonly projectStore: ProjectStore;
   private readonly editLog: EditLog;
