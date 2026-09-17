@@ -113,10 +113,31 @@ export class ProjectRepository {
     return this.name;
   }
 
+  /** meta.json body (name + a fresh modified-time) - the library's queryable index. */
+  private metaJson(): string {
+    return JSON.stringify({ name: this.name, modifiedAt: new Date().toISOString() });
+  }
+
   /** Rename the project: update the in-memory name and persist meta.json immediately. */
   async setName(name: string): Promise<void> {
     this.name = name;
-    await this.store.writeText("meta.json", JSON.stringify({ name, modifiedAt: new Date().toISOString() }));
+    await this.store.writeText("meta.json", this.metaJson());
+  }
+
+  /** Rewrite meta.json (bumps modifiedAt) without a full keyframe - used by the page-hide flush so
+   *  the library's modified-time is current after a short session. Serialized with the other writes. */
+  touchMeta(): Promise<void> {
+    const run = () => this.store.writeText("meta.json", this.metaJson());
+    this.saveChain = this.saveChain.then(run, run);
+    return this.saveChain;
+  }
+
+  /** Persist feed notes (notes.json) on the fast cadence: they do not ride the delta append path, so
+   *  this keeps them durable without waiting for a (now rare) keyframe. Serialized with other writes. */
+  writeNotes(notes: FeedNote[]): Promise<void> {
+    const run = () => this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
+    this.saveChain = this.saveChain.then(run, run);
+    return this.saveChain;
   }
 
   /** Load the working snapshot + log; null if no bundle has been written yet. */
@@ -200,21 +221,17 @@ export class ProjectRepository {
 
   /**
    * Write the working snapshot as a keyframe: `project.json` records the edit `seq` it reflects
-   * (`headSeq`), so load replays only the tail after it. The feed (`log.json`/`notes.json`) + meta
-   * ride along. Writes are serialized so they never overlap.
+   * (`headSeq`), so load replays only the tail after it. The feed cache (`log.json`) + meta ride
+   * along; feed notes are written separately on the fast cadence (`writeNotes`). Writes are
+   * serialized so they never overlap.
    */
-  writeKeyframe(project: ProjectData, headSeq: number, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
-    const run = () => this.writeKeyframeNow(project, headSeq, log, notes);
+  writeKeyframe(project: ProjectData, headSeq: number, log: EditEntry[]): Promise<void> {
+    const run = () => this.writeKeyframeNow(project, headSeq, log);
     this.saveChain = this.saveChain.then(run, run);
     return this.saveChain;
   }
 
-  private async writeKeyframeNow(
-    project: ProjectData,
-    headSeq: number,
-    log: EditEntry[],
-    notes: FeedNote[],
-  ): Promise<void> {
+  private async writeKeyframeNow(project: ProjectData, headSeq: number, log: EditEntry[]): Promise<void> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
@@ -225,14 +242,15 @@ export class ProjectRepository {
     await this.store.writeText("manifest.json", JSON.stringify(manifest));
     await this.store.writeText("project.json", JSON.stringify(keyframe));
     await this.store.writeText("log.json", JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
-    await this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
-    await this.store.writeText("meta.json", JSON.stringify({ name: this.name, modifiedAt: new Date().toISOString() }));
+    await this.store.writeText("meta.json", this.metaJson());
     this.lastKeyframeSeq = headSeq;
   }
 
-  /** A full write (keyframe + the whole log appended) for non-autosave callers: switch/create/import. */
+  /** A full write (keyframe + notes + the whole log appended) for non-autosave callers:
+   *  switch/create/import. */
   save(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
-    this.writeKeyframe(project, highWaterSeq(log, notes), log, notes);
+    this.writeKeyframe(project, highWaterSeq(log, notes), log);
+    this.writeNotes(notes);
     return this.appendEdits(log);
   }
 
