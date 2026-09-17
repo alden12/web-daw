@@ -291,11 +291,16 @@ export function Knob({
         <NumberKnob spec={spec as NumberSpec} store={store} onChange={onChange} author={author} />
       ),
     enum: () => (
-      <label className="flex flex-col items-center gap-1.5 w-14">
+      <label className="flex flex-col items-center gap-1.5 min-w-14">
         <span className="text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
         <select
           value={value as string}
-          onChange={(e) => onChange(spec.id, e.target.value)}
+          // Blur after choosing so the select doesn't keep keyboard focus and swallow the
+          // note-play keys (a focused select does letter typeahead; releasing focus avoids it).
+          onChange={(e) => {
+            onChange(spec.id, e.target.value);
+            e.target.blur();
+          }}
           className="font-mono text-[11px] bg-ground text-ink border border-line rounded-md px-1.5 py-1"
         >
           {(spec as EnumSpec).options.map((opt) => (
