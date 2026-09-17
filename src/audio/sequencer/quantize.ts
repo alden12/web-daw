@@ -2,7 +2,7 @@
  * Quantization: pull note timings toward a grid. Pure and DOM-free, so the browser
  * UI and the Node MCP server share one implementation (like the catalogs). This is
  * the explicit counterpart to the ClipStore no longer force-snapping on input - notes
- * hold their true positions, and quantize is something you (or Claude) choose to apply.
+ * hold their true positions, and quantize is something you (or an agent) choose to apply.
  *
  * `GRID_DIVISIONS` is the single source for the grid choices, reused by the snap
  * dropdowns, the quantize controls, and the MCP `quantize` tool, so adding a division

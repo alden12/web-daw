@@ -175,7 +175,7 @@ export function ProjectView({ projectStore, dispatch }: { projectStore: ProjectS
                   }`}
                 />
                 <span className={`truncate text-[12.5px] ${selected ? "text-strong" : "text-ink"}`}>{track.name}</span>
-                {track.muted && <span className="shrink-0 font-mono text-[9px] text-claude">M</span>}
+                {track.muted && <span className="shrink-0 font-mono text-[9px] text-hot">M</span>}
                 {track.solo && <span className="shrink-0 font-mono text-[9px] text-warn">S</span>}
                 <span className="ml-auto shrink-0 font-mono text-[9px] uppercase tracking-wider text-faint">
                   {kind}

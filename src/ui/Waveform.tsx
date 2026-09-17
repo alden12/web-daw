@@ -81,7 +81,7 @@ export function Waveform({
     // Resolve theme colours once per draw pass (canvas needs concrete colours, not CSS vars).
     const root = getComputedStyle(document.documentElement);
     const color = root.getPropertyValue("--color-you").trim() || "#56c7c2";
-    const clipColor = root.getPropertyValue("--color-claude").trim() || "#e0795f";
+    const clipColor = root.getPropertyValue("--color-hot").trim() || "#e0795f";
     const render = () => draw(canvas, peaks, gain, color, clipColor);
     render();
     const ro = new ResizeObserver(render);

@@ -120,7 +120,7 @@ export interface Commit {
   author: Author;
   message: string;
   time: number;
-  /** A system auto-checkpoint vs a user/Claude-named version. */
+  /** A system auto-checkpoint vs a named version (saved by a user or an agent). */
   auto: boolean;
   entryCount: number;
   /** Present only on keyframes; delta commits omit it and replay forward (materialize). */

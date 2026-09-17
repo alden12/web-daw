@@ -22,8 +22,10 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
   // own stable hue (not collapsed to one of three voice classes).
   const presence = useAuthorPresence();
   const { self } = presence;
-  // The author id is now an email; show "You" for my own edits rather than my raw address.
-  const label = (author: string) => (author === self ? "You" : authorLabel(author));
+  // The author id is now an email; show "You" for my own edits rather than my raw address. `self`
+  // also lets an agent I drove read as plain "Agent", while a peer's reads "Agent (their id)" -
+  // every agent shares the one violet, so the label is what tells two of them apart.
+  const label = (author: string) => (author === self ? "You" : authorLabel(author, self));
   const [tab, setTab] = useState<"activity" | "versions">("activity");
   const now = useNow();
   /** Which commit marker has its actions open. One at a time; a marker is a thin row, not a panel. */
@@ -96,7 +98,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
           <VersionTimeline versionStore={versionStore} editLog={editLog} />
         ) : items.length === 0 ? (
           <div className="border border-dashed border-line rounded-lg p-4 text-faint font-mono text-[11.5px] text-center">
-            Edits you and Claude make appear here.
+            Edits you and the agent make appear here.
           </div>
         ) : (
           <ul className="flex flex-col gap-1">

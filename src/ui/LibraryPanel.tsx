@@ -564,7 +564,7 @@ export function LibraryPanel({
           </span>
           <span className="truncate">Import audio as a track…</span>
         </button>
-        {importError && <p className="text-claude text-[11px] px-3.5 py-1">{importError}</p>}
+        {importError && <p className="text-hot text-[11px] px-3.5 py-1">{importError}</p>}
         {project.samples.length === 0 ? (
           <Hint>Import a sample to play it with the Sampler.</Hint>
         ) : (

@@ -24,10 +24,10 @@ describe("VersionStore (commit DAG)", () => {
     const a = await vs.commit("first", "you");
     expect(a?.parent).toBeNull();
 
-    log.dispatch({ type: "setTempo", bpm: 90 }, "claude");
-    const b = await vs.commit("second", "claude");
+    log.dispatch({ type: "setTempo", bpm: 90 }, "agent:you");
+    const b = await vs.commit("second", "agent:you");
     expect(b?.parent).toBe(a!.id);
-    expect(b?.author).toBe("claude");
+    expect(b?.author).toBe("agent:you");
 
     const hist = await vs.history();
     expect(hist.map((c) => c.message)).toEqual(["second", "first"]);
@@ -190,9 +190,9 @@ describe("VersionStore (commit DAG)", () => {
     const vs = new VersionStore(project, log, repo);
     await vs.load();
 
-    log.note("about to add the bass", "claude");
+    log.note("about to add the bass", "agent:you");
     log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-1" });
-    const c = await vs.commit("bass in", "claude");
+    const c = await vs.commit("bass in", "agent:you");
     expect(c?.noteCount).toBe(1);
 
     const stored = await repo.readCommit(c!.id);
@@ -208,12 +208,12 @@ describe("VersionStore (commit DAG)", () => {
     const { project, log, repo } = setup();
     const vs = new VersionStore(project, log, repo);
     await vs.load();
-    log.note("just thinking out loud", "claude");
+    log.note("just thinking out loud", "agent:you");
     expect(await vs.commit(undefined, undefined, true)).toBeNull(); // nothing to checkpoint yet
 
     // The pending note rides into the next real commit.
     log.dispatch({ type: "setTempo", bpm: 100 });
-    const c = await vs.commit("first real change", "claude");
+    const c = await vs.commit("first real change", "agent:you");
     expect((await repo.readCommit(c!.id))!.notes?.map((n) => n.text)).toEqual(["just thinking out loud"]);
   });
 
@@ -222,13 +222,13 @@ describe("VersionStore (commit DAG)", () => {
     const vs = new VersionStore(project, log, repo);
     await vs.load();
 
-    log.note("first idea", "claude");
+    log.note("first idea", "agent:you");
     log.dispatch({ type: "setTempo", bpm: 80 });
-    const a = await vs.commit("a", "claude");
+    const a = await vs.commit("a", "agent:you");
 
-    log.note("second idea", "claude");
+    log.note("second idea", "agent:you");
     log.dispatch({ type: "setTempo", bpm: 90 });
-    const b = await vs.commit("b", "claude");
+    const b = await vs.commit("b", "agent:you");
 
     expect((await repo.readCommit(a!.id))!.notes?.map((n) => n.text)).toEqual(["first idea"]);
     expect((await repo.readCommit(b!.id))!.notes?.map((n) => n.text)).toEqual(["second idea"]);
@@ -373,7 +373,7 @@ describe("VersionStore (remote / server-authoritative history)", () => {
       entry(1, track("t-1")),
       entry(2, commit("v1")),
       entry(3, track("t-2")),
-      entry(4, commit("v2"), "claude"),
+      entry(4, commit("v2"), "agent:you"),
     ]);
 
     const hist = await vs.history();
@@ -381,7 +381,7 @@ describe("VersionStore (remote / server-authoritative history)", () => {
       ["4", "v2", "2"],
       ["2", "v1", null],
     ]);
-    expect(hist[0].author).toBe("claude");
+    expect(hist[0].author).toBe("agent:you");
     expect(hist[1].entryCount).toBe(2); // the two edits before v1
     expect(hist[0].entryCount).toBe(1); // the one edit between v1 and v2
   });

@@ -58,7 +58,7 @@ describe("EditLog.restore", () => {
     const log = new EditLog(project);
     log.restore([
       { seq: 4, command: { type: "setTempo", bpm: 100 }, author: "you", time: 1 },
-      { seq: 5, command: { type: "createTrack", instrumentType: "fm", id: "t-x" }, author: "claude", time: 2 },
+      { seq: 5, command: { type: "createTrack", instrumentType: "fm", id: "t-x" }, author: "agent:you", time: 2 },
     ]);
 
     const state = log.getState();
@@ -76,14 +76,14 @@ describe("EditLog.restore", () => {
     const log = new EditLog(project);
     log.restore(
       [{ seq: 3, command: { type: "setTempo", bpm: 100 }, author: "you", time: 1 }],
-      [{ seq: 7, text: "warming up the pad", author: "claude", time: 2 }],
+      [{ seq: 7, text: "warming up the pad", author: "agent:you", time: 2 }],
     );
 
     expect(log.getNotes().map((n) => n.text)).toEqual(["warming up the pad"]);
     expect(log.getState().notes).toHaveLength(1);
 
     // seq continues from max(entry 3, note 7) + 1, so the next note lands at 8.
-    log.note("next move", "claude");
+    log.note("next move", "agent:you");
     expect(log.getNotes().at(-1)?.seq).toBe(8);
   });
 });
@@ -108,7 +108,7 @@ describe("project + edit-log persistence", () => {
     const dispose = attachAutosave(project, log, repo);
 
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    log.dispatch({ type: "setTempo", bpm: 90 }, "claude");
+    log.dispatch({ type: "setTempo", bpm: 90 }, "agent:you");
     await vi.runAllTimersAsync(); // fire the debounced save and flush its writes
     dispose();
     vi.useRealTimers();
@@ -123,7 +123,7 @@ describe("project + edit-log persistence", () => {
     // Log restored for the feed/history.
     const entries = log2.getState().entries;
     expect(entries.map((e) => e.command.type)).toEqual(["createTrack", "setTempo"]);
-    expect(entries.map((e) => e.author)).toEqual(["you", "claude"]);
+    expect(entries.map((e) => e.author)).toEqual(["you", "agent:you"]);
   });
 
   it("reconstructs HEAD from a keyframe plus a replayed edit tail", async () => {
@@ -249,7 +249,7 @@ describe("project + edit-log persistence", () => {
     await vi.runAllTimersAsync(); // initial keyframe
     const keyframeSeq = repo.keyframeSeq();
 
-    log.note("layering a pad on top", "claude"); // no project edit; below the interval
+    log.note("layering a pad on top", "agent:you"); // no project edit; below the interval
     await vi.runAllTimersAsync();
     expect(repo.keyframeSeq()).toBe(keyframeSeq); // the note did NOT trigger a keyframe
     dispose();
@@ -296,7 +296,7 @@ describe("project + edit-log persistence", () => {
 
     // A note changes no project state, so only the edit-log subscription can save it.
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    log.note("about to layer a pad on top", "claude");
+    log.note("about to layer a pad on top", "agent:you");
     await vi.runAllTimersAsync();
     dispose();
     vi.useRealTimers();
@@ -316,7 +316,7 @@ describe("project + edit-log persistence", () => {
     const dispose = attachAutosave(project, log, repo);
 
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    log.note("layering a pad", "claude");
+    log.note("layering a pad", "agent:you");
     await vi.runAllTimersAsync();
     dispose();
     vi.useRealTimers();
@@ -602,7 +602,7 @@ describe("project + edit-log persistence", () => {
       ],
     } as unknown as ProjectData;
     const log = [{ seq: 0, command: { type: "setTempo", bpm: 128 }, author: "you" as const, time: 1 }];
-    const notes = [{ seq: 1, text: "set the groove tempo", author: "claude" as const, time: 2 }];
+    const notes = [{ seq: 1, text: "set the groove tempo", author: "agent:you" as const, time: 2 }];
 
     const files = await source.exportBundle(project, log, notes);
     // Readable JSON entries plus the referenced sample as real .wav bytes. The unified stream

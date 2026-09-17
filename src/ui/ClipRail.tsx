@@ -3,7 +3,7 @@
  * "+ Clip" to add a new empty one. Clicking a chip makes it the active clip
  * (shown/edited in the roll); double-click renames; drag a chip onto this track's
  * lane in the arrangement to place that clip there. Voice colour tags who
- * authored each clip - you (teal), the agent (violet), or Claude/MCP (coral). Selecting is navigation
+ * authored each clip - you (teal) or an agent (violet), in-app or over MCP. Selecting is navigation
  * (direct on the store); add / remove / rename go through dispatch, so undo/redo +
  * the activity feed cover them.
  */

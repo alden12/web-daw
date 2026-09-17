@@ -121,7 +121,7 @@ export function SharePanel({
                 onClick={() => void revoke(member.email)}
                 aria-label={`Remove ${member.email}`}
                 title="Remove"
-                className="text-[15px] leading-none text-faint hover:text-claude cursor-pointer px-1 opacity-0 group-hover:opacity-100"
+                className="text-[15px] leading-none text-faint hover:text-hot cursor-pointer px-1 opacity-0 group-hover:opacity-100"
               >
                 ×
               </button>
@@ -154,7 +154,7 @@ export function SharePanel({
           </button>
         </form>
 
-        {error && <p className="text-claude text-[11px]">{error}</p>}
+        {error && <p className="text-hot text-[11px]">{error}</p>}
       </div>
     </div>
   );

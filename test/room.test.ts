@@ -77,7 +77,7 @@ describe("Room (realtime authority)", () => {
     await room.subscribe(b.client);
 
     await room.applyIncoming({ command: createTrack("t-1"), opId: "op-a", author: "you" });
-    await room.applyIncoming({ command: createTrack("t-2"), opId: "op-b", author: "claude" });
+    await room.applyIncoming({ command: createTrack("t-2"), opId: "op-b", author: "agent:you" });
 
     // A single authoritative order, assigned 0 then 1, delivered to every peer.
     expect(applied(a.messages).map((m) => m.type === "editApplied" && m.seq)).toEqual([0, 1]);

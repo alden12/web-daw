@@ -86,7 +86,7 @@ describe("custom devices through ProjectStore", () => {
   it("undo removes a just-added custom instrument; redo restores it", () => {
     const store = new ProjectStore();
     const log = new EditLog(store);
-    log.dispatch({ type: "addCustomInstrument", def: validInstrument }, "claude");
+    log.dispatch({ type: "addCustomInstrument", def: validInstrument }, "agent:you");
     expect(store.customInstruments.map((def) => def.type)).toContain("ci-test");
     log.undo();
     expect(store.customInstruments.some((def) => def.type === "ci-test")).toBe(false);

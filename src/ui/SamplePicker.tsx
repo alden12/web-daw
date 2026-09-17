@@ -82,7 +82,7 @@ export function SamplePicker({
               title="Import a sample file"
               aria-label="Import a sample file"
               onClick={() => fileInput.current?.click()}
-              className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md border border-line text-muted hover:text-ink hover:border-claude/55 cursor-pointer"
+              className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md border border-line text-muted hover:text-ink hover:border-hot/55 cursor-pointer"
             >
               +
             </button>

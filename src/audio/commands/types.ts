@@ -13,11 +13,12 @@ import type { PatchValues } from "../params/types";
 import type { NoteEvent } from "../sequencer/types";
 import type { ProjectData } from "../project/types";
 
-// Who authored an edit. `"claude"` = the MCP / Claude Code driver; `"agent"` = the built-in in-app
-// agent (model-agnostic) - two reserved AI voices. `"you"` is the default solo user; any other value is
-// a human user id (multi-user). A free string, not a union, so a collaborator's id flows through the
-// edit stream as-is; `ReservedVoice` names the ones with fixed meaning/colour.
-export type ReservedVoice = "you" | "claude" | "agent";
+// Who authored an edit. `"you"` is the default id for a user who has not set one; any other bare
+// value is a human user id (multi-user). An AI agent's edit is authored `agent:<userId>`, naming the
+// user who drove it - see `authors.ts` for why the driver rides in the author string. A free string,
+// not a union, so a collaborator's id flows through the edit stream as-is; `ReservedVoice` names the
+// one value with a fixed meaning and colour.
+export type ReservedVoice = "you";
 export type Author = ReservedVoice | (string & {});
 
 /** Protocol messages that are NOT durable edits (navigation / live / transport / history RPC / feed note). */

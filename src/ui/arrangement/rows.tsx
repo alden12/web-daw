@@ -136,7 +136,7 @@ function TrackHeader({
               onArmToggle();
             }}
             className={`w-2.5 h-2.5 rounded-full border cursor-pointer ${
-              armed ? "bg-claude border-claude" : "border-muted hover:border-claude"
+              armed ? "bg-hot border-hot" : "border-muted hover:border-hot"
             }`}
           />
         )}

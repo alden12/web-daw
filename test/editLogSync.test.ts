@@ -74,7 +74,7 @@ describe("edit log endpoints (server delta stream)", () => {
 
   it('accepts and round-trips a kind:"note" entry (feed notes ride the one stream)', async () => {
     const { app } = await makeSyncEnv();
-    const note = { seq: 0, command: { type: "note", text: "warming up" }, author: "claude", time: 1, kind: "note" };
+    const note = { seq: 0, command: { type: "note", text: "warming up" }, author: "agent:you", time: 1, kind: "note" };
     expect((await append(app, "p1", [note])).status).toBe(200);
     const entries = await readEntries(app, "p1");
     expect(entries[0]).toMatchObject({ kind: "note", command: { type: "note", text: "warming up" } });

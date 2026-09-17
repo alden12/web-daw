@@ -16,9 +16,22 @@ describe("colorForAuthor (perspective-relative)", () => {
     expect(colorForAuthor("you", {}, "bob")).not.toBe(DEFAULT_VOICE_COLORS.you);
   });
 
-  it("keeps the AI voices absolute (same colour for everyone)", () => {
-    expect(colorForAuthor("claude", {}, "bob")).toBe(DEFAULT_VOICE_COLORS.claude);
+  it("keeps the agent voice absolute (same colour for everyone)", () => {
+    expect(colorForAuthor("agent:alice", {}, "bob")).toBe(DEFAULT_VOICE_COLORS.agent);
     expect(colorForAuthor("agent", {}, "bob")).toBe(DEFAULT_VOICE_COLORS.agent);
+  });
+
+  // Every agent is violet however many people are driving one, and MY agent is violet too rather
+  // than teal: the point of the two-voice colour is seeing what an AI did against what a person did.
+  it("gives every agent the one violet, whoever drove it", () => {
+    expect(colorForAuthor("agent:alice", {}, "alice")).toBe(DEFAULT_VOICE_COLORS.agent);
+    expect(colorForAuthor("agent:bob", {}, "alice")).toBe(colorForAuthor("agent:alice", {}, "alice"));
+  });
+
+  // The settings panel offers one agent row, so an override has to reach an agent whatever the
+  // driver - keyed on the voice, not on the full author id.
+  it("applies the agent override to an agent driven by anyone", () => {
+    expect(colorForAuthor("agent:carol", { agent: "#abcdef" }, "alice")).toBe("#abcdef");
   });
 
   it("lets a configured override win, even for self or a voice", () => {

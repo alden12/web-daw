@@ -69,16 +69,18 @@ Key seams (real files):
   -> `EditLog.dispatch(command, author)`
   ([editLog.ts:159](../src/audio/commands/editLog.ts#L159)) -> the `APPLY` map
   ([applyEdit.ts:21](../src/audio/commands/applyEdit.ts#L21)).
-- **Author**: `Author = "you" | "claude"`
-  ([types.ts:15](../src/audio/commands/types.ts#L15)) drives the two-voice color. That
+- **Author**: a free string ([types.ts](../src/audio/commands/types.ts), helpers in
+  [authors.ts](../src/audio/commands/authors.ts)) driving the two-voice color. That
   color is **human-vs-AI, not vendor-vs-vendor** - the feed distinguishes "did I do
-  this or did the agent," not "Claude or Gemini." So the author should be
-  model-agnostic: the in-app agent is "the AI voice" regardless of which model is
-  plugged in (Gemini, Claude, local). Today the only AI value is `"claude"`, so phase 1
-  reuses it; the small cleanup is renaming the AI slot to something model-neutral (e.g.
-  `"agent"`) and treating the specific provider as separate metadata (a tooltip, say) -
-  never a second voice color. Note Claude Code is genuinely Claude, so *its* edits are
-  legitimately the AI voice by that model; the in-app agent just shares the same voice.
+  this or did the agent," not one model from another. So there is no per-model voice:
+  an agent edit is authored `agent:<userId>`, whichever model is behind it and whether
+  it came from the in-app agent or over MCP. The model is provider metadata, never a
+  voice color.
+- **Why the author names a user**: an agent does not act for itself, so its edit belongs
+  to whoever drove it - their undo can take it back and nobody else's can. It rides in
+  the author string rather than a separate field because a project's authorship stamps
+  are one string per object, with nowhere for a second field to go. `isOwnWork` is the
+  test undo scopes by.
 
 The in-app agent does **not** touch the Node MCP server or the WebSocket. That path
 exists for external clients. Our agent is in the browser, so it calls `dispatch`

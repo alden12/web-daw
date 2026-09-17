@@ -2,7 +2,7 @@
  * Authors settings section: set your identity and pick accent colours. Picking applies live - it writes
  * the author-colour store, which repaints every author-coloured surface (feed, tracks, notes, knobs) and
  * the `--color-*` CSS vars immediately. Colours live only in this browser. Rows: your identity + colour,
- * the two AI voices (agent / Claude), and any collaborators seen in this project's feed - so you can give
+ * the agent voice, and any collaborators seen in this project's feed - so you can give
  * each person a distinct colour rather than the auto-assigned hue. One tab of SettingsPanel.tsx.
  */
 import { useMemo, useState, useSyncExternalStore } from "react";
@@ -13,13 +13,11 @@ import { readCurrentUser, writeCurrentUser, subscribeCurrentUser, DEFAULT_USER }
 import { authEnabled } from "../auth/session";
 import { authorLabel } from "./authorStyle";
 import { voiceLabel, type Voice } from "./authorVoice";
+import { isAgentAuthor } from "../audio/commands/authors";
 
-const VOICES: { voice: Voice; hint: string }[] = [
-  { voice: "agent", hint: "the in-app agent" },
-  { voice: "claude", hint: "Claude over MCP" },
-];
-
-const RESERVED = new Set<string>(["agent", "claude"]);
+// One agent row, not one per model or per driver: an AI edit is the agent's whoever drove it and
+// whatever model is behind it, and every agent shares this colour (the feed label names the driver).
+const VOICES: { voice: Voice; hint: string }[] = [{ voice: "agent", hint: "the in-app agent and MCP" }];
 
 export function AuthorColorSettings({ config, editLog }: { config: AuthorColorConfig; editLog: EditLog }) {
   const pick = (author: string, hex: string) => writeAuthorColors({ ...config, [author]: hex });
@@ -31,7 +29,7 @@ export function AuthorColorSettings({ config, editLog }: { config: AuthorColorCo
   const collaborators = useMemo(() => {
     const seen = new Set<string>();
     for (const entry of entries) {
-      if (!RESERVED.has(entry.author) && entry.author !== currentUser) seen.add(entry.author);
+      if (!isAgentAuthor(entry.author) && entry.author !== currentUser) seen.add(entry.author);
     }
     return [...seen];
   }, [entries, currentUser]);

@@ -1,7 +1,7 @@
 /**
  * Sound-design tools: instrument parameters, the effect chain, and patches (saved
  * sounds). Parameter writes validate against the catalog schema (validateParam) before
- * dispatching as "agent"; applying a patch creates a new track from a saved sound.
+ * dispatching as the agent; applying a patch creates a new track from a saved sound.
  */
 import { z } from "zod";
 import type { AgentTool } from "../types";
@@ -19,7 +19,7 @@ import { newPatchId, savePatch } from "../../patches/library";
 import { allPatches, findPatch } from "../../patches/factory";
 
 export function soundTools(ctx: ToolContext): AgentTool[] {
-  const { projectStore, dispatch, resolveInstrumentTrack, resolveTrack, resolveEffect } = ctx;
+  const { projectStore, dispatch, author, resolveInstrumentTrack, resolveTrack, resolveEffect } = ctx;
 
   return [
     defineTool({
@@ -69,7 +69,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
         }
         const error = validateParam(spec, value);
         if (error) throw new Error(error);
-        dispatch({ type: "setParam", trackId: instrumentTrack.id, id, value }, "agent");
+        dispatch({ type: "setParam", trackId: instrumentTrack.id, id, value });
         return { ok: true, trackId: instrumentTrack.id, id, value };
       },
     }),
@@ -119,7 +119,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
         }
         const resolved = resolveTrack(track);
         const id = newEffectId();
-        dispatch({ type: "addEffect", hostId: resolved.id, effectType: effect, id }, "agent");
+        dispatch({ type: "addEffect", hostId: resolved.id, effectType: effect, id });
         return { ok: true, trackId: resolved.id, effectId: id, effect };
       },
     }),
@@ -130,7 +130,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), effect_id: z.string() }),
       run: ({ track, effect_id }) => {
         const { track: resolved, effect } = resolveEffect(track, effect_id);
-        dispatch({ type: "removeEffect", hostId: resolved.id, effectId: effect.id }, "agent");
+        dispatch({ type: "removeEffect", hostId: resolved.id, effectId: effect.id });
         return { ok: true, trackId: resolved.id, effectId: effect.id };
       },
     }),
@@ -141,7 +141,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), effect_id: z.string(), to_index: z.number().int().min(0) }),
       run: ({ track, effect_id, to_index }) => {
         const { track: resolved, effect } = resolveEffect(track, effect_id);
-        dispatch({ type: "moveEffect", hostId: resolved.id, effectId: effect.id, toIndex: to_index }, "agent");
+        dispatch({ type: "moveEffect", hostId: resolved.id, effectId: effect.id, toIndex: to_index });
         return { ok: true, trackId: resolved.id, effectId: effect.id, toIndex: to_index };
       },
     }),
@@ -166,7 +166,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
         }
         const error = validateParam(spec, value);
         if (error) throw new Error(error);
-        dispatch({ type: "setEffectParam", hostId: resolved.id, effectId: effect.id, id, value }, "agent");
+        dispatch({ type: "setEffectParam", hostId: resolved.id, effectId: effect.id, id, value });
         return { ok: true, trackId: resolved.id, effectId: effect.id, id, value };
       },
     }),
@@ -177,7 +177,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
       schema: z.object({ track: z.string().optional(), effect_id: z.string(), bypassed: z.boolean() }),
       run: ({ track, effect_id, bypassed }) => {
         const { track: resolved, effect } = resolveEffect(track, effect_id);
-        dispatch({ type: "bypassEffect", hostId: resolved.id, effectId: effect.id, bypassed }, "agent");
+        dispatch({ type: "bypassEffect", hostId: resolved.id, effectId: effect.id, bypassed });
         return { ok: true, trackId: resolved.id, effectId: effect.id, bypassed };
       },
     }),
@@ -225,28 +225,25 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
         const found = findPatch(patch);
         if (!found) throw new Error(`No patch matching "${patch}". Call list_patches.`);
         const id = newTrackId();
-        dispatch(
-          {
-            type: "createTrackFromPatch",
-            id,
-            name: name ?? found.name,
-            instrumentType: found.instrumentType,
-            params: found.params,
-            midiDevices: (found.midiDevices ?? []).map((device) => ({
-              id: newMidiDeviceId(),
-              type: device.type,
-              bypassed: device.bypassed,
-              params: device.params,
-            })),
-            effects: found.effects.map((effect) => ({
-              id: newEffectId(),
-              type: effect.type,
-              bypassed: effect.bypassed,
-              params: effect.params,
-            })),
-          },
-          "agent",
-        );
+        dispatch({
+          type: "createTrackFromPatch",
+          id,
+          name: name ?? found.name,
+          instrumentType: found.instrumentType,
+          params: found.params,
+          midiDevices: (found.midiDevices ?? []).map((device) => ({
+            id: newMidiDeviceId(),
+            type: device.type,
+            bypassed: device.bypassed,
+            params: device.params,
+          })),
+          effects: found.effects.map((effect) => ({
+            id: newEffectId(),
+            type: effect.type,
+            bypassed: effect.bypassed,
+            params: effect.params,
+          })),
+        });
         return { ok: true, trackId: id, patch: found.name };
       },
     }),
@@ -262,7 +259,7 @@ export function soundTools(ctx: ToolContext): AgentTool[] {
         savePatch({
           id,
           name,
-          author: "agent",
+          author,
           instrumentType: instrumentTrack.instrumentType,
           params: instrumentTrack.params.snapshot(),
           midiDevices: instrumentTrack.midiDevices.map((device) => ({

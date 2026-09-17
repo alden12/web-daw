@@ -6,10 +6,11 @@
  * dropped from the build. The map is also the extension point - a new tone is a new entry
  * here and nothing else.
  *
- * `you` / `agent` / `claude` mirror the edit voices (who did this), so a control tinted
- * `claude` reads as the same actor whose edits are coral. `warn` is a state, not an actor.
+ * `you` / `agent` mirror the edit voices (who did this), so a control tinted `agent` reads as the
+ * same actor whose edits are violet. `hot` and `warn` are states, not actors - `hot` is the coral
+ * that says recording / clipping / failed, which used to borrow a voice's name for the colour.
  */
-export type Tone = "you" | "agent" | "claude" | "warn";
+export type Tone = "you" | "agent" | "hot" | "warn";
 
 /**
  * A control that is *currently doing something*: recording, playing, armed, a metronome that
@@ -19,7 +20,7 @@ export type Tone = "you" | "agent" | "claude" | "warn";
 export const TONE_ACTIVE: Record<Tone, string> = {
   you: "bg-you/15 border-you/45 text-you",
   agent: "bg-agent/15 border-agent/45 text-agent",
-  claude: "bg-claude/15 border-claude/45 text-claude",
+  hot: "bg-hot/15 border-hot/45 text-hot",
   warn: "bg-warn/15 border-warn/45 text-warn",
 };
 
@@ -27,7 +28,7 @@ export const TONE_ACTIVE: Record<Tone, string> = {
 export const TONE_SOLID: Record<Tone, string> = {
   you: "bg-you text-ground hover:opacity-90",
   agent: "bg-agent text-ground hover:opacity-90",
-  claude: "bg-claude text-ground hover:opacity-90",
+  hot: "bg-hot text-ground hover:opacity-90",
   warn: "bg-warn text-ground hover:opacity-90",
 };
 
@@ -35,7 +36,7 @@ export const TONE_SOLID: Record<Tone, string> = {
 export const TONE_TEXT: Record<Tone, string> = {
   you: "text-you",
   agent: "text-agent",
-  claude: "text-claude",
+  hot: "text-hot",
   warn: "text-warn",
 };
 
@@ -43,7 +44,7 @@ export const TONE_TEXT: Record<Tone, string> = {
 export const TONE_HOVER: Record<Tone, string> = {
   you: "hover:text-you",
   agent: "hover:text-agent",
-  claude: "hover:text-claude",
+  hot: "hover:text-hot",
   warn: "hover:text-warn",
 };
 
@@ -55,7 +56,7 @@ export const TONE_HOVER: Record<Tone, string> = {
 export const TONE_FOCUS: Record<Tone, string> = {
   you: "focus-visible:[outline:2px_solid_var(--color-you)]",
   agent: "focus-visible:[outline:2px_solid_var(--color-agent)]",
-  claude: "focus-visible:[outline:2px_solid_var(--color-claude)]",
+  hot: "focus-visible:[outline:2px_solid_var(--color-hot)]",
   warn: "focus-visible:[outline:2px_solid_var(--color-warn)]",
 };
 

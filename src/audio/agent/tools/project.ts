@@ -1,6 +1,6 @@
 /**
  * Project-wide tools: tempo, arrangement length + loop, groove, the sample library, and
- * transport. Tempo/length/loop/groove dispatch as "agent"; transport is a live Scheduler
+ * transport. Tempo/length/loop/groove dispatch as the agent; transport is a live Scheduler
  * call (playback is not a durable edit). Samples and grooves are read from the catalogs.
  */
 import { z } from "zod";
@@ -18,7 +18,7 @@ export function projectTools(ctx: ToolContext): AgentTool[] {
       description: "Set the project tempo in BPM.",
       schema: z.object({ bpm: z.number().min(20).max(300) }),
       run: ({ bpm }) => {
-        dispatch({ type: "setTempo", bpm }, "agent");
+        dispatch({ type: "setTempo", bpm });
         return { ok: true, bpm };
       },
     }),
@@ -28,7 +28,7 @@ export function projectTools(ctx: ToolContext): AgentTool[] {
       description: "Set the arrangement length in beats (4 beats = 1 bar).",
       schema: z.object({ lengthBeats: z.number().positive() }),
       run: ({ lengthBeats }) => {
-        dispatch({ type: "setLength", lengthBeats }, "agent");
+        dispatch({ type: "setLength", lengthBeats });
         return { ok: true, lengthBeats };
       },
     }),
@@ -38,7 +38,7 @@ export function projectTools(ctx: ToolContext): AgentTool[] {
       description: "Set the loop/playback start point in beats.",
       schema: z.object({ beats: z.number().min(0) }),
       run: ({ beats }) => {
-        dispatch({ type: "setLoopStart", beats }, "agent");
+        dispatch({ type: "setLoopStart", beats });
         return { ok: true, beats };
       },
     }),
@@ -61,7 +61,7 @@ export function projectTools(ctx: ToolContext): AgentTool[] {
         if (groove !== undefined && grooveById(groove).id !== groove) {
           throw new Error(`Unknown groove "${groove}". Valid: ${GROOVES.map((entry) => entry.id).join(", ")}.`);
         }
-        dispatch({ type: "setGroove", grooveId: groove, amount }, "agent");
+        dispatch({ type: "setGroove", grooveId: groove, amount });
         return { ok: true, groove: groove ?? null, amount: amount ?? null };
       },
     }),

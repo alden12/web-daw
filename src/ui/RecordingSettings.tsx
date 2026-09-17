@@ -157,7 +157,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
       <div className="flex flex-col gap-2">
         {cal.phase === "running" ? (
           <div className="flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-claude animate-pulse" />
+            <span className="inline-block w-2 h-2 rounded-full bg-hot animate-pulse" />
             <span className="text-[12.5px] text-ink">
               {cal.stage === "count-in" ? "Tap along to lock the tempo…" : "Keep tapping - now measuring…"}
             </span>
@@ -202,7 +202,7 @@ export function RecordingSettings({ recorder, engine }: { recorder: Recorder; en
               Calibrate by tapping
             </button>
             {cal.phase === "error" && (
-              <span className="text-[11px] text-claude">Didn't catch enough taps - try again.</span>
+              <span className="text-[11px] text-hot">Didn't catch enough taps - try again.</span>
             )}
             {!engine.started && <span className="text-[11px] text-faint">Start audio first.</span>}
           </div>

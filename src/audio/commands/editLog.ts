@@ -22,6 +22,7 @@ import { isReplayable, rebuildWithout, tombstonedIds } from "./replay";
 import { describeCommand, type DescribeContext } from "./describe";
 import type { Author, EditCommand, EditEntry } from "./types";
 import { randomUuid } from "../randomUuid";
+import { agentAuthor, isOwnWork } from "./authors";
 
 /**
  * An undo step is the `id` of the log entry it takes back, and nothing else (DAW-34).
@@ -138,7 +139,7 @@ function coalesceKey(command: EditCommand): string {
 }
 
 /**
- * A feed-only annotation - a line of intent narration (e.g. Claude saying what it
+ * A feed-only annotation - a line of intent narration (e.g. an agent saying what it
  * is doing), shown in the activity feed but NOT an edit: it changes no project
  * state, so it stays out of the *replayable* edit stream (materialize/applyEdit
  * never touch it). Shares the edit `seq` counter so it interleaves with edits in
@@ -193,8 +194,9 @@ export class EditLog {
    *  persistence has one - which is what makes edits from before a reload undoable. */
   private base: { project: ProjectData; seq: number };
   private seq = 0;
-  /** The author stamped on local edits/undo/redo when a caller doesn't specify one (MCP passes "claude",
-   *  the agent "agent"). Defaults to "you"; a shared session sets it to the current user id. */
+  /** The author stamped on local edits/undo/redo when a caller doesn't specify one. Defaults to
+   *  "you"; a shared session sets it to the current user id. An agent's edits are stamped
+   *  `agentAuthor` of this, so they belong to the person driving it. */
   private localAuthor: Author = "you";
   private lastKey: string | null = null;
   private lastTime = 0;
@@ -214,7 +216,8 @@ export class EditLog {
    *  authority after being applied optimistically here (see SharedSession). It is handed the entry's
    *  `id` as well, which the session sends as the edit's `opId` - so the authority stores the same
    *  identity this log holds and an undo step means the same edit on every machine (DAW-34 stage E).
-   *  Undo/redo do NOT forward - they are local best-effort in a shared session. */
+   *  An undo/redo forwards too, as a TOMBSTONE naming the edit it takes back, which is what makes an
+   *  undo a shared fact rather than a local one. */
   private remote: ((edit: ForwardedEdit) => void) | null = null;
 
   /**
@@ -267,7 +270,8 @@ export class EditLog {
     this.undone = new Set([...this.undone].filter(above));
   }
 
-  /** Apply + log an edit. UI edits are authored by the current user (default 'you'); MCP edits 'claude'. */
+  /** Apply + log an edit. UI edits are authored by the current user (default 'you'); an agent's are
+   *  authored `agentAuthor` of that user - see `dispatchAsAgent`. */
   dispatch = (raw: EditCommand, author: Author = this.localAuthor): void => {
     // Resolve ambient defaults first (DAW-36), so the checkpoint, the apply, the log entry and the
     // forward to the authority all see one self-contained command rather than four chances to
@@ -409,6 +413,22 @@ export class EditLog {
     this.localAuthor = author;
   };
 
+  /** The author an AI agent's edits carry: an agent acting for whoever is driving it, so the edit
+   *  is theirs to undo (see `authors.ts`). Read rather than constructed by callers, so there is one
+   *  answer and no chance of two spellings of it. */
+  get agentAuthor(): Author {
+    return agentAuthor(this.localAuthor);
+  }
+
+  /**
+   * Dispatch an edit as the agent. A `Dispatch`, so it drops straight in wherever the UI's dispatch
+   * goes - the agent's tools and the MCP bridge use this instead of naming an author, so no call
+   * site has to remember to and none can forget.
+   */
+  dispatchAsAgent = (command: EditCommand): void => {
+    this.dispatch(command, this.agentAuthor);
+  };
+
   /**
    * Record a remote peer's edit in the activity feed WITHOUT applying it (the SharedSession has already
    * applied it to the project). Append-only, like a reflog entry, so the feed narrates who-did-what
@@ -517,8 +537,9 @@ export class EditLog {
     this.sendHeld();
   };
 
-  /** Post a feed-only annotation (intent narration). Not an edit; not undoable. */
-  note = (text: string, author: Author = "claude"): void => {
+  /** Post a feed-only annotation (intent narration). Not an edit; not undoable. Authored by the
+   *  agent by default, since narration is what an agent posts and a person just edits. */
+  note = (text: string, author: Author = agentAuthor(this.localAuthor)): void => {
     this.feedNotes.push({ seq: this.seq++, text, author, time: Date.now() });
     this.emit();
   };
@@ -592,15 +613,13 @@ export class EditLog {
    * themselves are per-tab session state (`undoSession.ts`), so this is the approximate answer used
    * only where the exact one does not exist.
    *
-   * **Approximate in one way worth knowing.** "Mine" is my author id plus the two AI voices, since
-   * an agent edits on behalf of whoever is driving it. In a shared session where two people each
-   * drive an agent, the log does not record which of them drove it, so an agent edit lands in both
-   * users' derived stacks. Undoing it would take back work the other person's agent did. Narrow,
-   * and the alternative is nobody being able to undo agent work in a fresh tab; fixing it properly
-   * means an agent edit carrying the user who drove it, which is a change to the author model.
+   * "Mine" is my own edits plus an agent's made for me, which an agent edit says outright now that
+   * it names the user who drove it (`isOwnWork`). An edit by an agent nobody is recorded as having
+   * driven belongs to no one and stays out: with no driver, taking it back could take back somebody
+   * else's work.
    */
   deriveUndoStack(): string[] {
-    const mine = (author: Author) => author === this.localAuthor || author === "claude" || author === "agent";
+    const mine = (author: Author) => isOwnWork(author, this.localAuthor);
     const tombstoned = tombstonedIds(this.entries);
     return this.entries
       .filter(

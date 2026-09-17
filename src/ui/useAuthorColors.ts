@@ -14,7 +14,7 @@ export function useAuthorColors(): AuthorColorConfig {
   return useSyncExternalStore(subscribeAuthorColors, readAuthorColors, readAuthorColors);
 }
 
-const VOICES: Voice[] = ["you", "agent", "claude"];
+const VOICES: Voice[] = ["you", "agent"];
 
 /**
  * Push the configured (or default) voice colours into the root CSS variables, re-lit for the

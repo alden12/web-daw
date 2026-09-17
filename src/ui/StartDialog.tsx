@@ -20,7 +20,7 @@ export function StartDialog({ onStart, error }: { onStart: () => void; error?: s
         </h2>
         <p className="text-sm text-muted leading-relaxed">
           Browsers won't play sound until you interact with the page. Click start to enable playback, the keyboard, and
-          anything Claude triggers over MCP.
+          anything an agent triggers over MCP.
         </p>
         <button
           type="button"

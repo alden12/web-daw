@@ -487,13 +487,13 @@ describe("MCP server (tracks)", () => {
     await connectTab();
     answerHistory((method, params) => {
       const replies: Record<string, unknown> = {
-        commit: { id: "cm-1234", message: params.message, author: "claude", time: 0, auto: false, entryCount: 3 },
-        history: [{ id: "cm-1234", message: "Set tempo", author: "claude", time: 0, auto: false, entryCount: 3 }],
+        commit: { id: "cm-1234", message: params.message, author: "agent:you", time: 0, auto: false, entryCount: 3 },
+        history: [{ id: "cm-1234", message: "Set tempo", author: "agent:you", time: 0, auto: false, entryCount: 3 }],
         diff: ["tempo 120 -> 140", 'added track "Bass"'],
         revert: {
           id: "cm-5678",
           message: 'Revert to "Set tempo"',
-          author: "claude",
+          author: "agent:you",
           time: 0,
           auto: false,
           entryCount: 0,

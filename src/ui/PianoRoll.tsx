@@ -1049,7 +1049,7 @@ export function PianoRoll({
                     <div
                       key={`cap-${i}`}
                       data-testid="ghost-note"
-                      className="absolute rounded-sm bg-claude/70 border border-claude pointer-events-none z-4"
+                      className="absolute rounded-sm bg-hot/70 border border-hot pointer-events-none z-4"
                       style={{
                         left: beatToX(note.startBeat, pxPerBeat),
                         width: Math.max(2, beatToX(note.endBeat - note.startBeat, pxPerBeat) - 1),
@@ -1064,7 +1064,7 @@ export function PianoRoll({
                         key={`held-${note.pitch}`}
                         data-testid="ghost-note"
                         data-left={beatToX(note.startBeat, pxPerBeat)}
-                        className="absolute rounded-sm bg-claude border border-claude pointer-events-none z-4 animate-pulse"
+                        className="absolute rounded-sm bg-hot border border-hot pointer-events-none z-4 animate-pulse"
                         style={{
                           left: beatToX(note.startBeat, pxPerBeat),
                           width: 2,
