@@ -8,6 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Server } from "node:http";
 import { createApp } from "./app";
 import { attachWsServer } from "./wsServer";
+import { resolveAuthConfig } from "./principal";
 import { getDb } from "../db/client";
 import { applyMigrations } from "../db/migrate";
 import { findStaleProjects } from "../db/store";
@@ -32,12 +33,10 @@ if (staleProjects.length > 0) {
 
 const port = process.env.API_PORT ? Number(process.env.API_PORT) : 5170;
 const corsOrigin = process.env.DAW_CORS_ORIGIN?.split(",").map((origin) => origin.trim());
-// Real auth (Supabase): when both are set, requests/sockets are gated by verifying a JWT against the
-// provider's JWKS and the principal is the token's user. When unset, the API runs in dev-stub mode
-// (open, a single "local" owner) - local dev only; production always sets these.
-const jwksUrl = process.env.SUPABASE_JWKS_URL;
-const issuer = process.env.SUPABASE_JWT_ISSUER;
-const auth = jwksUrl && issuer ? { jwksUrl, issuer } : undefined;
+// Real auth (Supabase): both SUPABASE_JWKS_URL and SUPABASE_JWT_ISSUER gate requests/sockets by verifying
+// a JWT against the provider's JWKS (the principal is the token's user). Absent config fails closed in
+// production and runs the open dev-stub only in local dev - see resolveAuthConfig.
+const auth = resolveAuthConfig(process.env);
 if (auth) console.log(`[web-daw] auth: verifying JWTs against ${auth.issuer}`);
 // Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
 const verbose = process.env.NODE_ENV !== "production";
