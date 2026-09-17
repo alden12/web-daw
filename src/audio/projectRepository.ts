@@ -22,7 +22,7 @@ import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
-import { applyEdit } from "./commands/applyEdit";
+import { isReplayable, rebuildWithout, replayEntries } from "./commands/replay";
 import { commitKeyframePath } from "./history/paths";
 import {
   emptyKeyframeIndex,
@@ -89,10 +89,6 @@ const fromStream = (stream: EditEntry[]): { entries: EditEntry[]; notes: FeedNot
   }
   return { entries, notes };
 };
-
-/** Whether a stream entry is replayed forward through `applyEdit` (edits only; notes and the
- *  undo/redo reflog markers are not). Absent kind = a legacy edit. */
-const isReplayable = (entry: EditEntry): boolean => entry.kind === undefined || entry.kind === "edit";
 
 const FORMAT_VERSION = 1;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
@@ -230,11 +226,11 @@ export class ProjectRepository {
     // and the undo/redo reflog markers are skipped - not pure-forward). A bundle with no `headSeq`
     // has `project.json` authoritative, so this no-ops.
     let project = baseProject;
-    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry));
+    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry.kind));
     if (replayTail.length > 0) {
       const replayStore = new ProjectStore(false);
       replayStore.load(baseProject);
-      for (const entry of replayTail) applyEdit(replayStore, entry.command, entry.author);
+      replayEntries(replayStore, replayTail);
       project = replayStore.snapshot();
     }
     this.lastKeyframeSeq = headSeq ?? -1;
@@ -334,6 +330,24 @@ export class ProjectRepository {
     } catch {
       return emptyKeyframeIndex();
     }
+  }
+
+  /**
+   * The project as it would be if `excluding` had never been dispatched (DAW-34 stage C): the newest
+   * retained keyframe below the earliest excluded edit, with the log above it replayed minus those.
+   *
+   * Null when the ring does not reach back far enough, which is what makes an undo that old
+   * unavailable rather than wrong. A project keyframes its initial state at seq -1 when it is
+   * created, so a young project is covered from its first edit.
+   */
+  async rebuildExcluding(
+    excluding: ReadonlySet<number>,
+    entries: readonly EditEntry[],
+    headSeq: number,
+  ): Promise<ProjectData | null> {
+    if (excluding.size === 0) return null;
+    const base = await this.rebuildBaseFor(Math.min(...excluding), headSeq);
+    return base ? rebuildWithout(base.project, base.seq, entries, excluding) : null;
   }
 
   /**

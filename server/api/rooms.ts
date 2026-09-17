@@ -13,6 +13,7 @@
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { applyEdit } from "../../src/audio/commands/applyEdit";
+import { replayEntries } from "../../src/audio/commands/replay";
 import { commitKeyframePath } from "../../src/audio/history/paths";
 import {
   emptyKeyframeIndex,
@@ -21,7 +22,7 @@ import {
   retainedKeyframePath,
   type KeyframeIndex,
 } from "../../src/audio/history/keyframes";
-import type { Author, EditCommand } from "../../src/audio/commands/types";
+import type { Author, EditCommand, EditEntry } from "../../src/audio/commands/types";
 import type { ProjectData } from "../../src/audio/project/types";
 import type { ServerMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
@@ -58,9 +59,6 @@ export interface IncomingEdit {
   opId: string;
   author?: Author;
 }
-
-/** Only pure-forward edits replay through `applyEdit`; notes and undo/redo markers are skipped. */
-const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
 
 /** Version-history markers that pin a keyframe at their seq (a diff / revert-to base): a named `commit`
  *  and a `loadSnapshot` revert. Both are also enumerable history nodes (kept through log compaction). */
@@ -123,9 +121,7 @@ export class Room {
       store.load(base as ProjectData);
     }
     const tail = await readEdits(db, owner, projectId, headSeq);
-    for (const entry of tail) {
-      if (isReplayable(entry.kind)) applyEdit(store, entry.command as EditCommand, entry.author as Author);
-    }
+    replayEntries(store, tail as unknown as EditEntry[]);
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
     // A missing or malformed ring index reads as empty: it costs undo depth, never data.
     const indexFile = await readFile(db, owner, projectId, KEYFRAME_INDEX_PATH);
