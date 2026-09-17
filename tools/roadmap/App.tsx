@@ -15,7 +15,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import designDoc from "../../docs/DESIGN.md?raw";
 import { parseMarkers, areasOf, sectionAround, STATUSES, type Status } from "../../scripts/roadmapParse";
-import { areaColours, buildGraph, type ColourMode } from "./graph";
+import { areaColours, buildGraph, buildEdges, type ColourMode } from "./graph";
 import { ItemNodeView } from "./ItemNode";
 import { AreaGroupNode } from "./AreaGroupNode";
 import { TicketGroupNode } from "./TicketGroupNode";
@@ -38,7 +38,25 @@ export function App() {
   const [colourMode, setColourMode] = useState<ColourMode>("area");
   const [locked, setLocked] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null); // a node with a dependency path, hovered
   const [layoutNonce, setLayoutNonce] = useState(0); // bump to force a fresh auto-layout (e.g. after reset)
+
+  // Node ids that arm hover highlighting: every ticket that touches a dependency path, plus the `area:*` boxes
+  // that have an external (cross-area) link. Hovering anything else (a dependency-free card, or an area box
+  // with only internal paths) does nothing, so it never restyles the edges for nothing.
+  const linkedNodes = useMemo(() => {
+    const areaOf = (id: string) => id.split("-")[0];
+    const linked = new Set<string>();
+    for (const item of items) {
+      for (const dep of item.deps) {
+        linked.add(dep).add(item.id);
+        if (areaOf(dep) !== areaOf(item.id)) {
+          linked.add(`area:${areaOf(dep)}`).add(`area:${areaOf(item.id)}`);
+        }
+      }
+    }
+    return linked;
+  }, [items]);
 
   const visibleItems = useMemo(
     () => items.filter((item) => !hiddenAreas.has(item.area) && !hiddenStatuses.has(item.status)),
@@ -114,10 +132,11 @@ export function App() {
 
   useEffect(() => {
     // Lay out the full item set (so filtering only toggles `hidden`, never re-flows), then apply the manual
-    // position/size overrides.
-    const graph = buildGraph(items, areas, colours, colourMode, selectedId, hiddenIds);
+    // position/size overrides. Nodes deliberately do NOT depend on `hoveredId` - hover restyles edges only
+    // (see the edge effect below), so it never rebuilds and repaints the node layer.
+    const nodes = buildGraph(items, areas, colours, colourMode, selectedId, hiddenIds);
     setNodes(
-      graph.nodes.map((node) => {
+      nodes.map((node) => {
         const dragged = draggedPositions.current[node.id];
         const resized = resizedSizes.current[node.id];
         const position = dragged ?? node.position;
@@ -125,9 +144,13 @@ export function App() {
         return { ...node, position, style };
       }),
     );
-    setEdges(graph.edges);
     // layoutNonce forces a re-run after a reset (the override refs were cleared).
-  }, [items, areas, colours, colourMode, selectedId, hiddenIds, layoutNonce, setNodes, setEdges]);
+  }, [items, areas, colours, colourMode, selectedId, hiddenIds, layoutNonce, setNodes]);
+
+  // Edges are their own layer: hover and selection restyle them here without touching the node layout above.
+  useEffect(() => {
+    setEdges(buildEdges(items, colours, colourMode, selectedId, hoveredId, hiddenIds));
+  }, [items, colours, colourMode, selectedId, hoveredId, hiddenIds, setEdges]);
 
   const selected = selectedId ? (items.find((item) => item.id === selectedId) ?? null) : null;
   const detail = selected ? sectionAround(designDoc, selected.line) : "";
@@ -144,6 +167,13 @@ export function App() {
       setSelectedId((node.data as { item: RoadmapItem }).item.id);
     }
   };
+
+  // Hover a node (ticket or area box) that has a dependency path to highlight every path touching it; ignore
+  // the dependency-free cards so hovering them never restyles the edges for nothing.
+  const onNodeMouseEnter: NodeMouseHandler = (_event, node) => {
+    if (linkedNodes.has(node.id)) setHoveredId(node.id);
+  };
+  const onNodeMouseLeave: NodeMouseHandler = () => setHoveredId(null);
 
   const counts = useMemo(() => {
     const byArea = new Map<string, number>();
@@ -232,6 +262,8 @@ export function App() {
               onNodesChange={handleNodesChange}
               onEdgesChange={onEdgesChange}
               onNodeClick={onNodeClick}
+              onNodeMouseEnter={onNodeMouseEnter}
+              onNodeMouseLeave={onNodeMouseLeave}
               onPaneClick={() => setSelectedId(null)}
               nodesDraggable={!locked}
               fitView
