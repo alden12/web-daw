@@ -4200,7 +4200,78 @@ projects:
           causal and had to be chased down before it could be dismissed.
 
 
-          ## What the evidence points at
+          ## DIAGNOSED, 2026-09-17 (slice-122), on the first run after the
+          trace was turned on
+
+
+          **It is a race in the test helper, and neither theory below was
+          right.** All three failures in the
+
+          seventh sighting had the same thing in the page snapshot: the "Start
+          the audio engine" dialog, up
+
+          and intercepting pointer events. The mixer failure says so outright -
+          `<div role="dialog"
+            aria-modal="true" aria-labelledby="start-title"> intercepts pointer events`, 56 retries, then
+            the 30s timeout.
+
+
+          Every spec opens with its own copy of:
+
+
+          ```
+
+          const start = page.getByRole("button", { name: /start audio/i });
+
+          if (await start.count()) { await start.click(); await
+          expect(start).toHaveCount(0); }
+
+          ```
+
+
+          `count()` is a point-in-time sample, not a wait. `AppShell` renders
+          `{!started && <StartDialog/>}`
+
+          from mount until it is clicked, so the dialog cannot come back - which
+          means it was never there when
+
+          `count()` ran. Under parallel load the page had not mounted yet, the
+          helper saw zero, skipped the
+
+          click, and the overlay appeared over a test that believed it was gone.
+
+
+          That accounts for every property this ticket was puzzling over:
+          clustering by file (one worker, one
+
+          slow mount, and every test in that file uses the same helper), always
+          clean in isolation (the app
+
+          mounts fast enough that the dialog is already there), spanning several
+          files at once (any worker
+
+          that happened to be slow), and hitting different selectors each time
+          (whatever that test clicked
+
+          first is what got blocked). The dev-server contention idea was half
+          right about the *trigger* and
+
+          wrong about the fault: slowness exposes the race, it is not itself the
+          failure.
+
+
+          **Fix: wait for the dialog rather than sampling for it**, and do it in
+          ONE place. There are 27
+
+          copies of the helper, which is why this survived six sightings - each
+          one looked like a different
+
+          test being flaky. Extract it to `e2e/support/` and have every spec
+          call it.
+
+
+          ## What the evidence points at (superseded by the diagnosis above -
+          kept for the record)
 
 
           The common factor is the *rail button click*, not any one assertion,
@@ -8000,6 +8071,44 @@ projects:
           rather than transitional. `Room.load` carries a note about what it
           will need: the same
             work-out-the-exclusions-before-choosing-a-base order the client now uses.
+
+
+          ### Where `undo.json` ends up
+
+
+          It should go, at E3 or E4, but it does not fall out for free.
+
+
+          Once undo forwards, the confirmed exclusions are in the log for both
+          modes. The optimistic ones
+
+          belong in the shared session's `pending` queue, which `LocalMirror`
+          already persists - an unsent
+
+          undo is an unsent op like any other. In a local project there is no
+          authority, so an undo is
+
+          confirmed the moment it is appended and the optimistic set is always
+          empty. That accounts for the
+
+          redo list. The undo list - what this user can still take back - is
+          derivable too once undo is
+
+          author-scoped: your replayable entries, not tombstoned, in seq order.
+
+
+          **Two semantics have to be decided before deriving it, and they are
+          why this is not automatic.**
+
+
+          - **Redo clearing.** A new edit clears the redo stack today, which is
+          what every editor does. A
+            derived stack has no "clear": a tombstoned edit stays tombstoned and would stay redoable
+            forever. Either the rule becomes "tombstones with no intervening edit of your own", or the
+            clearing needs its own marker in the log.
+          - **Redo order across users.** Today it is a stack. Derived, it is
+          "tombstones in order", which is
+            the same thing until two people's undos interleave, and then it is not.
 
 
           ### Still open in stage E
