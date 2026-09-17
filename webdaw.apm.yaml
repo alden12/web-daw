@@ -8465,6 +8465,61 @@ projects:
           to be the shared thing.
 
 
+          ### What a failed rebuild does, asked by Alden
+
+
+          The rebuild is not a transaction and does not need to be, because it
+          writes nothing. The tombstone
+
+          is committed to the log first, by `appendEdits`, which IS a
+          transaction; `recomputeHead` then only
+
+          reads (the keyframe, the log, maybe an older retained keyframe) and
+          swaps the in-memory store. So a
+
+          failure has nothing to roll back: the log still says the edit is
+          undone, and the next rebuild or
+
+          room reload reads the same log and reaches the same answer. A client
+          joining replays the log itself,
+
+          so it is not fooled by a stale room either.
+
+
+          The one thing a failure did leave was a store BEHIND its log, still
+          holding the undone edit - and
+
+          `persistKeyframe` writes whatever the store holds. A keyframe written
+          from it puts the undone edit
+
+          into the replay floor, which `headFromLog` can only undo by dropping
+          to a retained keyframe from
+
+          below it, and the ring does not always reach that far. Rare (it needs
+          a read failure, then a cadence
+
+          crossing before any successful rebuild, then a ring too short) but it
+          is the undo silently lost.
+
+
+          So `rebuildHead` records whether the rebuild worked and
+          `persistKeyframe` waits for one that did.
+
+          Skipping a keyframe costs a longer replay; writing a wrong one costs
+          the undo.
+          `test/rebuildFailure.test.ts` fails without the guard.
+
+
+          Not covered: a commit marker's keyframe is snapshotted in the
+          synchronous section, so it can still
+
+          be taken from a stale store. That one is a materialisation
+          convenience and re-derivable, unlike the
+
+          replay floor, so it did not justify breaking up the
+          seq/apply/broadcast section.
+
+
           ### Still open in stage E
 
 

@@ -115,6 +115,9 @@ export class Room {
    * the synchronous section establishes, without holding a lock across the broadcast.
    */
   private afterWork: Promise<unknown> = Promise.resolve();
+  /** Set when a rebuild failed, so the in-memory HEAD still has an undone edit in it. Blocks keyframe
+   *  writes until a rebuild succeeds - see `rebuildHead`. */
+  private headStale = false;
 
   // Explicit field assignment (no constructor parameter-properties: erasableSyntaxOnly forbids them).
   private constructor(
@@ -177,6 +180,9 @@ export class Room {
    * truth, so a failed keyframe just means the next load replays a little more.
    */
   private async persistKeyframe(): Promise<void> {
+    // A keyframe is the replay floor, so writing one from a store we know is behind the log would bake
+    // an undone edit into it (see `rebuildHead`). Skipping costs a longer replay; writing costs the undo.
+    if (this.headStale) return;
     const headSeq = this.maxSeq;
     if (headSeq <= this.lastKeyframeSeq) return;
     const snapshot = this.store.snapshot();
@@ -328,7 +334,7 @@ export class Room {
     await this.queueAfterWork(async () => {
       await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
       // The tombstone is in the log now, so HEAD is whatever the log says with it honoured.
-      if (tombstone) await this.recomputeHead();
+      if (tombstone) await this.rebuildHead();
       // Keep the queryable index name current on a rename, so every collaborator's listing reflects
       // it without the renamer pushing meta.json (a peer never writes the owner's meta.json).
       if (!tombstone && edit.command.type === "renameProject") {
@@ -350,6 +356,30 @@ export class Room {
   private queueAfterWork(task: () => Promise<unknown>): Promise<unknown> {
     this.afterWork = this.afterWork.then(task, task);
     return this.afterWork;
+  }
+
+  /**
+   * `recomputeHead`, remembering whether it worked.
+   *
+   * The rebuild writes nothing - the tombstone is already committed to the log above, by a
+   * transaction, and this only reads and then swaps the in-memory store. So a failure loses no data
+   * and needs no rollback: the log still says the edit is undone, and the next rebuild or room reload
+   * reads the same log and gets the same answer.
+   *
+   * What a failure DOES leave is a store that is behind its log, still holding the undone edit. That
+   * is harmless in itself (a joining client replays the log for itself), but a keyframe written from
+   * it would put the undone edit into the replay floor, where only a retained keyframe reaching back
+   * below it could get it out again - and the ring does not always reach. So a failed rebuild blocks
+   * keyframe writes until one succeeds.
+   */
+  private async rebuildHead(): Promise<void> {
+    try {
+      await this.recomputeHead();
+      this.headStale = false;
+    } catch (error) {
+      this.headStale = true;
+      throw error;
+    }
   }
 
   /**
