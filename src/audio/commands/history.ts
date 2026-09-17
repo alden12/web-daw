@@ -24,6 +24,13 @@ import { randomUuid } from "../randomUuid";
 const CHECKPOINT_DEBOUNCE_MS = 4000;
 
 /**
+ * Remote mode: how long to let the authoritative log settle before re-deriving history from it
+ * (HOST-21). Trailing, so a gesture of any length costs one refresh at the end of it rather than one
+ * per confirmed edit - a note drag confirms per frame.
+ */
+const REMOTE_REFRESH_DEBOUNCE_MS = 400;
+
+/**
  * Keyframe cadence: store a full snapshot at most every Nth commit; the commits
  * between are deltas that replay forward from it. Bounds both per-commit size and
  * the replay length needed to reconstruct any commit (see apm: "History and versioning").
@@ -37,6 +44,52 @@ const isMarker = (entry: EditEntry): boolean => MARKER_TYPES.has(entry.command.t
 /** A real, forward edit that counts toward a version's change tally (not a marker, not a feed note). */
 const isCountableEdit = (entry: EditEntry): boolean =>
   (entry.kind === undefined || entry.kind === "edit") && !MARKER_TYPES.has(entry.command.type);
+
+/**
+ * Derive the remote version list from the authoritative log: every `commit` / `loadSnapshot` marker
+ * is a version, and the countable edits between two markers are the later one's change tally.
+ * Oldest first, alongside the derived HEAD and whether anything countable trails the last marker.
+ *
+ * One pass over the log rather than a scan of it per marker, which was quadratic in a stream that
+ * routinely holds thousands of entries.
+ */
+function deriveRemoteHistory(stream: EditEntry[]): {
+  summaries: CommitSummary[];
+  headId: string | null;
+  hasUncommitted: boolean;
+} {
+  const summaries: CommitSummary[] = [];
+  let previousSeq = -1;
+  let countSinceMarker = 0;
+  for (const entry of stream) {
+    if (!isMarker(entry)) {
+      if (isCountableEdit(entry)) countSinceMarker++;
+      continue;
+    }
+    const parent = previousSeq >= 0 ? String(previousSeq) : null;
+    summaries.push({
+      id: String(entry.seq),
+      parent,
+      // Remote history is built from markers only, so a parent already *is* the previous named
+      // version; there are no auto checkpoints in the chain to skip over.
+      diffBase: parent,
+      author: entry.author,
+      message: (entry.command as { message?: string }).message ?? "Version",
+      time: entry.time,
+      auto: false,
+      entryCount: countSinceMarker,
+      noteCount: 0,
+      lastSeq: entry.seq,
+    });
+    previousSeq = entry.seq;
+    countSinceMarker = 0;
+  }
+  return {
+    summaries,
+    headId: previousSeq >= 0 ? String(previousSeq) : null,
+    hasUncommitted: countSinceMarker > 0,
+  };
+}
 
 /** The remote sink the remote-mode `VersionStore` authors commits through (a `SharedSession`). */
 export interface RemoteCommitSink {
@@ -52,6 +105,19 @@ export interface CommitSummary {
   time: number;
   auto: boolean;
   entryCount: number;
+  /**
+   * What this version's diff is measured against, which for a **named** version is the previous
+   * *named* one rather than its parent.
+   *
+   * Auto checkpoints are plumbing: they fire on a debounce nobody sees, so which of them happens
+   * to hold a given edit is a matter of how long you paused. Diffing a named version against its
+   * literal parent therefore reports "No detected changes" about edits you certainly made, purely
+   * because a checkpoint landed in between. Measuring from the last thing you *named* is both
+   * stable and what "what changed in this version" means.
+   *
+   * Null at the root, and equal to `parent` for an auto checkpoint (which is its own answer).
+   */
+  diffBase: string | null;
   /** How many feed notes (intent narration) this commit swept in. */
   noteCount: number;
   /** Highest edit seq this commit included - positions it in the activity feed. */
@@ -61,7 +127,15 @@ export interface CommitSummary {
 export interface VersionState {
   branch: string;
   headId: string | null;
-  hasUncommitted: boolean;
+  /**
+   * Whether there is anything worth naming: edits in no commit yet, **or** edits an auto
+   * checkpoint has already swept that no named version claims.
+   *
+   * The second half is the point. Gating Save on "uncommitted" alone means the button greys out
+   * four seconds after you stop editing, which is the debounce firing, and reads as the app
+   * deciding your work does not count.
+   */
+  hasUnnamedChanges: boolean;
 }
 
 export class VersionStore {
@@ -72,6 +146,8 @@ export class VersionStore {
   private readonly repoOverride: ProjectRepository | null;
   private refs: Refs = { head: "main", branches: { main: null } };
   private lastCommittedSeq = -1;
+  /** Whether HEAD is an auto checkpoint, so `getState` can tell "saved" from "merely checkpointed". */
+  private headIsAuto = false;
   /** Delta commits written since the last keyframe (drives keyframe cadence). */
   private commitsSinceKeyframe = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +163,27 @@ export class VersionStore {
   /** Cached derived state for the synchronous `getState()` (recomputed by `onLogAdvanced`). */
   private remoteHeadId: string | null = null;
   private remoteHasUncommitted = false;
+  /**
+   * Our copy of the authoritative log in remote mode, oldest first, and the seq we hold it through.
+   *
+   * **Kept, not refetched** (HOST-21). Deriving history means scanning the log for version markers,
+   * and this used to pull the whole log per derivation - from `onLogAdvanced` on every confirmed
+   * edit, and again from each `history()` the resulting emit provoked. A note drag confirms per
+   * frame, so a single gesture cost dozens of full-log responses of thousands of entries each.
+   * The log is append-only, so holding it and asking only for `seq > remoteStreamThrough` is both
+   * correct and nearly free.
+   *
+   * It also outlives server-side compaction, which prunes old fine-grained edits and keeps the
+   * markers. Entries we already counted stay counted, so a version's `entryCount` no longer shrinks
+   * out from under it once the log behind it is pruned.
+   */
+  private remoteStream: EditEntry[] = [];
+  private remoteStreamThrough = -1;
+  private remoteSynced = false;
+  private remoteRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private remoteSyncInFlight: Promise<void> | null = null;
+  /** Bumped whenever the held log is dropped, so a read still in flight knows to discard itself. */
+  private remoteGeneration = 0;
 
   constructor(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository) {
     this.project = project;
@@ -102,19 +199,67 @@ export class VersionStore {
    *  log. Pass null to return to the local file-DAG. Seeds the derived state. Call on (re)connect. */
   setRemote(sink: RemoteCommitSink | null): void {
     this.remoteSink = sink;
-    if (sink) void this.onLogAdvanced();
+    this.resetRemoteStream();
+    if (sink) void this.refreshRemote();
   }
 
-  /** The authoritative log advanced (a confirmed edit/commit/revert): recompute derived HEAD +
-   *  uncommitted flags and notify listeners so the history UI re-reads. Wired to `SharedSession`. */
-  async onLogAdvanced(): Promise<void> {
+  /** Drop the held log (a different project, or a different backend, is a different log). */
+  private resetRemoteStream(): void {
+    this.remoteGeneration += 1; // orphan any read still in flight against the old log
+    this.remoteSyncInFlight = null;
+    this.remoteStream = [];
+    this.remoteStreamThrough = -1;
+    this.remoteSynced = false;
+  }
+
+  /**
+   * The authoritative log advanced (a confirmed edit/commit/revert). Wired to `SharedSession`, which
+   * fires it per confirmed edit, so it only *schedules* the refresh; see REMOTE_REFRESH_DEBOUNCE_MS.
+   */
+  onLogAdvanced(): void {
     if (!this.isRemote) return;
-    const stream = await this.repo.readEditStream(-1);
-    const markers = stream.filter(isMarker);
-    this.remoteHeadId = markers.length > 0 ? String(markers[markers.length - 1].seq) : null;
-    const lastMarkerSeq = markers.length > 0 ? markers[markers.length - 1].seq : -1;
-    this.remoteHasUncommitted = stream.some((entry) => entry.seq > lastMarkerSeq && isCountableEdit(entry));
+    if (this.remoteRefreshTimer) clearTimeout(this.remoteRefreshTimer);
+    this.remoteRefreshTimer = setTimeout(() => {
+      this.remoteRefreshTimer = null;
+      void this.refreshRemote();
+    }, REMOTE_REFRESH_DEBOUNCE_MS);
+  }
+
+  /** Pull whatever the log gained since we last looked, then re-derive the cached state from it. */
+  private async refreshRemote(): Promise<void> {
+    if (!this.isRemote) return;
+    await this.syncRemoteStream();
+    const derived = deriveRemoteHistory(this.remoteStream);
+    this.remoteHeadId = derived.headId;
+    this.remoteHasUncommitted = derived.hasUncommitted;
     this.emit();
+  }
+
+  /**
+   * Append the entries after the ones we hold. One bounded request, whatever the log's size.
+   *
+   * Coalesced, because `setRemote` starts a sync and the first `history()` can arrive while it is
+   * still in flight: two reads from the same `remoteStreamThrough` would append the same entries
+   * twice and double the version list. A sync that starts mid-burst can miss the newest entries,
+   * which is harmless - `onLogAdvanced` is trailing-debounced, so another refresh always follows.
+   */
+  private syncRemoteStream(): Promise<void> {
+    this.remoteSyncInFlight ??= this.pullRemoteStream();
+    return this.remoteSyncInFlight;
+  }
+
+  private async pullRemoteStream(): Promise<void> {
+    const generation = this.remoteGeneration;
+    try {
+      const fresh = await this.repo.readEditStream(this.remoteStreamThrough);
+      if (generation !== this.remoteGeneration) return; // a project switch overtook this read
+      this.remoteSynced = true;
+      if (fresh.length === 0) return;
+      this.remoteStream = this.remoteStream.concat(fresh);
+      this.remoteStreamThrough = fresh[fresh.length - 1].seq;
+    } finally {
+      if (generation === this.remoteGeneration) this.remoteSyncInFlight = null;
+    }
   }
 
   private get repo(): ProjectRepository {
@@ -124,18 +269,24 @@ export class VersionStore {
   /** Load refs + HEAD from the bundle. Call after the project is restored. */
   async load(): Promise<void> {
     // Remote mode derives history from the log (no refs.json); just (re)seed the cached derived state.
-    if (this.isRemote) return this.onLogAdvanced();
+    // Reloading is how a project switch arrives here, and the held log belongs to the old project.
+    if (this.isRemote) {
+      this.resetRemoteStream();
+      return this.refreshRemote();
+    }
     const refs = await this.repo.readRefs();
     if (refs) {
       this.refs = refs;
       const head = this.headId() ? await this.repo.readCommit(this.headId()!) : null;
       this.lastCommittedSeq = head?.lastSeq ?? -1;
+      this.headIsAuto = head?.auto ?? false;
       this.commitsSinceKeyframe = await this.distanceToKeyframe(this.headId());
     } else {
       // No history yet: reset to a fresh DAG and start from here, rather than
       // retro-committing the restored working log (which has no commits behind it).
       this.refs = { head: "main", branches: { main: null } };
       this.lastCommittedSeq = this.maxSeq();
+      this.headIsAuto = false;
       this.commitsSinceKeyframe = 0;
     }
     this.emit();
@@ -150,7 +301,12 @@ export class VersionStore {
    *  auto-checkpoint: commits are explicit user actions and the authority owns keyframes, so this is a
    *  no-op (the history UI refreshes via `onLogAdvanced`, driven by the sync session). */
   attach(): () => void {
-    if (this.isRemote) return () => {};
+    if (this.isRemote) {
+      return () => {
+        if (this.remoteRefreshTimer) clearTimeout(this.remoteRefreshTimer);
+        this.remoteRefreshTimer = null;
+      };
+    }
     const unsub = this.editLog.subscribe(() => this.schedule());
     return () => {
       unsub();
@@ -164,9 +320,15 @@ export class VersionStore {
   }
 
   /**
-   * Commit the edits since the last commit + the current snapshot, advancing HEAD.
-   * No-op (returns null) when nothing is uncommitted. `auto` marks a system
-   * checkpoint vs a named version.
+   * Commit the edits since the last commit + the current snapshot, advancing HEAD. `auto` marks a
+   * system checkpoint vs a named version.
+   *
+   * **An auto checkpoint with nothing to record is a no-op; a named version never is.** A version
+   * marks a state you want to be able to come back to, and whether an invisible checkpoint
+   * happened to sweep the edits first has nothing to do with whether you meant to name it. That
+   * asymmetry is the fix for a real bug: the checkpoint debounce is four seconds, so pausing that
+   * long between the last edit and pressing Save used to leave you with no version and nothing
+   * saying why.
    */
   async commit(message?: string, author?: Author, auto = false): Promise<CommitSummary | null> {
     // Remote mode: author a commit marker into the shared log. It gets an authoritative seq + broadcast,
@@ -177,7 +339,10 @@ export class VersionStore {
       return null;
     }
     const entries = this.uncommitted();
-    if (entries.length === 0) return null;
+    if (auto && entries.length === 0) return null;
+    // A named save supersedes the checkpoint that was about to fire, so cancel it rather than
+    // leaving a redundant one queued behind the version.
+    if (this.timer) clearTimeout(this.timer);
     // Sweep in any feed notes posted since the last commit, so the narration is
     // anchored to the version it describes. Notes are not edits (materialize never
     // replays them); they ride alongside the entries purely as history.
@@ -197,8 +362,9 @@ export class VersionStore {
     const commit: Commit = {
       id: `cm-${randomUuid().slice(0, 8)}`,
       parent: this.headId(),
-      author: author ?? entries[entries.length - 1].author,
-      message: message ?? autoMessage(entries),
+      // Both fall back, because a named version can now carry no entries at all to read them off.
+      author: author ?? entries[entries.length - 1]?.author ?? "you",
+      message: message ?? (entries.length ? autoMessage(entries) : "Untitled version"),
       time: Date.now(),
       auto,
       entryCount: entries.length,
@@ -211,10 +377,12 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.headIsAuto = auto;
     this.commitsSinceKeyframe = keyframe ? 0 : this.commitsSinceKeyframe + 1;
     this.editLog.resetCoalescing(); // a commit is a boundary: don't fold later edits into a committed entry
     this.emit();
-    return toSummary(commit);
+    // Resolved against the *parent* chain, since this commit is not in it.
+    return toSummary(commit, auto ? commit.parent : await this.previousNamed(commit.parent));
   }
 
   /**
@@ -261,6 +429,7 @@ export class VersionStore {
     this.refs = { ...this.refs, branches: { ...this.refs.branches, [this.refs.head]: commit.id } };
     await this.repo.writeRefs(this.refs);
     this.lastCommittedSeq = lastSeq;
+    this.headIsAuto = false; // a revert is a deliberate node, not a checkpoint
     this.commitsSinceKeyframe = 0;
     this.editLog.resetCoalescing();
     this.emit();
@@ -295,42 +464,38 @@ export class VersionStore {
     // Remote: scan the authoritative log for version markers, newest first. Each marker's authoritative
     // seq is its id; `entryCount` is the real edits between it and the previous marker.
     if (this.isRemote) {
-      const stream = await this.repo.readEditStream(-1);
-      const summaries: CommitSummary[] = [];
-      let previousSeq = -1;
-      for (const marker of stream.filter(isMarker)) {
-        const entryCount = stream.filter(
-          (entry) => entry.seq > previousSeq && entry.seq < marker.seq && isCountableEdit(entry),
-        ).length;
-        summaries.push({
-          id: String(marker.seq),
-          parent: previousSeq >= 0 ? String(previousSeq) : null,
-          author: marker.author,
-          message: (marker.command as { message?: string }).message ?? "Version",
-          time: marker.time,
-          auto: false,
-          entryCount,
-          noteCount: 0,
-          lastSeq: marker.seq,
-        });
-        previousSeq = marker.seq;
-      }
-      return summaries.reverse().slice(0, limit);
+      // Derived from the log we hold, not from a fresh fetch of it (HOST-21). Only the first call
+      // before any refresh has to go to the network.
+      if (!this.remoteSynced) await this.syncRemoteStream();
+      return deriveRemoteHistory(this.remoteStream).summaries.reverse().slice(0, limit);
     }
-    const summaries: CommitSummary[] = [];
+    const chain: Commit[] = [];
     let id = this.headId();
-    while (id && summaries.length < limit) {
+    while (id && chain.length < limit) {
       const commit = await this.repo.readCommit(id);
       if (!commit) break;
-      summaries.push(toSummary(commit));
+      chain.push(commit);
       id = commit.parent;
     }
-    return summaries;
+    // Newest-first, so a named version's diff base is the next named commit *further down* the
+    // list. Auto checkpoints keep their parent, which is already the right answer for them.
+    return chain.map((commit, index) => {
+      if (commit.auto) return toSummary(commit);
+      const previousNamed = chain.slice(index + 1).find((ancestor) => !ancestor.auto);
+      // No named ancestor (or the chain was cut short by `limit`): fall back to the parent, which
+      // is what this did before and is never wrong, only sometimes less useful.
+      return toSummary(commit, previousNamed?.id ?? commit.parent);
+    });
   }
 
   getState(): VersionState {
-    if (this.isRemote) return { branch: "main", headId: this.remoteHeadId, hasUncommitted: this.remoteHasUncommitted };
-    return { branch: this.refs.head, headId: this.headId(), hasUncommitted: this.uncommitted().length > 0 };
+    if (this.isRemote)
+      return { branch: "main", headId: this.remoteHeadId, hasUnnamedChanges: this.remoteHasUncommitted };
+    return {
+      branch: this.refs.head,
+      headId: this.headId(),
+      hasUnnamedChanges: this.uncommitted().length > 0 || this.headIsAuto,
+    };
   }
 
   subscribe(listener: () => void): () => void {
@@ -368,6 +533,22 @@ export class VersionStore {
     return store.snapshot();
   }
 
+  /**
+   * The nearest ancestor that is a named version, skipping auto checkpoints, falling back to
+   * `from` itself when there is no named one behind it. This is what a named version's diff is
+   * measured against - see `CommitSummary.diffBase` for why.
+   */
+  private async previousNamed(from: string | null): Promise<string | null> {
+    let id = from;
+    while (id) {
+      const commit = await this.repo.readCommit(id);
+      if (!commit) break;
+      if (!commit.auto) return commit.id;
+      id = commit.parent;
+    }
+    return from;
+  }
+
   /** How many delta commits sit between `id` and the nearest keyframe (0 if it is one). */
   private async distanceToKeyframe(id: string | null): Promise<number> {
     let distance = 0;
@@ -402,7 +583,7 @@ function autoMessage(entries: EditEntry[]): string {
   return entries.length === 1 ? desc : `${desc} (+${entries.length - 1} more)`;
 }
 
-function toSummary(commit: Commit): CommitSummary {
+function toSummary(commit: Commit, diffBase: string | null = commit.parent): CommitSummary {
   return {
     id: commit.id,
     parent: commit.parent,
@@ -411,6 +592,7 @@ function toSummary(commit: Commit): CommitSummary {
     time: commit.time,
     auto: commit.auto,
     entryCount: commit.entryCount,
+    diffBase,
     noteCount: commit.notes?.length ?? 0,
     lastSeq: commit.lastSeq,
   };

@@ -60,9 +60,40 @@ If the device cannot reach the laptop at all (client isolation on the network), 
 instead - `cloudflared tunnel --url https://localhost:5155` - the tunnel hostnames are
 already in `allowedHosts`.
 
-Note that a trusted certificate (`mkcert`, plus its root installed on the device) will be
-needed before service workers and PWA install can be tested; a self-signed one is enough
-for everything above.
+### Installing it as an app
+
+The app is installable (MOBILE-3): a manifest, icons, and a service worker that precaches the
+whole shell so it starts with no network.
+
+**`yarn dev:mobile` cannot show you this**, for two separate reasons, and each on its own is
+enough:
+
+1. **There is no manifest or worker on the dev server.** They are generated for a real build
+   only (`devOptions.enabled: false`, so a stale worker can never serve the test suite). Nothing
+   is installable there however the origin is served.
+2. **A self-signed certificate is not enough.** A browser declines to register a service worker
+   on a certificate it does not trust, and says nothing at all about it: no install prompt, no
+   error. Fine for everything above, useless here.
+
+**So install it from the deploy**: `yarn deploy`, then open the Fly URL on the phone. Chrome
+Android offers **Install app** in its menu, iOS Safari **Share -> Add to Home Screen**.
+
+That is not a workaround for the local setup, it is the shorter path. Serving a build locally
+over a certificate a phone will trust means either a tunnel or a private CA, and either way what
+you end up testing is a build - so it may as well be the build everyone else gets, on the origin
+it will actually run on. The service worker's scope, the manifest's `start_url` and the API it
+talks to are all origin-shaped, and only the deploy has the real ones.
+
+Two things that surprise people:
+
+- An installed app is a **separate storage bucket** from the browser tab it was installed from,
+  so its OPFS projects start empty. It is a different app as far as the browser is concerned.
+- There is **no live reload**. It is a build; rebuild and reload to see a change, and the worker
+  hands over the new version on the load after that.
+
+`yarn check:pwa` answers the offline question without a device at all: it serves `dist/`,
+installs the worker, cuts the network and asks for a route the browser has never seen. CI runs
+it after the build.
 
 ## Contributing
 

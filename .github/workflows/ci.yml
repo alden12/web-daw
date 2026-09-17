@@ -42,5 +42,10 @@ jobs:
       - name: Install Playwright browser
         run: yarn playwright install --with-deps chromium
 
+      # Against dist/ from the build step above, because the service worker only exists in a
+      # real build - the e2e suite runs on the dev server, where it is deliberately off.
+      - name: PWA installs and starts offline
+        run: yarn check:pwa
+
       - name: End-to-end tests
         run: yarn test:e2e

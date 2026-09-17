@@ -282,13 +282,31 @@ export const commitSchema = z.object({
 });
 
 const packedStackSchema = z.object({
+  // Null once every checkpoint in the stack carries its own inverse: there is then nothing to
+  // replay a snapshot from, which is the whole point of DAW-34.
   base: projectDataSchema.nullable(),
-  steps: z.array(z.object({ command: editCommandSchema, author: authorSchema })),
+  steps: z.array(
+    z.object({
+      command: editCommandSchema,
+      author: authorSchema,
+      /** The commands that undo `command`; absent for a checkpoint that still uses a snapshot. */
+      inverse: z.array(editCommandSchema).optional(),
+      /** The authorship those commands restore (null = the key had no author). Travels with them. */
+      authors: z.record(z.string(), authorSchema.nullable()).optional(),
+    }),
+  ),
 });
 
 export const undoStateSchema = z.object({
   undo: packedStackSchema,
   redo: packedStackSchema,
+  /**
+   * Required, so an `undo.json` written by an older build fails validation and is discarded on load
+   * (DAW-8.15). That is the intended outcome rather than a migration to write: the file holds
+   * session-scoped undo state, never user work, and one reload with undo unavailable is exactly
+   * what an unverifiable stack should cost.
+   */
+  state: z.string(),
 });
 
 /* -------------------------------------------------------------------------- */

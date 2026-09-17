@@ -17,7 +17,35 @@ import { grooveAt } from "./groove";
 import { clamp } from "../../util";
 
 const LOOKAHEAD_MS = 25;
-const SCHEDULE_AHEAD_SEC = 0.1;
+
+/**
+ * How far ahead each tick schedules (DAW-32).
+ *
+ * 25ms / 100ms is the pairing "A Tale of Two Clocks" recommends, and it held for the whole life
+ * of this project on a desktop. A phone broke it: a tick that arrives more than this late has
+ * let notes come due unscheduled, and there is nothing that can be done about them afterwards
+ * except drop them. Mobile browsers throttle timers hard, an installed PWA backgrounds when you
+ * switch apps, and a phone stalls the main thread over things a laptop shrugs off.
+ *
+ * So the window is wider than the classic advice. What it costs is the horizon at which an edit
+ * takes effect: notes already scheduled are already committed, so muting a track or moving a
+ * note lands up to this far in the future rather than half as far. At 200ms that is still under
+ * a 16th note at any tempo anyone works at.
+ *
+ * It reduces how often a stall loses anything at all. The floor in `tick` is what makes the
+ * stalls it cannot cover *harmless*, which is the other half and the more important one.
+ */
+const SCHEDULE_AHEAD_SEC = 0.2;
+
+/**
+ * How late a note may be and still play, rather than being skipped as part of a missed window.
+ *
+ * Without it, a stall a millisecond longer than the lookahead drops notes outright - and a
+ * marginal overrun is by far the most likely kind, so the common case would be the one that
+ * loses a note. 20ms is inaudible as lateness (a 16th note at 120bpm is 125ms) and much more
+ * forgiving than silence where a note should be.
+ */
+const CATCH_UP_GRACE_SEC = 0.02;
 
 /** Pure: seconds for a number of beats at a tempo. */
 export function beatsToSeconds(beats: number, bpm: number): number {
@@ -232,7 +260,24 @@ export class Scheduler implements TransportClock {
     const loopLen = this.project.length - loopStart;
     const now = this.engine.currentTime;
     const horizonBeats = this.anchorBeat + (now + SCHEDULE_AHEAD_SEC - this.anchorTime) * bps;
-    const fromBeats = this.scheduledUntilBeats;
+
+    /**
+     * **Never schedule the past** (DAW-32). `scheduledUntilBeats` is wherever the last tick
+     * reached and nothing else pulls it forward, so a tick that does not run leaves it behind
+     * while the audio clock carries on regardless.
+     *
+     * Without this floor the next tick's window spans the whole stall, and every note that came
+     * due inside it is scheduled at a time already past - which Web Audio plays *immediately*,
+     * so a two-second stall at 120bpm fires four beats of material in one instant. That is what
+     * a phone reported as "jumping through time, like it's catching up".
+     *
+     * Skipping the gap is the right answer rather than a concession. The transport is not lost:
+     * the position comes from the audio clock, so it has been correct throughout, and only
+     * scheduling fell behind. Dropping the missed window resumes exactly where the clock says
+     * playback should be, which is what a transport is for.
+     */
+    const nowBeats = this.anchorBeat + (now - CATCH_UP_GRACE_SEC - this.anchorTime) * bps;
+    const fromBeats = Math.max(this.scheduledUntilBeats, nowBeats);
     if (horizonBeats <= fromBeats) return;
 
     // Resolve the project groove once per tick (cheap; the per-note math is in the
@@ -280,6 +325,10 @@ export class Scheduler implements TransportClock {
         for (const { note, atBeat } of notesStartingInBeatRange(events, fromBeats, horizonBeats, loopLen, loopStart)) {
           // Groove nudges the onset + scales velocity at schedule time (notes untouched).
           const shift = grooveAt(groove, atBeat, grooveAmount);
+          // `Math.max(now, ...)` is for the groove, not for lateness: a swing under 50% gives a
+          // negative `offsetBeats`, which can pull a note at the very start of the window a few
+          // milliseconds behind the clock. (It used to double as the thing that turned a stalled
+          // tick into a burst of simultaneous notes; the floor above is what stops that now.)
           const when = Math.max(now, this.anchorTime + (atBeat - this.anchorBeat) / bps + shift.offsetBeats / bps);
           const velocity = clamp(note.velocity * shift.velocityScale, 0, 1);
           noteTarget.playNote(note.pitch, beatsToSeconds(note.length, bpm), velocity, when);

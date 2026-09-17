@@ -29,6 +29,13 @@
       "when": 1784031605983,
       "tag": "0003_sparkling_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788721524260,
+      "tag": "0004_bright_hammerhead",
+      "breakpoints": true
     }
   ]
 }

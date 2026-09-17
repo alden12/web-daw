@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, type JWTVerifyGetKey } from "jose";
-import { makeSyncEnv } from "./support/syncEnv";
+import { makeSyncEnv, invite } from "./support/syncEnv";
 import { createApp } from "../server/api/app";
 import { makeJwtResolver, type AuthConfig } from "../server/api/principal";
 import { files, projects } from "../server/db/schema";
@@ -238,12 +238,17 @@ describe("sync API routes", () => {
     const KID = "test-key";
     const CONFIG: AuthConfig = { jwksUrl: "https://unused.invalid/jwks", issuer: ISSUER };
 
-    async function authFixture(): Promise<{ jwks: JWTVerifyGetKey; token: (sub: string) => Promise<string> }> {
+    async function authFixture(): Promise<{
+      jwks: JWTVerifyGetKey;
+      token: (sub: string, email?: string) => Promise<string>;
+    }> {
       const { publicKey, privateKey } = await generateKeyPair(ALG);
       const jwk = await exportJWK(publicKey);
       const jwks = createLocalJWKSet({ keys: [{ ...jwk, alg: ALG, kid: KID }] });
-      const token = (sub: string) =>
-        new SignJWT({})
+      // The email claim is what the allowlist gate checks (HOST-20), so a token minted without one
+      // is refused however valid its signature.
+      const token = (sub: string, email?: string) =>
+        new SignJWT(email ? { email } : {})
           .setProtectedHeader({ alg: ALG, kid: KID })
           .setIssuer(ISSUER)
           .setAudience("authenticated")
@@ -257,20 +262,25 @@ describe("sync API routes", () => {
     it("401s without a valid token and 200s with one (verified through the middleware)", async () => {
       const { db } = await makeSyncEnv();
       const { jwks, token } = await authFixture();
+      await invite(db, "alice@x.com", "bob@x.com", "carol@x.com", "dave@x.com", "x@x.com", "bob@example.com");
       const app = createApp(db, { resolvePrincipal: makeJwtResolver(db, CONFIG, jwks) });
 
       expect((await app.request("/projects")).status).toBe(401);
       expect((await app.request("/projects", { headers: { Authorization: "Bearer bogus" } })).status).toBe(401);
-      const ok = await app.request("/projects", { headers: { Authorization: `Bearer ${await token("user-1")}` } });
+      // With an email claim, because the allowlist gate needs a name to check (HOST-20).
+      const ok = await app.request("/projects", {
+        headers: { Authorization: `Bearer ${await token("user-1", "x@x.com")}` },
+      });
       expect(ok.status).toBe(200);
     });
 
     it("scopes projects to the token's subject (two real users are isolated)", async () => {
       const { db } = await makeSyncEnv();
       const { jwks, token } = await authFixture();
+      await invite(db, "alice@x.com", "bob@x.com", "carol@x.com", "dave@x.com", "x@x.com", "bob@example.com");
       // One app, one verifier: the principal comes from each request's token, not app config.
       const app = createApp(db, { resolvePrincipal: makeJwtResolver(db, CONFIG, jwks) });
-      const auth = async (sub: string) => ({ Authorization: `Bearer ${await token(sub)}` });
+      const auth = async (sub: string) => ({ Authorization: `Bearer ${await token(sub, `${sub}@x.com`)}` });
 
       await app.request("/projects/p1/files/project.json", {
         method: "PUT",

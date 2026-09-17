@@ -22,6 +22,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import type { Db } from "../db/types";
 import { ensureUser } from "../db/store";
+import { isEmailAllowed } from "../db/access";
 
 /** A resolved user identity. `email` is best-effort (a provider may omit the claim). */
 export interface Principal {
@@ -84,6 +85,18 @@ export function makeJwtResolver(db: Db, config: AuthConfig, getKey?: JWTVerifyGe
       const { payload } = await jwtVerify(credential, keys, { issuer: config.issuer, audience });
       if (!payload.sub) return null;
       const email = typeof payload.email === "string" ? payload.email : undefined;
+      /**
+       * **A valid token is not an invitation** (HOST-20). Google's OAuth "testing mode" test-user
+       * list gates sensitive scopes rather than sign-in, so anyone with a Google account completes
+       * the flow and arrives here correctly signed. The allowlist is what decides.
+       *
+       * No email means refused, for the same reason an empty table does: the claim is best-effort
+       * (a provider may omit it), and a caller we cannot name is a caller we cannot have invited.
+       *
+       * Checked **before** `ensureUser`, so a refusal leaves no row behind. Provisioning someone we
+       * are about to turn away would quietly fill `users` with strangers.
+       */
+      if (!email || !(await isEmailAllowed(db, email))) return null;
       await ensureUser(db, payload.sub, email);
       return { userId: payload.sub, email };
     } catch {

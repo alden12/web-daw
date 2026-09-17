@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { SignJWT, generateKeyPair, exportJWK, createLocalJWKSet, type JWTVerifyGetKey } from "jose";
-import { makeSyncEnv } from "./support/syncEnv";
+import { makeSyncEnv, invite } from "./support/syncEnv";
 import { createApp } from "../server/api/app";
 import { makeJwtResolver, type AuthConfig } from "../server/api/principal";
 import { RoomRegistry } from "../server/api/rooms";
@@ -54,6 +54,7 @@ describe("sharing HTTP routes (owner or member)", () => {
   async function harness() {
     const { db } = await makeSyncEnv();
     const { jwks, token } = await authFixture();
+    await invite(db, "alice@x.com", "bob@x.com", "carol@x.com", "dave@x.com", "x@x.com", "bob@example.com");
     const app = createApp(db, { resolvePrincipal: makeJwtResolver(db, CONFIG, jwks) });
     // Header builders. `auth` is a GET/DELETE header set; `authJson` adds the JSON content-type for bodies.
     const auth = async (sub: string, email?: string) => ({ Authorization: `Bearer ${await token(sub, email)}` });

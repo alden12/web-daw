@@ -46,6 +46,9 @@ export type LocalEdit =
       startBeat?: number;
       gain?: number;
       groupId?: string;
+      /** Placement length in beats. Derived from `durationSec` at the tempo of the moment, and
+       *  pinned by a dispatch so a replay at another tempo lays it out the same (DAW-36). */
+      length?: number;
     }
   | {
       type: "setAudioClip";
@@ -74,6 +77,8 @@ export type LocalEdit =
       durationSec?: number;
       gain?: number;
       startBeat?: number;
+      /** Placement length in beats, pinned at dispatch. See `addAudioTrack.length` (DAW-36). */
+      length?: number;
     }
   | {
       // Add a note clip (a recorded MIDI take) to an EXISTING instrument track's
@@ -97,6 +102,8 @@ export type LocalEdit =
       id: string;
       name?: string;
       groupId?: string;
+      /** Length of the seed clip, pinned at dispatch. See `createTrack.lengthBeats` (DAW-36). */
+      lengthBeats?: number;
       instrumentType: string;
       params: PatchValues;
       effects: { id: string; type: string; bypassed?: boolean; params: PatchValues }[];
