@@ -22,7 +22,7 @@ import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { ProjectStore } from "./project/projectStore";
-import { isReplayable, rebuildWithout, replayEntries } from "./commands/replay";
+import { isReplayable, rebuildWithout, replayEntries, tombstonedIds } from "./commands/replay";
 import { commitKeyframePath } from "./history/paths";
 import {
   emptyKeyframeIndex,
@@ -226,12 +226,33 @@ export class ProjectRepository {
     // `headSeq`; replay the edits after it through `applyEdit` to reach the true working state (notes
     // and the undo/redo reflog markers are skipped - not pure-forward). A bundle with no `headSeq`
     // has `project.json` authoritative, so this no-ops.
-    let project = baseProject;
-    const replayTail = entries.filter((entry) => entry.seq > (headSeq ?? -1) && isReplayable(entry.kind));
-    if (replayTail.length > 0) {
+    //
+    // The tombstones are worked out over the WHOLE log before a base is chosen, because one of them
+    // can take back an edit that is already baked into the keyframe, and replaying forward from that
+    // keyframe cannot remove it (DAW-34 stage E).
+    const tombstoned = tombstonedIds(entries);
+    let rebuildFrom = { project: baseProject, seq: headSeq ?? -1 };
+    const bakedIn = entries.filter(
+      (entry) => entry.id !== undefined && tombstoned.has(entry.id) && entry.seq <= rebuildFrom.seq,
+    );
+    if (bakedIn.length > 0) {
+      // Go back to a retained keyframe from before the earliest of them. Failing that the ring does
+      // not reach that far, and those undos are simply lost - the edits stay applied, which is the
+      // same "unavailable rather than wrong" the rebuild path takes when it has no base.
+      const older = await this.rebuildBaseFor(Math.min(...bakedIn.map((entry) => entry.seq)), rebuildFrom.seq);
+      if (older) rebuildFrom = older;
+    }
+    let project = rebuildFrom.project;
+    const replayable = entries.filter((entry) => entry.seq > rebuildFrom.seq && isReplayable(entry.kind));
+    // Moving the base back always leaves entries above it, so this one condition covers both cases.
+    if (replayable.length > 0) {
       const replayStore = new ProjectStore(false);
-      replayStore.load(baseProject);
-      replayEntries(replayStore, replayTail);
+      replayStore.load(rebuildFrom.project);
+      replayEntries(replayStore, entries, {
+        above: rebuildFrom.seq,
+        excluding: tombstoned,
+        ignoreTombstones: true,
+      });
       project = replayStore.snapshot();
     }
     this.lastKeyframeSeq = headSeq ?? -1;

@@ -24,7 +24,16 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL: `http://localhost:${PORT}`,
-    trace: "on-first-retry",
+    /**
+     * Keep a trace for ANY failure, not just a retried one (ARCH-5).
+     *
+     * It was `on-first-retry`, which never fires where the flake actually gets hit: `retries` is 0
+     * locally, so a local failure produced no artifact at all and each occurrence cost a re-run and
+     * a moment of wondering whether it was real. `retain-on-failure` hides nothing - it changes no
+     * retry behaviour and writes only on failure - and the trace is what turns the next sighting
+     * into a diagnosis rather than a seventh tally mark.
+     */
+    trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

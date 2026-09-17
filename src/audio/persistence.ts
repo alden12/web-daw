@@ -79,7 +79,10 @@ export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: P
     const entries = editLog.getEntries();
     const notes = editLog.getNotes();
     const keyframeSeq = active.keyframeSeq();
-    // Undo/redo can't be replayed forward, so a tail carrying one forces a fresh keyframe.
+    // A tail carrying an undo/redo forces a fresh keyframe. `load` can now cope without one - it
+    // honours the log's tombstones (DAW-34 stage E) - but only by walking back to an older retained
+    // keyframe when the undone edit is baked into the head one. Keyframing here keeps the common
+    // case on the cheap path, and keeps project.json an honest picture of the project.
     const undoRedoPending = entries.some(
       (entry) => entry.seq > keyframeSeq && (entry.kind === "undo" || entry.kind === "redo"),
     );

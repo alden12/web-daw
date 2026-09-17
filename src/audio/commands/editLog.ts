@@ -18,7 +18,7 @@ import type { ProjectStore } from "../project/projectStore";
 import type { ProjectData } from "../project/types";
 import { applyEdit } from "./applyEdit";
 import { normalizeCommand } from "./normalize";
-import { isReplayable, rebuildWithout } from "./replay";
+import { isReplayable, rebuildWithout, tombstonedIds } from "./replay";
 import { describeCommand, type DescribeContext } from "./describe";
 import type { Author, EditCommand, EditEntry } from "./types";
 import { randomUuid } from "../randomUuid";
@@ -448,6 +448,9 @@ export class EditLog {
       time: Date.now(),
       kind,
       label: `${kind === "undo" ? "Undid" : "Redid"}: ${command ? describeCommand(command) : "an edit"}`,
+      // The tombstone (DAW-34 stage E). It was a feed row before, saying an undo happened; naming
+      // the edit makes it the record OF the undo, so the log alone says what the project is.
+      undoes: id,
     });
     this.lastKey = null;
     // Undo/redo do not forward (they are local best-effort in a shared session), but a held edit
@@ -520,20 +523,17 @@ export class EditLog {
     const keep = (ids: string[] | undefined) => (ids ?? []).filter((id) => known.has(id));
     this.undoStack = keep(stored?.undo);
     this.redoStack = keep(stored?.redo);
-    // A redo step is an edit currently left OUT of the project, so the excluded set is the redo
-    // stack. Then MAKE that true rather than assuming it.
+    // What is taken back has two sources, and they are different things rather than a duplication.
     //
-    // It used to assume: locally the project is saved after the undo, so it already reflected the
-    // exclusions. That does not hold in a shared session, where the client never writes the project
-    // at all - the authority does, and an undo is not forwarded to it (see `remote`), so the log
-    // comes back with the edit still applied. The stack then claimed edits were absent that were
-    // present, and the next undo rebuilt with both excluded: one press, two edits gone.
-    //
-    // Rebuilding here costs one replay of the retained window on a reload, and only when something
-    // was undone before it. It also keeps the promise the stack is making: what you undid stays
-    // undone across a reload, in either mode.
-    this.undone = new Set(this.redoStack);
+    // The LOG's tombstones are the confirmed ones: an undo that reached the log, so every reader of
+    // it agrees. `undo.json`'s redo list is this client's OPTIMISTIC ones: undone here and not yet
+    // in any log - the same base-plus-pending split the shared session makes for edits. A reload has
+    // to honour both or it drops whichever half it ignores.
+    this.undone = new Set([...tombstonedIds(this.entries), ...this.redoStack]);
     this.dropUnreachable();
+    // Then make it so rather than assuming it. Locally the project is written after the undo, so it
+    // already matches and this is a no-op; in a shared session the authority wrote it and never
+    // heard about the undo, so it does not.
     if (this.undone.size > 0) this.rebuildProject();
     this.emit();
   }

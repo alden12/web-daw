@@ -121,6 +121,14 @@ export class Room {
       store.load(base as ProjectData);
     }
     const tail = await readEdits(db, owner, projectId, headSeq);
+    // Tombstones (DAW-34 stage E) cannot reach here yet, for two reasons rather than one: an undo is
+    // not forwarded, AND `edits` has no column for `undoes`, so a forwarded one would not round-trip
+    // either. Both have to land before this tail can carry one - which is worth knowing, because
+    // adding the forwarding alone would leave this looking like it worked.
+    //
+    // When they do arrive this needs what the client's `load` already does: work the exclusions out
+    // over the whole log BEFORE choosing a base, because a tombstone in the tail can take back an
+    // edit baked into the keyframe below it, and replaying forward cannot remove it.
     replayEntries(store, tail as unknown as EditEntry[]);
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
     // A missing or malformed ring index reads as empty: it costs undo depth, never data.

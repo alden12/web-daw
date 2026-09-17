@@ -4179,6 +4179,12 @@ projects:
             related to what is being worked on. Raising the priority of the cheap diagnostic below.
 
 
+          - Sixth sighting, 2026-09-17, third of the same afternoon: two in
+          `mobile-shell.e2e.ts`. Isolated:
+            60/60. Re-run: 153/153. Three occurrences in one session means it now fires on roughly
+            half of full runs, which is past the point where re-running is a reasonable answer.
+
+
           ## Why it matters
 
 
@@ -4194,7 +4200,78 @@ projects:
           causal and had to be chased down before it could be dismissed.
 
 
-          ## What the evidence points at
+          ## DIAGNOSED, 2026-09-17 (slice-122), on the first run after the
+          trace was turned on
+
+
+          **It is a race in the test helper, and neither theory below was
+          right.** All three failures in the
+
+          seventh sighting had the same thing in the page snapshot: the "Start
+          the audio engine" dialog, up
+
+          and intercepting pointer events. The mixer failure says so outright -
+          `<div role="dialog"
+            aria-modal="true" aria-labelledby="start-title"> intercepts pointer events`, 56 retries, then
+            the 30s timeout.
+
+
+          Every spec opens with its own copy of:
+
+
+          ```
+
+          const start = page.getByRole("button", { name: /start audio/i });
+
+          if (await start.count()) { await start.click(); await
+          expect(start).toHaveCount(0); }
+
+          ```
+
+
+          `count()` is a point-in-time sample, not a wait. `AppShell` renders
+          `{!started && <StartDialog/>}`
+
+          from mount until it is clicked, so the dialog cannot come back - which
+          means it was never there when
+
+          `count()` ran. Under parallel load the page had not mounted yet, the
+          helper saw zero, skipped the
+
+          click, and the overlay appeared over a test that believed it was gone.
+
+
+          That accounts for every property this ticket was puzzling over:
+          clustering by file (one worker, one
+
+          slow mount, and every test in that file uses the same helper), always
+          clean in isolation (the app
+
+          mounts fast enough that the dialog is already there), spanning several
+          files at once (any worker
+
+          that happened to be slow), and hitting different selectors each time
+          (whatever that test clicked
+
+          first is what got blocked). The dev-server contention idea was half
+          right about the *trigger* and
+
+          wrong about the fault: slowness exposes the race, it is not itself the
+          failure.
+
+
+          **Fix: wait for the dialog rather than sampling for it**, and do it in
+          ONE place. There are 27
+
+          copies of the helper, which is why this survived six sightings - each
+          one looked like a different
+
+          test being flaky. Extract it to `e2e/support/` and have every spec
+          call it.
+
+
+          ## What the evidence points at (superseded by the diagnosis above -
+          kept for the record)
 
 
           The common factor is the *rail button click*, not any one assertion,
@@ -4221,9 +4298,14 @@ projects:
           ## Next steps
 
 
-          - Capture the trace on retry (`trace: "on-first-retry"`) and keep the
-          artifact, so the next
-            occurrence is diagnosable instead of re-run away. Cheap, do this first.
+          - ~~Capture the trace on retry~~ **done on slice-122, and the
+          setting was the problem.**
+            `trace: "on-first-retry"` was already configured, but `retries` is 0 locally, so it never
+            fired where the flake is actually hit: a local failure produced no artifact at all. Now
+            `retain-on-failure`, which writes on any failure, changes no retry behaviour and hides
+            nothing. Traces land in `test-results/` (gitignored), so the next sighting is
+            diagnosable. **Read one before doing any of the below** - they are guesses, and there is
+            now evidence to be had.
           - Check whether the workers share a Vite warmup: a `webServer`
           readiness probe that hits the app
             route once before the suite starts would rule (1) in or out.
@@ -7905,6 +7987,128 @@ projects:
 
           the bug and the fix agree on where the project ends up, and differ
           only in what the press moved.
+
+
+          ### E2 done on slice-122: the tombstone entry
+
+
+          An undo was an exclusion set the client held in memory and persisted
+          to `undo.json`. The log
+
+          recorded that an undo had *happened* - a feed row reading "Undid: ..."
+          - but not which edit it took
+
+          back, so nothing reading the log could work out what the project was
+          meant to be.
+
+
+          **`EditEntry.undoes`** names it. The reflog marker was already being
+          appended; carrying the id turns
+
+          it from a note about an undo into the record OF one. `replayEntries`
+          honours them by default, so a
+
+          stream of entries is now a complete account: replay every edit except
+          the ones a tombstone above
+
+          them takes back.
+
+
+          **The ordering property is what makes past states stay true.**
+          `tombstonedIds(entries, upTo)` walks
+
+          in order and honours only the tombstones at or below `upTo`, so
+          replaying to an older point does not
+
+          hand it undos made after it. Worth noting the version timeline never
+          needed this: a commit
+
+          materialises from a write-once pinned keyframe, not from replay, so it
+          was already safe.
+
+
+          **The case that is easy to miss:** a tombstone can take back an edit
+          already baked into the keyframe
+
+          beneath it, and replaying forward cannot remove it. So the exclusions
+          are worked out over the whole
+
+          log BEFORE a base is chosen, and `load` walks back to an older
+          retained keyframe when it has to. If
+
+          the ring does not reach that far the undo is lost and the edit stays
+          applied - unavailable rather
+
+          than wrong, the same call the rebuild path makes when it has no base.
+          `attachAutosave` still forces a
+
+          keyframe when the tail carries an undo, which keeps the common case
+          off that path entirely.
+
+
+          **Two sources of exclusion, and they are different things rather than
+          a duplication.** The log's
+
+          tombstones are the CONFIRMED undos, which every reader agrees on.
+          `undo.json`'s redo list is this
+
+          client's OPTIMISTIC ones - undone here and not yet in any log - which
+          is the same base-plus-pending
+
+          split the shared session already makes for edits. A reload unions
+          them. Once undo forwards, a
+
+          hosted client's optimistic set drains into the log the same way a
+          pending edit does.
+
+
+          **Not forwarded yet, so the authority's log still holds no
+          tombstones.** A hosted session's undo
+
+          therefore still rides `undo.json` alone across a reload, which is why
+          the union above is load-bearing
+
+          rather than transitional. `Room.load` carries a note about what it
+          will need: the same
+            work-out-the-exclusions-before-choosing-a-base order the client now uses.
+
+
+          ### Where `undo.json` ends up
+
+
+          It should go, at E3 or E4, but it does not fall out for free.
+
+
+          Once undo forwards, the confirmed exclusions are in the log for both
+          modes. The optimistic ones
+
+          belong in the shared session's `pending` queue, which `LocalMirror`
+          already persists - an unsent
+
+          undo is an unsent op like any other. In a local project there is no
+          authority, so an undo is
+
+          confirmed the moment it is appended and the optimistic set is always
+          empty. That accounts for the
+
+          redo list. The undo list - what this user can still take back - is
+          derivable too once undo is
+
+          author-scoped: your replayable entries, not tombstoned, in seq order.
+
+
+          **Two semantics have to be decided before deriving it, and they are
+          why this is not automatic.**
+
+
+          - **Redo clearing.** A new edit clears the redo stack today, which is
+          what every editor does. A
+            derived stack has no "clear": a tombstoned edit stays tombstoned and would stay redoable
+            forever. Either the rule becomes "tombstones with no intervening edit of your own", or the
+            clearing needs its own marker in the log.
+          - **Redo order across users.** Today it is a stack. Derived, it is
+          "tombstones in order", which is
+            the same thing until two people's undos interleave, and then it is not.
 
 
           ### Still open in stage E
