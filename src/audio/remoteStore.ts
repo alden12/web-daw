@@ -8,7 +8,7 @@
  * client derived from the shared contract. The 409-as-idempotent behaviour for write-once
  * commits is the DAW's policy, applied here rather than in the transport.
  */
-import { createApiClient, type ApiClient } from "../contract/client";
+import { createApiClient, type ApiClient, type TokenSource } from "../contract/client";
 import type { BundleStore, ProjectStorage } from "./bundleStore";
 import type { EditEntry } from "./commands/types";
 
@@ -68,7 +68,7 @@ export class RemoteBundleStore implements BundleStore {
 export class RemoteProjectStorage implements ProjectStorage {
   private readonly client: ApiClient;
 
-  constructor(baseUrl: string, token?: string) {
+  constructor(baseUrl: string, token?: TokenSource) {
     this.client = createApiClient({ baseUrl, token });
   }
 

@@ -10,6 +10,7 @@ import type { EditLog } from "../audio/commands/editLog";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { writeAuthorColors, colorForAuthor, SWATCHES, type AuthorColorConfig } from "./authorColors";
 import { readCurrentUser, writeCurrentUser, subscribeCurrentUser, DEFAULT_USER } from "./currentUser";
+import { authEnabled, signOut } from "../auth/session";
 import { authorLabel } from "./authorStyle";
 import { voiceLabel, type Voice } from "./authorVoice";
 
@@ -120,9 +121,11 @@ function SwatchRow({
 }
 
 /**
- * TEMPORARY (pre-auth): set the identity stamped on your edits, so two people (or two tabs, via
- * `?user=`) editing one project appear as distinct, differently-coloured authors. Removed once real
- * auth supplies the identity. Commits on blur / Enter; empty resets to the default.
+ * Your identity + colour. With real auth on, the name comes from your signed-in account (shown as static
+ * text, with a Sign out button). Without auth (local dev), it's a self-chosen handle you can type - so two
+ * tabs (via `?user=`) can appear as distinct, differently-coloured authors. Either way you pick your own
+ * accent colour here. The `writeCurrentUser` write path (from the auth session, or this field in dev) is
+ * the one seam the rest of the app reads.
  */
 function IdentityField({
   currentUser,
@@ -144,16 +147,29 @@ function IdentityField({
         <span className="text-[12.5px] text-ink">You are</span>
         <span className="text-[11px] text-faint">edits are stamped with this name</span>
       </div>
-      <input
-        type="text"
-        value={draft}
-        placeholder={DEFAULT_USER}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => event.key === "Enter" && commit()}
-        aria-label="Your name"
-        className="w-full text-[12.5px] text-ink bg-ground border border-line rounded-md px-2 py-1 focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-1"
-      />
+      {authEnabled ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[12.5px] font-medium text-bright truncate">{currentUser}</span>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="shrink-0 text-[11px] text-muted hover:text-ink border border-line rounded-md px-2 py-1 cursor-pointer"
+          >
+            Sign out
+          </button>
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={draft}
+          placeholder={DEFAULT_USER}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => event.key === "Enter" && commit()}
+          aria-label="Your name"
+          className="w-full text-[12.5px] text-ink bg-ground border border-line rounded-md px-2 py-1 focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-1"
+        />
+      )}
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Your colour">
         {SWATCHES.map((swatch) => {
           const selected = current.toLowerCase() === swatch.hex.toLowerCase();
@@ -173,10 +189,12 @@ function IdentityField({
           );
         })}
       </div>
-      <p className="text-[11px] text-faint leading-relaxed">
-        Temporary: sets who your edits belong to for live collaboration. Also settable with{" "}
-        <code className="text-muted">?user=</code> in the URL.
-      </p>
+      {!authEnabled && (
+        <p className="text-[11px] text-faint leading-relaxed">
+          Sets who your edits belong to for live collaboration. Also settable with{" "}
+          <code className="text-muted">?user=</code> in the URL.
+        </p>
+      )}
     </div>
   );
 }

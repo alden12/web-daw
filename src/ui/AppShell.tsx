@@ -20,6 +20,7 @@ import { currentProjectId } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
 import { createWsClient, wsBaseFromApiUrl } from "../contract/client";
+import { getAccessToken } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { EditLog } from "../audio/commands/editLog";
@@ -203,7 +204,7 @@ export function AppShell() {
         const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
         const transport = createWsClient({
           baseUrl: wsBaseFromApiUrl(apiUrl),
-          token: import.meta.env?.VITE_DAW_API_TOKEN,
+          token: getAccessToken, // the live session token (getter), so a reconnect uses a refreshed one
         });
         const session = new SharedSession({
           projectStore,
