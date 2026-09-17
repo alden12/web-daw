@@ -1277,18 +1277,52 @@ land in either order, or not at all if the local-first single-user shape stays t
   cheap groundwork that keeps the longer-term tablet / mobile goal (the Mobile / responsive bullet
   below) reachable without a rewrite, and it is why the timeline-usability batch above specifies a
   touch path for each new action.
-- **Mobile / responsive layout.** The four-region video-editor grid (library | center | agent
-  + timeline) assumes a wide screen; small screens need a different shape - collapse to a
-  single focused region with a bottom tab/drawer bar to switch between library, the selected
-  track's workbench, the timeline, and the agent. Touch interactions are the real work: the
-  knob's vertical-drag gesture, note drawing, and group/clip drag all need touch handlers and
-  larger hit targets. The agent pane leans toward a slide-over sheet on phones. Being web-first
-  is the advantage here - it should run on a tablet/phone, which also makes the AI-co-author
-  pitch (hand it to Claude, glance at the feed) compelling on the go. Mode toggle
-  (Converse/Produce) maps naturally onto how much screen the agent takes.
+- **Mobile / responsive layout (an epic; direction settled 2026-07-14).** The four-region video-editor
+  grid assumes a wide screen; touch devices need a different shape. A concept mockup of the phone + tablet
+  layouts lives at `docs/mockups/mobile-ux.html` (self-contained, open in a browser). Guiding decisions:
+  - **Swap the shell, not the app.** The stores (`projectStore`, `editLog`, the param schema) and the
+    leaf components (`PianoRoll`, `Knob`, `LibraryPanel`, mixer, agent) are already UI-agnostic. Only the
+    desktop `[grid-area:...]` shell doesn't map. So below a breakpoint, render a `MobileShell` that
+    re-hosts the same panels - mobile is another projection of the same stores, not a fork.
+  - **Tier by device, don't build one "mobile."** Phone = play / tweak / **agent-driven** creation
+    (not full arrangement editing by finger); tablet (esp. landscape + Pencil) = a genuine editing
+    surface approaching desktop. Detect with `pointer: coarse` / `pointerType`, not just width.
+  - **Navigation:** a thumb-reachable **bottom tab bar** (reuse the data-driven `ActivityRail` view
+    list: Arrange / Edit / Mix / Library / Agent) + a **persistent transport bar** pinned top +
+    **slide-up sheets** for transient tasks (add instrument, edit a param) so you don't lose your place.
+    **Long-press replaces right-click** (no hover, no secondary click).
+  - **The editing surfaces are the real work, and the keystone is migrating drag logic to the**
+    **Pointer Events API** (`pointerdown/move/up`, one path for mouse/touch/Pencil, `touch-action:none`
+    to own gestures) - do it once and every pointer surface benefits. Then layer: **pinch-zoom +
+    two-finger pan** on both axes; an **explicit tool model** (draw / select / erase) to disambiguate a
+    drag without modifier keys; **hit-target floors** (min note height + resize handles, fixed keyboard
+    edge); heavier reliance on **grid snap/quantize**.
+  - **Agent-forward is the mobile superpower.** Precise multi-track touch editing is inherently painful;
+    describing intent is not. On mobile the agent shifts from assistant to the **primary creation path**
+    ("add a four-on-the-floor kick," "harmonize in the project key"), with touch for auditioning and
+    fine-tuning. Notes-as-prompt (play a phrase, attach it) is especially strong here.
+  - **Platform gotchas:** iOS Safari / WKWebView has **no Web MIDI** (the on-screen keyboard/pads become
+    the only input - invest there, velocity via touch-y/force); **AudioContext needs a user-gesture to
+    unlock**; handle safe-area insets.
+  - **Suggested sequencing:** (1) spike - render + navigate at phone width (`MobileShell` + tabs +
+    transport); (2) Pointer Events refactor of roll/timeline/knobs (no desktop behaviour change); (3)
+    touch gesture + tool layer; (4) agent-forward flow + on-screen keyboard/pads; (5) PWA packaging.
+
+- **Native packaging - PWA first, then Tauri v2 (which now does mobile).** The real gating risk is not
+  the shell tech but whether an **OS webview can deliver acceptable real-time AudioWorklet audio** on
+  mobile - and that risk is shared by every webview approach (PWA, Tauri, Capacitor), since all three use
+  WKWebView / Android WebView. So: ship a **PWA first** (installable, zero native shell, free) to validate
+  webview audio on real devices and get an offline-capable app now; then **Tauri v2** for app-store
+  presence + native niceties - it added first-class iOS/Android targets, so one Tauri project can cover
+  desktop *and* mobile (a point in its favour over a native rewrite, which would abandon the shared web
+  codebase). Tauri-mobile is younger than its desktop story and its mobile plugin ecosystem is thinner, so
+  **Capacitor** is the fallback if Tauri-mobile plugins fall short (more proven web-to-mobile wrapper, same
+  webview + audio caveats). Only reach for React Native / Flutter / native if the webview proves it can't
+  carry the audio - which the PWA step will tell us cheaply.
 
 **Longer horizon:** automation lanes (section 5); sharing / collaboration; Tauri desktop
-shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow).
+shell (also the home for native low-latency monitoring and the fullest in-app IDE workflow), with
+**Tauri v2 mobile** as the same-codebase path to the app stores (see the native-packaging bullet above).
 
 The cheap things to bake in early (because retrofitting is expensive): the project as a
 nested tree of buses, a persisted append-only authored event log, clip variants as bundles
@@ -1659,11 +1693,25 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
   present fields, with zod's default key-stripping so evolving fields don't break saves); deep
   per-parameter validation stays at the client/MCP boundary where the param schema lives. A test
   runs a real project snapshot through the schemas to guard against over-strictness.
-- **Migrations (the rule changed).** The old "discard old data on a format change" shortcut was
-  scoped to disposable local-only data; hosted data can't be discarded, so migration is now
-  required and forward-only: DB schema via `drizzle-kit` (versioned SQL in `drizzle/`), and the
-  project document via upcasters in `src/audio/project/documentMigration.ts` (empty registry today;
-  `ProjectRepository.load` chains them and heals the bundle).
+- **Migrations - the paradigm shifted, and it is now in force (slice 81 deploy).** The old "discard
+  old data on a format change" shortcut was scoped to disposable local-only data. With the app now
+  **deployed to a live hosted database** (Fly + Neon), that shortcut is **retired**: there is real
+  persisted user data, so every schema change must carry it forward. **Migrations are forward-only and
+  additive-preserving** - we never discard or reshape data destructively in place. Two independent axes:
+  - **DB schema (Drizzle):** edit `server/db/schema.ts` -> `yarn db:generate` (versioned SQL in
+    `drizzle/`) -> deploy. `applyMigrations` runs pending SQL **on boot**, idempotently. Because a
+    migration runs while the previous machine is still serving (rolling deploy), new SQL must be safe
+    against the running code too, so a destructive change (drop/rename) is done **expand -> contract**
+    across two deploys, never in one.
+  - **Project document (`project.json` / command blobs, opaque to Drizzle):** bump `PROJECT_SCHEMA` +
+    add a `fromVersion -> fromVersion + 1` upcaster in `src/audio/project/documentMigration.ts`;
+    `ProjectRepository.load` chains them and heals each bundle lazily on load. CI fails on a gap
+    (`firstMissingUpcaster`); `findStaleProjects` flags stored docs below the current version.
+  - **Safety:** Neon keeps point-in-time history; take a **Neon branch** (copy-on-write clone of prod)
+    as a rollback point and test a risky migration against it before deploying. Operational runbook:
+    `docs/DEPLOY.md` ("Migrations on a live database").
+  The "discard on change" mindset (still referenced in the older local-only notes above and in the
+  slice-70 dev-DB refresh) applied **only** while data was disposable; it does not apply to hosted data.
 
 **Roadmap (deferred):**
 
@@ -1984,7 +2032,18 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     3-way semantic merge via the commit DAG we already have) over CRDT, decided then.
   - See the hosting/scaling entry above: the authority is **per-project** (the shard unit), so a project
     is single-region at a time; server-assigned `seq` is the enabling change.
-- **Hosting & scaling (deferred, recorded for the multiplayer slice).**
+- **Hosting & scaling.**
+  - **First deploy - DONE (slice 81):** the recommended shape below is now realized as a concrete,
+    repeatable deploy (runbook in `docs/DEPLOY.md`). **Single origin:** one Node process serves the built
+    client (`dist/`), the Hono API, and `/ws` from one URL (the server gained static + SPA-fallback
+    serving in `server/api/index.ts`; the auth gate is scoped to `/projects` so static assets aren't
+    401'd). **Fly.io** runs it as a **scale-to-zero** machine (`fly.toml`: one `shared-cpu-1x`/256 MB,
+    `max_machines_running = 1`, no volume - bounds cost to ~$2-3/mo worst case, near-$0 idle) + **Neon**
+    free Postgres; migrations apply on boot. Scale-to-zero is safe here because a room rebuilds by
+    replaying the `edits` table and clients reconnect/gap-fill (slice 76) - the only cost is a few-second
+    cold start after idle; flip `min_machines_running = 1` for a live session. Deployed with **auth on**
+    (the Supabase JWT stack, slices 77-80). The scaling model below (per-project sharding, single-region)
+    still stands as the growth path; nothing here forecloses it.
   - **The constraint:** the realtime server holds **WebSocket** connections - long-lived, stateful -
     unlike today's stateless HTTP API. That rules out request/response **serverless** (Vercel/Netlify
     functions, plain Lambda) for the socket layer; it needs an always-on process.
@@ -2037,11 +2096,19 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
      `insert(...).onConflictDoNothing().returning()`: the `(projectId, path)` unique constraint lets
      exactly one concurrent insert win, and the loser (no row returned) is a 409 - no check-then-upsert
      for two writers to race.
-- **Before any deploy / multi-user (a coherent "harden for hosting" slice):** the token **defaults
-  to open** (empty = no auth), is a single shared secret with **no rate-limiting / brute-force
-  protection** and a timing-unsafe compare, and the owner is a hardcoded `"local"` (any caller can
-  touch every project) - all need real per-user accounts + auth. Plus **per-owner quotas** (projects
-  / files / bytes) against storage abuse, and narrowing **CORS** from `*` to the app origin.
+- **Harden for hosting - mostly DONE (auth epic, slices 77-80 + deploy slice 81).** The old shared
+  token (open-by-default, single secret, timing-unsafe compare, hardcoded `"local"` owner) is **retired**;
+  real per-user accounts + Supabase-JWT verification + owner-or-member authorization now gate every
+  request and socket. Single-origin deploy makes the `*` **CORS** concern moot (no cross-origin browser
+  calls). **Still open:** **per-owner quotas** (projects / files / bytes) against storage abuse, and
+  rate-limiting on the auth/JWT path.
+- **Observability (near-term: structured logging; tracing deferred).** One service today, so distributed
+  tracing earns nothing - a request/connection correlation id in structured stdout logs (Fly ingests
+  stdout) is the debug tool. Near-term slice: leveled JSON logging + **prod request logs** (currently off),
+  domain-event logs (WS connect/disconnect, room load/evict, edit applied, auth refusals), and error
+  handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
+  retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
+  or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
 - **Client-side (inherent to shallow validation):** the loader must treat loaded project data as
   untrusted (defensive coercion on load; no unsafe deep-merge of loaded keys - a stored `__proto__`
   key is a prototype-pollution vector only if the client merges it carelessly).

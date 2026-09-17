@@ -75,6 +75,10 @@ short list of coding conventions to follow throughout the codebase.
 - `build`, `test`, `test:e2e`, and `tsc` (via `build` + `check:server`) run in GitHub
   Actions (`.github/workflows/ci.yml`) on every push to `main` and every PR. Keep them
   green; a red gate blocks the merge.
+- **Running `test:e2e` locally: move `.env` aside first.** A local `.env` with
+  `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` set turns the auth gate on, so Playwright
+  gets stuck on the login screen and every test times out. CI has no `.env`, so it's green
+  there. Locally: `mv .env .env.bak; yarn test:e2e; mv .env.bak .env`.
 
 ## General
 
@@ -89,3 +93,7 @@ short list of coding conventions to follow throughout the codebase.
   hat = 42, open hat = 46, ...), not an ad-hoc layout. Defaults stay data (remappable), but
   pick the standard as the default.
 - No em-dash characters in committed text (commits, comments, docs).
+- **UI glyph icons: size them up.** Small glyph controls (disclosure arrows, chevrons,
+  kebab dots) tend to render too cramped. Default new ones to ~16-18px with an adequate
+  hit area (~`w-6`/`w-7`), not `text-[10px]`; size up existing small ones when you touch
+  them. (Established from repeated user feedback.)
