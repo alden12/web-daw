@@ -10,7 +10,7 @@ import type { Instrument } from "./types";
 export class SilentInstrument implements Instrument {
   readonly output: GainNode;
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     this.output = ctx.createGain();
   }
 

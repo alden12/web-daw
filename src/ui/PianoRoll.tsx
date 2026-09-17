@@ -584,6 +584,7 @@ export function PianoRoll({
               loopStart={0}
               loopEnd={len}
               pxPerBeat={pxPerBeat}
+              timeSignature={projectStore?.timeSignature}
               onSetLoopEnd={(beats) => dispatch({ type: "setClipLength", trackId, lengthBeats: beats })}
             />
 

@@ -24,6 +24,19 @@ describe("metronomeClicksInBeatRange", () => {
         .map((c) => c.atBeat),
     ).toEqual([0, 4]);
   });
+  it("accents on the time-signature's beats per bar (3/4 downbeats every 3)", () => {
+    expect(
+      metronomeClicksInBeatRange(0, 9, 0, 12, 3)
+        .filter((c) => c.accent)
+        .map((c) => c.atBeat),
+    ).toEqual([0, 3, 6]);
+  });
+  it("clicks the shown beat (eighths) and accents the downbeat in a compound meter (6/8)", () => {
+    // 6/8: beatsPerBar = 6*4/8 = 3 beats, beatUnit = 0.5 -> a click every eighth, bar every 6 of them.
+    const clicks = metronomeClicksInBeatRange(0, 6, 0, 6, 3, 0.5);
+    expect(clicks.map((c) => c.atBeat)).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5]);
+    expect(clicks.filter((c) => c.accent).map((c) => c.atBeat)).toEqual([0, 3]); // bar downbeats only
+  });
   it("maps continuous beats through the loop so accents follow the loop start", () => {
     // loopLen 4 from 0: continuous beats 4,5 wrap to musical 0,1 -> beat 4 accents.
     expect(metronomeClicksInBeatRange(4, 6, 0, 4, 4)).toEqual([

@@ -913,15 +913,30 @@ dynamic tiers: curation, sandboxing (worker/iframe/Wasm with a narrow capability
   edit its effect rack in the center workbench; generalize selection beyond "the selected track".
   Model/audio/MCP already support group effects (host-addressed).
 
-- `DAW-10` `to-do` **Changeable time signature**
+- `DAW-10` `review` **Changeable time signature**
 
-  Transport & grid: metronome (slice 27) and beat markers (slice 33, the audio-clip ruler) already
-  shipped; **changeable time signature** is what remains. Today `BEATS_PER_BAR = 4` is hardcoded in the
-  scheduler and the rulers. Make it a transport-level project value (`{ numerator, denominator }` on
-  `ProjectData`, default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. It threads
-  through the metronome accent (downbeat per `numerator`), every bar/beat `Ruler`, the arrangement grid
-  snap, and `beatsToSeconds`/loop math. Keystone-friendly: one transport value projected into the
-  scheduler, the rulers, and MCP - no per-site hardcoding.
+  Transport & grid: make the meter a transport-level project value (`{ numerator, denominator }` on
+  `ProjectData`, default 4/4) with a `setTimeSignature` edit, surfaced beside the tempo control. A "beat"
+  stays a fixed quarter-note, so bar length in beats is `numerator * 4 / denominator` (the shared
+  `beatsPerBar` helper in `project/schema.ts`); the scheduler metronome accent, every bar/beat `Ruler`, the
+  arrangement + waveform grids, the recorder's bar snap, and MCP all project that one value - no per-site
+  hardcoding. Split into the numerator (simple x/4 meters) and the denominator (x/8 compound meters) so the
+  fractional-bar rendering lands on its own slice.
+
+  `DAW-10.1` `review` **Numerator: simple meters (x/4)**
+  The keystone field + `setTimeSignature` edit (rides undo/history/multiplayer) + `set_time_signature` MCP
+  tool + a numerator control by the tempo readout, with every consumer switched off the hardcoded
+  `BEATS_PER_BAR = 4` to the project's `beatsPerBar` getter. The denominator is stored (default 4) and rides
+  the whole data model already, but stays fixed at 4 in the UI/MCP this slice; bars remain integer beats.
+
+  `DAW-10.2` `review` **Denominator: compound meters (x/8)** (deps: DAW-10.1)
+  Unlocked the denominator (a `<select>` beside the numerator; the `set_time_signature` MCP tool now takes
+  it too). The subdivision is the meter's "shown beat" (`beatUnitBeats = 4/denominator`: a quarter in x/4,
+  an eighth in x/8), so the ruler ticks and the metronome step by it and 7/8 shows 7 eighth-beats with the
+  bar line landing on a tick. `beatTicks` iterates by tick *index* (not accumulating beats) so the
+  fractional-bar test (7/8 bars every 3.5 beats) stays exact; `metronomeClicksInBeatRange` gained a
+  `beatUnit` step and accents the bar downbeat; the recorder count-in matches. Compound accent *grouping*
+  (6/8 as two dotted-quarter pulses) is a later nicety - downbeat-only for now.
 
 - `DAW-11` `to-do` **Timeline loop enable/disable toggle**
 
@@ -1395,16 +1410,20 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   tool catalog (zod -> JSON Schema); edits land authored `claude` (coral) through the existing
   `dispatch` seam. Claude Code / Desktop over MCP already covers this for the tinkerer at no
   per-token cost; the panel adds the embedded UX and the general "just open the app" user.
-`AGENT-4` `to-do` **Agent ears, offline audio analysis**
+`AGENT-4` `in-progress` **Agent ears, offline audio analysis**
 
 - **Agent "ears" (audio analysis).** The agent reasons on symbolic data and cannot hear the
   output. Render offline (`OfflineAudioContext`) and expose **analysis tools** that mirror the
   `list_*` reads, built in three tiers of increasing sophistication. Closes the perception loop
-  for mixing/arrangement; human auditioning still decides taste.
+  for mixing/arrangement; human auditioning still decides taste. The offline-render core
+  (`renderProjectOffline`, reusing the exact instrument/effect factories + worklets) and the
+  first analysis tier landed on slice-90; see the tier tickets for what remains.
 
-  `AGENT-4.1` `to-do` **Objective DSP analysis**
+  `AGENT-4.1` `in-progress` **Objective DSP analysis**
   Loudness / LUFS, spectral balance / masking, and clipping detection (e.g. Meyda). The first and most
-  tractable tier: cheap, deterministic measures the agent can act on directly.
+  tractable tier: cheap, deterministic measures the agent can act on directly. **Shipped (slice-90):**
+  the offline render + peak/headroom, RMS loudness, and clipping via the `analyze_mix` tool.
+  **Remaining:** integrated LUFS and spectral balance / masking (the FFT-based measures).
 
   `AGENT-4.2` `to-do` **MIR analysis** (deps: AGENT-4.1)
   Musical-information retrieval: key / BPM / onset detection (e.g. essentia.js), so the agent can reason
@@ -1413,6 +1432,40 @@ Kept here for reference; no new tickets (they would duplicate DAW-4/DAW-5 etc.).
   `AGENT-4.3` `to-do` **Perceptual / semantic analysis** (deps: AGENT-4.2)
   CLAP or an audio-tagging model, or a multimodal model exposed as a `describe_sound` tool, for "what does
   this sound like" judgements.
+
+  `AGENT-4.4` `to-do` **Scoped render: a subset of tracks or a bar range** (deps: AGENT-4.1)
+  `renderProjectOffline` currently renders the whole arrangement and full mix. Add `RenderOptions` for a
+  **track subset** (solo one or a few - dry, or through their group/master bus) and a **bar/beat window**,
+  and expose them as optional `analyze_mix` args, so on a large project the agent renders only what a
+  question needs ("is `track_3` clipping?", "how do bars 33-48 sound?") instead of the whole song - cheaper
+  and more targeted. Edges to handle: a note starting before the window but still sounding, and effect
+  tails bleeding in from earlier.
+
+  `AGENT-4.5` `to-do` **Unify the live + offline graph build (dedupe routing / master bus / note flattening)** (deps: AGENT-4.1)
+  The DSP is already shared (one set of factories drives both live and offline), but the wiring *around* it is
+  duplicated in three places: per-track routing (`renderProjectOffline`'s `connectChain` mirrors
+  `AudioEngine.reconcile`'s `rewireChain` + `parentInput`), the master bus + limiter (same magic numbers in
+  two spots), and note flattening (`flattenTrackNotes` vs `Scheduler.tick`'s placement -> notes pass). Extract
+  the two cheap ones first - a shared pure `flattenArrangement(track, range)` and a `createMasterBus(ctx)`
+  helper. The real work is a graph builder parameterized by `BaseAudioContext` that both the live (incremental)
+  `reconcile` and the offline (one-shot) render drive, so routing + limiter config cannot diverge - and it
+  chips away at the oversized `AudioEngine.ts`. Its own focused engine slice, not folded into a feature.
+
+  `AGENT-4.6` `to-do` **Expose `analyze_mix` (the ears) over MCP via the bridge** (deps: AGENT-4.1)
+  `analyze_mix` is registered only in the in-app `createAgentTools`; the Node MCP server is DOM-free and its
+  tools are registered separately, so external clients (Claude Code / Desktop) cannot call it yet. Add an MCP
+  tool + a bridge handler that forwards to the live tab, where `renderProjectOffline` + analyze run and return
+  the `MixSummary` (plain JSON, crosses the wire fine) - the same round-trip every MCP edit already uses.
+  Needs a live tab open (Web Audio is browser-only); a tab-less server-side render is the separate deferred
+  epic (portable DSP core, pairs with the B3 server-MCP direction).
+
+  `AGENT-4.7` `review` **Render fidelity: match the live output (audio tracks, MIDI devices, groove, full arrangement)** (deps: AGENT-4.1)
+  Closed the deliberate v1 gaps so `renderProjectOffline` is faithful to playback, so `analyze_mix` measures
+  what the user hears (slice-91): renders **audio tracks** (pre-decodes clip buffers, schedules the audio-clip
+  loop regions via `audioPlayWindow` like the scheduler), routes notes through each track's **MIDI-device**
+  chain via an offline transport clock (arps / octavators self-schedule from it, so they render exactly as
+  live), and applies **groove**. The region plays once, which IS the arrangement (live just loops it). Samples
+  already pre-decode (`AGENT-4.1`).
 
   **Where it runs - client-side first.** Rendering the graph offline uses `OfflineAudioContext` in the
   browser, which reuses the *exact* DSP the user hears - no second engine to keep in sync (the shared-DSP
@@ -2702,6 +2755,20 @@ robustness / config gaps:
   handlers (Hono `onError` + process `unhandledRejection`/`uncaughtException`); a log drain for searchable
   retention. Adopt **OpenTelemetry tracing** only when services split (agent/worker, sharded authorities)
   or latency profiling is needed; keep logs trace-ready. Operational detail in `docs/DEPLOY.md`.
+
+`HOST-10` `to-do` **MCP mirror: stream edits instead of full snapshots**
+
+- **Tech debt.** The local Node MCP server keeps a full `ProjectStore` mirror of the tab
+  (`server/mcpServer.ts`), kept current by inbound sync messages. The high-frequency edits already delta
+  (`paramChanged`, `clipSnapshot`), but **every structural/transport emit ships the whole `ProjectData`**:
+  `bridge.ts`'s `wireOutbound` sends a `projectStructure` snapshot on each `projectStore.subscribe` fire.
+  The pathological case is a continuous drag of a structural control (a volume fader, or a tempo /
+  time-signature numerator), which calls `emit()` per frame -> a full-project `JSON.stringify` ~60x/sec on
+  a large project. It runs over localhost (loopback) and only when an MCP client is connected, so the cost
+  is serialization CPU / GC, not network bytes - hence debt, not a live bug. **Fix:** send the `EditCommand`
+  and `applyEdit` it into the mirror (the append-edits model the network authority already uses,
+  `server/api/rooms.ts`) - O(edit), not O(project). A cheap stopgap is to rAF/debounce the
+  `projectStructure` send so a drag collapses to one snapshot at drag-end.
 
 ### Foundations & deferred notes (no ticket)
 

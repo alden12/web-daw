@@ -12,6 +12,10 @@ export function diffProjects(from: ProjectData, to: ProjectData): string[] {
   const lines: string[] = [];
   if (from.tempoBpm !== to.tempoBpm) lines.push(`Tempo ${from.tempoBpm} -> ${to.tempoBpm} BPM`);
   if (from.lengthBeats !== to.lengthBeats) lines.push(`Length ${from.lengthBeats} -> ${to.lengthBeats} beats`);
+  const timeSignatureLabel = (signature: ProjectData["timeSignature"]) =>
+    signature ? `${signature.numerator}/${signature.denominator}` : "4/4";
+  if (timeSignatureLabel(from.timeSignature) !== timeSignatureLabel(to.timeSignature))
+    lines.push(`Time signature ${timeSignatureLabel(from.timeSignature)} -> ${timeSignatureLabel(to.timeSignature)}`);
 
   const before = new Map(from.tracks.map((track) => [track.id, track]));
   const after = new Map(to.tracks.map((track) => [track.id, track]));

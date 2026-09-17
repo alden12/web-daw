@@ -7,7 +7,9 @@
  * into one undo step.
  */
 import { useRef } from "react";
-import { beatTicks, beatToX, DEFAULT_BEATS_PER_BAR } from "./timeGrid";
+import { beatTicks, beatToX } from "./timeGrid";
+import { DEFAULT_TIME_SIGNATURE, beatsPerBar as beatsPerBarOf } from "../../audio/project/schema";
+import type { TimeSignature } from "../../audio/project/types";
 import { beginPointerDrag } from "../pointerDrag";
 
 const RULER_H = 22; // px
@@ -19,7 +21,7 @@ export function Ruler({
   pxPerBeat,
   onSetLoopStart,
   onSetLoopEnd,
-  beatsPerBar = DEFAULT_BEATS_PER_BAR,
+  timeSignature = DEFAULT_TIME_SIGNATURE,
   minLoop = 1,
 }: {
   /** Total beats drawn (loop end + trailing room to expand into). */
@@ -30,12 +32,13 @@ export function Ruler({
   /** Omit to hide the loop-start handle (e.g. the piano roll, where clips start at 0). */
   onSetLoopStart?: (beats: number) => void;
   onSetLoopEnd: (beats: number) => void;
-  beatsPerBar?: number;
+  timeSignature?: TimeSignature;
   minLoop?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const width = beatToX(viewBeats, pxPerBeat);
-  const ticks = beatTicks(viewBeats, beatsPerBar);
+  const ticks = beatTicks(viewBeats, timeSignature);
+  const beatsPerBar = beatsPerBarOf(timeSignature);
 
   // Shared loop-handle drag: snap to whole beats, clamp via the supplied limit fn.
   const drag = (e: React.PointerEvent, commit: (beats: number) => void) => {

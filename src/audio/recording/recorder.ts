@@ -34,7 +34,6 @@ export type AutoQuantize = () => QuantizeSettings | null;
 /** Returns the manual recording-latency trim (ms earlier) to apply on top of the auto estimate. */
 export type RecordOffsetMs = () => number;
 
-const BEATS_PER_BAR = 4; // matches the scheduler's metronome accent (4/4 for now)
 const COUNT_IN_LEAD_SEC = 0.12; // small lead so the first click is not clipped
 
 /** What the next take captures: audio from the mic, or MIDI notes played live. */
@@ -194,21 +193,25 @@ export class Recorder {
         await this.refreshDevices();
       }
 
-      const interval = 60 / this.project.tempo; // seconds per beat
-      const countBeats = this.state.countInBars * BEATS_PER_BAR;
+      // Count in on the meter's shown beat (a quarter in x/4, an eighth in x/8), accenting each
+      // bar downbeat - matching the transport metronome so the count flows straight into playback.
+      const secondsPerBeat = 60 / this.project.tempo; // per quarter-note
+      const step = this.project.beatUnit * secondsPerBeat; // seconds per shown beat
+      const unitsPerBar = this.project.timeSignature.numerator; // shown beats per bar
+      const countUnits = this.state.countInBars * unitsPerBar;
       const t0 = this.engine.currentTime + COUNT_IN_LEAD_SEC;
-      for (let i = 0; i < countBeats; i++) {
-        this.engine.scheduleClick(t0 + i * interval, i % BEATS_PER_BAR === 0);
+      for (let i = 0; i < countUnits; i++) {
+        this.engine.scheduleClick(t0 + i * step, i % unitsPerBar === 0);
       }
-      // The first recorded beat lands one interval after the last count-in click. Anchor the
+      // The first recorded beat lands one step after the last count-in click. Anchor the
       // transport to this exact audio-clock time so its metronome continues the count-in grid
       // in phase (the JS timer only needs to wake us near it, not define the beat).
-      const downbeatTime = t0 + countBeats * interval;
+      const downbeatTime = t0 + countUnits * step;
 
       const beginCapture = () => {
         this.countInTimer = null;
         if (this.state.status === "idle") return; // stopped during the count-in
-        if (!this.scheduler.isPlaying) this.scheduler.play(countBeats > 0 ? downbeatTime : undefined);
+        if (!this.scheduler.isPlaying) this.scheduler.play(countUnits > 0 ? downbeatTime : undefined);
         if (this.mode === "audio") {
           this.startBeat = this.scheduler.beatAtTime(this.engine.startRecording());
         } else {
@@ -219,9 +222,9 @@ export class Recorder {
         this.set({ status: "recording", take: this.mode === "midi" ? this.liveTake() : null });
       };
 
-      if (countBeats > 0) {
+      if (countUnits > 0) {
         this.set({ status: "counting" });
-        // Wake at the downbeat itself (include the lead), not countBeats*interval after now -
+        // Wake at the downbeat itself (include the lead), not countUnits*step after now -
         // otherwise capture starts COUNT_IN_LEAD_SEC early and the take lands ahead of the grid.
         this.countInTimer = setTimeout(beginCapture, (downbeatTime - this.engine.currentTime) * 1000);
       } else {
@@ -358,7 +361,8 @@ export class Recorder {
     // Anchor the clip at the bar the take began in, so notes keep their groove
     // relative to the bar and the clip lines up with the grid. The clip is sized
     // up to whole bars to cover the last note.
-    const clipStart = Math.max(0, Math.floor(this.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR);
+    const beatsPerBar = this.project.beatsPerBar;
+    const clipStart = Math.max(0, Math.floor(this.startBeat / beatsPerBar) * beatsPerBar);
     const captured0: NoteEvent[] = captured.map((note) => ({
       id: newNoteId(),
       pitch: note.pitch,
@@ -371,7 +375,7 @@ export class Recorder {
     const autoQuantize = this.getAutoQuantize();
     const notes = autoQuantize ? quantizeNotes(captured0, autoQuantize) : captured0;
     const span = Math.max(...notes.map((note) => note.start + note.length));
-    const lengthBeats = Math.max(BEATS_PER_BAR, Math.ceil(span / BEATS_PER_BAR) * BEATS_PER_BAR);
+    const lengthBeats = Math.max(beatsPerBar, Math.ceil(span / beatsPerBar) * beatsPerBar);
     this.dispatch({
       type: "addNoteClip",
       trackId: target.id,

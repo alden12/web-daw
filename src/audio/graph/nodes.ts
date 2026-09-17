@@ -13,7 +13,7 @@ import type { NodeSpec, ShaperShape } from "./types";
 
 export interface NodeImpl {
   /** Build the bare node (construction-only args like delay length are read from the spec). */
-  create(ctx: AudioContext, spec: NodeSpec): { node: AudioNode; source?: AudioScheduledSourceNode };
+  create(ctx: BaseAudioContext, spec: NodeSpec): { node: AudioNode; source?: AudioScheduledSourceNode };
   /** The AudioParam for a field, if it is one (else undefined - it's a property). */
   audioParam(node: AudioNode, field: string): AudioParam | undefined;
   /** Set an enum/string property (waveform, filter type). */

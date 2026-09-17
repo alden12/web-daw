@@ -38,6 +38,13 @@ import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/de
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { parseCustomDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
+import {
+  DEFAULT_TIME_SIGNATURE,
+  TIME_SIGNATURE_NUMERATOR_RANGE,
+  TIME_SIGNATURE_DENOMINATORS,
+  beatsPerBar,
+  beatUnitBeats,
+} from "./schema";
 import type { SampleAsset } from "../samples/catalog";
 import type { PatchValues } from "../params/types";
 import type {
@@ -50,10 +57,15 @@ import type {
   ClipContent,
   EffectData,
   MidiDeviceData,
+  TimeSignature,
 } from "./types";
 
 const MIN_BPM = 20;
 const MAX_BPM = 300;
+// Time-signature bounds are shared with the zod schema (the one source), so the store's coercion
+// and the schema's validation can't drift. The guard narrows a number to the denominator union.
+const isValidDenominator = (value: number): value is TimeSignature["denominator"] =>
+  (TIME_SIGNATURE_DENOMINATORS as readonly number[]).includes(value);
 const MIN_LENGTH = 1; // beats
 const MAX_LENGTH = 256; // beats (single-loop model; arrangement lifts this later)
 const MIN_LOOP = 1; // beats - smallest loop region (loop end - loop start)
@@ -156,6 +168,8 @@ export interface ProjectStructure {
   lengthBeats: number;
   /** Loop start in beats; the playback loop region is [loopStart, lengthBeats]. */
   loopStart: number;
+  /** Time signature (`numerator` beats per bar, each a `1/denominator` note). Default 4/4. */
+  timeSignature: TimeSignature;
   /** Project-wide groove template id (see grooves/catalog) + how strongly it applies. */
   grooveId: string;
   grooveAmount: number;
@@ -171,6 +185,7 @@ export class ProjectStore {
   private tempoBpm = 120;
   private lengthBeats = 16;
   private loopStartBeats = 0;
+  private timeSig: TimeSignature = { ...DEFAULT_TIME_SIGNATURE };
   private grooveId = DEFAULT_GROOVE_ID;
   private grooveAmount = 1;
   private samples: SampleAsset[] = [];
@@ -218,6 +233,7 @@ export class ProjectStore {
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
+      timeSignature: this.timeSig,
       selectedTrackId: this.selectedTrackId,
       grooveId: this.grooveId,
       grooveAmount: this.grooveAmount,
@@ -260,6 +276,19 @@ export class ProjectStore {
   }
   get loopStart(): number {
     return this.loopStartBeats;
+  }
+  get timeSignature(): TimeSignature {
+    return this.timeSig;
+  }
+  /** Bar length in beats (a beat = a quarter-note). Integer for x/4, fractional for x/8. The
+   *  scheduler, rulers, and grid all project the meter through the shared `beatsPerBar` helper. */
+  get beatsPerBar(): number {
+    return beatsPerBar(this.timeSig);
+  }
+  /** The meter's "shown beat" in beats (the note the denominator counts): 1 for x/4, 0.5 for x/8.
+   *  The ruler ticks and the metronome step by this so x/8 subdivides into eighths. */
+  get beatUnit(): number {
+    return beatUnitBeats(this.timeSig);
   }
   get name(): string {
     return this.projectName;
@@ -821,6 +850,21 @@ export class ProjectStore {
     this.emit();
   }
 
+  /** Set the project time signature. Numerator clamps to a whole beats-per-bar; omitted or invalid
+   *  denominators keep the current one (this store coerces - the MCP boundary validates). */
+  setTimeSignature(numerator: number, denominator?: number): void {
+    const nextNumerator = clamp(
+      Math.round(numerator),
+      TIME_SIGNATURE_NUMERATOR_RANGE.min,
+      TIME_SIGNATURE_NUMERATOR_RANGE.max,
+    );
+    const requested = denominator ?? this.timeSig.denominator;
+    const nextDenominator = isValidDenominator(requested) ? requested : this.timeSig.denominator;
+    if (nextNumerator === this.timeSig.numerator && nextDenominator === this.timeSig.denominator) return;
+    this.timeSig = { numerator: nextNumerator, denominator: nextDenominator };
+    this.emit();
+  }
+
   /** The project-wide groove: which template, and how strongly it applies (0..1). */
   getGroove(): { id: string; amount: number } {
     return { id: this.grooveId, amount: this.grooveAmount };
@@ -1261,6 +1305,7 @@ export class ProjectStore {
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
       loopStartBeats: this.loopStartBeats,
+      timeSignature: this.timeSig,
       selectedTrackId: this.selectedTrackId,
       grooveId: this.grooveId,
       grooveAmount: this.grooveAmount,
@@ -1436,6 +1481,7 @@ export class ProjectStore {
     this.tempoBpm = clamp(data.tempoBpm ?? 120, MIN_BPM, MAX_BPM);
     this.lengthBeats = data.lengthBeats ?? 16;
     this.loopStartBeats = clamp(data.loopStart ?? 0, 0, this.lengthBeats - MIN_LOOP);
+    this.timeSig = { ...(data.timeSignature ?? DEFAULT_TIME_SIGNATURE) };
     this.grooveId = data.grooveId ?? DEFAULT_GROOVE_ID;
     this.grooveAmount = clamp(data.grooveAmount ?? 1, 0, 1);
     this.samples = (data.samples ?? []).map((sample) => ({ ...sample }));

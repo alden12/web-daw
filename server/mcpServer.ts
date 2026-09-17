@@ -34,6 +34,7 @@ import { GRID_DIVISIONS, beatsForGrid, quantizeNotes } from "../src/audio/sequen
 import { GROOVES, grooveById } from "../src/audio/grooves/catalog";
 import { BUILTIN_SAMPLES, builtinRef, assetRef } from "../src/audio/samples/catalog";
 import { DEFAULT_WS_PORT } from "../src/audio/mcp/protocol";
+import { timeSignatureSchema } from "../src/audio/project/schema";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "../src/audio/mcp/protocol";
 import {
   parseInstrumentDef,
@@ -302,6 +303,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
           {
             connected: connected(),
             tempoBpm: mirror.tempo,
+            timeSignature: mirror.timeSignature,
             lengthBeats: mirror.length,
             selectedTrackId: mirror.selectedId,
             instruments: pickableInstrumentInfos().map((def) => ({
@@ -1469,6 +1471,27 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
       if (!sendToTab({ type: "setTempo", bpm })) return fail("No DAW tab connected.");
       mirror.setTempo(bpm);
       return ok(`Tempo set to ${bpm} BPM.`);
+    },
+  );
+
+  server.registerTool(
+    "set_time_signature",
+    {
+      title: "Set time signature",
+      description:
+        "Set the project time signature: the numerator is the beats per bar; the denominator (a power of two, default 4) is the note that gets one beat - e.g. 3/4, 7/8, 5/16.",
+      // Reuse the canonical time-signature schema so the tool's validation can't drift from it.
+      inputSchema: {
+        numerator: timeSignatureSchema.shape.numerator,
+        denominator: timeSignatureSchema.shape.denominator.optional(),
+      },
+    },
+    async ({ numerator, denominator }) => {
+      const beatUnit = denominator ?? 4;
+      if (!sendToTab({ type: "setTimeSignature", numerator, denominator: beatUnit }))
+        return fail("No DAW tab connected.");
+      mirror.setTimeSignature(numerator, beatUnit);
+      return ok(`Time signature set to ${numerator}/${beatUnit}.`);
     },
   );
 

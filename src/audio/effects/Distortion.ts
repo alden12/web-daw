@@ -23,7 +23,7 @@ export class DistortionEffect extends BaseEffect {
   private shaper!: WaveShaperNode;
   private tone!: BiquadFilterNode;
 
-  constructor(ctx: AudioContext, store: ParamStore) {
+  constructor(ctx: BaseAudioContext, store: ParamStore) {
     super(ctx, store);
     this.init();
   }
