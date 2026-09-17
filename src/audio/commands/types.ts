@@ -125,7 +125,14 @@ export type LocalEdit =
       contentHash: string;
       source?: string;
     }
-  | { type: "removeSample"; id: string };
+  | { type: "removeSample"; id: string }
+  | {
+      // Rename the project. The name is project state (in project.json), so a rename syncs across a
+      // shared session and rides undo/redo + history like any edit; meta.json keeps a copy as the
+      // library's list index. Browser-only for now (no MCP wire message).
+      type: "renameProject";
+      name: string;
+    };
 
 /** Every durable, authored edit. Serializable by construction. */
 export type EditCommand = ProtocolEdit | LocalEdit;

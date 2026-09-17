@@ -73,6 +73,7 @@ function trackMeta(track: Track): TrackMeta {
 /** Project the runtime tracks/groups + transport into the cached structural view. */
 export function buildStructure(tracks: Track[], groups: Group[], transport: TransportState): ProjectStructure {
   return {
+    name: transport.name,
     groups: groups.map(groupMeta),
     tracks: tracks.map(trackMeta),
     tempoBpm: transport.tempoBpm,

@@ -15,6 +15,29 @@ describe("ProjectStore", () => {
     expect(new ProjectStore(false).getStructure().tracks).toHaveLength(0);
   });
 
+  it("renames the project (state, so it rides snapshot/load) and defaults empty to Untitled", () => {
+    const p = new ProjectStore(false);
+    expect(p.name).toBe("Untitled");
+    p.renameProject("  My Song  ");
+    expect(p.name).toBe("My Song"); // trimmed
+    expect(p.getStructure().name).toBe("My Song");
+    expect(p.snapshot().name).toBe("My Song");
+
+    const reloaded = new ProjectStore(false);
+    reloaded.load(p.snapshot());
+    expect(reloaded.name).toBe("My Song"); // round-trips
+
+    p.renameProject("   ");
+    expect(p.name).toBe("Untitled"); // empty resets
+  });
+
+  it("defaults the name to Untitled when a document has none", () => {
+    const p = new ProjectStore(false);
+    p.renameProject("Was Named");
+    p.load({ ...p.snapshot(), name: undefined });
+    expect(p.name).toBe("Untitled");
+  });
+
   it("adds tracks of different instrument types, each with its own schema", () => {
     const p = new ProjectStore(false);
     const sub = p.addTrack("subtractive");

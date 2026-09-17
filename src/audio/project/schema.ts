@@ -162,6 +162,10 @@ const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDe
 /* -------------------------------------------------------------------------- */
 
 export const projectDataSchema = z.object({
+  /** The project's display name. Optional for back-compat (older docs kept it only in meta.json, the
+   *  list index); now it rides the project state so a rename syncs as an edit. Healed from meta on load
+   *  when absent. */
+  name: z.string().optional(),
   groups: z.array(groupDataSchema),
   tracks: z.array(trackDataSchema),
   tempoBpm: z.number(),

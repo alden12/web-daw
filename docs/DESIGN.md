@@ -1841,10 +1841,39 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     was a privileged always-teal identity others couldn't recolour - now two users are symmetric (each
     sees itself teal, the other in a distinct, recolourable colour). The Authors settings tab lists
     **collaborators seen in the feed** (excluding the AI voices + self), each with its own swatch picker.
-    authorVoice.ts trimmed to the reserved-voice constants + label. Remaining A3: **A3b** `renameProject`
-    edit command (name into `project.json`, needs a `PROJECT_SCHEMA` bump); **A3c** reconnect gap-fill.
-    Still to build after A3: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence),
-    **Phase D** (solo-offline PWA).
+    authorVoice.ts trimmed to the reserved-voice constants + label.
+    **A3b (slice 75, done):** project name is now project state - a `renameProject` edit
+    (`ProjectStore.renameProject`, an optional `name` on `projectDataSchema`) instead of a bare
+    `meta.json` write, so a rename syncs live across a shared session, rides undo/redo + history, and the
+    authority's headless replay reconstructs it. `meta.json` keeps a name copy as the library's list
+    index. A document with no `name` defaults to "Untitled" (the dev DB was cleared to drop pre-A3b
+    projects rather than carry a meta-heal, per the disposable-dev-data consent - no `PROJECT_SCHEMA`
+    bump). The header title reads the name from the store (`useProject`) so a peer's rename updates it in
+    real time. Remaining A3: **A3c** reconnect gap-fill
+    (fetch edits missed during a brief disconnect on resubscribe).
+  - **Auth + real users/sharing (the next epic, before Phase B/C).** Today auth is stubbed: one
+    hardcoded owner `"local"` + a shared bearer token, so "two users" are the same account. This epic
+    makes multi-user genuine and is the gateway to the rest:
+    1. **DB**: a `users` table; `projects.ownerId` -> a real user; a **membership/sharing** table (who
+       may open a project) - "two users on one project" only means something once a project is shared
+       with specific accounts.
+    2. **Auth mechanism**: login + sessions (Supabase is a candidate - could also supply auth, replacing
+       the token).
+    3. **Server**: resolve a real principal from a session on both HTTP and the WS upgrade, replacing the
+       token + `"local"` owner.
+    4. **Client**: a login UI; `currentUser` becomes the authenticated identity and the temporary
+       identity setter (A3a) is removed - the app already treats `author` as an opaque id, so nothing
+       downstream changes.
+    5. **Project index -> the `projects` table** (the `meta.json`-redundancy cleanup): list projects from
+       the table's `name`/`modifiedAt` (already columns) via a richer `GET /projects`, have the
+       **authority update `projects.name`** when it applies a `renameProject` edit, and retire server-side
+       `meta.json` (kept only as the OPFS/offline fallback index, or derived from `project.json`). Done
+       here because this epic reworks that table (ownership/sharing) and the list endpoint anyway - so the
+       index consolidation lands once, not twice. `name` stays in `project.json` as synced state (that is
+       what carries a rename through the edit stream); only the *index* copy moves.
+    Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
+    Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
+    (solo-offline PWA).
   - **Transport: WebSocket for the live edit channel, HTTP for the rest.** The WS *contract* already
     ships (slice 64: `ws.ts` message unions, typed `createWsClient`); this slice stands up the socket
     server (`@hono/node-ws` or `ws`) + dispatcher, reusing the append core. List/delete, blob/sample

@@ -51,6 +51,7 @@ function snapshotMidiDevices(devices: MidiDeviceInstance[]): MidiDeviceData[] {
 
 /** The transport + selection fields a snapshot carries alongside the buses/tracks. */
 export interface TransportState {
+  name: string;
   tempoBpm: number;
   lengthBeats: number;
   loopStartBeats: number;
@@ -68,6 +69,7 @@ export interface TransportState {
 /** Read the whole runtime project into a plain, serializable `ProjectData`. */
 export function snapshotProject(tracks: Track[], groups: Group[], transport: TransportState): ProjectData {
   return {
+    name: transport.name,
     groups: groups.map((group) => ({
       id: group.id,
       name: group.name,
