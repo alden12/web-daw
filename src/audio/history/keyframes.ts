@@ -120,3 +120,26 @@ export function rebuildBase(
     null,
   );
 }
+
+/**
+ * The OLDEST keyframe still usable as a rebuild base: the furthest back undo can reach.
+ *
+ * `rebuildBase` answers "what do I replay from to exclude this edit"; this answers "how far back
+ * does undo go at all", which is what a reload needs in order to make edits from before it
+ * undoable. Keyframes below the retention floor are skipped for the same reason as there - the
+ * edits above them are gone, so nothing can be replayed from them.
+ */
+export function oldestBase(
+  index: KeyframeIndex,
+  headSeq: number,
+  options: { window?: number; size?: number } = {},
+): { slot: number; seq: number } | null {
+  const floor = headSeq - (options.window ?? KEYFRAME_RETAIN_WINDOW);
+  return normalize(index, options.size ?? KEYFRAME_RING_SIZE).reduce<{ slot: number; seq: number } | null>(
+    (best, each, slot) =>
+      each !== null && each <= headSeq && each >= floor && (best === null || each < best.seq)
+        ? { slot, seq: each }
+        : best,
+    null,
+  );
+}

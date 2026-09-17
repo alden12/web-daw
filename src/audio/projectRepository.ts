@@ -27,6 +27,7 @@ import { commitKeyframePath } from "./history/paths";
 import {
   emptyKeyframeIndex,
   KEYFRAME_INDEX_PATH,
+  oldestBase,
   planKeyframes,
   rebuildBase,
   retainedKeyframePath,
@@ -350,6 +351,14 @@ export class ProjectRepository {
     return base ? rebuildWithout(base.project, base.seq, entries, excluding) : null;
   }
 
+  /** The oldest retained keyframe still usable, which is how far back undo can reach after a
+   *  reload. Null when the ring holds nothing that old. */
+  async oldestRebuildBase(headSeq: number): Promise<{ seq: number; project: ProjectData } | null> {
+    const index = this.keyframeIndex ?? (await this.readKeyframeIndex());
+    this.keyframeIndex = index;
+    return this.readRetained(oldestBase(index, headSeq));
+  }
+
   /**
    * The base a rebuild should start from when excluding edit `seq`: the newest retained keyframe
    * strictly below it, with the seq it reflects so the caller knows which tail to replay. Null when
@@ -361,7 +370,13 @@ export class ProjectRepository {
   async rebuildBaseFor(seq: number, headSeq: number): Promise<{ seq: number; project: ProjectData } | null> {
     const index = this.keyframeIndex ?? (await this.readKeyframeIndex());
     this.keyframeIndex = index;
-    const base = rebuildBase(index, seq, headSeq);
+    return this.readRetained(rebuildBase(index, seq, headSeq));
+  }
+
+  /** Read one ring slot, checking it still holds the seq the index claims. */
+  private async readRetained(
+    base: { slot: number; seq: number } | null,
+  ): Promise<{ seq: number; project: ProjectData } | null> {
     if (!base) return null;
     const raw = await this.store.readText(retainedKeyframePath(base.slot));
     if (!raw) return null;

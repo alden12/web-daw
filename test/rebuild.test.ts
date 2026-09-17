@@ -10,20 +10,18 @@ import { describe, expect, it } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { ProjectRepository } from "../src/audio/projectRepository";
 import { MemoryBundleStore } from "../src/audio/bundleStore";
-import { invertibleTypes } from "../src/audio/commands/invert";
 import { rebuildWithout, replayEntries, isReplayable } from "../src/audio/commands/replay";
 import { fingerprintProject } from "../src/audio/project/fingerprint";
-import { SAMPLES, seeded, type Sample } from "./support/commandSamples";
-import type { InvertibleType } from "../src/audio/commands/invert";
+import { SAMPLES, sampledTypes, seeded, type Sample, type SampledType } from "./support/commandSamples";
 
 /** An empty project, which is what a log replays onto when nothing has been keyframed yet. */
 const emptyProject = () => new ProjectStore(false).snapshot();
 
 describe("rebuildWithout", () => {
-  describe.each(invertibleTypes())("%s", (type) => {
-    const sample = SAMPLES[type] as Sample<InvertibleType>;
+  describe.each(sampledTypes())("%s", (type) => {
+    const sample = SAMPLES[type] as Sample<SampledType>;
 
-    it("rebuilds to the same project the inverse undoes to", () => {
+    it("rebuilds to the project as it was before the command", () => {
       const { project, log } = seeded();
       for (const command of sample.setup) log.dispatch(command);
       log.resetCoalescing();

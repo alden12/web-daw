@@ -1,14 +1,16 @@
 /**
- * One valid command per invertible type, plus a project with enough in it that each has a real
- * target. Shared because two suites need the same table: `invert.test.ts` checks that each command's
- * inverse undoes it, and `rebuild.test.ts` checks that rebuilding the log without the command lands
- * in the same place. Running both off one table is what checks the two undo paths against each
- * other while DAW-34 changes over from one to the other.
+ * One valid command per type worth covering, plus a project with enough in it that each has a real
+ * target.
+ *
+ * It was built to check that every command's inverse undid it, and then reused to check that
+ * rebuilding the log without the command lands in the same place - running both off one table is
+ * what checked the two undo paths against each other while DAW-34 changed over. The inverses are
+ * gone; the table stays, because "apply this, rebuild without it, get back to where you were" is
+ * the property undo now rests on, and it wants a real command per type to say it about.
  */
 import { ProjectStore } from "../../src/audio/project/projectStore";
 import { EditLog } from "../../src/audio/commands/editLog";
 import type { EditCommand } from "../../src/audio/commands/types";
-import type { InvertibleType } from "../../src/audio/commands/invert";
 import type { GraphEffectDef, GraphInstrumentDef } from "../../src/audio/graph/types";
 
 const CUSTOM_INSTRUMENT: GraphInstrumentDef = {
@@ -32,15 +34,15 @@ const CUSTOM_EFFECT: GraphEffectDef = {
 };
 
 /**
- * One command per invertible type, with the edits needed to put the project somewhere non-default
- * first - an inverse that restores a default value proves very little.
+ * One command per covered type, with the edits needed to put the project somewhere non-default
+ * first - undoing back to a default value proves very little.
  */
-export interface Sample<K extends InvertibleType> {
+export interface Sample<K extends EditCommand["type"]> {
   setup: EditCommand[];
   command: Extract<EditCommand, { type: K }>;
 }
 
-export const SAMPLES: { [K in InvertibleType]: Sample<K> } = {
+export const SAMPLES = {
   renameProject: {
     setup: [{ type: "renameProject", name: "Before" }],
     command: { type: "renameProject", name: "After" },
@@ -254,10 +256,14 @@ export const SAMPLES: { [K in InvertibleType]: Sample<K> } = {
     ],
     command: { type: "removeMidiDevice", trackId: "t-1", deviceId: "md-1" },
   },
-};
+} satisfies { [K in EditCommand["type"]]?: Sample<K> };
+
+/** The command types the table covers. */
+export type SampledType = keyof typeof SAMPLES;
+export const sampledTypes = (): SampledType[] => Object.keys(SAMPLES) as SampledType[];
 
 /**
- * A project with enough in it that every sample below has a real target: an instrument track with a
+ * A project with enough in it that every sample above has a real target: an instrument track with a
  * note, an effect and a MIDI device, an audio track with a clip, and two groups to move between.
  * `addTrack` seeds the clip `c-t-1` and the placement `p-t-1`.
  */

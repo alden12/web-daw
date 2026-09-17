@@ -344,6 +344,9 @@ describe("project + edit-log persistence", () => {
     const log = new EditLog(project);
     // Two attachments, as the shell does: the project is saved by one, the undo stacks by the
     // other, because a hosted session replaces the first and still needs the second (DAW-8.15).
+    // What creating a project does, and what undo across a reload now rests on: the initial state
+    // is keyframed at seq -1, which is the base a rebuild starts from (DAW-34 stage B).
+    await repo.save(project.snapshot(), [], []);
     const dispose = attachAutosave(project, log, repo);
     const disposeUndo = attachUndoPersistence(log, repo);
 
@@ -426,17 +429,17 @@ describe("project + edit-log persistence", () => {
     expect(project2.getTracks()).toHaveLength(1);
   });
 
-  it("keeps a persisted stack when the log's seqs drifted but the project state matches (DAW-8.15)", () => {
+  it("drops persisted steps whose seqs the reloaded log does not have, and keeps the rest", () => {
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     log.dispatch({ type: "renameProject", name: "Alden" });
     log.dispatch({ type: "setTempo", bpm: 132 });
     const packed = log.getCheckpoints();
 
-    // A hosted session numbers the same history differently from the client that authored it: a
-    // coalesced gesture is one local entry but many forwarded edits at the authority, so the log
-    // reloaded over HTTP runs ahead of the counter the stack was written beside. Stamping the seq
-    // made undo permanently unavailable in a shared session; the project state does not drift.
+    // A step names a log entry by seq, so a log renumbered underneath it (which is what a hosted
+    // session's authority does - see the note on DAW-34 stage E) leaves nothing for those steps to
+    // point at. They are dropped per entry, and undo is unavailable rather than wrong: excluding a
+    // seq the log does not have would change nothing and leave the button doing nothing.
     const renumbered = log.getEntries().map((entry, index) => ({ ...entry, seq: index * 7 + 100 }));
 
     const project2 = new ProjectStore(false);
@@ -444,24 +447,29 @@ describe("project + edit-log persistence", () => {
     const log2 = new EditLog(project2);
     log2.restore(renumbered, log.getNotes());
     log2.restoreCheckpoints(packed);
+    expect(log2.getState().canUndo).toBe(false);
 
-    expect(log2.getState().canUndo).toBe(true);
-    log2.undo();
-    expect(project2.tempo).toBe(120);
-    expect(project2.name).toBe("Alden");
+    // The same stack against the log it was written beside keeps every step.
+    const project3 = new ProjectStore(false);
+    project3.load(project.snapshot());
+    const log3 = new EditLog(project3);
+    log3.restore(log.getEntries(), log.getNotes());
+    log3.setRebuildBase(new ProjectStore(false).snapshot(), -1);
+    log3.restoreCheckpoints(packed);
+
+    expect(log3.getState().canUndo).toBe(true);
+    log3.undo();
+    expect(project3.tempo).toBe(120);
+    expect(project3.name).toBe("Alden");
   });
 
-  it("gives up on persisting undo rather than writing a file too big to land (DAW-8.15)", () => {
+  // The byte budget that used to live here is gone with the snapshots it guarded: `undo.json` is
+  // now two lists of edit seqs, which cannot outgrow the server's JSON cap however big the project
+  // gets (DAW-34). What is left worth asserting is that the file stays that small.
+  it("persists undo as seqs, not state, so the file cannot outgrow the project", () => {
     const project = new ProjectStore(false);
     const log = new EditLog(project);
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    // A normal stack persists its steps. `base` is no longer the discriminator: an all-inverse stack
-    // carries no base snapshot at all (DAW-34), so "gave up" now shows as no steps, below.
-    expect(log.getCheckpoints().undo.steps).toHaveLength(1);
-
-    // A project whose snapshot alone is past the budget. Nothing we can trim brings it under, so the
-    // choice is an unwritable file (rejected by the server's JSON cap, undo silently gone) or an
-    // honest empty stack. The state stamp still goes out, so the load path takes the empty one.
     const notes = Array.from({ length: 40_000 }, (_note, index) => ({
       id: `n-${index}`,
       pitch: 60,
@@ -469,7 +477,6 @@ describe("project + edit-log persistence", () => {
       length: 0.25,
       velocity: 0.8,
     }));
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     log.dispatch({
       type: "addNoteClip",
       trackId: "t-1",
@@ -482,11 +489,10 @@ describe("project + edit-log persistence", () => {
     log.dispatch({ type: "setTempo", bpm: 132 });
 
     const packed = log.getCheckpoints();
-    expect(packed.undo.steps).toHaveLength(0);
-    expect(packed.redo.steps).toHaveLength(0);
-    expect(packed.state).toBeTruthy();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    expect(packed.undo).toEqual([0, 1, 2]);
+    expect(packed.redo).toEqual([]);
+    // A megabyte of notes in the project; a few dozen bytes of undo state beside it.
+    expect(JSON.stringify(packed).length).toBeLessThan(200);
   });
 
   it("treats an unreadable or out-of-shape undo.json as absent (DAW-8.15)", async () => {
@@ -496,13 +502,13 @@ describe("project + edit-log persistence", () => {
     await store.writeText("undo.json", "{ not json at all");
     expect(await repo.readUndo()).toBeNull();
 
-    // Right shape for an older build, wrong shape for this one: no state stamp, so it cannot be
-    // verified against the project and is not worth trusting with a `project.load`.
+    // The shape an older build wrote: a base snapshot and steps rather than seqs. It fails the
+    // schema and reads as absent, which costs one reload of undo and no user work (DAW-34).
     await store.writeText("undo.json", JSON.stringify({ undo: { base: null, steps: [] }, redo: null }));
     expect(await repo.readUndo()).toBeNull();
   });
 
-  it("delta-encoded undo/redo reproduces exact states through a reload", () => {
+  it("persisted undo/redo reproduces exact states through a reload", () => {
     const build = () => {
       const project = new ProjectStore(false);
       const log = new EditLog(project);
@@ -522,19 +528,17 @@ describe("project + edit-log persistence", () => {
     src.log.undo();
     src.log.undo();
     const packed = src.log.getCheckpoints();
-    // Every command here can be inverted, so the stack needs no base snapshot at all - which is the
-    // size win DAW-34 is after. A stack still holding a snapshot checkpoint anchors on one base at
-    // the bottom of the chain, never one per checkpoint.
-    expect(packed.undo.base).toBeNull();
-    expect(packed.undo.steps.length).toBeGreaterThan(1);
+    // Two lists of seqs, and nothing else: no base snapshot, no per-step state (DAW-34).
+    expect(packed.undo.length).toBeGreaterThan(1);
+    expect(packed.redo).toHaveLength(2);
 
     const project2 = new ProjectStore(false);
     project2.load(src.project.snapshot()); // working state, as project.json would carry it
     const log2 = new EditLog(project2);
-    // In the same order the real load paths use: the project and log first, then the stacks layered
-    // on. The order matters now that a stack is only accepted when its stamp matches the loaded
-    // project state (DAW-8.15); layering it on an empty project would compare against nothing.
+    // In the same order the real load paths use: the project and log, then a keyframe to rebuild
+    // from, then the stacks. Layering the stacks first would compare their seqs against no log.
     log2.restore(src.log.getEntries(), src.log.getNotes());
+    log2.setRebuildBase(new ProjectStore(false).snapshot(), -1);
     log2.restoreCheckpoints(packed);
 
     expect(project2.snapshot()).toEqual(ref.project.snapshot());

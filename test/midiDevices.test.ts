@@ -34,10 +34,12 @@ describe("MIDI devices in the project store", () => {
   it("undo removes a just-added device; redo restores it", () => {
     const store = new ProjectStore();
     const log = new EditLog(store);
-    const track = store.addTrack("subtractive");
-    log.dispatch({ type: "addMidiDevice", trackId: track.id, deviceType: "octavator", id: "md-test" }, "you");
+    // Through the log, not straight into the store: undo rebuilds the project from the log, so a
+    // track created behind its back would not be there to put a device back on (DAW-34).
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-md" });
+    log.dispatch({ type: "addMidiDevice", trackId: "t-md", deviceType: "octavator", id: "md-test" }, "you");
     const has = () => {
-      const t = store.getTrack(track.id);
+      const t = store.getTrack("t-md");
       return t?.kind === "instrument" && t.midiDevices.some((device) => device.id === "md-test");
     };
     expect(has()).toBe(true);

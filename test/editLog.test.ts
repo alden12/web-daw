@@ -71,8 +71,11 @@ describe("EditLog", () => {
   it("a recorded MIDI take punches in over the lane, and undo restores what was beneath", () => {
     const { project, log } = setup();
     log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
-    project.removePlacement("t-1", "p-t-1"); // drop the auto-seeded placement for a clean lane
-    project.addPlacement("t-1", { id: "p-old", startBeat: 0, length: 8 }); // seed clip beneath
+    // All through the log: undo rebuilds the project from it, so a placement added behind its back
+    // would vanish on the first undo (DAW-34).
+    log.dispatch({ type: "removePlacement", trackId: "t-1", placementId: "p-t-1" });
+    log.dispatch({ type: "addPlacement", trackId: "t-1", id: "p-old", startBeat: 0, length: 8 });
+    log.resetCoalescing();
     const lane = () => project.getStructure().tracks.find((t) => t.id === "t-1")!.placements;
 
     log.dispatch({
