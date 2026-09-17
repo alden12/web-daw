@@ -4,7 +4,9 @@
  * different port. Config via .env (DATABASE_URL, API_PORT, DAW_API_TOKEN).
  */
 import { serve } from "@hono/node-server";
+import type { Server } from "node:http";
 import { createApp } from "./app";
+import { attachWsServer } from "./wsServer";
 import { getDb } from "../db/client";
 import { applyMigrations } from "../db/migrate";
 import { findStaleProjects } from "../db/store";
@@ -29,7 +31,10 @@ if (staleProjects.length > 0) {
 
 const port = process.env.API_PORT ? Number(process.env.API_PORT) : 5170;
 const corsOrigin = process.env.DAW_CORS_ORIGIN?.split(",").map((origin) => origin.trim());
-const app = createApp(getDb(), { token: process.env.DAW_API_TOKEN, corsOrigin });
+const token = process.env.DAW_API_TOKEN;
+const app = createApp(getDb(), { token, corsOrigin });
 
-serve({ fetch: app.fetch, port });
-console.log(`[web-daw] sync API listening on http://localhost:${port}`);
+// The realtime multiplayer socket shares the HTTP server/port (path /ws), so it is one origin.
+const server = serve({ fetch: app.fetch, port }) as Server;
+attachWsServer(server, { db: getDb(), token });
+console.log(`[web-daw] sync API listening on http://localhost:${port} (+ ws on /ws)`);

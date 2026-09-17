@@ -225,6 +225,17 @@ export async function readEdits(
   }));
 }
 
+/** The project's highest authored edit `seq`, or -1 if it has none. The realtime authority uses this
+ *  to resume seq assignment for a room without reading the whole edit stream. Owner-scoped. */
+export async function maxEditSeq(db: Db, ownerId: string, projectId: string): Promise<number> {
+  const rows = await db
+    .select({ maxSeq: sql<number>`coalesce(max(${edits.seq}), -1)` })
+    .from(edits)
+    .innerJoin(projects, eq(edits.projectId, projects.id))
+    .where(and(eq(edits.projectId, projectId), eq(projects.ownerId, ownerId)));
+  return Number(rows[0]?.maxSeq ?? -1);
+}
+
 /** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */
 async function syncMeta(db: Db, projectId: string, json: unknown): Promise<void> {
   const meta = json as { name?: string; modifiedAt?: string } | null;
