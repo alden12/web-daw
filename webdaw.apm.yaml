@@ -7755,6 +7755,23 @@ projects:
             id: 01a097e7-d6a4-7465-8d85-83feb4db6326
             at: 2026-09-12T23:15:48.516Z
             actor: claude
+          - body: "**Stage B built, `793e09d` on `slice-119-retained-keyframes`.** Interval
+              **500** over the 2000-edit window, so five snapshots (roughly
+              250KB normal, 5MB large). A **fixed ring of slots**, not a growing
+              set: nothing in the stack can delete one file from a bundle (not
+              `BundleStore`, not the server file store, not the HTTP API), so a
+              new keyframe overwrites the oldest slot and storage is bounded by
+              construction. A keyframe whose edits were pruned is ignored on
+              read instead. `src/audio/history/keyframes.ts` holds the rule; the
+              authority and the repository both write the ring, matching who
+              already writes `project.json`. `rebuildBaseFor` is the read side
+              for stage C. **Open:** the offline mirror only has the ring slots
+              it happened to fetch, so offline undo depth is luck until stage
+              E."
+            audience: user
+            id: 01a0afbc-3b07-7440-8967-91eba27b1340
+            at: 2026-09-17T14:19:03.815Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"
