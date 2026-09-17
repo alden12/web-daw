@@ -275,7 +275,7 @@ export class Room {
    * out-of-order older seq, so broadcast order must match `seq`). The per-seq persist then trails behind,
    * independent and safe to interleave (upsert-by-seq). Returns the broadcast message.
    */
-  async applyIncoming(edit: IncomingEdit): Promise<ServerMessage> {
+  async applyIncoming(edit: IncomingEdit, from?: RoomClient): Promise<ServerMessage> {
     const author = edit.author ?? "you";
     // Idempotent re-send (a reconnect re-sends unconfirmed ops): re-echo the original seq without
     // applying again. Broadcast it so the originator retires its pending op; peers drop it as a dup
@@ -292,6 +292,20 @@ export class Room {
       };
       this.broadcast(reEcho);
       return reEcho;
+    }
+    // An undo this authority cannot rebuild without is REFUSED rather than recorded (DAW-34 stage E).
+    // Accepting one is the bad outcome: the log would say the edit is undone while every rebuild kept
+    // it, so the client that pressed undo and the authority would disagree with nothing to say so.
+    // The client puts the edit back and reports it, which is the same "unavailable rather than wrong"
+    // call every other rebuild path here makes when it has no base to reach from.
+    if (edit.kind === "undo" && !(await this.canHonourUndo(edit.undoes))) {
+      const refused: ServerMessage = {
+        type: "editRejected",
+        opId: edit.opId,
+        reason: "that edit is too far back to undo - the project has moved on since",
+      };
+      from?.send(refused); // the sender only: no peer applied it, so no peer needs telling
+      return refused;
     }
     const seq = ++this.maxSeq;
     // A tombstone takes an edit back OUT, which nothing applied forward can do, so the store is
@@ -335,6 +349,10 @@ export class Room {
       await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
       // The tombstone is in the log now, so HEAD is whatever the log says with it honoured.
       if (tombstone) await this.rebuildHead();
+      // A rebuild that failed left one owed: without this retry the store stays behind its log for
+      // the life of the room, and `persistKeyframe` stays blocked with it. Swallowed, because this
+      // edit is already broadcast and persisted - a debt from an earlier one is not its problem.
+      else if (this.headStale) await this.rebuildHead().catch(() => {});
       // Keep the queryable index name current on a rename, so every collaborator's listing reflects
       // it without the renamer pushing meta.json (a peer never writes the owner's meta.json).
       if (!tombstone && edit.command.type === "renameProject") {
@@ -356,6 +374,43 @@ export class Room {
   private queueAfterWork(task: () => Promise<unknown>): Promise<unknown> {
     this.afterWork = this.afterWork.then(task, task);
     return this.afterWork;
+  }
+
+  /**
+   * Whether a rebuild could actually leave `undoes` out.
+   *
+   * Three ways it cannot, and they are all "too far back" rather than "invalid": the entry is no
+   * longer in the retained log (compaction pruned it), or it is at or below the keyframe that is the
+   * replay floor with no older retained keyframe to drop to. This is the authority's half of the
+   * check `EditLog.dropUnreachable` makes on a client, and it exists separately because the two can
+   * legitimately disagree: a client undoing offline still reaches an edit the authority has since
+   * moved past.
+   *
+   * A REDO never needs this. It stops excluding an edit rather than starting to, so the worst a
+   * too-old one can do is ask for an edit the base already has - which is the outcome anyway.
+   *
+   * Reads the log in full. It happens once per undo on the authority, next to a rebuild that reads
+   * the same thing, so the duplicate read is the cheaper half of an operation that is already rare.
+   */
+  private async canHonourUndo(undoes: string | undefined): Promise<boolean> {
+    if (undoes === undefined) return false;
+    // Everything ordered before this message has to have reached the log first: the edit being
+    // undone is often the one sent a moment earlier, still in the persist queue (an undo forwards
+    // the held edit first, exactly so the authority is never told about the tombstone sooner).
+    await this.queueAfterWork(async () => {});
+    try {
+      const log = await readEdits(this.db, { userId: this.ownerId }, this.projectId, -1);
+      const entry = log.find((each) => each.id === undoes);
+      if (!entry) return false; // pruned, or never stored: there is nothing left to exclude
+      if (entry.seq > this.lastKeyframeSeq) return true; // in the tail the rebuild replays anyway
+      return (await this.retainedBaseFor(entry.seq)) !== null; // baked in: needs an older base
+    } catch {
+      // A read that failed says nothing about reach, and the two ways to be wrong are not equal:
+      // refusing would bounce a perfectly good undo on a transient blip, while accepting leaves the
+      // tombstone in the log for the next rebuild that works to honour - and `rebuildHead` blocks
+      // the keyframe write until one does, so nothing bakes in meanwhile.
+      return true;
+    }
   }
 
   /**

@@ -8716,6 +8716,114 @@ projects:
           now (`test/support/syncHarness.ts`).
 
 
+          ### E7: an undo the authority cannot honour is refused
+
+
+          Alden's question, and it found a split-brain. Undo offline, and by
+          reconnect the edit you took back
+
+          can sit below the authority's keyframe with no older retained one to
+          drop to. The tombstone was
+
+          accepted and then quietly did nothing: it went into the log, the
+          rebuild could not reach the edit,
+
+          so the authority kept it - while the client that pressed undo had
+          already dropped it. Two
+
+          different projects, no error, lasting as long as the tab did. Proved
+          with a room driven 120 edits
+
+          past the keyframe interval while a client was away.
+
+
+          **Refusing converges them.** `canHonourUndo` asks whether a rebuild
+          could actually leave the edit
+
+          out: the entry is still in the retained log, and either above the
+          keyframe floor or reachable from
+
+          a retained keyframe below it. If not, `editRejected` goes to the
+          sender alone (no peer applied it),
+
+          and the client puts the edit back and says why. This is the
+          authority's half of the check
+
+          `EditLog.dropUnreachable` makes on a client, and it has to exist
+          separately because the two can
+
+          legitimately disagree - a client undoing offline still reaches an
+          edit the authority has moved past.
+
+
+          **`editRejected` existed in the contract and on the client and had
+          never been sent by anything.**
+
+          The client dropped the op and rolled it out of the live store
+          already; what was missing was the
+
+          authority ever refusing, and the sender being passed in so a refusal
+          could reach whoever sent it.
+
+
+          **A refused tombstone needs the local reflog entry removed too**
+          (`EditLog.revokeReflog`). Dropping
+
+          the op puts the edit back in the live project, but an entry still
+          saying it was undone takes it out
+
+          again on the next rebuild, and the excluded set keeps disagreeing
+          with the authority. The entry is
+
+          removed rather than compensated for with a redo: it only ever existed
+          locally, so this is the same
+
+          move as dropping a rejected edit from the queue, and a "Redid:" line
+          the user never pressed is a
+
+          worse account than no line. The step goes back on the stack it came
+          off.
+
+
+          **A redo never needs the check.** It stops excluding an edit rather
+          than starting to, so the worst
+
+          a too-old one can do is ask for an edit the base already has, which
+          is the outcome anyway.
+
+
+          **A failed reachability read accepts rather than refuses.** The two
+          ways to be wrong are not equal:
+
+          refusing bounces a good undo on a transient blip, while accepting
+          leaves the tombstone for the next
+
+          rebuild that works to honour - and the keyframe stays blocked
+          meanwhile, so nothing bakes in.
+
+
+          **Which uncovered a gap in E's own rebuild guard:** nothing retried a
+          rebuild that had failed, so
+
+          the store stayed behind its log for the life of the room and
+          `persistKeyframe` stayed blocked with
+
+          it. The next edit of any kind retries it now, swallowing the error,
+          since a debt from an earlier
+
+          edit is not that edit's problem.
+
+
+          **Still duplicated:** `forwardUndo` and `undoIdentity` keep their own
+          transport harnesses. They go
+
+          through `incomingEdit` and pass their room client, so they cannot
+          drift on the fields, but they
+
+          should move onto `test/support/syncHarness.ts` - the assertion churn
+          is id strings, not behaviour.
+
+
           ### Stage E is done; what is left is stage F
 
 

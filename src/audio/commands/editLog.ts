@@ -478,6 +478,41 @@ export class EditLog {
     this.noteReflog(id, "undo");
   };
 
+  /**
+   * Take back an undo/redo the authority refused (DAW-34 stage E).
+   *
+   * An undo can be forwarded and then turned down: the edit it names may be so far back that the
+   * authority cannot rebuild without it - baked into its keyframe with no older retained one to drop
+   * to. Accepting it anyway is the bad outcome, because the client and the authority then disagree
+   * about the project with nothing to say so.
+   *
+   * So the reflog entry is REMOVED rather than compensated for. It only ever existed locally (the
+   * authority never stored it), which makes this the same move as dropping a rejected edit from the
+   * pending queue, and a "Redid:" line the user never pressed would be a worse account of what
+   * happened than no line at all.
+   *
+   * The excluded set is recomputed rather than patched, so it cannot drift from the entries and the
+   * stacks it is derived from.
+   */
+  revokeReflog = (entryId: string): void => {
+    const index = this.entries.findIndex((entry) => entry.id === entryId && entry.undoes !== undefined);
+    const reflog = this.entries[index];
+    if (!reflog || (reflog.kind !== "undo" && reflog.kind !== "redo")) return;
+    const target = reflog.undoes as string;
+    this.entries.splice(index, 1);
+    // The step goes back on the stack it came off, so the button says what it did before the press.
+    const [from, to] = reflog.kind === "undo" ? [this.redoStack, this.undoStack] : [this.undoStack, this.redoStack];
+    const held = from.lastIndexOf(target);
+    if (held >= 0) {
+      from.splice(held, 1);
+      to.push(target);
+    }
+    this.undone = new Set([...tombstonedIds(this.entries), ...this.redoStack]);
+    this.dropUnreachable();
+    this.rebuildProject();
+    this.emit();
+  };
+
   redo = (): void => {
     const id = this.redoStack.pop();
     if (id === undefined) return;

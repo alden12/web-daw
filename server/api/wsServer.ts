@@ -111,7 +111,9 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         client.send({ type: "error", message: "not authorized for this project" });
         return;
       }
-      const applied = await room.applyIncoming(incomingEdit(message));
+      // The client is passed in so a refusal reaches whoever sent it (an undo the authority cannot
+      // rebuild without - see `Room.applyIncoming`). Nothing is broadcast for one: no peer applied it.
+      const applied = await room.applyIncoming(incomingEdit(message), client);
       if (applied.type === "editApplied")
         log(`edit ${message.projectId} seq=${applied.seq} ${message.command.type} by ${applied.author}`);
     });

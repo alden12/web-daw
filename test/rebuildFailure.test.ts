@@ -72,4 +72,24 @@ describe("a rebuild that fails", () => {
     expect(ids).not.toContain("t-0");
     expect(ids).not.toContain("t-1");
   });
+
+  // The reachability check an undo now passes through reads the same log. A read that failed says
+  // nothing about reach, and the two ways to be wrong are not equal: refusing would bounce a
+  // perfectly good undo on a transient blip, while accepting leaves the tombstone for the next
+  // rebuild that works to honour.
+  it("does not bounce the undo just because the check could not read the log", async () => {
+    const { db } = await makeSyncEnv();
+    const room = await Room.load(db, "local", "p1");
+    await fill(room, 0, 2);
+
+    readState.failing = true;
+    await expect(
+      room.applyIncoming({ command: track("t-0"), opId: "op-undo", kind: "undo", undoes: "op-0" }),
+    ).rejects.toThrow("the log read failed");
+    readState.failing = false;
+
+    // Recorded, not refused - so a rebuild that works still takes the edit back.
+    await room.applyIncoming({ command: track("t-x"), opId: "op-x" });
+    expect(room.snapshot().tracks.map((each) => each.id)).not.toContain("t-0");
+  });
 });

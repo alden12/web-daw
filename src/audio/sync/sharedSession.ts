@@ -403,12 +403,21 @@ export class SharedSession {
     if (isNew) this.onConfirmed?.();
   }
 
-  /** The authority refused one of our edits: drop the optimistic op and roll it out of the live store. */
+  /**
+   * The authority refused one of our edits: drop the optimistic op and roll it out of the live store.
+   *
+   * A refused TOMBSTONE needs one thing more (DAW-34 stage E). Dropping it from the queue puts the
+   * edit back in the live project, but the log still holds the reflog entry saying it was undone, so
+   * the next rebuild would take it straight back out - and the excluded set would keep disagreeing
+   * with the authority for as long as the tab lived. `revokeReflog` takes the undo back properly,
+   * including putting the step back on the stack it came off.
+   */
   private onEditRejected(message: Extract<ServerMessage, { type: "editRejected" }>): void {
     const index = this.pending.findIndex((op) => op.opId === message.opId);
     if (index < 0) return;
-    this.pending.splice(index, 1);
+    const [rejected] = this.pending.splice(index, 1);
     this.persistPending(); // drop the rejected op from the durable queue too
+    if (rejected.undoes !== undefined) this.editLog.revokeReflog(rejected.opId);
     this.rebuildLive();
     this.onError?.(`Edit rejected: ${message.reason}`);
   }

@@ -71,6 +71,8 @@ export class Client {
   readonly sent: ClientMessage[] = [];
   /** Reconnect conflicts raised to the UI (the held edits clashed with a peer's). */
   readonly conflicts: { info: ConflictInfo; myState: ProjectData }[] = [];
+  /** Messages the session raised to the UI (a refused edit says why here). */
+  readonly errors: string[] = [];
   private deliver: (message: ServerMessage) => void = () => {};
   private reopen: () => void = () => {};
   private closed: () => void = () => {};
@@ -87,7 +89,8 @@ export class Client {
         if (!this.connected) return; // dropped on the floor while disconnected
         this.sent.push(message);
         if (message.type === "subscribe") serverQueue.push(() => room.subscribe(this.roomClient));
-        else if (message.type === "edit") serverQueue.push(() => room.applyIncoming(incomingEdit(message)));
+        else if (message.type === "edit")
+          serverQueue.push(() => room.applyIncoming(incomingEdit(message), this.roomClient));
       },
       onMessage: (handler) => {
         this.deliver = handler;
@@ -107,6 +110,7 @@ export class Client {
       projectId: id,
       newOpId: () => `op-${opCounter++}`,
       onConflict: (info, myState) => this.conflicts.push({ info, myState }),
+      onError: (message) => this.errors.push(message),
     });
     this.session.attach();
     this.reopen(); // initial connect fires onOpen -> the session subscribes
