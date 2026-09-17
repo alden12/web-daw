@@ -4163,6 +4163,14 @@ projects:
             153/153. Same rail button as the second sighting, which strengthens (2): every
             `project-link` test switches projects, so the persisted project id and the rail state are
             exactly what two workers would race over.
+          - Fourth sighting, 2026-09-17 on slice-121, and it **breaks the
+          one-file pattern**: seven failures
+            spread across `mobile-shell.e2e.ts` (4) and `piano-roll.e2e.ts` (3). Isolated: 60/60 and
+            7/7. Re-run: 153/153. So the title of this ticket is now wrong - it is not confined to a
+            single spec file, which rules out "one worker stalls on its one file" as a complete
+            explanation and leaves shared browser-local state (2) or dev-server contention (1) able
+            to hit several workers in the same window. The failures were all touch/roll drags this
+            time rather than rail clicks, so it is not tied to one selector either.
 
           ## Why it matters
 
@@ -7769,6 +7777,103 @@ projects:
           transport question above, and
 
           everyone-rebuilds is the shipping answer.
+
+
+          ### E1 done on slice-121: one identity for an edit
+
+
+          Stage E turned out to rest on something the plan had folded into it:
+          every remaining item needs a way to
+
+          name an edit that survives leaving this machine. Tombstones have to
+          name one, forwarding an undo has
+
+          to say which edit, and author-scoped undo has to match a peer's edit
+          to its author. So E1 is that,
+
+          on its own, and it is what closes the known regression.
+
+
+          **`EditEntry.id`.** Minted by whoever made the edit, never reassigned.
+          `seq` stays what it always
+
+          was, an ORDER, and in a hosted session it is the authority's to
+          assign: the client numbers its
+
+          entries optimistically and gets renumbered. A stack written against
+          client seqs therefore named
+
+          nothing once the log came back from the server, so the whole stack was
+          dropped on reload.
+
+
+          **The id IS the `opId`.** One value, from the client that made the
+          edit through to the authority's
+
+          stored log (`edits.entry_id`, migration `0005`) and on to every peer's
+          feed, so all three name the
+
+          edit the same way. `SharedSession.enqueue` takes the log's entry id
+          rather than minting one; only an
+
+          edit with no log entry of its own - a commit marker - still needs a
+          minted id.
+
+
+          **Undo steps, `undo.json`, and `replayEntries({ excluding })` are all
+          in ids now.** The stacks are
+
+          `string[]`; `rebuildWithout` matches on `entry.id`. An entry with no
+          id can never be excluded, which
+
+          is the safe direction: it replays, so the project is what the log
+          says. Old `undo.json` files fail
+
+          the schema and are discarded, which costs one reload of undo and no
+          user work.
+
+
+          **One trap worth knowing.** Because the authority dedups by `opId`,
+          forwarding twice under one entry
+
+          id would silently drop the second send. So `flushForward` now ends the
+          entry as well as sending it:
+
+          one entry, one authoritative row, always. A drag interrupted by a
+          peer's edit becomes two of each,
+
+          which is correct rather than merely tolerable.
+
+
+          **`fingerprintProject` needed no retiring** - stage D had already
+          taken it out of the runtime path.
+
+          It survives as a test helper (compare two snapshots in one value), and
+          its docblock said otherwise
+
+          until now.
+
+
+          Covered by `test/undoIdentity.test.ts`: the renumbering cases fail if
+          steps are matched against seqs,
+
+          which is the old bug stated as a test. One live miss found on the way -
+          `readEdits` rebuilt its rows
+
+          field by field and dropped the new column.
+
+
+          ### Still open in stage E
+
+
+          The tombstone entry, forwarding undo/redo to peers, author-scoped
+          undo, and the three offline cases
+
+          (unsent: drop from `pending`; sent-but-unacked and confirmed: tombstone
+          by id, which is now the same
+
+          lookup for both, since the id no longer depends on whether a seq has
+          been assigned).
 
 
           **F. Measure on a phone.** The gate on whether any of `invert.ts`
