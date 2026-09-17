@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The drum machine: a Drum Kit track can be edited either as a pad x step grid ("Pads")
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 test("a Drum Kit track shows the step grid; toggling a cell writes a note", async ({ page }) => {
   await page.goto("/");

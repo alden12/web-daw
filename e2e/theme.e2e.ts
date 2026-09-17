@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Light mode. The palette is CSS (`index.css`) and switching it is one attribute, so what
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 const themeAttr = (page: Page) => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
 const token = (page: Page, name: string) =>

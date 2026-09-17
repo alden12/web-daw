@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The activity rail + toolbar (the VSCode-style spine). Guards: the rail switches
@@ -9,14 +10,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 const libPanel = (page: Page) => page.locator('[class*="grid-area:library"]');
 const libWidth = (page: Page) => libPanel(page).evaluate((el) => el.getBoundingClientRect().width);

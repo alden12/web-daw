@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Importing a sample into the project library (the Library panel "Samples"
@@ -8,14 +9,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 /** A minimal valid 16-bit PCM mono WAV (a few silent frames) as a Buffer. */
 function tinyWav(): Buffer {

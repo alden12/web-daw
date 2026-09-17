@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The touch shell (MOBILE-1, restructured by MOBILE-5). At phone/tablet size the app swaps
@@ -18,13 +19,6 @@ const LANDSCAPE = { width: 844, height: 390 };
 const TABLET = { width: 1024, height: 768 };
 
 /** Dismiss the audio-start modal so the shell is interactive. */
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 /**
  * Going to the home screen, or coming back. Driven by hand because Playwright cannot actually

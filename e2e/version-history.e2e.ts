@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * The version timeline (Activity rail view -> Versions tab): save named versions of
@@ -7,14 +8,6 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
-  }
-}
 
 async function renameTrack(page: Page, to: string) {
   await page.getByTitle("Double-click to rename").first().dblclick();

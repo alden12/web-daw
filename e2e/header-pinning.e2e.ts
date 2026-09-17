@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Whether the arrangement's header column is pinned or scrolls away with the lanes, which is
@@ -6,14 +7,6 @@ import { test, expect, type Page } from "@playwright/test";
  * pure and unit-tested (`test/pinHeaders.test.ts`); what needs a browser is that the width it
  * reads is the *timeline's*, so docking a panel beside the arrangement changes the answer.
  */
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 /** The header cell of the first lane - the thing that is either sticky or not. */
 const headerPosition = (page: Page) =>

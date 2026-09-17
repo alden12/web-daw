@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Piano-roll mouse editing: the default project seeds one instrument track
@@ -15,17 +16,6 @@ import { test, expect, type Page } from "@playwright/test";
 // A tall viewport so the piano-roll panel has room (otherwise the sticky velocity
 // lane covers most of the short grid and swallows clicks).
 test.use({ viewport: { width: 1280, height: 1100 } });
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    // Wait for the start overlay to clear before interacting: engine.start() now
-    // awaits the worklet modules, so it resolves (and the layout settles) a beat
-    // later - clicking the grid before that races the re-layout and misses.
-    await expect(start).toHaveCount(0);
-  }
-}
 
 /**
  * A viewport point a little way into the grid, measured from the scroll

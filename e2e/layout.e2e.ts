@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * Layout & resizable-panel integration. These guard the four-region spine
@@ -12,13 +13,6 @@ const region = (page: Page, area: "library" | "center" | "agent" | "timeline") =
   page.locator(`[class*="grid-area:${area}"]`);
 
 /** Dismiss the audio-start modal so panels are interactive. */
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0); // wait for the start overlay to clear (engine.start awaits worklets)
-  }
-}
 
 async function box(page: Page, area: "library" | "center" | "agent" | "timeline") {
   const b = await region(page, area).boundingBox();

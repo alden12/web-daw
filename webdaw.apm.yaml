@@ -4260,14 +4260,32 @@ projects:
           failure.
 
 
-          **Fix: wait for the dialog rather than sampling for it**, and do it in
-          ONE place. There are 27
+          **Fixed on slice-123.** `dismissStart` moved to `e2e/support/app.ts`
+          and waits for the dialog
 
-          copies of the helper, which is why this survived six sightings - each
-          one looked like a different
+          (`start.waitFor({ state: "visible" })`) instead of sampling for it.
+          All 27 copies are gone; the
 
-          test being flaky. Extract it to `e2e/support/` and have every spec
-          call it.
+          153 call sites all run straight after a `goto` or `reload`, so the
+          dialog is always freshly
+
+          mounted and waiting for it is safe. If a future flow starts the engine
+          without it, this fails
+
+          saying so rather than silently skipping - the better way round, since
+          that is a change worth
+
+          noticing.
+
+
+          Measured after: 6 full runs, 5 clean. The one failure happened before
+          I started preserving
+
+          artifacts, so it is unidentified and this is NOT proof - but the rate
+          was roughly half of runs
+
+          before, so it is a large move in the right direction. Any recurrence
+          now leaves a trace.
 
 
           ## What the evidence points at (superseded by the diagnosis above -

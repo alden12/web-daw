@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { dismissStart } from "./support/app";
 
 /**
  * A project has a link: the URL names whichever project is open, and a URL that names one
@@ -6,14 +7,6 @@ import { test, expect, type Page } from "@playwright/test";
  * what needs a browser is that the address bar is actually pointed at the open project and
  * that arriving on such a URL opens it rather than the persisted current one.
  */
-
-async function dismissStart(page: Page) {
-  const start = page.getByRole("button", { name: /start audio/i });
-  if (await start.count()) {
-    await start.click();
-    await expect(start).toHaveCount(0);
-  }
-}
 
 /** The project menu lives behind the current project's name in the library header. */
 const projectMenu = (page: Page) => page.getByRole("button", { name: "Project menu" });
