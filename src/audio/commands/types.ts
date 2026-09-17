@@ -190,6 +190,16 @@ export interface EditEntry {
   kind?: "edit" | "undo" | "redo" | "note";
   /** Display override for non-edit entries (e.g. "Undid: Added note"). */
   label?: string;
+  /**
+   * For an `undo` or `redo` entry: the `id` of the edit it takes back or puts back (DAW-34 stage E).
+   *
+   * This is the tombstone. It makes an undo a fact *in* the log rather than a set held beside it, so
+   * the log alone says what the project is: replay every edit except the ones a tombstone above them
+   * takes back. Append-only and itself ordered, so replaying only as far as some seq honours only
+   * the tombstones at or below it - an older state stays what it was rather than acquiring undos
+   * that happened after it.
+   */
+  undoes?: string;
 }
 
 /** The single mutation entry point handed to the UI and the MCP bridge. */

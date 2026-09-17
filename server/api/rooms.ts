@@ -121,6 +121,10 @@ export class Room {
       store.load(base as ProjectData);
     }
     const tail = await readEdits(db, owner, projectId, headSeq);
+    // Tombstones (DAW-34 stage E) are not here yet: an undo is not forwarded, so the authority's log
+    // holds none, and this tail replays every edit in it. When they do arrive this needs what the
+    // client's `load` already does - work the exclusions out over the whole log before choosing a
+    // base, because a tombstone in the tail can take back an edit baked into the keyframe below it.
     replayEntries(store, tail as unknown as EditEntry[]);
     const maxSeq = await maxEditSeq(db, ownerId, projectId);
     // A missing or malformed ring index reads as empty: it costs undo depth, never data.

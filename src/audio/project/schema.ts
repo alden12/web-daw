@@ -259,6 +259,9 @@ export const editEntrySchema = z.object({
   // as {type:"note", text}); it is skipped by forward replay. undo/redo are the reflog markers.
   kind: z.enum(["edit", "undo", "redo", "note"]).optional(),
   label: z.string().optional(),
+  /** On an undo/redo entry: the id of the edit it takes back or puts back - the tombstone that makes
+   *  the log alone say what the project is (DAW-34 stage E). */
+  undoes: z.string().optional(),
 });
 
 export const feedNoteSchema = z.object({

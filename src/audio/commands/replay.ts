@@ -27,9 +27,28 @@ import type { Author, EditCommand, EditEntry } from "./types";
  */
 export const isReplayable = (kind: string | undefined): boolean => kind === undefined || kind === "edit";
 
+/**
+ * The ids the log itself says are taken back, as of `upTo` (default: the whole log).
+ *
+ * Walks in order, because an undo and a redo of the same edit are both tombstones and the later one
+ * wins. `upTo` is what keeps an older state true: replaying only as far as some seq honours only
+ * the tombstones at or below it, so a past point does not acquire undos made after it.
+ */
+export function tombstonedIds(entries: readonly EditEntry[], upTo?: number): Set<string> {
+  const excluded = new Set<string>();
+  for (const entry of entries) {
+    if (upTo !== undefined && entry.seq > upTo) continue;
+    if (entry.undoes === undefined) continue;
+    if (entry.kind === "undo") excluded.add(entry.undoes);
+    else if (entry.kind === "redo") excluded.delete(entry.undoes);
+  }
+  return excluded;
+}
+
 export interface ReplayOptions {
   /**
-   * Entry *ids* to leave out: the edits being undone. Everything else replays as usual.
+   * Further entry *ids* to leave out, on top of the log's own tombstones: edits undone locally and
+   * not yet part of the stream.
    *
    * Ids rather than seqs, because `seq` is an order the authority reassigns while an undo step has
    * to keep naming the same edit (see `EditEntry.id`). An entry with no id can never be excluded,
@@ -38,15 +57,35 @@ export interface ReplayOptions {
   readonly excluding?: ReadonlySet<string>;
   /** Replay only entries above this seq - the base snapshot already reflects the rest. */
   readonly above?: number;
+  /**
+   * Ignore the log's own tombstones and exclude only `excluding`.
+   *
+   * For a caller that has already computed the exclusion set over a wider window than the entries
+   * it is passing - a rebuild replays a tail, but a tombstone in that tail can take back an edit
+   * baked into the base beneath it, so the set has to be worked out before the base is even chosen.
+   */
+  readonly ignoreTombstones?: boolean;
 }
 
-/** Apply a stream of entries to a store, in the order given. Mutates; returns nothing. */
+/**
+ * Apply a stream of entries to a store, in the order given. Mutates; returns nothing.
+ *
+ * The log's tombstones are honoured by default, so a stream of entries is a complete account of the
+ * project: hand it every entry and it applies the edits that still stand. Note it needs the undo and
+ * redo entries to do that, so a caller must not filter them out on the way in - they are skipped for
+ * *applying* (`isReplayable`), which is a different question from whether they are needed.
+ */
 export function replayEntries(project: ProjectStore, entries: readonly EditEntry[], options: ReplayOptions = {}): void {
-  const { excluding, above } = options;
+  const { excluding, above, ignoreTombstones } = options;
+  const tombstoned = ignoreTombstones ? null : tombstonedIds(entries);
   for (const entry of entries) {
     if (above !== undefined && entry.seq <= above) continue;
-    if (entry.id !== undefined && excluding?.has(entry.id)) continue;
     if (!isReplayable(entry.kind)) continue;
+    if (entry.id === undefined) {
+      applyEdit(project, entry.command as EditCommand, entry.author as Author);
+      continue;
+    }
+    if (excluding?.has(entry.id) || tombstoned?.has(entry.id)) continue;
     applyEdit(project, entry.command as EditCommand, entry.author as Author);
   }
 }
@@ -70,6 +109,8 @@ export function rebuildWithout(
 ): ProjectData {
   const project = new ProjectStore(false);
   project.load(base);
-  replayEntries(project, entries, { above: baseSeq, excluding });
+  // `excluding` is the caller's complete set - it already folded in the log's tombstones over the
+  // whole log, which is the only way to notice one that takes back an edit below `baseSeq`.
+  replayEntries(project, entries, { above: baseSeq, excluding, ignoreTombstones: true });
   return project.snapshot();
 }
