@@ -357,6 +357,10 @@ export class SharedSession {
    *  conflict hold, pending is NOT replayed, so the live store shows the peer's (authoritative) state
    *  while the user decides. */
   private rebuildLive(): void {
+    // A drag in progress is one held forward, not yet in `pending` (DAW-8.13), and this rebuild
+    // replaces the live project with `base` + `pending` - so without this the rebuild would throw
+    // away the part of the drag that has happened so far.
+    this.editLog.flushForward();
     const scratch = new ProjectStore(false);
     scratch.load(this.base.snapshot());
     if (!this.conflictHold) for (const op of this.pending) applyEdit(scratch, op.command, op.author);
@@ -364,8 +368,8 @@ export class SharedSession {
   }
 
   close(): void {
+    this.editLog.setRemote(null); // flushes a held edit while the session can still send it
     this.closed = true;
-    this.editLog.setRemote(null);
     this.transport.close();
   }
 }

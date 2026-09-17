@@ -7,6 +7,7 @@
  * DAW-8.5).
  */
 import { useRef } from "react";
+import { capturePointerDrag, releasePointerDrag } from "./dragGesture";
 
 export function Fader({
   value,
@@ -53,12 +54,14 @@ export function Fader({
       title={title}
       onPointerDownCapture={onPointerDownCapture}
       onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capturePointerDrag(e);
         setFromClientX(e.clientX);
       }}
       onPointerMove={(e) => {
         if (e.buttons) setFromClientX(e.clientX);
       }}
+      onPointerUp={releasePointerDrag}
+      onPointerCancel={releasePointerDrag}
       onKeyDown={(e) => {
         if (e.key === "ArrowLeft" || e.key === "ArrowDown") onChange(Math.max(0, value - step));
         if (e.key === "ArrowRight" || e.key === "ArrowUp") onChange(Math.min(max, value + step));

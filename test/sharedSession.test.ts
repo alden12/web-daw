@@ -31,8 +31,15 @@ class Harness {
     return client;
   }
 
-  /** Drain queued client -> server operations (subscribe / edit) in enqueue order. */
+  /**
+   * Drain queued client -> server operations (subscribe / edit) in enqueue order.
+   *
+   * Settles every client's gesture first: a coalescable edit is held until its drag ends (DAW-8.13),
+   * and a test's `dispatch` stands for a finished one. Without this a held `editNotes` would not
+   * have reached the authority by the time the test asserts on it.
+   */
   async pump(): Promise<void> {
+    for (const client of this.clients) client.editLog.flushForward();
     while (this.serverQueue.length) await this.serverQueue.shift()!();
   }
 }

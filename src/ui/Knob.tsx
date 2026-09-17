@@ -11,6 +11,7 @@ import { useParam } from "../audio/params/useParam";
 import { fromNormalized, toNormalized } from "../audio/params/taper";
 import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
+import { capturePointerDrag, releasePointerDrag } from "./dragGesture";
 import { pitchName } from "./noteNames";
 import { Select } from "./controls/Select";
 import { Fader } from "./controls/Fader";
@@ -123,7 +124,7 @@ function NumberKnob({
   const angle = -135 + norm * 270;
 
   const onPointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capturePointerDrag(e);
     drag.current = { startY: e.clientY, startNorm: norm };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -133,7 +134,7 @@ function NumberKnob({
     onChange(spec.id, fromNormalized(spec, nextNorm));
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    releasePointerDrag(e);
     drag.current = null;
   };
 
@@ -159,6 +160,7 @@ function NumberKnob({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         {/* Punches the ring out of the sweep, so the arc reads as a track rather than a pie. */}
         <span className="absolute inset-1.25 rounded-full bg-ground" />
@@ -193,7 +195,7 @@ function NumberSlider({
   const norm = toNormalized(spec, value as number);
 
   const onPointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    capturePointerDrag(e);
     drag.current = { startY: e.clientY, startNorm: norm };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -203,7 +205,7 @@ function NumberSlider({
     onChange(spec.id, fromNormalized(spec, nextNorm));
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    releasePointerDrag(e);
     drag.current = null;
   };
 
@@ -222,6 +224,7 @@ function NumberSlider({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       >
         <span className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 rounded-full bg-line" />
         <span
