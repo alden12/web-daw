@@ -9,7 +9,7 @@
  */
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "./types";
-import { edits, files, projects } from "./schema";
+import { edits, files, projects, users } from "./schema";
 
 export type WriteResult = { ok: true } | { ok: false; reason: "conflict" | "forbidden" };
 
@@ -27,6 +27,19 @@ export type EditEntryInput = {
 };
 
 const isCommitPath = (path: string) => path.startsWith("history/commits/");
+
+/**
+ * Provision a user row just-in-time (idempotent). Called from the principal seam on every resolved
+ * request, so the `projects.owner_id` FK is always satisfied before any owner-stamped project write.
+ * A conflicting id keeps the existing row (we do not overwrite a stored email with a possibly-absent
+ * one). This is the same path that later provisions a real user on their first authenticated request.
+ */
+export async function ensureUser(db: Db, userId: string, email?: string): Promise<void> {
+  await db
+    .insert(users)
+    .values({ id: userId, email: email ?? null })
+    .onConflictDoNothing();
+}
 
 /** A project whose stored document version trails the current schema (needs upcasting). */
 export type StaleProject = { id: string; name: string; projectSchema: number };

@@ -12,7 +12,18 @@
  *    entries, stored as jsonb so they are valid-JSON-checked, readable, and queryable) OR
  *    `bytes` (binary, e.g. samples) - a CHECK enforces exactly one.
  */
-import { pgTable, text, integer, bigint, timestamp, primaryKey, customType, jsonb, check } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  integer,
+  bigint,
+  timestamp,
+  primaryKey,
+  customType,
+  jsonb,
+  check,
+  index,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 /**
@@ -27,16 +38,35 @@ const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
   fromDriver: (value) => value,
 });
 
-export const projects = pgTable("projects", {
+/**
+ * Our own user records, keyed by the identity provider's stable subject id (a Supabase auth uuid, or
+ * "local" in dev-stub mode). We deliberately keep this table rather than reaching into Supabase's
+ * internal tables, so all domain data references an id we own - swapping the auth provider later stays
+ * a contained change. Rows are provisioned just-in-time on the first authenticated request.
+ */
+export const users = pgTable("users", {
   id: text("id").primaryKey(),
-  ownerId: text("owner_id").notNull(),
-  name: text("name").notNull().default("Untitled"),
-  /** Version of the project-document format last written (drives lazy upcasting). */
-  projectSchema: integer("project_schema").notNull().default(0),
-  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull().defaultNow(),
-  /** Soft delete: set on delete, filtered from listings, never hard-removed. */
-  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  /** From the JWT `email` claim; nullable (a provider may omit it). */
+  email: text("email"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const projects = pgTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id),
+    name: text("name").notNull().default("Untitled"),
+    /** Version of the project-document format last written (drives lazy upcasting). */
+    projectSchema: integer("project_schema").notNull().default(0),
+    modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Soft delete: set on delete, filtered from listings, never hard-removed. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [index("projects_owner_idx").on(table.ownerId)],
+);
 
 export const files = pgTable(
   "files",
@@ -86,6 +116,7 @@ export const edits = pgTable(
   (table) => [primaryKey({ columns: [table.projectId, table.seq] })],
 );
 
+export type UserRow = typeof users.$inferSelect;
 export type ProjectRow = typeof projects.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type EditRow = typeof edits.$inferSelect;
