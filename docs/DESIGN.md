@@ -1822,7 +1822,7 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     MCP / recorder / agent edits all forward automatically; enabled whenever a remote backend is
     configured (`VITE_DAW_API_URL`), where the client stops HTTP autosave and the authority persists.
     Undo/redo stay **local best-effort** in a shared session (their snapshots predate a rebase).
-    **A3 (collaboration completeness, in progress) - A3a (slice 73, done):** per-user identity + colours.
+    **A3 (collaboration completeness, done) - A3a (slice 73, done):** per-user identity + colours.
     `author` generalised from the 3-role enum to a bounded free string (`claude`/`agent` reserved AI
     voices, `you` the default; any other value a human user id) - backward compatible, no schema bump.
     A `currentUser` store (localStorage + `?user=` override, dev-only setter in the Authors settings tab,
@@ -1849,8 +1849,16 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     index. A document with no `name` defaults to "Untitled" (the dev DB was cleared to drop pre-A3b
     projects rather than carry a meta-heal, per the disposable-dev-data consent - no `PROJECT_SCHEMA`
     bump). The header title reads the name from the store (`useProject`) so a peer's rename updates it in
-    real time. Remaining A3: **A3c** reconnect gap-fill
-    (fetch edits missed during a brief disconnect on resubscribe).
+    real time.
+    **A3c (slice 76, done):** reconnect gap-fill - a dropped connection self-heals. `createWsClient` now
+    reconnects with capped exponential backoff after an unexpected close and exposes an `onOpen` hook that
+    fires on every (re)connect. `SharedSession.resync` (bound to `onOpen`, and the single path the initial
+    subscribe rides too) re-subscribes - the authority's `snapshot` folds any edits missed while away (the
+    gap-fill) - and re-sends every still-pending optimistic op. Re-sends are idempotent by `opId`: the room
+    now *broadcasts* an already-applied re-echo (rather than returning it silently) so the originator retires
+    its pending op, and peers drop it via their reorder guard. `onEditApplied` retires a pending op on any
+    `opId` match, even when its echo trails a snapshot that already folded it into `base`. This closes A3
+    (collaboration completeness); next is the auth + real-users epic below.
   - **Auth + real users/sharing (the next epic, before Phase B/C).** Today auth is stubbed: one
     hardcoded owner `"local"` + a shared bearer token, so "two users" are the same account. This epic
     makes multi-user genuine and is the gateway to the rest:

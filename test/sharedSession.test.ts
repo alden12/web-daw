@@ -43,11 +43,18 @@ class Client {
   readonly inbox: ServerMessage[] = [];
   readonly sent: ClientMessage[] = [];
   private deliver: (message: ServerMessage) => void = () => {};
+  private reopen: () => void = () => {};
+  /** Whether the socket is "connected": a disconnect drops outbound sends (and stops broadcasts, since
+   *  the room removes the client), modelling a real network drop until `reconnect()`. */
+  private connected = true;
+  private readonly room: Room;
   private readonly roomClient: RoomClient = { send: (message) => this.inbox.push(message) };
 
   constructor(id: string, room: Room, serverQueue: Array<() => Promise<unknown>>) {
+    this.room = room;
     const transport: SyncTransport = {
       send: (message) => {
+        if (!this.connected) return; // dropped on the floor while disconnected
         this.sent.push(message);
         if (message.type === "subscribe") serverQueue.push(() => room.subscribe(this.roomClient));
         else if (message.type === "edit")
@@ -57,6 +64,9 @@ class Client {
       },
       onMessage: (handler) => {
         this.deliver = handler;
+      },
+      onOpen: (handler) => {
+        this.reopen = handler;
       },
       close: () => room.remove(this.roomClient),
     };
@@ -68,6 +78,20 @@ class Client {
       newOpId: () => `op-${opCounter++}`,
     });
     this.session.attach();
+    this.reopen(); // initial connect fires onOpen -> the session subscribes
+  }
+
+  /** Simulate a network drop: the room stops broadcasting to us and outbound sends are lost. */
+  disconnect(): void {
+    this.connected = false;
+    this.room.remove(this.roomClient);
+    this.inbox.length = 0;
+  }
+
+  /** Simulate the socket reopening: the transport fires onOpen, so the session re-subscribes + re-sends. */
+  reconnect(): void {
+    this.connected = true;
+    this.reopen();
   }
 
   /** Deliver every queued server message to the session, in receipt order. */
@@ -250,5 +274,75 @@ describe("SharedSession (client optimistic + rebase)", () => {
 
     expect(a.trackIds()).toEqual([]);
     void rejections;
+  });
+
+  it("heals a disconnect: on reconnect it re-subscribes and folds edits missed while away", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1", "alice");
+    const b = harness.connect("p1", "bob");
+    await harness.pump();
+    a.flush();
+    b.flush();
+
+    // B drops off the network; A keeps working. B is out of the room, so it misses both edits.
+    b.disconnect();
+    a.editLog.dispatch(createTrack("t-1"));
+    a.editLog.dispatch(createTrack("t-2"));
+    await harness.pump();
+    a.flush();
+    expect(b.trackIds()).toEqual([]);
+
+    // B reconnects: the re-subscribe's snapshot carries the missed edits, so B catches up.
+    b.reconnect();
+    await harness.pump();
+    b.flush();
+    expect(b.trackIds()).toEqual(["t-1", "t-2"]);
+    expect(a.trackIds()).toEqual(["t-1", "t-2"]);
+  });
+
+  it("re-sends an edit made while disconnected, so it reaches the authority after reconnect", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1");
+    await harness.pump();
+    a.flush();
+
+    // A goes offline, then edits: applied optimistically, but the send is dropped (never reaches the room).
+    a.disconnect();
+    a.editLog.dispatch(createTrack("t-a"));
+    await harness.pump();
+    expect(a.trackIds()).toEqual(["t-a"]); // optimistic locally
+    expect(harness.room.snapshot().tracks).toHaveLength(0); // authority never saw it
+
+    // Reconnect re-sends the still-pending op; now the authority applies it and A stays converged.
+    a.reconnect();
+    await harness.pump();
+    a.flush();
+    expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
+    expect(a.trackIds()).toEqual(["t-a"]);
+  });
+
+  it("does not double-apply an edit whose echo it missed before dropping (idempotent re-send)", async () => {
+    const { db } = await makeSyncEnv();
+    const harness = new Harness(await Room.load(db, "local", "p1"));
+    const a = harness.connect("p1");
+    await harness.pump();
+    a.flush();
+
+    // A's edit reaches the authority (applied, seq assigned, echo queued), but A drops before flushing
+    // the echo - so the op stays pending on A even though the authority already applied it.
+    a.editLog.dispatch(createTrack("t-a"));
+    await harness.pump();
+    a.disconnect(); // clears the un-flushed echo from A's inbox
+    expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
+
+    // Reconnect: the snapshot recovers t-a into `base`, and the re-sent op re-echoes its original seq
+    // (idempotent by opId) rather than adding a second track. A converges to exactly one t-a.
+    a.reconnect();
+    await harness.pump();
+    a.flush();
+    expect(a.trackIds()).toEqual(["t-a"]);
+    expect(harness.room.snapshot().tracks.map((track) => track.id)).toEqual(["t-a"]);
   });
 });

@@ -108,10 +108,12 @@ export class Room {
    */
   async applyIncoming(edit: IncomingEdit): Promise<ServerMessage> {
     const author = edit.author ?? "you";
-    // Idempotent re-send: re-echo the original seq, do not apply again.
+    // Idempotent re-send (a reconnect re-sends unconfirmed ops): re-echo the original seq without
+    // applying again. Broadcast it so the originator retires its pending op; peers drop it as a dup
+    // (their reorder guard skips a seq at or below head).
     const seen = this.appliedOps.get(edit.opId);
     if (seen !== undefined) {
-      return {
+      const reEcho: ServerMessage = {
         type: "editApplied",
         projectId: this.projectId,
         seq: seen,
@@ -119,6 +121,8 @@ export class Room {
         author,
         opId: edit.opId,
       };
+      this.broadcast(reEcho);
+      return reEcho;
     }
     const seq = ++this.maxSeq;
     applyEdit(this.store, edit.command, author);

@@ -30,6 +30,9 @@ import type { ClientMessage, ServerMessage } from "../../contract/ws";
 export interface SyncTransport {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
+  /** Fires each time the socket (re)opens, including the first connect. The session uses it to
+   *  (re-)subscribe and re-send unconfirmed edits, so a dropped connection self-heals on reconnect. */
+  onOpen(handler: () => void): void;
   close(): void;
 }
 
@@ -88,7 +91,10 @@ export class SharedSession {
     this.base.load(this.projectStore.snapshot());
 
     this.transport.onMessage((message) => this.onMessage(message));
-    this.transport.send({ type: "subscribe", projectId: this.projectId });
+    // Every (re)open re-runs `resync`: subscribe (the authority replies with a `snapshot` that folds any
+    // edits missed while disconnected) and re-send unconfirmed pending ops. The first connect is just its
+    // first firing, so subscribe rides one code path.
+    this.transport.onOpen(() => this.resync());
   }
 
   /** Attach to an `EditLog` as its remote sink: every locally-dispatched edit is enqueued for the
@@ -104,9 +110,35 @@ export class SharedSession {
    */
   enqueue(command: EditCommand, author: Author): void {
     if (this.closed) return;
-    const opId = this.newOpId();
-    this.pending.push({ opId, command, author });
-    this.transport.send({ type: "edit", projectId: this.projectId, command, opId, baseSeq: this.headSeq, author });
+    const op: PendingOp = { opId: this.newOpId(), command, author };
+    this.pending.push(op);
+    this.sendEdit(op);
+  }
+
+  /** Wire one pending op to the authority. `baseSeq` reflects the latest confirmed head (informational
+   *  for the authority); `opId` matches the echo and dedups a re-send after a reconnect. */
+  private sendEdit(op: PendingOp): void {
+    this.transport.send({
+      type: "edit",
+      projectId: this.projectId,
+      command: op.command,
+      opId: op.opId,
+      baseSeq: this.headSeq,
+      author: op.author,
+    });
+  }
+
+  /**
+   * (Re-)establish the session on a transport (re)open: subscribe, then re-send every still-pending op.
+   * The subscribe draws a `snapshot` whose `onSnapshot` folds any edits missed while disconnected (the
+   * gap-fill), and the re-sends recover local edits whose `editApplied` we may have missed. Both are
+   * idempotent by `opId` at the authority, so an op that did reach it before the drop re-echoes its
+   * original `seq` instead of double-applying.
+   */
+  private resync(): void {
+    if (this.closed) return;
+    this.transport.send({ type: "subscribe", projectId: this.projectId });
+    for (const op of this.pending) this.sendEdit(op);
   }
 
   private onMessage(message: ServerMessage): void {
@@ -136,18 +168,23 @@ export class SharedSession {
   }
 
   /**
-   * The authority ordered an edit. If it echoes one of our pending ops, that op is now confirmed
-   * (baked into `base`), so we retire it and the live store already matches - no rebuild. A peer's edit
-   * (an `opId` we do not hold) advances `base` underneath our pending ops, so we rebase the live store.
+   * The authority ordered an edit. A `seq` we have not folded yet advances `base`; one already folded
+   * (a dup, a reorder, or an op recovered via a reconnect `snapshot`) does not. Either way, if it echoes
+   * one of our pending ops we retire it: when it was fresh the live store already reflects it (base +
+   * remaining pending), but when it was already in `base` via a snapshot we must rebuild to drop the now-
+   * redundant pending copy. A peer's fresh edit (an `opId` we do not hold) rebases beneath our pending.
    */
   private onEditApplied(message: Extract<ServerMessage, { type: "editApplied" }>): void {
-    if (message.seq <= this.headSeq) return; // already folded in (dup / reorder guard)
-    applyEdit(this.base, message.command as EditCommand, message.author);
-    this.headSeq = message.seq;
+    const isNew = message.seq > this.headSeq;
+    if (isNew) {
+      applyEdit(this.base, message.command as EditCommand, message.author);
+      this.headSeq = message.seq;
+    }
     const index = this.pending.findIndex((op) => op.opId === message.opId);
     if (index >= 0) {
-      this.pending.splice(index, 1); // ours: confirmed, live already reflects it
-    } else {
+      this.pending.splice(index, 1); // ours: confirmed
+      if (!isNew) this.rebuildLive(); // already in `base` (snapshot-recovered): drop the redundant pending copy
+    } else if (isNew) {
       this.rebuildLive(); // a peer's: slot it beneath our still-pending edits
       this.editLog.recordRemote(message.command as EditCommand, message.author); // narrate it in the feed
     }
