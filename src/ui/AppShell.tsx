@@ -16,6 +16,9 @@ import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects } from "../audio/projects/operations";
+import { currentProjectId } from "../audio/projectRepository";
+import { SharedSession } from "../audio/sync/sharedSession";
+import { createWsClient, wsBaseFromApiUrl } from "../contract/client";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { EditLog } from "../audio/commands/editLog";
@@ -176,16 +179,41 @@ export function AppShell() {
   // (OPFS); autosave/checkpoints attach only after, to avoid a redundant re-save.
   useEffect(() => {
     let active = true;
-    let disposeAutosave = () => {};
+    let disposePersistence = () => {};
     let disposeCheckpoints = () => {};
     void initProjects({ projectStore, editLog, versionStore }).then(() => {
       if (!active) return;
-      disposeAutosave = attachAutosave(projectStore, editLog);
+      // With a remote backend, edits ride the live WS channel and the authority persists them (the
+      // client no longer appends over HTTP): open a shared session and route each dispatched edit to it.
+      // Local-only backend keeps the HTTP/OPFS autosave. Version-history checkpoints stay client-side
+      // either way until Phase B moves them server-side.
+      const apiUrl = import.meta.env?.VITE_DAW_API_URL;
+      if (apiUrl) {
+        const entries = editLog.getEntries();
+        const notes = editLog.getNotes();
+        const baseSeq = Math.max(-1, ...entries.map((entry) => entry.seq), ...notes.map((note) => note.seq));
+        const transport = createWsClient({
+          baseUrl: wsBaseFromApiUrl(apiUrl),
+          token: import.meta.env?.VITE_DAW_API_TOKEN,
+        });
+        const session = new SharedSession({
+          projectStore,
+          editLog,
+          transport,
+          projectId: currentProjectId(),
+          baseSeq,
+          onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+        });
+        session.attach();
+        disposePersistence = () => session.close();
+      } else {
+        disposePersistence = attachAutosave(projectStore, editLog);
+      }
       disposeCheckpoints = versionStore.attach();
     });
     return () => {
       active = false;
-      disposeAutosave();
+      disposePersistence();
       disposeCheckpoints();
     };
   }, [projectStore, editLog, versionStore]);

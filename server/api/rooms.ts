@@ -100,9 +100,11 @@ export class Room {
   }
 
   /**
-   * Order + apply + persist + broadcast one incoming edit. The seq assignment and in-memory apply are
-   * synchronous (no await between them), so concurrent messages are ordered by arrival with no lock; the
-   * per-seq persist that follows is independent and safe to interleave. Returns the broadcast message.
+   * Order + apply + broadcast + persist one incoming edit. Assign `seq`, apply, and broadcast all run
+   * synchronously with no `await` between them, so concurrent messages are ordered by arrival with no
+   * lock AND every peer sees `editApplied`s in strict `seq` order (a client's reorder guard drops an
+   * out-of-order older seq, so broadcast order must match `seq`). The per-seq persist then trails behind,
+   * independent and safe to interleave (upsert-by-seq). Returns the broadcast message.
    */
   async applyIncoming(edit: IncomingEdit): Promise<ServerMessage> {
     const author = edit.author ?? "you";
@@ -121,8 +123,6 @@ export class Room {
     const seq = ++this.maxSeq;
     applyEdit(this.store, edit.command, author);
     this.appliedOps.set(edit.opId, seq);
-    const entry: EditEntryInput = { seq, command: edit.command, author, time: Date.now(), kind: "edit" };
-    await appendEdits(this.db, this.ownerId, this.projectId, [entry]);
     const applied: ServerMessage = {
       type: "editApplied",
       projectId: this.projectId,
@@ -131,7 +131,10 @@ export class Room {
       author,
       opId: edit.opId,
     };
+    // Broadcast before the persist await, so broadcast order == seq order across concurrent edits.
     this.broadcast(applied);
+    const entry: EditEntryInput = { seq, command: edit.command, author, time: Date.now(), kind: "edit" };
+    await appendEdits(this.db, this.ownerId, this.projectId, [entry]);
     return applied;
   }
 

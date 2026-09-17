@@ -22,6 +22,8 @@ export interface WsOptions {
   token?: string;
   /** The principal every connection maps to (stubbed single owner until real auth). */
   ownerId?: string;
+  /** Trace connection lifecycle + each message to the console. On in dev, off in prod. */
+  log?: boolean;
 }
 
 /** Attach the multiplayer socket server to an existing HTTP server. Returns it for lifecycle control. */
@@ -30,13 +32,16 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
   const ownerId = options.ownerId ?? "local";
   const registry = new RoomRegistry(options.db);
   const wss = new WebSocketServer({ server, path: channels.main.path });
+  const log = options.log ? (message: string) => console.log(`[web-daw ws] ${message}`) : () => {};
 
   wss.on("connection", (socket, request) => {
     const provided = new URL(request.url ?? "", "http://localhost").searchParams.get("token") ?? undefined;
     if (token && provided !== token) {
+      log("connection rejected (unauthorized)");
       socket.close(1008, "unauthorized");
       return;
     }
+    log("connection opened");
     const client: RoomClient = {
       send: (message) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -55,6 +60,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
       }
       const parsed = parseClientMessage(raw);
       if (!parsed.success) {
+        log("dropped an unrecognised message");
         client.send({ type: "error", message: "unrecognised message" });
         return;
       }
@@ -67,6 +73,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         projectId = message.projectId;
         const room = await registry.get(ownerId, projectId);
         await room.subscribe(client);
+        log(`subscribe ${projectId} (now ${room.connectionCount} peer(s))`);
         return;
       }
       // edit: must be for the subscribed project.
@@ -75,11 +82,22 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         return;
       }
       const room = await registry.get(ownerId, message.projectId);
-      await room.applyIncoming({ command: message.command as EditCommand, opId: message.opId, author: message.author });
+      const applied = await room.applyIncoming({
+        command: message.command as EditCommand,
+        opId: message.opId,
+        author: message.author,
+      });
+      if (applied.type === "editApplied")
+        log(`edit ${message.projectId} seq=${applied.seq} ${message.command.type} by ${applied.author}`);
     });
 
     socket.on("close", () => {
-      if (projectId) registry.leave(projectId, client);
+      if (projectId) {
+        registry.leave(projectId, client);
+        log(`connection closed (${projectId})`);
+      } else {
+        log("connection closed");
+      }
     });
   });
 

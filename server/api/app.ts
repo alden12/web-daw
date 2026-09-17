@@ -17,6 +17,7 @@
  */
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
 import { zValidator } from "@hono/zod-validator";
 import type { Db } from "../db/types";
@@ -54,6 +55,8 @@ export interface AppOptions {
   maxJsonBytes?: number;
   /** Max bytes for a binary sample write (default 64 MB). */
   maxSampleBytes?: number;
+  /** Log each HTTP request (method, path, status, duration) to the console. On in dev, off in prod. */
+  logRequests?: boolean;
 }
 
 export function createApp(db: Db, options: AppOptions = {}) {
@@ -74,7 +77,9 @@ export function createApp(db: Db, options: AppOptions = {}) {
 
   return (
     new Hono<Env>()
-      // CORS first, so even a 401 carries the headers the browser needs to read the response.
+      // Request logging first (dev), so it times the whole request incl. later middleware.
+      .use("*", async (c, next) => (options.logRequests ? logger()(c, next) : next()))
+      // CORS next, so even a 401 carries the headers the browser needs to read the response.
       .use("*", cors({ origin: corsOrigin, allowMethods: ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"] }))
       .use("*", async (c, next) => {
         if (token && c.req.header("Authorization") !== `Bearer ${token}`) {

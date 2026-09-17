@@ -126,19 +126,38 @@ export function createApiClient(config: { baseUrl: string; token?: string }): Ap
   };
 }
 
-/** A typed WebSocket wrapper: `send` only accepts `ClientMessage`s, and `onMessage`
- *  delivers validated `ServerMessage`s. Thin transport glue over the contract's message
- *  unions - the live socket server it talks to arrives with the multiplayer work. */
-export function createWsClient(baseUrl: string): {
+/** Derive the WebSocket origin from the HTTP API base URL (they share host/port; the socket lives at
+ *  `channels.main.path`). `http(s)` -> `ws(s)`; a bare host defaults to `ws://`. */
+export function wsBaseFromApiUrl(apiUrl: string): string {
+  const trimmed = apiUrl.replace(/\/$/, "");
+  if (trimmed.startsWith("https://")) return `wss://${trimmed.slice("https://".length)}`;
+  if (trimmed.startsWith("http://")) return `ws://${trimmed.slice("http://".length)}`;
+  if (trimmed.startsWith("ws://") || trimmed.startsWith("wss://")) return trimmed;
+  return `ws://${trimmed}`;
+}
+
+/** A typed WebSocket wrapper: `send` only buffers/sends `ClientMessage`s (queuing until the socket
+ *  opens), and `onMessage` delivers validated `ServerMessage`s. Thin transport glue over the contract's
+ *  message unions. The token rides the query string because a browser `WebSocket` cannot set an
+ *  Authorization header (the server reads `?token=` at the upgrade, mirroring the HTTP bearer gate). */
+export function createWsClient(config: { baseUrl: string; token?: string }): {
   send(message: ClientMessage): void;
   onMessage(handler: (message: ServerMessage) => void): void;
   close(): void;
 } {
-  const url = `${baseUrl.replace(/\/$/, "")}${channels.main.path}`;
+  const base = `${config.baseUrl.replace(/\/$/, "")}${channels.main.path}`;
+  const url = config.token ? `${base}?token=${encodeURIComponent(config.token)}` : base;
   const socket = new WebSocket(url);
+  // Buffer sends made before the socket opens (subscribe fires from the constructor), flush on open.
+  const backlog: ClientMessage[] = [];
+  socket.addEventListener("open", () => {
+    for (const message of backlog) socket.send(JSON.stringify(message));
+    backlog.length = 0;
+  });
   return {
     send(message) {
-      socket.send(JSON.stringify(message));
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+      else backlog.push(message);
     },
     onMessage(handler) {
       socket.addEventListener("message", (event) => {
