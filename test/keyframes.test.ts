@@ -87,6 +87,23 @@ describe("retainedKeyframePath", () => {
   });
 });
 
+describe("KEYFRAME_RING_SIZE", () => {
+  // The interval and the window are tuning knobs and need not divide. A fractional size is fatal:
+  // `emptyKeyframeIndex` asks for `new Array(size)`, which throws on a non-integer.
+  it("is a whole number of slots", () => {
+    expect(Number.isInteger(KEYFRAME_RING_SIZE)).toBe(true);
+    expect(() => emptyKeyframeIndex()).not.toThrow();
+    expect(emptyKeyframeIndex()).toHaveLength(KEYFRAME_RING_SIZE);
+  });
+
+  // The invariant rounding up is there to protect: the slots behind the one being filled have to
+  // reach back at least as far as the retained window, or undo cannot reach an edit the log still
+  // holds. Rounding down would quietly break this.
+  it("spans the retained window", () => {
+    expect((KEYFRAME_RING_SIZE - 1) * KEYFRAME_RETAIN_INTERVAL).toBeGreaterThanOrEqual(KEYFRAME_RETAIN_WINDOW);
+  });
+});
+
 describe("the ring, through the repository", () => {
   /** A project with one track, so a snapshot has something in it to tell copies apart. */
   const projectAt = (tempo: number): ProjectData => {

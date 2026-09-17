@@ -28,8 +28,15 @@ export const KEYFRAME_RETAIN_INTERVAL = 500;
  *  authority's `SNAPSHOT_WINDOW` and the client's `MAX_PERSISTED_ENTRIES`. */
 export const KEYFRAME_RETAIN_WINDOW = 2000;
 
-/** Slots in the ring: enough to span the window, plus the one currently being filled. */
-export const KEYFRAME_RING_SIZE = KEYFRAME_RETAIN_WINDOW / KEYFRAME_RETAIN_INTERVAL + 1;
+/**
+ * Slots in the ring: enough to span the window, plus the one currently being filled.
+ *
+ * Rounded UP, because a fractional count is both meaningless and fatal - `emptyKeyframeIndex` would
+ * ask for `new Array(5.4)` and throw - and because the two constants above are tuning knobs that
+ * need not divide. Up rather than down: the ring has to reach back at least as far as the window,
+ * and a spare slot costs one snapshot.
+ */
+export const KEYFRAME_RING_SIZE = Math.ceil(KEYFRAME_RETAIN_WINDOW / KEYFRAME_RETAIN_INTERVAL) + 1;
 
 /**
  * Storage path for a retained keyframe, addressed by RING SLOT rather than by seq - that is what
