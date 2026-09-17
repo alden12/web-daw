@@ -5604,6 +5604,88 @@ projects:
         id: 01a06cff-6978-764a-8970-f4f03e487f29
         created_at: 2026-09-04T15:17:53.144Z
         updated_at: 2026-09-04T15:17:53.144Z
+      - ref: DAW-31
+        area: DAW
+        title: The transport has a position you can set
+        status: to-do
+        sort_path: "000031"
+        body: >
+          **There is no playhead position.** `Scheduler.getPositionBeats()`
+          returns 0 whenever the transport is stopped, and `play()` always sets
+          `anchorBeat = 0`, so playback begins at `loopStart` every time and the
+          playhead only exists while something is playing. Both rulers draw it
+          at `opacity: 0` when stopped, which is honest: there is nothing to
+          draw.
+
+
+          So there is no way to say "start from here", on any surface. This is
+          not a touch gap - the desktop ruler has never been clickable either,
+          it only carries the two loop handles. Found while building MOBILE-7,
+          whose **Split at playhead** cannot work without it: the position is
+          always beat 0, which is never strictly inside a note, so the row could
+          only ever be disabled. It was built, found inert, and taken back out
+          again (2026-09-04) rather than shipped greyed out.
+
+
+          The same silent zero is behind a quirk nobody had pinned down: **Cmd-V
+          in the roll always pastes at beat 0**, because it pastes at
+          `snapB(scheduler.getPositionBeats())`.
+
+
+          ## The work
+
+
+          1. **A stored position on the scheduler.** `positionBeats`, surviving
+          a stop; `seek(beats)` sets it, re-anchoring if playing so the jump is
+          heard immediately rather than at the next loop. `play()` anchors to it
+          instead of to 0.
+
+          2. **Stop returns the playhead to where playback began**, not to
+          `loopStart` and not to wherever it stopped. That is what makes a
+          scrubbed position durable: set it, audition from it, stop, and it is
+          still where you put it - which is the whole reason for scrubbing
+          before a split. (Pro Tools' leave-it-where-it-stopped loses the
+          position on every audition; Ableton's return-to-start throws away the
+          scrub.)
+
+          3. **Draw the playhead when stopped**, at the position. Currently
+          gated on `isPlaying` in both `PianoRoll` and `ArrangementTimeline`.
+
+          4. **Tap or drag the ruler to seek.** `Ruler` is shared, so the
+          arrangement and the roll get it from one change - as does the drum
+          roll. Snap to the grid; the loop handles already sit on top and keep
+          their own gestures, so this is the ruler's *background* taking the
+          press.
+
+          5. Keep the recorder honest: it maps capture time to beats through
+          `beatAtTime`, which reads the same anchor, so a take recorded after a
+          seek must still land where it was played.
+
+          6. **Restore "Split at playhead"** to the selected note's kebab in the
+          roll (MOBILE-7). It goes out as one `addNotes` - insert-or-replace by
+          id, so the shortened original and the new tail travel together and a
+          split is one undo step - and the row is disabled when the position is
+          not strictly inside the note. The `MenuItem` list becomes a getter
+          again at that point, since the transport is exactly the state the roll
+          does not re-render for.
+
+
+          ## Notes
+
+
+          - The loop wrap is `loopStart + (cont % loopLen)`, so a position
+          outside the loop region needs deciding: clamp it into the region, or
+          let playback run from it and wrap on the first pass. Clamping is
+          probably right, since a playhead outside the loop is a playhead you
+          cannot hear.
+
+          - Worth a look at whether the position belongs on the scheduler or the
+          project. It is view state rather than document state (two people in a
+          shared session do not share a playhead), so the scheduler, and not
+          persisted.
+        id: 01a06e62-8d2f-71ee-a949-33b2be7a9c30
+        created_at: 2026-09-04T21:45:47.567Z
+        updated_at: 2026-09-04T21:49:40.287Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -9001,6 +9083,35 @@ projects:
             audience: user
             id: 019fb8c0-66da-76ff-8744-626e64529fe1
             at: 2026-07-31T15:17:24.826Z
+            actor: claude
+          - body: "**The `touch-action: none` implementation note is superseded**
+              (2026-09-04). It predicted the roll must own its gestures and
+              scroll itself, because a vertical note drag would race the
+              browser's pan. It does not: notes already carry `touch-none` from
+              MOBILE-1, so a drag beginning on a note never starts a pan, and
+              the race never happens. Taking the whole surface would cost the
+              native scroll momentum MOBILE-2 deliberately kept (see
+              `usePinchZoom`'s note on leaving one finger alone). So the roll
+              keeps `pan-x pan-y` and only the notes and their handles opt out.
+              The asymmetry the note describes (roll scrolls in the axis it
+              creates in) still holds, it is just the browser doing the
+              scrolling."
+            audience: user
+            id: 01a06e08-f8ee-7772-b3ca-d4b93b3ce2a9
+            at: 2026-09-04T20:07:56.910Z
+            actor: claude
+          - body: '**Split at the playhead is deferred to DAW-31** (2026-09-04). The ticket
+              says "the touch version is the easy one, so it ships here rather
+              than being deferred" - which was true of the gesture and false of
+              the premise. There is no playhead to split at:
+              `getPositionBeats()` is 0 whenever the transport is stopped and
+              `play()` always anchors to 0, so the row could only ever be
+              disabled. It was built, tried on a phone, found inert, and taken
+              back out with its helper and tests rather than shipped greyed out.
+              DAW-31 gives the transport a position and restores the row.'
+            audience: user
+            id: 01a06e66-32cf-768c-a871-712c3be8f1ad
+            at: 2026-09-04T21:49:46.575Z
             actor: claude
       - ref: MOBILE-8
         area: MOBILE

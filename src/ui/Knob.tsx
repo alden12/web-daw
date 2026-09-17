@@ -13,6 +13,7 @@ import type { SampleAsset } from "../audio/samples/catalog";
 import { SamplePicker } from "./SamplePicker";
 import { pitchName } from "./noteNames";
 import { Select } from "./controls/Select";
+import { Fader } from "./controls/Fader";
 import { authorFillStyle, authorDotStyle, authorHex } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 
@@ -73,8 +74,8 @@ function NoteSelect({
 }
 
 /** A horizontal fader for a number param - label on the left, value on the right, track
- *  stretching between. Used in the compact drum-pad layout. Snaps to `spec.step` via the
- *  store's coercion. */
+ *  stretching between. Used in the compact drum-pad layout. The taper is applied here and the
+ *  track itself is a plain 0..1 `Fader`; `spec.step` is snapped by the store's coercion. */
 function NumberHSlider({
   spec,
   store,
@@ -88,54 +89,19 @@ function NumberHSlider({
 }) {
   const [value] = useParam(store, spec.id);
   const presence = useAuthorPresence();
-  const drag = useRef<{ startX: number; width: number; startNorm: number } | null>(null);
-  const norm = toNormalized(spec, value as number);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { startX: e.clientX, width: e.currentTarget.getBoundingClientRect().width, startNorm: norm };
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current) return;
-    const nextNorm = Math.min(
-      1,
-      Math.max(0, drag.current.startNorm + (e.clientX - drag.current.startX) / drag.current.width),
-    );
-    onChange(spec.id, fromNormalized(spec, nextNorm));
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    drag.current = null;
-  };
 
   return (
-    <label className="flex items-center gap-2 w-full">
+    <div className="flex items-center gap-2 w-full">
       <span className="w-10 shrink-0 text-[9px] uppercase tracking-wide text-muted">{spec.label}</span>
-      <div
-        className="relative flex-1 h-2 rounded-full bg-ground border border-line cursor-ew-resize touch-none focus-visible:[outline:2px_solid_var(--color-you)] focus-visible:outline-offset-2"
-        role="slider"
-        aria-label={spec.label}
-        aria-valuemin={spec.min}
-        aria-valuemax={spec.max}
-        aria-valuenow={value as number}
-        tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-      >
-        <span
-          className="absolute left-0 top-0 bottom-0 rounded-full"
-          style={{ ...authorFillStyle(author ?? "you", presence), width: `${norm * 100}%` }}
-        />
-        <span
-          className="absolute top-1/2 h-3.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-line bg-card shadow"
-          style={{ left: `${norm * 100}%` }}
-        />
-      </div>
-      <span className="w-11 shrink-0 text-right font-mono text-[10px] text-ink">
-        {formatValue(spec, value as number)}
-      </span>
-    </label>
+      <Fader
+        label={spec.label}
+        position={toNormalized(spec, value as number)}
+        onPosition={(position) => onChange(spec.id, fromNormalized(spec, position))}
+        display={formatValue(spec, value as number)}
+        aria={{ now: value as number, min: spec.min, max: spec.max }}
+        fillStyle={authorFillStyle(author ?? "you", presence)}
+      />
+    </div>
   );
 }
 

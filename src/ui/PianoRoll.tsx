@@ -13,6 +13,13 @@
  * - wheel zooms: ctrl/pinch = both axes, Cmd = vertical, Shift = horizontal (cursor-
  *   anchored); plain wheel scrolls.
  *
+ * **Touch has none of the three things that model rests on** - hover, modifiers, and a
+ * pointer you can place inside 6px - so it gets the same model reached differently
+ * (MOBILE-7): a selected note grows finger-sized end handles and a kebab of actions, and
+ * the marquee is off entirely because on a phone that same drag is how you pan. Both live
+ * in `roll/NoteHandles.tsx`. There is no touch *mode*: the affordances are simply sized by
+ * pointer type, so a mouse still gets the drag-edge and the marquee it always had.
+ *
  * Every multi-note gesture commits through ONE plural command (`editNotes` /
  * `addNotes` / `removeNotes`), so a drag is one undo step and one feed entry. The
  * roll edits the track's active clip; its loop handle sets the CLIP length (the
@@ -43,6 +50,7 @@ import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
 import { QUANT_KEYS } from "./quantizeSettings";
 import { Menu, type MenuItem } from "./Menu";
+import { NoteHandles } from "./roll/NoteHandles";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
@@ -112,6 +120,8 @@ const LABEL_TIERS = { naturals: 11, all: 16 };
 type Drag =
   | {
       kind: "move" | "resize";
+      /** Which end a resize is dragging. Unused by a move, which has no end. */
+      edge: "start" | "end";
       ids: string[];
       origin: Map<string, NoteEvent>;
       startBeat: number;
@@ -236,7 +246,8 @@ export function PianoRoll({
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const clampStart = (b: number) => clamp(b, 0, Math.max(0, len - GRID));
   const clampPitch = (p: number) => clamp(p, 0, 127);
-  const clampLen = (l: number, start: number) => clamp(l, snapOn ? snapDiv : GRID, len - start);
+  const minNoteLength = snapOn ? snapDiv : GRID;
+  const clampLen = (l: number, start: number) => clamp(l, minNoteLength, len - start);
 
   // Pointer -> grid coordinates (the grid rect already accounts for scroll).
   const beatAt = (clientX: number) =>
@@ -466,11 +477,57 @@ export function PianoRoll({
   }, [selection, clip.notes, trackId, dispatch, snapOn, snapDiv, len]);
 
   // --- note drag (move / resize) -------------------------------------------
+
+  /**
+   * Move or resize the dragged selection, shared by a drag on a note's body and one on a
+   * selection handle. Every frame commits through one `editNotes`, so a whole drag is one undo
+   * step and one feed entry however many notes it moved.
+   */
+  const onNoteDragMove = (ev: PointerEvent) => {
+    const d = drag.current;
+    if (!d || (d.kind !== "move" && d.kind !== "resize")) return;
+    const dB = snapB(beatAt(ev.clientX) - d.startBeat);
+    if (d.kind === "move") {
+      const dP = pitchAt(ev.clientY) - d.startPitch;
+      if (!d.moved && dB === 0 && dP === 0) return;
+      d.moved = true;
+      const notes = d.ids.map((id) => {
+        const original = d.origin.get(id)!;
+        return { ...original, start: clampStart(original.start + dB), pitch: clampPitch(original.pitch + dP) };
+      });
+      dispatch({ type: "editNotes", trackId, clipId, notes });
+      return;
+    }
+    if (!d.moved && dB === 0) return;
+    d.moved = true;
+    const notes = d.ids.map((id) => {
+      const original = d.origin.get(id)!;
+      if (d.edge === "end") return { ...original, length: clampLen(original.length + dB, original.start) };
+      // Dragging the start end moves the start and leaves the end where it is, which is what
+      // taking hold of that end of anything means. Clamped against the note's own end rather
+      // than the clip's, so it cannot be dragged inside out.
+      const end = original.start + original.length;
+      const start = clamp(original.start + dB, 0, end - minNoteLength);
+      return { ...original, start, length: end - start };
+    });
+    if (notes.length === 1) lastLen.current = notes[0].length;
+    dispatch({ type: "editNotes", trackId, clipId, notes });
+  };
+
+  /** The notes a drag should carry: the selection, or the note being grabbed if it is outside it. */
+  const dragTargets = (ids: Set<string>) => {
+    const picked = clip.notes.filter((note) => ids.has(note.id));
+    return { ids: picked.map((note) => note.id), origin: new Map(picked.map((note) => [note.id, { ...note }])) };
+  };
+
   const onNoteDown = (note: NoteEvent, e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     const noteRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const isEdge = noteRect.right - e.clientX <= RESIZE_PX;
+    // The implicit edge is a mouse affordance only. A fingertip covers far more than 6px, so on
+    // touch it turned "move this note" into "resize it" whenever you grabbed the right-hand end
+    // of a short one - and touch has the handles for that, which are a target you can see.
+    const isEdge = e.pointerType === "mouse" && noteRect.right - e.clientX <= RESIZE_PX;
 
     let sel = new Set(selection);
     if (e.shiftKey) {
@@ -480,37 +537,40 @@ export function PianoRoll({
     setSelection(sel);
     if (e.shiftKey && !sel.has(note.id)) return; // toggled off -> no drag
 
-    const ids = [...sel];
-    const origin = new Map(ids.map((id) => [id, { ...clip.notes.find((note) => note.id === id)! }]));
-    const startBeat = beatAt(e.clientX);
-    const startPitch = pitchAt(e.clientY);
-    drag.current = { kind: isEdge ? "resize" : "move", ids, origin, startBeat, startPitch, moved: false };
-
-    const onMove = (ev: PointerEvent) => {
-      const d = drag.current;
-      if (!d || (d.kind !== "move" && d.kind !== "resize")) return;
-      const dB = snapB(beatAt(ev.clientX) - d.startBeat);
-      if (d.kind === "move") {
-        const dP = pitchAt(ev.clientY) - d.startPitch;
-        if (!d.moved && dB === 0 && dP === 0) return;
-        d.moved = true;
-        const notes = d.ids.map((id) => {
-          const original = d.origin.get(id)!;
-          return { ...original, start: clampStart(original.start + dB), pitch: clampPitch(original.pitch + dP) };
-        });
-        dispatch({ type: "editNotes", trackId, clipId, notes });
-      } else {
-        if (!d.moved && dB === 0) return;
-        d.moved = true;
-        const notes = d.ids.map((id) => {
-          const original = d.origin.get(id)!;
-          return { ...original, length: clampLen(original.length + dB, original.start) };
-        });
-        if (notes.length === 1) lastLen.current = notes[0].length;
-        dispatch({ type: "editNotes", trackId, clipId, notes });
-      }
+    drag.current = {
+      kind: isEdge ? "resize" : "move",
+      edge: "end",
+      ...dragTargets(sel),
+      startBeat: beatAt(e.clientX),
+      startPitch: pitchAt(e.clientY),
+      moved: false,
     };
-    beginPointerDrag(onMove, () => {
+    beginPointerDrag(onNoteDragMove, () => {
+      drag.current = null;
+    });
+  };
+
+  /**
+   * Drag the selection from one of its floating grips (MOBILE-7). Exactly the drags a mouse
+   * runs on the note itself, entered from targets you can actually hit: from either end, which
+   * the implicit edge never offered because there was no room for a second invisible one, and
+   * from a grip clear of the note, because a fingertip on a 12px note covers it.
+   *
+   * The grip's offset from the note does not need accounting for - the drag works in deltas
+   * from wherever the finger landed, so the note simply keeps its distance from it.
+   */
+  const onGripDown = (kind: "move" | "resize", edge: "start" | "end", e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    drag.current = {
+      kind,
+      edge,
+      ...dragTargets(selection),
+      startBeat: beatAt(e.clientX),
+      startPitch: pitchAt(e.clientY),
+      moved: false,
+    };
+    beginPointerDrag(onNoteDragMove, () => {
       drag.current = null;
     });
   };
@@ -583,6 +643,52 @@ export function PianoRoll({
       setSelection(new Set([id]));
     });
   };
+
+  // --- the selected note's own actions (MOBILE-7) ---------------------------
+  // One note only: a group has its own handles and its own answer to what "resize" means, and
+  // that is the next slice of this ticket.
+  const selectedNote = selection.size === 1 ? (clip.notes.find((note) => selection.has(note.id)) ?? null) : null;
+
+  // Split belongs here too, at the playhead rather than at a tap point - but there is no
+  // playhead to split at. `getPositionBeats()` is 0 whenever the transport is stopped and
+  // `play()` always anchors to 0, so the position is never inside a note and the row could only
+  // ever be disabled. It comes back with DAW-31, which gives the transport a position.
+
+  /** A copy directly after the original, which is the only placement that needs no aiming. */
+  const duplicateNote = (note: NoteEvent) => {
+    const id = newNoteId();
+    dispatch({
+      type: "addNotes",
+      trackId,
+      clipId,
+      notes: [{ ...note, id, start: clampStart(note.start + note.length) }],
+    });
+    setSelection(new Set([id]));
+  };
+
+  const noteMenuItems = (note: NoteEvent): MenuItem[] => [
+    {
+      label: "Velocity",
+      fader: {
+        // Already a fraction, so the fader's 0..1 needs no conversion.
+        position: note.velocity,
+        onPosition: (position) =>
+          dispatch({ type: "editNotes", trackId, clipId, notes: [{ ...note, velocity: position }] }),
+        display: String(Math.round(note.velocity * 100)),
+        aria: { now: Math.round(note.velocity * 100), min: 0, max: 100 },
+      },
+    },
+    { separator: true },
+    { label: "Duplicate", onClick: () => duplicateNote(note) },
+    {
+      label: "Delete",
+      danger: true,
+      onClick: () => {
+        dispatch({ type: "removeNotes", trackId, clipId, ids: [note.id] });
+        setSelection(new Set());
+      },
+    },
+  ];
 
   // --- velocity lane --------------------------------------------------------
   const onVelDown = (note: NoteEvent, e: React.PointerEvent) => {
@@ -857,6 +963,21 @@ export function PianoRoll({
                   </div>
                 );
               })}
+
+              {selectedNote && (
+                <NoteHandles
+                  note={selectedNote}
+                  topPitch={MAX_PITCH}
+                  pxPerBeat={pxPerBeat}
+                  rowH={rowH}
+                  leadX={gutter}
+                  leadY={RULER_H}
+                  scrollRef={scrollRef}
+                  onResize={(edge, event) => onGripDown("resize", edge, event)}
+                  onMove={(event) => onGripDown("move", "end", event)}
+                  menuItems={noteMenuItems(selectedNote)}
+                />
+              )}
 
               {marquee && (
                 <div
