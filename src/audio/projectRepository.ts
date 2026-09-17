@@ -21,6 +21,17 @@ import type { Author, EditEntry } from "./commands/types";
 import type { FeedNote, UndoState } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument } from "./project/documentMigration";
+import { ProjectStore } from "./project/projectStore";
+import { applyEdit } from "./commands/applyEdit";
+
+/** `project.json` carries this keyframe marker: the edit `seq` the snapshot reflects, so load
+ *  knows which log tail to replay on top. A persistence detail (the domain ignores it); the
+ *  server's non-strict `projectDataSchema` tolerates the extra key. */
+type PersistedProject = ProjectData & { headSeq?: number };
+
+/** Fold the edit log's high-water seq (edits + feed notes share the counter). */
+const highWaterSeq = (log: { seq: number }[], notes: { seq: number }[]): number =>
+  Math.max(-1, ...log.map((entry) => entry.seq), ...notes.map((note) => note.seq));
 
 const FORMAT_VERSION = 1;
 /** Schema version of `project.json`. We do not support older shapes (single-user app). */
@@ -83,10 +94,20 @@ export class ProjectRepository {
   private name = "Untitled";
   private saveChain: Promise<void> = Promise.resolve();
   private readonly store: BundleStore;
+  /** Highest SEALED edit seq already synced (entries below are immutable; the last, still-coalescing
+   *  entry sits above it and is re-sent each append so its final value lands). */
+  private syncedThroughSeq = -1;
+  /** Edit seq the last-written `project.json` keyframe reflects (the replay floor). */
+  private lastKeyframeSeq = -1;
 
   constructor(store: BundleStore, projectId: string | null = null) {
     this.store = store;
     this.projectId = projectId;
+  }
+
+  /** Seq the last keyframe reflects; drives the autosave keyframe cadence. -1 = never keyframed. */
+  keyframeSeq(): number {
+    return this.lastKeyframeSeq;
   }
 
   /** The project's display name (from meta.json; "Untitled" until loaded/renamed). */
@@ -108,7 +129,9 @@ export class ProjectRepository {
     this.projectId = manifest.projectId;
     const projectRaw = await this.store.readText("project.json");
     if (!projectRaw) return null;
-    const project = await this.upcast(JSON.parse(projectRaw), manifest);
+    const migrated = (await this.upcast(JSON.parse(projectRaw), manifest)) as PersistedProject;
+    const { headSeq, ...base } = migrated;
+    const baseProject = base as ProjectData;
     const metaRaw = await this.store.readText("meta.json");
     if (metaRaw) {
       try {
@@ -119,11 +142,28 @@ export class ProjectRepository {
     }
     const logRaw = await this.store.readText("log.json");
     const notesRaw = await this.store.readText("notes.json");
-    return {
-      project,
-      log: logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [],
-      notes: notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [],
-    };
+    const feedFromFile = logRaw ? (JSON.parse(logRaw) as EditEntry[]) : [];
+    const notes = notesRaw ? (JSON.parse(notesRaw) as FeedNote[]) : [];
+
+    // Reconstruct HEAD from the keyframe + the edit tail: the keyframe (`project.json`) reflects
+    // seq `headSeq`; replay the log entries after it through `applyEdit` to reach the true working
+    // state. Only kind:"edit" entries are pure-forward (undo/redo force a keyframe, so the tail
+    // never carries them). Legacy bundles have no `headSeq` and an empty edit log, so this no-ops
+    // and `project.json` is authoritative, as before.
+    const tail = headSeq != null ? await this.store.readEdits(headSeq) : [];
+    let project = baseProject;
+    if (tail.length > 0) {
+      const replayStore = new ProjectStore(false);
+      replayStore.load(baseProject);
+      for (const entry of tail) {
+        if (entry.kind !== "undo" && entry.kind !== "redo") applyEdit(replayStore, entry.command, entry.author);
+      }
+      project = replayStore.snapshot();
+    }
+    this.lastKeyframeSeq = headSeq ?? -1;
+    // Everything on disk is already sealed history, so nothing below the max needs re-sending.
+    this.syncedThroughSeq = Math.max(headSeq ?? -1, highWaterSeq(tail, []));
+    return { project, log: [...feedFromFile, ...tail], notes };
   }
 
   /**
@@ -143,25 +183,59 @@ export class ProjectRepository {
     return data as ProjectData;
   }
 
-  /** Persist the working snapshot + log + feed notes. Writes are serialized so they never overlap. */
-  save(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
-    const run = () => this.writeAll(project, log, notes);
+  /**
+   * Append authored edits to the log (the delta). Sends everything above the last sealed seq: the
+   * last entry may still be coalescing, so it is re-sent each call (the store upserts by seq) to
+   * carry its final value; entries below it are immutable and sent once. Serialized with saves.
+   */
+  appendEdits(entries: EditEntry[]): Promise<void> {
+    const run = async () => {
+      const toSend = entries.filter((entry) => entry.seq > this.syncedThroughSeq);
+      if (toSend.length === 0) return;
+      await this.store.appendEdits(toSend);
+      // Seal all but the last entry (only the last can still coalesce, so keep re-sending it).
+      if (entries.length >= 2) this.syncedThroughSeq = entries[entries.length - 2].seq;
+    };
     this.saveChain = this.saveChain.then(run, run);
     return this.saveChain;
   }
 
-  private async writeAll(project: ProjectData, log: EditEntry[], notes: FeedNote[]): Promise<void> {
+  /**
+   * Write the working snapshot as a keyframe: `project.json` records the edit `seq` it reflects
+   * (`headSeq`), so load replays only the tail after it. The feed (`log.json`/`notes.json`) + meta
+   * ride along. Writes are serialized so they never overlap.
+   */
+  writeKeyframe(project: ProjectData, headSeq: number, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
+    const run = () => this.writeKeyframeNow(project, headSeq, log, notes);
+    this.saveChain = this.saveChain.then(run, run);
+    return this.saveChain;
+  }
+
+  private async writeKeyframeNow(
+    project: ProjectData,
+    headSeq: number,
+    log: EditEntry[],
+    notes: FeedNote[],
+  ): Promise<void> {
     if (!this.projectId) this.projectId = `p-${crypto.randomUUID().slice(0, 8)}`;
     const manifest: Manifest = {
       formatVersion: FORMAT_VERSION,
       projectId: this.projectId,
       projectSchema: PROJECT_SCHEMA,
     };
+    const keyframe: PersistedProject = { ...project, headSeq };
     await this.store.writeText("manifest.json", JSON.stringify(manifest));
-    await this.store.writeText("project.json", JSON.stringify(project));
+    await this.store.writeText("project.json", JSON.stringify(keyframe));
     await this.store.writeText("log.json", JSON.stringify(log.slice(-MAX_PERSISTED_ENTRIES)));
     await this.store.writeText("notes.json", JSON.stringify(notes.slice(-MAX_PERSISTED_ENTRIES)));
     await this.store.writeText("meta.json", JSON.stringify({ name: this.name, modifiedAt: new Date().toISOString() }));
+    this.lastKeyframeSeq = headSeq;
+  }
+
+  /** A full write (keyframe + the whole log appended) for non-autosave callers: switch/create/import. */
+  save(project: ProjectData, log: EditEntry[], notes: FeedNote[] = []): Promise<void> {
+    this.writeKeyframe(project, highWaterSeq(log, notes), log, notes);
+    return this.appendEdits(log);
   }
 
   /** Store an audio sample, returning its content hash (its `fileId`). Dedups. */

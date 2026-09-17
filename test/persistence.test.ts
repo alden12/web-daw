@@ -97,6 +97,65 @@ describe("project + edit-log persistence", () => {
     expect(entries.map((e) => e.author)).toEqual(["you", "claude"]);
   });
 
+  it("reconstructs HEAD from a keyframe plus a replayed edit tail", async () => {
+    // Simulate a stale keyframe with edits appended after it (the delta case): the working state
+    // on reload must equal the live snapshot, rebuilt by replaying the tail through applyEdit.
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+
+    // Distinct-target edits (no coalescing), so seqs are stable and the keyframe is consistent.
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.dispatch({ type: "createTrack", instrumentType: "fm", id: "t-2" });
+    // Keyframe reflecting only the first two edits.
+    await repo.writeKeyframe(project.snapshot(), log.getEntries().at(-1)!.seq, log.getEntries(), []);
+    // Two more edits AFTER the keyframe - appended to the log, not folded into a new keyframe.
+    log.dispatch({ type: "setTempo", bpm: 140 });
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-3" });
+    await repo.appendEdits(log.getEntries());
+    const live = project.snapshot();
+
+    // Reload with a fresh repo over the same bundle.
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+
+    expect(project2.snapshot()).toEqual(live); // keyframe + replayed tail == live HEAD
+    expect(project2.tempo).toBe(140);
+    expect(project2.getTrack("t-3")?.kind).toBe("instrument");
+    // The feed still shows the whole authored history (keyframe's log.json + the tail).
+    expect(log2.getEntries().map((e) => e.command.type)).toEqual([
+      "createTrack",
+      "createTrack",
+      "setTempo",
+      "createTrack",
+    ]);
+  });
+
+  it("autosave forces a keyframe on undo, so a reload keeps the undone state (not the resurrected edit)", async () => {
+    vi.useFakeTimers();
+    const store = new MemoryBundleStore();
+    const repo = new ProjectRepository(store);
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log, repo);
+
+    log.dispatch({ type: "createTrack", instrumentType: "subtractive", id: "t-1" });
+    log.dispatch({ type: "setTempo", bpm: 100 });
+    await vi.runAllTimersAsync(); // keyframe reflecting both edits
+    log.undo(); // tempo back to 120; appends a kind:"undo" entry (not replayable forward)
+    await vi.runAllTimersAsync(); // autosave must FORCE a keyframe here
+    dispose();
+    vi.useRealTimers();
+
+    const project2 = new ProjectStore(false);
+    const log2 = new EditLog(project2);
+    await restoreProject(project2, log2, new ProjectRepository(store));
+    // If the undo hadn't forced a keyframe, replaying the tail would skip it and resurrect bpm 100.
+    expect(project2.tempo).toBe(120);
+  });
+
   it("persists a feed note posted with no following edit (saved via the log subscription)", async () => {
     vi.useFakeTimers();
     const repo = new ProjectRepository(new MemoryBundleStore());

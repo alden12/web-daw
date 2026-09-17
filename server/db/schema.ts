@@ -59,12 +59,13 @@ export const files = pgTable(
 );
 
 /**
- * The append-only edit log: one row per authored edit, keyed `(projectId, seq)` with the
- * client's monotonic `seq`. This is the delta stream - autosave appends new entries instead of
- * re-uploading the whole `project.json`, and load reconstructs HEAD by replaying entries after
- * the last keyframe. Append-only and immutable per `seq` (like a commit): a re-sent entry is an
- * idempotent no-op, never an overwrite. FK to `projects` with ON DELETE RESTRICT (deletion is
- * soft, on the project row). The command payload is stored as jsonb (valid-JSON-checked, queryable).
+ * The edit log: one row per authored edit, keyed `(projectId, seq)` with the client's monotonic
+ * `seq`. This is the delta stream - autosave appends new entries instead of re-uploading the whole
+ * `project.json`, and load reconstructs HEAD by replaying entries after the last keyframe. The
+ * working log is MUTABLE per `seq` (append is an upsert): a coalescing edit - a knob drag - folds
+ * into its entry in place without minting a new seq, so a re-send updates it. (This is the working
+ * stream; the durable write-once history is the commit DAG.) FK to `projects` with ON DELETE
+ * RESTRICT (deletion is soft). The command payload is jsonb (valid-JSON-checked, queryable).
  */
 export const edits = pgTable(
   "edits",
