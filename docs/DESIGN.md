@@ -240,6 +240,20 @@ Note: Claude Code / Claude Desktop over MCP already gives a capable agent on you
 subscription (no per-token API key) - the in-app panel adds the embedded UX and reaches the
 general "just open the app" user.
 
+**MCP transport, local now / remote later (roadmap).** Today the MCP loop is entirely *local*:
+the Node MCP server runs on the user's own machine (started by their MCP client over stdio) and
+listens on `ws://localhost:8765`; the browser tab connects *out* to it. This keeps working after
+the web app is deployed - a hosted `https://` tab may still open `ws://localhost` (browsers treat
+localhost as a secure-context exception), so a user running the local server drives their open
+tab as before, and those edits flow through the same `dispatch("claude")` seam into the shared
+session. That is fine for the tinkerer audience and needs nothing from hosting. **Deferred: a
+remote/hosted MCP** so a user need not run a local process - the MCP server would reach the
+project through the **sync authority** (server-side, addressed by `projectId` + the user's
+principal) instead of a localhost socket, gated by the same JWT auth. This overlaps heavily with
+the in-app agent panel (the client-side agent loop over the shared tool catalog), which is the
+more natural "hosted agent" path; build the panel first and treat server-side MCP as the
+power-user API onto the same authority. Not needed while local MCP suffices.
+
 ## 10. Proposed on-disk project format (the concrete next step)
 
 Everything tinker-related (file viewer, IDE editing, git history, import/export, sharing)
@@ -1912,9 +1926,20 @@ offline fallback, and bundle export/import (`.daw.zip`) stays as the portability
     is one room keyed by `projectId` and a member's edits persist under the owner (an unauthorized subscribe
     is refused, closing 1008). And the **project index moved onto the `projects` table**: `GET /projects`
     returns `{ id, name, modifiedAt, role }[]` (the `ProjectStorage` seam's `listProjectIds -> listProjects`),
-    killing the per-project `meta.json` read on the remote path. Deferred to a **cleanup follow-up**: retire
-    `DAW_API_TOKEN` end to end, and the fuller server-side `meta.json` retirement (have the authority update
-    `projects.name` on a `renameProject` edit; `meta.json` stays only as the OPFS/offline fallback index).
+    killing the per-project `meta.json` read on the remote path.
+    **Auth cleanup (slice 80, done):** the Auth-C follow-ups + a polish. (a) **Retired `DAW_API_TOKEN`**
+    end to end - `makeDevResolver` keeps only the `"local"` dev principal (open locally; production always
+    sets the JWT config), and `VITE_DAW_API_TOKEN` is gone (the client sends the Supabase JWT or nothing).
+    (b) **Email-based edit identity** - `author` (the colour key + feed label) is now the signed-in
+    **email**, not the display name, so two logins of the same person stay distinct; the feed shows "You"
+    for your own edits, emails for collaborators. One-line change in the `AuthGate` bridge (no schema/wire
+    change - `author` stays a free string). (c) **Rename propagates live** - the authority calls
+    `setProjectName` when it applies a `renameProject` edit (so `projects.name` is authoritative without the
+    renamer pushing `meta.json`), and a peer patches its library-list label straight from the edit via a new
+    `SharedSession.onRemoteEdit` hook -> `patchProjectName`. (d) **Account avatar + panel** - a rail avatar
+    (your colour + initials) above the settings gear opens an account panel (name, email, sign out; the
+    single home for sign-out now). Still deferred: the fuller server-side `meta.json` retirement (keep it
+    only as the OPFS/offline fallback index).
     Do auth **before** Phase B/C - it changes the ownership/principal model both build on.
     Then: **Phase B** (server-side history/keyframe/commits), **Phase C** (presence), **Phase D**
     (solo-offline PWA).

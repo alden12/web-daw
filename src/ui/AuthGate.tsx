@@ -21,8 +21,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
 function GatedApp({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(subscribeAuth, readAuthState, readAuthState);
 
-  // Keep the edit-author identity in step with the session (reset to the default on sign-out).
-  const identity = state.status === "signed-in" ? state.user.name : state.status === "signed-out" ? DEFAULT_USER : null;
+  // Keep the edit-author identity in step with the session (reset to the default on sign-out). We stamp
+  // the EMAIL, not the display name: it's unique per account (two logins of the same person share a name
+  // but not an email), so collaborators stay distinct in the feed and in colour. The readable display
+  // name still drives the account avatar/panel; only edit attribution uses the email.
+  const identity =
+    state.status === "signed-in"
+      ? (state.user.email ?? state.user.name)
+      : state.status === "signed-out"
+        ? DEFAULT_USER
+        : null;
   useEffect(() => {
     if (identity) writeCurrentUser(identity);
   }, [identity]);

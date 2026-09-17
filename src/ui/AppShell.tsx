@@ -16,6 +16,7 @@ import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
 import { attachAutosave } from "../audio/persistence";
 import { initProjects } from "../audio/projects/operations";
+import { patchProjectName } from "../audio/projects/library";
 import { currentProjectId } from "../audio/projectRepository";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
@@ -30,6 +31,7 @@ import { CenterWorkbench } from "./CenterWorkbench";
 import { AgentPanel } from "./AgentPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { SharePanel } from "./SharePanel";
+import { AccountPanel } from "./AccountPanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
 import { AuthorColorsProvider } from "./authorColorsContext";
@@ -122,6 +124,7 @@ export function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The project being shared (its id + name), or null when the Share panel is closed.
   const [share, setShare] = useState<{ id: string; name: string } | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
@@ -216,6 +219,11 @@ export function AppShell() {
           projectId: currentProjectId(),
           baseSeq,
           onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+          // A peer renaming the project: update our library-list label straight from the edit (the store
+          // already applied it), so the dropdown reflects it live without a reload.
+          onRemoteEdit: (command) => {
+            if (command.type === "renameProject") patchProjectName(currentProjectId(), command.name);
+          },
         });
         session.attach();
         disposePersistence = () => session.close();
@@ -330,6 +338,7 @@ export function AppShell() {
             onSelect={selectView}
             onToggleCollapse={() => setLibCollapsed(!libCollapsed)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenAccount={() => setAccountOpen(true)}
           />
           {!libCollapsed && (
             <LibraryPanel
@@ -415,6 +424,7 @@ export function AppShell() {
           />
         )}
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
+        {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} />}
       </div>
     </AuthorColorsProvider>

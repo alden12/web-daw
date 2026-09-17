@@ -24,6 +24,7 @@ import {
   readEdits,
   readFile,
   resolveProjectAccess,
+  setProjectName,
   type Accessor,
   type EditEntryInput,
 } from "../db/store";
@@ -155,6 +156,9 @@ export class Room {
     this.broadcast(applied);
     const entry: EditEntryInput = { seq, command: edit.command, author, time: Date.now(), kind: "edit" };
     await appendEdits(this.db, { userId: this.ownerId }, this.projectId, [entry]);
+    // Keep the queryable index name current on a rename, so every collaborator's listing reflects it
+    // without the renamer pushing meta.json (a peer never writes the owner's meta.json).
+    if (edit.command.type === "renameProject") await setProjectName(this.db, this.projectId, this.store.name);
     return applied;
   }
 

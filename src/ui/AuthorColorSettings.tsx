@@ -10,7 +10,7 @@ import type { EditLog } from "../audio/commands/editLog";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { writeAuthorColors, colorForAuthor, SWATCHES, type AuthorColorConfig } from "./authorColors";
 import { readCurrentUser, writeCurrentUser, subscribeCurrentUser, DEFAULT_USER } from "./currentUser";
-import { authEnabled, signOut } from "../auth/session";
+import { authEnabled } from "../auth/session";
 import { authorLabel } from "./authorStyle";
 import { voiceLabel, type Voice } from "./authorVoice";
 
@@ -38,7 +38,10 @@ export function AuthorColorSettings({ config, editLog }: { config: AuthorColorCo
 
   return (
     <div className="flex flex-col gap-4">
-      <IdentityField currentUser={currentUser} config={config} onPick={pick} />
+      {/* With auth on, your own identity + colour live in the account panel (rail avatar); here we only
+          show the AI voices and collaborators. In local/dev mode there's no account panel, so the
+          self-identity field stays here. */}
+      {!authEnabled && <IdentityField currentUser={currentUser} config={config} onPick={pick} />}
       {VOICES.map(({ voice, hint }) => (
         <SwatchRow
           key={voice}
@@ -148,16 +151,8 @@ function IdentityField({
         <span className="text-[11px] text-faint">edits are stamped with this name</span>
       </div>
       {authEnabled ? (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[12.5px] font-medium text-bright truncate">{currentUser}</span>
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="shrink-0 text-[11px] text-muted hover:text-ink border border-line rounded-md px-2 py-1 cursor-pointer"
-          >
-            Sign out
-          </button>
-        </div>
+        // Signed in: the identity is fixed (your email); sign-out lives in the account panel (rail avatar).
+        <span className="text-[12.5px] font-medium text-bright truncate">{currentUser}</span>
       ) : (
         <input
           type="text"

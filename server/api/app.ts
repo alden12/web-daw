@@ -56,18 +56,13 @@ const DEFAULT_MAX_JSON_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_SAMPLE_BYTES = 64 * 1024 * 1024;
 
 export interface AppOptions {
-  /** Real auth: verify a Supabase (or any OIDC) JWT against this JWKS/issuer. When set, it replaces the
-   *  shared-token gate and the principal is the token's user. When unset, the app runs in dev-stub mode
-   *  (`token` + `ownerId` below). */
+  /** Real auth: verify a Supabase (or any OIDC) JWT against this JWKS/issuer. When set, the principal is
+   *  the token's user; when unset, the app runs in dev-stub mode (the single `ownerId` below, open). */
   auth?: AuthConfig;
   /** Inject a pre-built principal resolver (tests use this to verify against a local key set). Takes
-   *  precedence over `auth`/`token`/`ownerId`. */
+   *  precedence over `auth`/`ownerId`. */
   resolvePrincipal?: ResolvePrincipal;
-  /** Dev-stub: shared bearer token. When empty/unset, the API runs open (local dev). The entry
-   *  point passes DAW_API_TOKEN; kept off `process` here so the app stays importable
-   *  under any tsconfig. */
-  token?: string;
-  /** Dev-stub: the single principal every request maps to (until real auth supplies it). */
+  /** Dev-stub: the single principal every request maps to (local dev / tests; default "local"). */
   ownerId?: string;
   /** Allowed CORS origin(s). Default "*" (the app runs on a different port in dev, and the
    *  bearer token, not a cookie, is the gate). Narrow this to the app origin on deploy. */
@@ -82,12 +77,10 @@ export interface AppOptions {
 
 export function createApp(db: Db, options: AppOptions = {}) {
   // Resolve identity through one seam: an injected resolver (tests) > real JWT verification (`auth`) >
-  // the dev-stub shared-token gate. Handlers below are principal-agnostic - they read `c.get("ownerId")`.
+  // the dev-stub principal. Handlers below are principal-agnostic - they read `c.get("ownerId")`.
   const resolvePrincipal =
     options.resolvePrincipal ??
-    (options.auth
-      ? makeJwtResolver(db, options.auth)
-      : makeDevResolver(db, { token: options.token, devUserId: options.ownerId }));
+    (options.auth ? makeJwtResolver(db, options.auth) : makeDevResolver(db, { devUserId: options.ownerId }));
   const corsOrigin = options.corsOrigin ?? "*";
   const maxJsonBytes = options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES;
   const maxSampleBytes = options.maxSampleBytes ?? DEFAULT_MAX_SAMPLE_BYTES;

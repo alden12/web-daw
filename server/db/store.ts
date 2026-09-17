@@ -350,6 +350,18 @@ export async function removeMember(db: Db, projectId: string, email: string): Pr
     .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.email, normalizeEmail(email))));
 }
 
+/**
+ * Set the project's index name + bump modifiedAt. The realtime authority calls this when it applies a
+ * `renameProject` edit, so `projects.name` stays current for every collaborator's listing without
+ * depending on the renamer's client pushing meta.json - a peer never writes the owner's meta.json.
+ */
+export async function setProjectName(db: Db, projectId: string, name: string): Promise<void> {
+  await db
+    .update(projects)
+    .set({ name: name.trim() || "Untitled", modifiedAt: sql`now()` })
+    .where(eq(projects.id, projectId));
+}
+
 /** meta.json -> projects.name + modifiedAt (so the list is queryable without reading files). */
 async function syncMeta(db: Db, projectId: string, json: unknown): Promise<void> {
   const meta = json as { name?: string; modifiedAt?: string } | null;

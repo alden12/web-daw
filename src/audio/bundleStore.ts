@@ -302,7 +302,7 @@ export function getProjectStorage(): ProjectStorage {
     const apiUrl = import.meta.env?.VITE_DAW_API_URL;
     if (apiUrl) {
       // Pass the token *getter* (not a snapshot) so a live Supabase session token is read per request;
-      // it falls back to the static VITE_DAW_API_TOKEN when auth is off.
+      // it yields undefined when auth is off (the dev-stub server is open).
       storageSingleton = new RemoteProjectStorage(apiUrl, getAccessToken);
     } else if (typeof navigator !== "undefined" && !!navigator.storage?.getDirectory) {
       storageSingleton = new OpfsProjectStorage();

@@ -11,6 +11,7 @@ import type { CommitSummary, VersionStore } from "../audio/commands/history";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { VersionTimeline } from "./VersionTimeline";
 import { colorForAuthor } from "./authorColors";
+import { authorLabel } from "./authorStyle";
 import { useAuthorPresence } from "./authorColorsContext";
 
 export function ActivityView({ editLog, versionStore }: { editLog: EditLog; versionStore: VersionStore }) {
@@ -18,6 +19,8 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
   // Per-author accent (hex), perspective-relative: my own edits read teal, every collaborator in their
   // own stable hue (not collapsed to one of three voice classes).
   const { config, self } = useAuthorPresence();
+  // The author id is now an email; show "You" for my own edits rather than my raw address.
+  const label = (author: string) => (author === self ? "You" : authorLabel(author));
   const [tab, setTab] = useState<"activity" | "versions">("activity");
 
   // Commits, loaded from the version store and refreshed when it changes, so the
@@ -75,7 +78,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   <li
                     key={`c-${c.id}`}
                     className="flex items-center gap-2 px-2.5 py-1 my-0.5 text-faint"
-                    title={`${c.auto ? "Autosaved" : "Saved"} · ${c.message} (by ${c.author})`}
+                    title={`${c.auto ? "Autosaved" : "Saved"} · ${c.message} (by ${label(c.author)})`}
                   >
                     <span className="h-px w-3 shrink-0 bg-line" />
                     <span className="font-mono text-[10px] min-w-0 truncate">
@@ -113,7 +116,7 @@ export function ActivityView({ editLog, versionStore }: { editLog: EditLog; vers
                   <span className={`font-mono text-[11.5px] truncate ${isUndoRedo ? "text-muted italic" : "text-ink"}`}>
                     {editLog.describe(entry)}
                   </span>
-                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{entry.author}</span>
+                  <span className="ml-auto font-mono text-[10px] text-faint shrink-0">{label(entry.author)}</span>
                 </li>
               );
             })}
