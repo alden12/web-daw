@@ -4227,9 +4227,14 @@ projects:
           ## Next steps
 
 
-          - Capture the trace on retry (`trace: "on-first-retry"`) and keep the
-          artifact, so the next
-            occurrence is diagnosable instead of re-run away. Cheap, do this first.
+          - ~~Capture the trace on retry~~ **done on slice-122, and the
+          setting was the problem.**
+            `trace: "on-first-retry"` was already configured, but `retries` is 0 locally, so it never
+            fired where the flake is actually hit: a local failure produced no artifact at all. Now
+            `retain-on-failure`, which writes on any failure, changes no retry behaviour and hides
+            nothing. Traces land in `test-results/` (gitignored), so the next sighting is
+            diagnosable. **Read one before doing any of the below** - they are guesses, and there is
+            now evidence to be had.
           - Check whether the workers share a Vite warmup: a `webServer`
           readiness probe that hits the app
             route once before the suite starts would rule (1) in or out.
