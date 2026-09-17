@@ -15,7 +15,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "server": "tsx server/index.ts",
-    "api": "tsx --env-file-if-exists=.env server/api/index.ts",
+    "api": "tsx watch --env-file-if-exists=.env server/api/index.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
