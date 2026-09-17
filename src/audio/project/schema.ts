@@ -288,25 +288,6 @@ export const commitSchema = z.object({
   lastSeq: z.number(),
 });
 
-/**
- * `undo.json`: two lists of edit `id`, which is the whole file now that undo rebuilds the project
- * from a keyframe with those entries left out (DAW-34).
- *
- * Ids rather than seqs since stage E. A `seq` is an order the authority assigns, so a hosted
- * session's log comes back renumbered and a stack written against client seqs named nothing; an id
- * is minted by whoever made the edit and never changes.
- *
- * Neither the old seq shape nor the older one before it - a base snapshot plus a command and an
- * inverse per step, with a `state` fingerprint guarding against applying a stale one - parses here,
- * and both are discarded on load. That is the intended outcome rather than a migration to write:
- * the file holds session-scoped undo state, never user work, and one reload with undo unavailable
- * is what an unreadable stack should cost.
- */
-export const undoStateSchema = z.object({
-  undo: z.array(z.string()),
-  redo: z.array(z.string()),
-});
-
 /* -------------------------------------------------------------------------- */
 /* Inferred document types (re-exported through project/types.ts)             */
 /* -------------------------------------------------------------------------- */
@@ -338,7 +319,6 @@ const byPath: Record<string, z.ZodType> = {
   "project.json": projectDataSchema,
   "log.json": logSchema,
   "notes.json": notesSchema,
-  "undo.json": undoStateSchema,
   "history/refs.json": refsSchema,
   [KEYFRAME_INDEX_PATH]: keyframeIndexSchema,
 };

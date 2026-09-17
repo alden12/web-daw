@@ -171,6 +171,51 @@ describe("an undo reaches the peers", () => {
   });
 });
 
+/**
+ * Whose edit does undo take back? Yours. It was already true - `recordRemote` never pushed a peer's
+ * edit onto the local stack - but it was true by accident rather than by design, undocumented and
+ * one careless line from breaking. These pin it (DAW-34 stage E).
+ */
+describe("undo is scoped to its author", () => {
+  it("takes back YOUR last edit, not whoever edited most recently", async () => {
+    const { author, peer } = await twoClients();
+    author.log.dispatch(track("t-a"));
+    await author.pump();
+    author.flush();
+    peer.flush();
+
+    peer.log.dispatch(track("t-b")); // the peer edits LAST
+    await peer.pump();
+    peer.flush();
+    author.flush();
+
+    // So the most recent edit in the author's log is the peer's, and its own stack does not hold it.
+    expect(author.log.getEntries().at(-1)?.author).not.toBe(author.log.getCheckpoints().undo.at(-1));
+    expect(author.log.getCheckpoints().undo).toEqual(["a-0"]);
+
+    author.log.undo();
+    await author.pump();
+    author.flush();
+
+    expect(author.store.getTrack("t-a")).toBeUndefined(); // yours went
+    expect(author.store.getTrack("t-b")).toBeTruthy(); // theirs stayed
+  });
+
+  it("leaves a peer nothing of yours to take back either", async () => {
+    const { author, peer } = await twoClients();
+    author.log.dispatch(track("t-a"));
+    await author.pump();
+    author.flush();
+    peer.flush();
+
+    // The peer has the edit in its project and its feed, and nothing in its undo stack.
+    expect(peer.store.getTrack("t-a")).toBeTruthy();
+    expect(peer.log.getEntries().some((entry) => entry.id === "a-0")).toBe(true);
+    expect(peer.log.getCheckpoints().undo).toEqual([]);
+    expect(peer.log.getState().canUndo).toBe(false);
+  });
+});
+
 describe("a room cold-starting honours the tombstones in its log", () => {
   it("comes back without the undone edit", async () => {
     const { db, author } = await twoClients();
