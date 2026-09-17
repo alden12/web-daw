@@ -7772,6 +7772,28 @@ projects:
             id: 01a0afbc-3b07-7440-8967-91eba27b1340
             at: 2026-09-17T14:19:03.815Z
             actor: claude
+          - body: >-
+              **Stage C built, `0a47371`.** `rebuildWithout(base, baseSeq,
+              entries, excluding)` in `src/audio/commands/replay.ts`, plus
+              `ProjectRepository.rebuildExcluding` which fetches the ring base
+              first. Nothing reads it yet - stage D switches over.
+
+
+              **The cross-check passed first time:** all 43 commands with a
+              known inverse rebuild byte-identically to where that inverse
+              lands. `test/rebuild.test.ts` runs off the same table as
+              `invert.test.ts`, now shared at `test/support/commandSamples.ts`,
+              so the two paths check each other until the inverses go.
+
+
+              `replay.ts` also absorbed the three copies of `isReplayable`.
+              Worth knowing for stage D: a project keyframes its initial state
+              at seq **-1** on create, so a young project has a rebuild base
+              from its first edit.
+            audience: user
+            id: 01a0afc6-adc0-76be-a474-f3066928ee87
+            at: 2026-09-17T14:30:28.544Z
+            actor: claude
       - ref: DAW-34.1
         area: DAW
         title: "Containment: an object's key does not say what contains it"
