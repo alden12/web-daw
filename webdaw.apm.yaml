@@ -4172,6 +4172,13 @@ projects:
             to hit several workers in the same window. The failures were all touch/roll drags this
             time rather than rail clicks, so it is not tied to one selector either.
 
+          - Fifth sighting, 2026-09-17, same session as the fourth: three
+          failures across `layout.e2e.ts`
+            (1) and `menus.e2e.ts` (2). Isolated: 12/12. Re-run: 153/153. Two sightings in one
+            afternoon, on a tree where nothing touching either file changed, so the rate is not
+            related to what is being worked on. Raising the priority of the cheap diagnostic below.
+
+
           ## Why it matters
 
 
@@ -4886,7 +4893,7 @@ projects:
       - ref: DAW-8.4
         area: DAW
         title: Small UI polish batch
-        status: review
+        status: done
         sort_path: "000008.000004"
         parent: DAW-8
         body: >-
@@ -5289,7 +5296,7 @@ projects:
       - ref: DAW-8.13
         area: DAW
         title: "Bug: a clip-length drag lands several history entries instead of one"
-        status: review
+        status: done
         sort_path: "000008.000013"
         parent: DAW-8
         body: >
@@ -5464,7 +5471,7 @@ projects:
       - ref: DAW-8.14
         area: DAW
         title: Commit markers in the Activity feed carry no time and no way back
-        status: review
+        status: done
         sort_path: "000008.000014"
         parent: DAW-8
         body: >-
@@ -5506,7 +5513,7 @@ projects:
         area: DAW
         title: "Bug: undo does not survive a page reload, though the machinery says it
           should"
-        status: review
+        status: done
         sort_path: "000008.000015"
         parent: DAW-8
         body: >-
@@ -7863,6 +7870,43 @@ projects:
           field by field and dropped the new column.
 
 
+          **One bug E1 had to close on the way.** Making the stack survive a
+          hosted reload un-masked an
+
+          assumption underneath it: `restoreCheckpoints` set the excluded set
+          from the persisted redo stack
+
+          and trusted that the loaded project already reflected it. True
+          locally, where autosave writes the
+
+          project after the undo. False in a shared session, where the client
+          never writes the project at all -
+
+          the authority does, and an undo is not forwarded to it, so the log
+          comes back with the edit still
+
+          applied. The stack then claimed edits were absent that were present,
+          and the next undo rebuilt with
+
+          both excluded: one press, two edits gone.
+
+
+          Fixed by making it true instead of assuming it - `restoreCheckpoints`
+          rebuilds when anything is
+
+          excluded. It costs one replay of the retained window on a reload that
+          had an undo outstanding, and
+
+          it keeps the promise the stack makes: what you undid stays undone
+          across a reload, in either mode.
+
+          Note the test for this has to assert the CHANGE a later undo press
+          makes, not the state after it:
+
+          the bug and the fix agree on where the project ends up, and differ
+          only in what the press moved.
+
+
           ### Still open in stage E
 
 
@@ -8306,7 +8350,7 @@ projects:
       - ref: DAW-36
         area: DAW
         title: Commands must carry what they need, not read it from ambient state
-        status: review
+        status: done
         sort_path: "000036"
         body: >
           Several commands took a default from whatever the project happened to
@@ -10259,7 +10303,7 @@ projects:
       - ref: HOST-21
         area: HOST
         title: "Bug: hosted mode refetches the entire edit log on every edit"
-        status: review
+        status: done
         sort_path: "000021"
         body: >-
           Spotted 2026-09-08 in the network tab of a local hosted session: **20
