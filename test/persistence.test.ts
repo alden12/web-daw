@@ -497,18 +497,9 @@ describe("project + edit-log persistence", () => {
     expect(JSON.stringify(packed).length).toBeLessThan(200);
   });
 
-  it("treats an unreadable or out-of-shape undo.json as absent (DAW-8.15)", async () => {
-    const store = new MemoryBundleStore();
-    const repo = new ProjectRepository(store);
-
-    await store.writeText("undo.json", "{ not json at all");
-    expect(await repo.readUndo()).toBeNull();
-
-    // The shape an older build wrote: a base snapshot and steps rather than seqs. It fails the
-    // schema and reads as absent, which costs one reload of undo and no user work (DAW-34).
-    await store.writeText("undo.json", JSON.stringify({ undo: { base: null, steps: [] }, redo: null }));
-    expect(await repo.readUndo()).toBeNull();
-  });
+  // `undo.json` is gone: the stacks are per-tab session state now (DAW-34 stage E). What replaced
+  // this is `test/undoSession.test.ts`, which covers the same "unreadable reads as absent" property
+  // against the store that actually holds them.
 
   it("persisted undo/redo reproduces exact states through a reload", () => {
     const build = () => {

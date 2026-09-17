@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
-import { Room, type RoomClient } from "../server/api/rooms";
+import { incomingEdit, Room, type RoomClient } from "../server/api/rooms";
 import { readEdits } from "../server/db/store";
 import { SharedSession, type SyncTransport, type LocalMirror, type PendingOp } from "../src/audio/sync/sharedSession";
 import { ProjectStore } from "../src/audio/project/projectStore";
@@ -70,10 +70,7 @@ class Client {
         if (!this.connected) return; // dropped on the floor while disconnected
         this.sent.push(message);
         if (message.type === "subscribe") serverQueue.push(() => room.subscribe(this.roomClient));
-        else if (message.type === "edit")
-          serverQueue.push(() =>
-            room.applyIncoming({ command: message.command as EditCommand, opId: message.opId, author: message.author }),
-          );
+        else if (message.type === "edit") serverQueue.push(() => room.applyIncoming(incomingEdit(message)));
       },
       onMessage: (handler) => {
         this.deliver = handler;

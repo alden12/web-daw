@@ -12,10 +12,9 @@
  */
 import { WebSocket, WebSocketServer } from "ws";
 import type { Server } from "node:http";
-import type { EditCommand } from "../../src/audio/commands/types";
 import { channels, parseClientMessage } from "../../src/contract/ws";
 import type { Db } from "../db/types";
-import { RoomRegistry, type RoomClient } from "./rooms";
+import { incomingEdit, RoomRegistry, type RoomClient } from "./rooms";
 import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipal } from "./principal";
 
 export interface WsOptions {
@@ -112,11 +111,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
         client.send({ type: "error", message: "not authorized for this project" });
         return;
       }
-      const applied = await room.applyIncoming({
-        command: message.command as EditCommand,
-        opId: message.opId,
-        author: message.author,
-      });
+      const applied = await room.applyIncoming(incomingEdit(message));
       if (applied.type === "editApplied")
         log(`edit ${message.projectId} seq=${applied.seq} ${message.command.type} by ${applied.author}`);
     });

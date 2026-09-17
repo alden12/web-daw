@@ -16,9 +16,9 @@
  * doubles as an integrity check.
  */
 import type { ProjectData } from "./project/types";
-import { projectDataSchema, undoStateSchema } from "./project/schema";
+import { projectDataSchema } from "./project/schema";
 import type { Author, EditCommand, EditEntry } from "./commands/types";
-import type { FeedNote, UndoState } from "./commands/editLog";
+import type { FeedNote } from "./commands/editLog";
 import { type BundleStore, getProjectStorage } from "./bundleStore";
 import { migrateDocument, PROJECT_SCHEMA } from "./project/documentMigration";
 import { headFromLog, rebuildWithout } from "./commands/replay";
@@ -157,6 +157,12 @@ export class ProjectRepository {
   /** The retained-keyframe ring's slot -> seq map, cached so the cadence check costs no read. Null
    *  until first loaded from the bundle. */
   private keyframeIndex: KeyframeIndex | null = null;
+
+  /** Which project this repository is for, or null before one has been loaded or saved. Read by the
+   *  per-tab undo store, which keys its stacks by project (DAW-34 stage E). */
+  get id(): string | null {
+    return this.projectId;
+  }
 
   constructor(store: BundleStore, projectId: string | null = null) {
     this.store = store;
@@ -479,30 +485,9 @@ export class ProjectRepository {
     return { project, log, notes };
   }
 
-  // ---- undo/redo (session checkpoints, persisted so undo survives a reload) ----
-
-  writeUndo(state: UndoState): Promise<void> {
-    return this.store.writeText("undo.json", JSON.stringify(state));
-  }
-
-  /**
-   * Validated, not cast. What comes back is fed straight to `ProjectStore.load` and replayed
-   * through `applyEdit`, so "a project snapshot we are about to load" is the last payload that
-   * should be taken on trust. The hosted path is already shape-checked server-side on write
-   * (`validateBundleFile`), but the OPFS path and the offline cache are not, and the schema was
-   * sitting right there unused. Anything unparseable is treated as absent: undo is unavailable
-   * for that load and the next write replaces it.
-   */
-  async readUndo(): Promise<UndoState | null> {
-    const raw = await this.store.readText("undo.json");
-    if (!raw) return null;
-    try {
-      const parsed = undoStateSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data : null;
-    } catch {
-      return null; // not JSON at all
-    }
-  }
+  // The undo/redo stacks used to live here, as `undo.json` in the bundle. They are per-tab session
+  // state now (`undoSession.ts`), because they are neither durable project data nor anything another
+  // reader of the bundle should see - see the note there (DAW-34 stage E).
 
   // ---- version history (the commit DAG, under history/) ----
 

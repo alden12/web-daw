@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
-import { Room } from "../server/api/rooms";
+import { incomingEdit, Room } from "../server/api/rooms";
 import { readEdits } from "../server/db/store";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
@@ -30,16 +30,7 @@ function connect(room: Room, prefix: string) {
   const transport: SyncTransport = {
     send: (message: ClientMessage) => {
       if (message.type === "subscribe") queue.push(() => room.subscribe(roomClient));
-      else if (message.type === "edit")
-        queue.push(() =>
-          room.applyIncoming({
-            command: message.command as EditCommand,
-            opId: message.opId,
-            author: message.author,
-            kind: message.kind,
-            undoes: message.undoes,
-          }),
-        );
+      else if (message.type === "edit") queue.push(() => room.applyIncoming(incomingEdit(message)));
     },
     onMessage: (handler) => (deliver = handler),
     onOpen: (handler) => (open = handler),
@@ -171,6 +162,51 @@ describe("an undo reaches the peers", () => {
   });
 });
 
+/**
+ * Whose edit does undo take back? Yours. It was already true - `recordRemote` never pushed a peer's
+ * edit onto the local stack - but it was true by accident rather than by design, undocumented and
+ * one careless line from breaking. These pin it (DAW-34 stage E).
+ */
+describe("undo is scoped to its author", () => {
+  it("takes back YOUR last edit, not whoever edited most recently", async () => {
+    const { author, peer } = await twoClients();
+    author.log.dispatch(track("t-a"));
+    await author.pump();
+    author.flush();
+    peer.flush();
+
+    peer.log.dispatch(track("t-b")); // the peer edits LAST
+    await peer.pump();
+    peer.flush();
+    author.flush();
+
+    // So the most recent edit in the author's log is the peer's, and its own stack does not hold it.
+    expect(author.log.getEntries().at(-1)?.author).not.toBe(author.log.getCheckpoints().undo.at(-1));
+    expect(author.log.getCheckpoints().undo).toEqual(["a-0"]);
+
+    author.log.undo();
+    await author.pump();
+    author.flush();
+
+    expect(author.store.getTrack("t-a")).toBeUndefined(); // yours went
+    expect(author.store.getTrack("t-b")).toBeTruthy(); // theirs stayed
+  });
+
+  it("leaves a peer nothing of yours to take back either", async () => {
+    const { author, peer } = await twoClients();
+    author.log.dispatch(track("t-a"));
+    await author.pump();
+    author.flush();
+    peer.flush();
+
+    // The peer has the edit in its project and its feed, and nothing in its undo stack.
+    expect(peer.store.getTrack("t-a")).toBeTruthy();
+    expect(peer.log.getEntries().some((entry) => entry.id === "a-0")).toBe(true);
+    expect(peer.log.getCheckpoints().undo).toEqual([]);
+    expect(peer.log.getState().canUndo).toBe(false);
+  });
+});
+
 describe("a room cold-starting honours the tombstones in its log", () => {
   it("comes back without the undone edit", async () => {
     const { db, author } = await twoClients();
@@ -187,5 +223,32 @@ describe("a room cold-starting honours the tombstones in its log", () => {
     // A fresh room for the same project, as an eviction and a later reconnect would produce.
     const reloaded = await Room.load(db, "local", "p1");
     expect(reloaded.snapshot().tracks.map((each) => each.id)).toEqual(["t-1"]);
+  });
+});
+
+describe("the wire message a room actually receives", () => {
+  // The bug this pins: the WebSocket server listed the fields it forwarded and the test harnesses
+  // listed theirs, so a tombstone arrived whole in the tests and arrived as a plain edit in the real
+  // app - which re-applied the very command the undo was taking back. Both go through
+  // `incomingEdit` now, and this says what it must carry.
+  it("carries the tombstone fields through, not just the command", () => {
+    expect(
+      incomingEdit({
+        type: "edit",
+        projectId: "p1",
+        baseSeq: 3,
+        command: track("t-1"),
+        opId: "op-1",
+        author: "you",
+        kind: "undo",
+        undoes: "op-0",
+      }),
+    ).toMatchObject({ command: track("t-1"), opId: "op-1", author: "you", kind: "undo", undoes: "op-0" });
+  });
+
+  it("leaves an ordinary edit with no tombstone fields to mistake for one", () => {
+    const translated = incomingEdit({ type: "edit", projectId: "p1", baseSeq: 3, command: track("t-1"), opId: "op-1" });
+    expect(translated.kind).toBeUndefined();
+    expect(translated.undoes).toBeUndefined();
   });
 });

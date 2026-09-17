@@ -10,6 +10,7 @@
 import type { ProjectStore } from "./project/projectStore";
 import type { EditLog } from "./commands/editLog";
 import { getRepository, type ProjectRepository } from "./projectRepository";
+import { readUndoSession, writeUndoSession } from "./undoSession";
 
 /** Fast cadence: coalesce an edit burst, then append the delta to the log. */
 const APPEND_DEBOUNCE_MS = 300;
@@ -42,9 +43,13 @@ export async function restoreProject(
   const headSeq = highWaterSeq(saved.log, saved.notes);
   const base = await repo.oldestRebuildBase(headSeq);
   if (base) editLog.setRebuildBase(base.project, base.seq);
-  // Layer persisted undo/redo back on, so undo works after a reload.
-  const undo = await repo.readUndo();
-  if (undo) editLog.restoreCheckpoints(undo);
+  // Layer this tab's undo/redo back on, so undo works after a reload (DAW-34 stage E).
+  //
+  // The stacks are per-tab session state, so a tab that has none - a fresh one, or another device -
+  // derives what it can from the log instead. Exact where the exact answer exists, approximate only
+  // where the alternative is no undo at all.
+  const stored = repo.id ? readUndoSession(repo.id) : null;
+  editLog.restoreCheckpoints(stored ?? { undo: editLog.deriveUndoStack(), redo: [] });
 }
 
 /**
@@ -183,17 +188,17 @@ const UNDO_PERSIST_MS = 1500;
 
 export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository): () => void {
   // Resolved per write, not captured: a project switch replaces the repository, and a captured one
-  // would write this project's stacks into the previous project's bundle.
+  // would write this project's stacks under the previous project's key.
   const targetRepo = () => repo ?? getRepository();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const write = () => {
     const active = targetRepo();
     if (!active) return;
-    // Failures are the caller's business to notice, not this timer's to crash on: a stack that did
-    // not land just means the previous one is read back, and a step naming an entry the log no
-    // longer holds is dropped on restore rather than misapplied.
-    void active.writeUndo(editLog.getCheckpoints()).catch(() => {});
+    // Synchronous and per-tab now (DAW-34 stage E): the stacks are session state, not project data,
+    // so they no longer ride the bundle. `writeUndoSession` swallows a storage failure - undo still
+    // works in memory for as long as the tab lives, which is all it ever promised.
+    if (active.id) writeUndoSession(active.id, editLog.getCheckpoints());
   };
 
   const schedule = () => {

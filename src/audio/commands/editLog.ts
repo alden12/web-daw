@@ -586,6 +586,36 @@ export class EditLog {
   }
 
   /**
+   * The edits in the log that this user could take back, oldest first (DAW-34 stage E).
+   *
+   * What a tab with no stacks of its own falls back to: a fresh tab, or another device. The stacks
+   * themselves are per-tab session state (`undoSession.ts`), so this is the approximate answer used
+   * only where the exact one does not exist.
+   *
+   * **Approximate in one way worth knowing.** "Mine" is my author id plus the two AI voices, since
+   * an agent edits on behalf of whoever is driving it. In a shared session where two people each
+   * drive an agent, the log does not record which of them drove it, so an agent edit lands in both
+   * users' derived stacks. Undoing it would take back work the other person's agent did. Narrow,
+   * and the alternative is nobody being able to undo agent work in a fresh tab; fixing it properly
+   * means an agent edit carrying the user who drove it, which is a change to the author model.
+   */
+  deriveUndoStack(): string[] {
+    const mine = (author: Author) => author === this.localAuthor || author === "claude" || author === "agent";
+    const tombstoned = tombstonedIds(this.entries);
+    return this.entries
+      .filter(
+        (entry) =>
+          entry.id !== undefined &&
+          isReplayable(entry.kind) &&
+          mine(entry.author) &&
+          !tombstoned.has(entry.id) &&
+          entry.seq > this.base.seq,
+      )
+      .map((entry) => entry.id as string)
+      .slice(-MAX_DEPTH);
+  }
+
+  /**
    * Replace the log + feed notes with their persisted forms (on reload). Continues
    * `seq` from the highest restored seq across *both* streams, so new edits and
    * notes stay monotonic (correct even if older items were trimmed). Clears the

@@ -151,3 +151,57 @@ describe("loading a bundle honours its tombstones", () => {
     expect(loaded!.project.tracks.map((each) => each.id)).toEqual(["t-1"]);
   });
 });
+
+/**
+ * What a tab with no stacks of its own falls back to (DAW-34 stage E): a fresh tab, or another
+ * device. The stacks are per-tab session state, so this is the approximate answer used only where
+ * the exact one does not exist.
+ */
+describe("deriving the undo stack from the log", () => {
+  it("offers your own edits, oldest first", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    edit({ type: "setTempo", bpm: 140 });
+
+    expect(log.deriveUndoStack()).toEqual(["e-0", "e-1"]);
+  });
+
+  it("leaves out what a tombstone already took back", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    edit({ type: "setTempo", bpm: 140 });
+    log.undo();
+
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
+  });
+
+  it("leaves out another user's edits, which are not yours to take back", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    log.recordRemote({ command: track("t-peer"), author: "someone-else", id: "peer-0" });
+
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
+  });
+
+  // An agent edits on behalf of whoever is driving it, so its work is yours to take back. The
+  // alternative is a fresh tab being unable to undo anything the agent did.
+  it("keeps the AI voices, which act on your behalf", () => {
+    const { log } = seededLog();
+    log.dispatch(track("t-1"), "claude");
+    log.resetCoalescing();
+    log.dispatch(track("t-2"), "agent");
+
+    expect(log.deriveUndoStack()).toEqual(["e-0", "e-1"]);
+  });
+
+  it("leaves out the reflog markers, which are not edits", () => {
+    const { log, edit } = seededLog();
+    edit(track("t-1"));
+    log.undo();
+    log.redo();
+
+    // Three entries by now - the edit and two markers - and only the edit is undoable.
+    expect(log.getEntries().length).toBeGreaterThan(1);
+    expect(log.deriveUndoStack()).toEqual(["e-0"]);
+  });
+});

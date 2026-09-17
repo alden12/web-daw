@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { makeSyncEnv } from "./support/syncEnv";
-import { Room } from "../server/api/rooms";
+import { incomingEdit, Room } from "../server/api/rooms";
 import { readEdits } from "../server/db/store";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
@@ -194,10 +194,7 @@ describe("the authority stores the identity the client minted", () => {
     const transport: SyncTransport = {
       send: (message: ClientMessage) => {
         if (message.type === "subscribe") queue.push(() => room.subscribe(roomClient));
-        else if (message.type === "edit")
-          queue.push(() =>
-            room.applyIncoming({ command: message.command as EditCommand, opId: message.opId, author: message.author }),
-          );
+        else if (message.type === "edit") queue.push(() => room.applyIncoming(incomingEdit(message)));
       },
       onMessage: (handler) => (deliver = handler),
       onOpen: (handler) => (open = handler),

@@ -22,6 +22,7 @@ import {
 import { getProjectStorage, type ProjectStorage } from "../bundleStore";
 import { newProjectId, refreshProjects } from "./library";
 import { restoreProject } from "../persistence";
+import { clearUndoSession } from "../undoSession";
 
 export interface ProjectDeps {
   projectStore: ProjectStore;
@@ -33,7 +34,8 @@ export interface ProjectDeps {
 async function flush(deps: ProjectDeps): Promise<void> {
   const repo = getRepository();
   await repo.save(deps.projectStore.snapshot(), deps.editLog.getEntries(), deps.editLog.getNotes());
-  await repo.writeUndo(deps.editLog.getCheckpoints());
+  // The undo stacks are per-tab session state and not part of the bundle, so a switch has nothing
+  // to flush for them: `attachUndoPersistence` has already written this tab's copy (DAW-34 stage E).
 }
 
 /** Load the current project's bundle into the live objects (+ reload history). */
@@ -181,6 +183,10 @@ export async function deleteProject(
 ): Promise<void> {
   const wasCurrent = id === currentProjectId();
   await storage.deleteProject(id);
+  // The undo stacks are per-tab session state rather than bundle contents, so deleting the bundle
+  // does not take them with it. Left behind, they would be inherited by a project that reused the
+  // id, and every step would name an entry that no longer exists (DAW-34 stage E).
+  clearUndoSession(id);
   if (wasCurrent) {
     // Don't flush (that would resurrect the deleted bundle); repoint directly.
     const remaining = (await storage.listProjects()).map((project) => project.id).filter((other) => other !== id);
