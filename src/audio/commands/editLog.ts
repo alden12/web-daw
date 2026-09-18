@@ -211,7 +211,7 @@ export class EditLog {
   private heldForward: { command: EditCommand; author: Author; id: string } | null = null;
   private forwardTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<() => void>();
-  private cached!: EditLogState;
+  private cached: EditLogState | null = null;
   /** Optional realtime sink: when a shared session is live, each dispatched edit is forwarded to the
    *  authority after being applied optimistically here (see SharedSession). It is handed the entry's
    *  `id` as well, which the session sends as the edit's `opId` - so the authority stores the same
@@ -234,7 +234,6 @@ export class EditLog {
     this.project = project;
     this.newEntryId = newEntryId;
     this.base = { project: project.snapshot(), seq: -1 };
-    this.rebuild();
   }
 
   /**
@@ -260,9 +259,11 @@ export class EditLog {
    * project has moved thousands of edits past your own, so every step you brought with you is below
    * the base you can reach, while the authority's ladder reaches all of them perfectly well.
    *
-   * So with a remote to ask, a step survives as long as its EDIT does: `undo` forwards it and waits
-   * instead of rebuilding (see there). Without one - a local-only project - there is nobody to ask
-   * and the old answer stands, because a button that fails every time is worse than a greyed one.
+   * So a step survives as long as its EDIT does: `undo` forwards it and waits instead of rebuilding
+   * (see there). Whether there is anyone to forward TO is asked when the step is pressed, not here,
+   * and that timing is the whole point - `restoreProject` restores the stacks before `AppShell`
+   * constructs the session, so a log asked here would answer "no remote" on every reload and drop
+   * exactly the steps a reload is supposed to bring back.
    *
    * `undone` keeps the narrow test either way. It feeds the local rebuild, and an id below the base
    * is already accounted for in that base; keeping it would only claim an exclusion that never
@@ -277,9 +278,8 @@ export class EditLog {
     );
     const above = (id: string) => (seqById.get(id) ?? -Infinity) > this.base.seq;
     // An id with no entry at all is gone whoever is asked: nothing to exclude, nothing to undo.
-    const holdable = (id: string) => (this.remote !== null ? seqById.has(id) : above(id));
-    this.undoStack = this.undoStack.filter(holdable);
-    this.redoStack = this.redoStack.filter(holdable);
+    this.undoStack = this.undoStack.filter((id) => seqById.has(id));
+    this.redoStack = this.redoStack.filter((id) => seqById.has(id));
     this.undone = new Set([...this.undone].filter(above));
   }
 
@@ -447,6 +447,9 @@ export class EditLog {
   setRemote = (sink: ((edit: ForwardedEdit) => void) | null): void => {
     this.sendHeld();
     this.remote = sink;
+    // Changes what is undoable: a step below the base is one the authority can answer and this log
+    // cannot, so attaching (or dropping) a remote moves the button either way.
+    this.emit();
   };
 
   /** Set the author stamped on local edits (the current user id in a shared session). */
@@ -521,6 +524,13 @@ export class EditLog {
     if (this.locallyReachable(id)) {
       this.undone.add(id);
       this.rebuildProject();
+    } else if (this.remote === null) {
+      // Below the base on a local-only project: nobody could honour it, so the step goes rather than
+      // sitting there failing. Pressing again takes the next one, which is the honest behaviour and
+      // very nearly unreachable in practice - a local log and its ring cover the same 2000 edits.
+      this.redoStack.pop();
+      this.emit();
+      return;
     }
     this.noteReflog(id, "undo");
   };
@@ -569,6 +579,10 @@ export class EditLog {
     if (this.locallyReachable(id)) {
       this.undone.delete(id);
       this.rebuildProject();
+    } else if (this.remote === null) {
+      this.undoStack.pop();
+      this.emit();
+      return;
     }
     this.noteReflog(id, "redo");
   };
@@ -676,7 +690,7 @@ export class EditLog {
   };
 
   getState(): EditLogState {
-    return this.cached;
+    return this.rebuild();
   }
 
   /** Feed-only annotations, oldest first. */
@@ -738,6 +752,10 @@ export class EditLog {
    * it names the user who drove it (`isOwnWork`). An edit by an agent nobody is recorded as having
    * driven belongs to no one and stays out: with no driver, taking it back could take back somebody
    * else's work.
+   *
+   * Not filtered by the rebuild base, for the same reason `dropUnreachable` no longer is: a step
+   * below it is one for the authority to answer, not one to hide. This has to make the same call as
+   * a restored stack, or a fresh tab and a reloaded one disagree about what is undoable.
    */
   deriveUndoStack(): string[] {
     const mine = (author: Author) => isOwnWork(author, this.localAuthor);
@@ -745,11 +763,7 @@ export class EditLog {
     return this.entries
       .filter(
         (entry) =>
-          entry.id !== undefined &&
-          isReplayable(entry.kind) &&
-          mine(entry.author) &&
-          !tombstoned.has(entry.id) &&
-          entry.seq > this.base.seq,
+          entry.id !== undefined && isReplayable(entry.kind) && mine(entry.author) && !tombstoned.has(entry.id),
       )
       .map((entry) => entry.id as string)
       .slice(-MAX_DEPTH);
@@ -782,17 +796,37 @@ export class EditLog {
     return () => this.listeners.delete(listener);
   }
 
-  private rebuild(): void {
+  /**
+   * The state a reader sees, built on the first read after a change rather than on the change.
+   *
+   * Lazy for the reason `ProjectStore` and `ClipStore` are (DAW-39): this copies the whole entry
+   * window - up to `MAX_PERSISTED_ENTRIES` of them - and did it on every dispatch, every peer edit
+   * and every undo, whether or not anything read the result. Replaying a log emits once an entry and
+   * read none of them.
+   *
+   * Still a stable reference between changes, which is what `useSyncExternalStore` needs.
+   */
+  private rebuild(): EditLogState {
+    if (this.cached) return this.cached;
+    // What a press would actually achieve, which is not the same as holding a step. A step below the
+    // base needs an authority to rebuild it; with no remote attached there is nobody to ask, and a
+    // live button that does nothing is worse than a greyed-out one. Asked here rather than when the
+    // stacks are built, because a remote can attach later - and does, on every reload.
+    const seqById = new Map(
+      this.entries.filter((entry) => entry.id !== undefined).map((entry) => [entry.id, entry.seq]),
+    );
+    const usable = (id: string) => this.remote !== null || (seqById.get(id) ?? -Infinity) > this.base.seq;
     this.cached = {
       entries: this.entries.slice(),
       notes: this.feedNotes.slice(),
-      canUndo: this.undoStack.length > 0,
-      canRedo: this.redoStack.length > 0,
+      canUndo: this.undoStack.some(usable),
+      canRedo: this.redoStack.some(usable),
     };
+    return this.cached;
   }
 
   private emit(): void {
-    this.rebuild();
+    this.cached = null;
     for (const listener of this.listeners) listener();
   }
 }

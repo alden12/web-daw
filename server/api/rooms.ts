@@ -65,6 +65,15 @@ const KEYFRAME_INTERVAL = 100;
 
 /** The seq a project's starting state reflects: before its first edit. See `seedStartKeyframe`. */
 const START_SEQ = -1;
+/**
+ * How many recent opIds the room remembers for deduplication.
+ *
+ * A resend arrives seconds after its original - a reconnect replaying its held queue - so this only
+ * has to outlast a round trip, and ten thousand edits is far more than one. Forgetting an older one
+ * costs a duplicated edit in a case that does not happen; remembering them all costs a map that
+ * grows for as long as anyone has the project open.
+ */
+const DEDUP_WINDOW = 10_000;
 
 /** A connected client - anything the room can push a server message to. */
 export interface RoomClient {
@@ -109,7 +118,13 @@ type SnapshotEntries = Extract<ServerMessage, { type: "snapshot" }>["entries"];
 
 export class Room {
   private readonly clients = new Set<RoomClient>();
-  /** opId -> assigned seq, so a resent edit (reconnect/retry) re-echoes instead of double-applying. */
+  /**
+   * opId -> assigned seq, so a resent edit (reconnect/retry) re-echoes instead of double-applying.
+   *
+   * Bounded, because it is a recent-window question wearing the clothes of a permanent record: a
+   * resend follows its original by seconds. Unbounded it held one uuid per edit for as long as the
+   * room stayed open, which on a project people actually work in is the whole session.
+   */
   private readonly appliedOps = new Map<string, number>();
   private readonly db: Db;
   private readonly ownerId: string;
@@ -372,6 +387,11 @@ export class Room {
     const tombstone = edit.kind === "undo" || edit.kind === "redo";
     if (!tombstone) applyEdit(this.store, edit.command, author);
     this.appliedOps.set(edit.opId, seq);
+    // Insertion-ordered, so the first key is the oldest: drop it once past the window.
+    if (this.appliedOps.size > DEDUP_WINDOW) {
+      const oldest = this.appliedOps.keys().next();
+      if (!oldest.done) this.appliedOps.delete(oldest.value);
+    }
     // A version-history marker pins a keyframe AT its own seq (time-travel base). Snapshot HEAD
     // synchronously here - before any `await` - so a concurrent edit crossing this section can't advance
     // the store first and make the keyframe reflect a later seq. `commit` is a no-op (snapshot = HEAD);
