@@ -11,7 +11,7 @@
  *  - writing manifest.json syncs the queryable `project_schema` column; the name/modifiedAt index is
  *    maintained by the authority (`setProjectName` on a `renameProject` edit), not by `meta.json`.
  */
-import { and, desc, eq, gt, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Db } from "./types";
 import { edits, files, projectMembers, projects, users } from "./schema";
 
@@ -258,6 +258,31 @@ export async function appendEdits(
       .where(eq(edits.projectId, projectId));
     return { ok: true, maxSeq: Number(rows[0]?.maxSeq ?? -1) };
   });
+}
+
+/**
+ * Where the named edits sit in the log, for the ids that are still there.
+ *
+ * The narrow question a rebuild actually has about old history (DAW-38 step 4): a tombstone in the
+ * recent tail names an edit that may be anywhere, and all the rebuild needs is HOW FAR BACK. Reading
+ * the whole log to find one row was the only way to ask before, which at a hundred thousand retained
+ * edits is a hundred thousand rows over the wire to learn one number.
+ *
+ * An absent id simply has no entry in the result: pruned, or never stored.
+ */
+export async function readEditSeqs(
+  db: Db,
+  who: Accessor,
+  projectId: string,
+  entryIds: readonly string[],
+): Promise<Map<string, number>> {
+  if (entryIds.length === 0) return new Map();
+  const rows = await db
+    .select({ entryId: edits.entryId, seq: edits.seq })
+    .from(edits)
+    .innerJoin(projects, eq(edits.projectId, projects.id))
+    .where(and(eq(edits.projectId, projectId), accessibleWhere(who), inArray(edits.entryId, [...entryIds])));
+  return new Map(rows.flatMap((row) => (row.entryId === null ? [] : [[row.entryId, row.seq] as const])));
 }
 
 /**
