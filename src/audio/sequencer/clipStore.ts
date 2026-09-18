@@ -33,11 +33,10 @@ export class ClipStore {
   private readonly notes = new Map<string, NoteEvent>();
   private lengthBeats = DEFAULT_LENGTH;
   private readonly listeners = new Set<() => void>();
-  private cached!: ClipData;
+  private cached: ClipData | null = null;
 
   constructor(initial?: Partial<ClipData>) {
     if (initial) this.applyClip(initial);
-    this.rebuild();
   }
 
   private normalize(input: NoteInput, id: string): NoteEvent {
@@ -62,21 +61,34 @@ export class ClipStore {
     }
   }
 
-  private rebuild(): void {
-    this.cached = {
+  /**
+   * The sorted view, built on the first read after a change rather than on the change itself.
+   *
+   * Lazy because a mutation is cheap and this is not: it copies and re-sorts every note in the clip.
+   * Doing it eagerly made replaying a log quadratic - filling a clip with n notes paid n sorts of an
+   * ever-longer array, which measured 12 seconds for a hundred thousand edits and is the whole reason
+   * deep rebuilds looked unaffordable. Nothing bulk (replay, `load`, the Node mirror) reads between
+   * its own writes, so those now pay one sort instead of n.
+   *
+   * The cached object is still a stable reference between mutations, which is what
+   * `useSyncExternalStore` needs; it is simply built a moment later than it used to be.
+   */
+  private view(): ClipData {
+    this.cached ??= {
       notes: [...this.notes.values()].sort((a, b) => a.start - b.start || a.pitch - b.pitch),
       lengthBeats: this.lengthBeats,
     };
+    return this.cached;
   }
 
   private emit(): void {
-    this.rebuild();
+    this.cached = null;
     for (const listener of this.listeners) listener();
   }
 
   /** Stable reference between mutations - safe for useSyncExternalStore. */
   getClip(): ClipData {
-    return this.cached;
+    return this.view();
   }
 
   addNote(input: NoteInput): string {
@@ -124,7 +136,7 @@ export class ClipStore {
   }
 
   snapshot(): ClipData {
-    return this.cached;
+    return this.view();
   }
 
   load(clip: Partial<ClipData>): void {

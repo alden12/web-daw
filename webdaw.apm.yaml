@@ -9627,6 +9627,123 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-39
+        area: DAW
+        title: Rebuilding a project from its log is linear in the log
+        status: review
+        sort_path: "000039"
+        deps:
+          - DAW-34
+        body: >
+          Found 2026-09-18 by the bench DAW-34 stage F asked for, on its first
+          run. Replay was super-linear:
+
+          100k edits took **12.5s** where the arithmetic in DAW-38 said 1.2s,
+          and 50k took 2.7s. Every
+
+          replay figure in DAW-38 was taken from a 2000-edit measurement and
+          extrapolated, so every one of
+
+          them was wrong by a factor that grew with depth - which is precisely
+          the depth DAW-38 wants to add.
+
+
+          ## The cause, which was not where I first said it was
+
+
+          A CPU profile put 78% of a replay inside `ClipStore.view` (the sorted
+          note array). My first guess
+
+          was that `ClipStore.emit()` re-sorted the clip on every note added,
+          and making that cache lazy
+
+          changed the numbers by **nothing at all**, because something was
+          reading it between every write.
+
+
+          That something was `ProjectStore.emit()`, one level up: it rebuilt
+          the whole structural view on
+
+          every mutation, and `buildStructure` walks every track, group, effect
+          and clip - including
+
+          `clip.store.getClip().lengthBeats`, which materializes and re-sorts
+          the notes just to read a
+
+          number. So replaying n edits into a project of t tracks did n
+          structure builds, each re-sorting
+
+          the entire song. O(edits x project), presenting as a curve.
+
+
+          ## The fix
+
+
+          Both caches are lazy: a mutation clears the cached object, the next
+          read builds it. The contract
+
+          `useSyncExternalStore` needs (a stable reference between mutations)
+          is unchanged - the object is
+
+          just built a moment later. `trackMeta` asks `getLength()` for the
+          length, which is the number it
+
+          wanted. Nothing bulk (replay, `load`, the Node mirror) reads between
+          its own writes, so a replay
+
+          pays one structure build at the end instead of one per entry.
+
+
+          | 40 tracks, notes piled on | before | after |
+
+          |---|---|---|
+
+          | 10,000 edits | 158ms | 20ms |
+
+          | 50,000 edits | 2,714ms | 46ms |
+
+          | 100,000 edits | 12,483ms | **129ms** |
+
+          | 2,500 `createTrack` | 507ms | 30ms |
+
+
+          That last row was also the CI timeout on the DAW-38 branch
+          (`startKeyframe.test.ts` seeding 2500
+
+          edits), which was this same bug seen from the other end.
+
+
+          `test/lazyViews.test.ts` pins the shape rather than the timings,
+          which vary by machine: replaying
+
+          201 edits builds the structure 0 times (203 before the fix) and once
+          when the structure is read.
+
+
+          ## What it does to the live path
+
+
+          Less than it does to replay, and deliberately so. React's
+          `useSyncExternalStore` calls `getSnapshot`
+
+          from its own store-change handler, so a mounted UI still causes a
+          build per edit - which is the
+
+          cost it always paid, for a reason, at one edit per gesture. The win
+          is entirely on the paths with
+
+          no subscriber, which is every path that replays a log.
+
+
+          ## Two lessons worth keeping
+
+
+          - The bench earned its cost on its first run, having been written to
+          answer a different question
+            (is a phone fast enough). Both of my extrapolations from the 2000-edit measurement were wrong.
+          - The profile disagreed with my diagnosis, and the diagnosis was
+          wrong. The first fix measured as
+            exactly zero improvement, which is the only reason it got profiled rather than believed.
       - ref: DAW-38
         area: DAW
         title: A project can always be rebuilt from its log, and deep undo stays fast
@@ -9634,6 +9751,7 @@ projects:
         sort_path: "000038"
         deps:
           - DAW-34
+          - DAW-39
         body: >
           Agreed with Alden 2026-09-18, out of DAW-34 stage E. Two changes that
           are really one idea: **keep
@@ -9707,6 +9825,32 @@ projects:
 
           Both sit well inside the 30s Alden set as acceptable for an edge
           failure case.
+
+
+          **Superseded 2026-09-18, and not in the direction I expected.** Those
+          two figures came from
+
+          extrapolating a 2000-edit measurement, and replay was not linear;
+          measured, 100k edits took 12.5s.
+
+          DAW-39 then made replay linear and cheap: **100k edits now replay in
+          129ms on a laptop, so ~0.5s
+
+          on a phone** - the full-recovery case, from an empty store, with no
+          keyframe at all.
+
+
+          That mostly dissolves the case for a geometric ladder as a LATENCY
+          measure: reaching back the whole
+
+          100k costs half a second, so no undo depth is slow enough to need a
+          nearer base. What survives is
+
+          work item 3 - the cost of READING 100k rows out of Postgres on every
+          undo, which the ring bounds
+
+          and replay speed does not. Size the ring against that, not against
+          replay time.
 
 
           ## The work
