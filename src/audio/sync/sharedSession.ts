@@ -532,6 +532,10 @@ export class SharedSession {
     this.confirmed = this.confirmed.filter((each) => each.seq > seq);
     this.headSeq = Math.max(this.headSeq, seq);
     this.rebuildBase();
+    // The log rebuilds undo from its OWN base, which is now behind what we just accepted. Left
+    // alone, the two disagree from here on and the next ordinary undo rebuilds the deep edit back
+    // into the project (DAW-38 step 5). Pending is named so it stays above the new base.
+    this.editLog.rebaseOnto(this.base.snapshot(), new Set(this.pending.map((op) => op.opId)));
     this.rebuildLive();
   }
 

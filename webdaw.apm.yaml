@@ -10434,7 +10434,19 @@ projects:
             keep a slot open for a base the log can no longer reach.
           - **Step 3** - the immediate keyframe write, landed early in #148
           because the client fix needs it.
-          - **Steps 4-5** remain: bounding the two whole-log reads, and the
+          - **Step 5** - the client stops giving up, PR #149.
+          `dropUnreachable` drew the wrong line: it
+            asked whether THIS log could rebuild a step, and dropped it when not. With a remote to ask,
+            a step now survives as long as its edit does, and pressing it forwards the tombstone and
+            waits rather than simulating an answer the base cannot produce. Local-only projects keep
+            the old behaviour, because there is nobody to ask.
+
+          - The piece that was not in the plan: `EditLog.rebaseOnto`. Adopting
+          the authority's answer in the
+            session left the log rebuilding from a base written before the undo, so the next ordinary
+            undo put the deep edit straight back. The session now re-bases the log onto what it
+            accepted, naming its pending edits so they stay above the new base.
+          - **Step 4** remains (bounding the two whole-log reads), and the
           recovery action.
 
           **Also fixed in #149, found by a test that would not seed:**

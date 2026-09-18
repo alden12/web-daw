@@ -252,23 +252,64 @@ export class EditLog {
   };
 
   /**
-   * Forget steps the base cannot reach. An edit at or below the base is baked into it, so excluding
-   * it changes nothing - keeping such a step would leave undo enabled and then do nothing when
-   * pressed, which is the one outcome worse than a greyed-out button.
+   * Forget steps nothing could honour, which is not the same as steps THIS log cannot rebuild.
+   *
+   * An edit at or below the base is baked into it, so a local replay cannot leave it out. That used
+   * to end the matter and the step was dropped - which is the wrong answer in a shared session, and
+   * wrong in exactly the case the deep log exists for (DAW-38). Come back from a flight and the
+   * project has moved thousands of edits past your own, so every step you brought with you is below
+   * the base you can reach, while the authority's ladder reaches all of them perfectly well.
+   *
+   * So with a remote to ask, a step survives as long as its EDIT does: `undo` forwards it and waits
+   * instead of rebuilding (see there). Without one - a local-only project - there is nobody to ask
+   * and the old answer stands, because a button that fails every time is worse than a greyed one.
+   *
+   * `undone` keeps the narrow test either way. It feeds the local rebuild, and an id below the base
+   * is already accounted for in that base; keeping it would only claim an exclusion that never
+   * happens.
    */
   private dropUnreachable(): void {
-    // A step names an id, so "above the base" is a question about the entry it names. One pass to
-    // index the log, because this runs on a reload with a full window of entries and a stack up to
-    // MAX_DEPTH deep, and a scan per step would be the product of the two.
+    // A step names an id, so this is a question about the entry it names. One pass to index the log,
+    // because this runs on a reload with a full window of entries and a stack up to MAX_DEPTH deep,
+    // and a scan per step would be the product of the two.
     const seqById = new Map(
       this.entries.filter((entry) => entry.id !== undefined).map((entry) => [entry.id, entry.seq]),
     );
-    // An id with no entry is unreachable by the same argument: nothing to exclude, nothing to undo.
     const above = (id: string) => (seqById.get(id) ?? -Infinity) > this.base.seq;
-    this.undoStack = this.undoStack.filter(above);
-    this.redoStack = this.redoStack.filter(above);
+    // An id with no entry at all is gone whoever is asked: nothing to exclude, nothing to undo.
+    const holdable = (id: string) => (this.remote !== null ? seqById.has(id) : above(id));
+    this.undoStack = this.undoStack.filter(holdable);
+    this.redoStack = this.redoStack.filter(holdable);
     this.undone = new Set([...this.undone].filter(above));
   }
+
+  /** Whether a step can be taken back HERE: its edit is above the base, so a replay can omit it. */
+  private locallyReachable(id: string): boolean {
+    const entry = this.entries.find((each) => each.id === id);
+    return entry !== undefined && entry.seq > this.base.seq;
+  }
+
+  /**
+   * Adopt the authority's state as the base to rebuild from (DAW-38 step 5).
+   *
+   * Called by `SharedSession` when it has taken the authority's answer for a tombstone neither of
+   * them could fold locally. Without it the two disagree from that moment on: the session holds the
+   * corrected project while this log would still rebuild from a base written before the undo, and
+   * the next ordinary undo would quietly put the deep edit back.
+   *
+   * `pending` names the caller's unconfirmed edits, which are in this log but not in the authority's
+   * state, so the new base sits at the newest entry that is NOT one of them - leaving exactly those
+   * to replay on top. No rebuild here: the session loads the live store itself immediately after.
+   */
+  rebaseOnto = (project: ProjectData, pending: ReadonlySet<string>): void => {
+    const seq = this.entries.reduce(
+      (newest, entry) => (entry.id !== undefined && pending.has(entry.id) ? newest : Math.max(newest, entry.seq)),
+      -1,
+    );
+    this.base = { project, seq };
+    this.dropUnreachable();
+    this.emit();
+  };
 
   /** Apply + log an edit. UI edits are authored by the current user (default 'you'); an agent's are
    *  authored `agentAuthor` of that user - see `dispatchAsAgent`. */
@@ -473,8 +514,14 @@ export class EditLog {
     const id = this.undoStack.pop();
     if (id === undefined) return;
     this.redoStack.push(id);
-    this.undone.add(id);
-    this.rebuildProject();
+    // Submitted rather than simulated when the edit is below the base (DAW-38 step 5). Rebuilding
+    // from a base that already contains it would produce a project that still has it, so the answer
+    // has to come from the authority - which holds the deeper bases - and arrives as a confirmed
+    // tombstone that re-seeds this log through `rebaseOnto`. Until then the project is unchanged.
+    if (this.locallyReachable(id)) {
+      this.undone.add(id);
+      this.rebuildProject();
+    }
     this.noteReflog(id, "undo");
   };
 
@@ -518,8 +565,11 @@ export class EditLog {
     const id = this.redoStack.pop();
     if (id === undefined) return;
     this.undoStack.push(id);
-    this.undone.delete(id);
-    this.rebuildProject();
+    // Same call as `undo`: below the base there is nothing here to put the edit back into.
+    if (this.locallyReachable(id)) {
+      this.undone.delete(id);
+      this.rebuildProject();
+    }
     this.noteReflog(id, "redo");
   };
 
