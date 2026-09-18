@@ -281,6 +281,11 @@ export function AppShell() {
             },
             // The authoritative log advanced: refresh server-side version history from its markers.
             onConfirmed: () => void versionStore.onLogAdvanced(),
+            // How the session recovers from a tombstone it cannot honour itself - one taking back an
+            // edit already folded into its seed (DAW-41). The authority rebuilt without that edit and
+            // wrote `project.json`, so re-reading it is the answer. Remote-first through the cached
+            // store, so this gets the fresh file whenever there is a network.
+            readAuthoritativeHead: () => getRepository().readHeadKeyframe(),
           });
           session.attach();
           // Pull the retained keyframe ring into the offline cache while there IS a network (DAW-34

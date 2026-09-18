@@ -412,7 +412,12 @@ export class Room {
       if (markerSnapshot) await this.persistCommitKeyframe(seq, markerSnapshot);
       // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a
       // bounded tail. Runs after the broadcast, so it never delays peers seeing the edit.
-      if (this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
+      //
+      // A tombstone writes one straight away rather than waiting for the cadence, because a peer that
+      // cannot fold it locally recovers by re-reading this exact file (DAW-41). On the cadence it
+      // could still be the PRE-undo snapshot, and handing that back would undo the undo. Undos are
+      // rare and a keyframe write is cheap, so the trade is not close.
+      if (tombstone || this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
     });
     return applied;
   }

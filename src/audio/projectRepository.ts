@@ -212,8 +212,17 @@ export class ProjectRepository {
     return this.saveChain;
   }
 
-  /** Load the working snapshot + log; null if no bundle has been written yet. */
-  async load(): Promise<StoredProject | null> {
+  /**
+   * The stored HEAD keyframe: `project.json`, upcast, and the seq it reflects. Null if no bundle has
+   * been written yet.
+   *
+   * Split out of `load` because a live session needs exactly this and none of the rest (DAW-41). When
+   * a tombstone takes back an edit the session has already folded into its seed, it cannot rebuild
+   * without that edit - but the authority has, and wrote the result here, so re-reading this file is
+   * the recovery. Deliberately does NOT read the log or replay: the caller has its own entries above
+   * this keyframe and replays them itself.
+   */
+  async readHeadKeyframe(): Promise<{ project: ProjectData; seq: number } | null> {
     const manifestRaw = await this.store.readText("manifest.json");
     if (!manifestRaw) return null;
     const manifest = JSON.parse(manifestRaw) as Manifest;
@@ -222,7 +231,14 @@ export class ProjectRepository {
     if (!projectRaw) return null;
     const migrated = (await this.upcast(JSON.parse(projectRaw), manifest)) as PersistedProject;
     const { headSeq, ...base } = migrated;
-    const baseProject = base as ProjectData;
+    return { project: base as ProjectData, seq: headSeq ?? -1 };
+  }
+
+  /** Load the working snapshot + log; null if no bundle has been written yet. */
+  async load(): Promise<StoredProject | null> {
+    const head = await this.readHeadKeyframe();
+    if (!head) return null;
+    const { project: baseProject, seq: keyframeSeq } = head;
     const metaRaw = await this.store.readText("meta.json");
     if (metaRaw) {
       try {
@@ -236,28 +252,29 @@ export class ProjectRepository {
     // Guard: if the capped window did not reach back to the keyframe, read the full tail so replay is
     // complete (only fires with > MAX_PERSISTED_ENTRIES edits since the last keyframe - shouldn't
     // happen in normal use, where a keyframe lands every KEYFRAME_EDIT_INTERVAL edits).
-    if (headSeq != null && stream.length > 0 && stream[0].seq > headSeq + 1) {
-      stream = mergeBySeq(await this.store.readEdits(headSeq), stream);
+    if (stream.length > 0 && stream[0].seq > keyframeSeq + 1) {
+      stream = mergeBySeq(await this.store.readEdits(keyframeSeq), stream);
     }
     const { entries, notes } = fromStream(stream);
 
     // Reconstruct HEAD from the keyframe + the edit tail: the keyframe (`project.json`) reflects seq
     // `headSeq`; replay the edits after it through `applyEdit` to reach the true working state (notes
     // and the undo/redo reflog markers are skipped - not pure-forward). A bundle with no `headSeq`
-    // has `project.json` authoritative, so this no-ops.
+    // reads as -1, which says "this keyframe is the genesis project" - so the whole log replays onto
+    // it, which is what an unmarked `project.json` means.
     //
     // The tombstones are worked out over the WHOLE log before a base is chosen, because one of them
     // can take back an edit that is already baked into the keyframe, and replaying forward from that
     // keyframe cannot remove it (DAW-34 stage E).
-    const keyframe = { project: baseProject, seq: headSeq ?? -1 };
+    const keyframe = { project: baseProject, seq: keyframeSeq };
     const project = await headFromLog({
       base: keyframe,
       entries,
       olderBase: (belowSeq) => this.rebuildBaseFor(belowSeq, keyframe.seq),
     });
-    this.lastKeyframeSeq = headSeq ?? -1;
+    this.lastKeyframeSeq = keyframeSeq;
     // Everything on disk is already sealed history, so nothing at/below the max needs re-sending.
-    this.syncedThroughSeq = Math.max(headSeq ?? -1, highWaterSeq(entries, notes));
+    this.syncedThroughSeq = Math.max(keyframeSeq, highWaterSeq(entries, notes));
     return { project, log: entries, notes };
   }
 
