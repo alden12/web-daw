@@ -30,7 +30,7 @@ function connect(room: Room, prefix: string) {
   const transport: SyncTransport = {
     send: (message: ClientMessage) => {
       if (message.type === "subscribe") queue.push(() => room.subscribe(roomClient));
-      else if (message.type === "edit") queue.push(() => room.applyIncoming(incomingEdit(message)));
+      else if (message.type === "edit") queue.push(() => room.applyIncoming(incomingEdit(message), roomClient));
     },
     onMessage: (handler) => (deliver = handler),
     onOpen: (handler) => (open = handler),

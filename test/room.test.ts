@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { makeSyncEnv } from "./support/syncEnv";
+import { makeSyncEnv, seedEdits } from "./support/syncEnv";
 import { Room, type RoomClient } from "../server/api/rooms";
 import { deleteEditsBelow, listProjects } from "../server/db/store";
 import { edits, files, projects } from "../server/db/schema";
@@ -161,19 +161,23 @@ describe("Room (realtime authority)", () => {
   // starting a fresh ring and overwriting slot 0 on its next keyframe.
   it("keeps a retained copy of the keyframe, and re-reads the ring on reload", async () => {
     const { db } = await makeSyncEnv();
+    // Slot 0 is the base at the project's start (`seedStartKeyframe`), and the retain interval counts
+    // from it - so the first copy of a real keyframe lands 500 edits after the START, not 500 after
+    // the first keyframe. Seeded in one insert rather than driven edit by edit: the test wants a
+    // project this old, not five hundred round trips.
+    await seedEdits(db, "p1", 500);
     const room = await Room.load(db, "local", "p1");
-    await fillTracks(room, 100);
+    await fillTracks(room, 1, 500);
 
-    const index = await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH);
-    expect(index).toEqual([99, null, null, null, null]);
-    const retained = (await readBundleFile(db, "p1", retainedKeyframePath(0))) as ProjectData & { headSeq?: number };
-    expect(retained?.headSeq).toBe(99);
-    expect(retained?.tracks).toHaveLength(100);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 500, null, null, null]);
+    const retained = (await readBundleFile(db, "p1", retainedKeyframePath(1))) as ProjectData & { headSeq?: number };
+    expect(retained?.headSeq).toBe(500);
+    expect(retained?.tracks).toHaveLength(501);
 
     // A fresh room for the same project continues the ring instead of restarting it.
     const reloaded = await Room.load(db, "local", "p1");
-    await fillTracks(reloaded, 100, 100);
-    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([99, null, null, null, null]);
+    await fillTracks(reloaded, 100, 501);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 500, null, null, null]);
   });
 
   it("reloads from the keyframe + tail, so a compacted log still reconstructs exact HEAD", async () => {

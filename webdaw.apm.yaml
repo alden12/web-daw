@@ -8716,6 +8716,289 @@ projects:
           now (`test/support/syncHarness.ts`).
 
 
+          ### E7: an undo the authority cannot honour is refused
+
+
+          Alden's question, and it found a split-brain. Undo offline, and by
+          reconnect the edit you took back
+
+          can sit below the authority's keyframe with no older retained one to
+          drop to. The tombstone was
+
+          accepted and then quietly did nothing: it went into the log, the
+          rebuild could not reach the edit,
+
+          so the authority kept it - while the client that pressed undo had
+          already dropped it. Two
+
+          different projects, no error, lasting as long as the tab did. Proved
+          with a room driven 120 edits
+
+          past the keyframe interval while a client was away.
+
+
+          **Refusing converges them.** `canHonourUndo` asks whether a rebuild
+          could actually leave the edit
+
+          out: the entry is still in the retained log, and either above the
+          keyframe floor or reachable from
+
+          a retained keyframe below it. If not, `editRejected` goes to the
+          sender alone (no peer applied it),
+
+          and the client puts the edit back and says why. This is the
+          authority's half of the check
+
+          `EditLog.dropUnreachable` makes on a client, and it has to exist
+          separately because the two can
+
+          legitimately disagree - a client undoing offline still reaches an
+          edit the authority has moved past.
+
+
+          **`editRejected` existed in the contract and on the client and had
+          never been sent by anything.**
+
+          The client dropped the op and rolled it out of the live store
+          already; what was missing was the
+
+          authority ever refusing, and the sender being passed in so a refusal
+          could reach whoever sent it.
+
+
+          **A refused tombstone needs the local reflog entry removed too**
+          (`EditLog.revokeReflog`). Dropping
+
+          the op puts the edit back in the live project, but an entry still
+          saying it was undone takes it out
+
+          again on the next rebuild, and the excluded set keeps disagreeing
+          with the authority. The entry is
+
+          removed rather than compensated for with a redo: it only ever existed
+          locally, so this is the same
+
+          move as dropping a rejected edit from the queue, and a "Redid:" line
+          the user never pressed is a
+
+          worse account than no line. The step goes back on the stack it came
+          off.
+
+
+          **A redo never needs the check.** It stops excluding an edit rather
+          than starting to, so the worst
+
+          a too-old one can do is ask for an edit the base already has, which
+          is the outcome anyway.
+
+
+          **A failed reachability read accepts rather than refuses.** The two
+          ways to be wrong are not equal:
+
+          refusing bounces a good undo on a transient blip, while accepting
+          leaves the tombstone for the next
+
+          rebuild that works to honour - and the keyframe stays blocked
+          meanwhile, so nothing bakes in.
+
+
+          **Which uncovered a gap in E's own rebuild guard:** nothing retried a
+          rebuild that had failed, so
+
+          the store stayed behind its log for the life of the room and
+          `persistKeyframe` stayed blocked with
+
+          it. The next edit of any kind retries it now, swallowing the error,
+          since a debt from an earlier
+
+          edit is not that edit's problem.
+
+
+          **Still duplicated:** `forwardUndo` and `undoIdentity` keep their own
+          transport harnesses. They go
+
+          through `incomingEdit` and pass their room client, so they cannot
+          drift on the fields, but they
+
+          should move onto `test/support/syncHarness.ts` - the assertion churn
+          is id strings, not behaviour.
+
+
+          ### E8: a base at the project's start
+
+
+          Found while answering Alden on the refusal above. The oldest base a
+          hosted project had was its
+
+          first keyframe, written 100 edits in - so nothing sat below edits
+          0..99 and no rebuild could leave
+
+          one of them out. Ring after 120 edits: `[99, null, null, null,
+          null]`. A LOCAL project has always
+
+          retained one at seq -1 on its first save (`[-1, null, null, null,
+          null]`), so the two disagreed
+
+          about how far back undo reaches, and the comment beside the client's
+          version already claimed the
+
+          behaviour the authority did not have.
+
+
+          `seedStartKeyframe` writes it when a room loads. The base is the
+          empty project, because that IS
+
+          what replay starts from - `recomputeHead` uses exactly this when a
+          project has no keyframe yet. It
+
+          is skipped once the log no longer reaches seq 0, which is the same
+          window `rebuildBase`'s floor
+
+          enforces, so a project past that is never given a base its own floor
+          would refuse.
+
+
+          **A knock-on worth knowing:** the retain interval counts from the
+          newest base, so seeding the start
+
+          also moves the cadence - the next slot is taken 500 edits after the
+          START rather than 500 after the
+
+          first keyframe. Same spacing, one base earlier, and the opening edits
+          covered instead of stranded.
+
+          Two existing room tests asserted the old numbers.
+
+
+          ### E9: a refused undo drops its step
+
+
+          Also Alden's: what does a user see when an undo turns out to be
+          impossible? A rejection - and then
+
+          the same rejection again on every press, because `revokeReflog` put
+          the step back on the stack it
+
+          came off. The refusal is permanent (retained bases only move
+          forward, so an edit out of reach never
+
+          comes back into it), so the step is DROPPED now and the button greys
+          out. A button that fails
+
+          identically every time is worse than one that is not offered.
+
+
+          ### Open question: keep every edit instead of keyframes
+
+
+          Raised by Alden, and it is a good one. Replay from empty is already
+          exact and already the mechanism
+
+          (see E8), so a complete log can rebuild any state - including one a
+          corrupt keyframe broke, which no
+
+          snapshot can do unless it happens to sit before the damage.
+
+
+          **Storage does NOT favour it** (correcting a first estimate that put
+          the ring at 25MB; the measured
+
+          figure in `keyframes.ts` is ~250KB for the whole ring normal, ~5MB
+          for the whole ring large, so ~1MB
+
+          a keyframe). Back of the envelope on edits: one edit is one gesture
+          after coalescing, a dense
+
+          arrangement is 10-20k note edits, weeks of automation and mixing
+          another 10-50k, so a
+
+          heavily-worked project is order **100k edits** and a pathological one
+          maybe 500k. At 405 bytes a row
+
+          (measured, see DAW-38) that is **~40MB** and **~200MB** against a
+          ~5MB ring - 8x to 40x the
+
+          storage, per project.
+
+
+          **Speed does favour it.** The stage-B measurements say replaying the
+          full 2000-edit window on a
+
+          large project is 23.7ms on a laptop, about 12us an edit. So 100k
+          edits is ~1.2s on a laptop and
+
+          maybe 5s on a phone; 500k is ~6s and ~30s. A recovery rebuild is a
+          progress spinner, not the
+
+          "several minutes" a dialog would want to warn about.
+
+
+          Two costs, and the second is the real one:
+
+
+          - **Two hot paths read the whole log.** `recomputeHead` and
+          `canHonourUndo` both `readEdits(-1)`,
+            bounded today only by the pruning. Both can be bounded to "above the base" - contained, not free.
+          - **It makes the command vocabulary a forever-compatible format.** A
+          command type has to mean the
+            same thing for 2000 edits today; keep the log and it has to mean the same thing forever, or
+            command upcasters join the document ones. Keyframes have no such problem - they are data, and
+            `documentMigration` upgrades them. This is a commitment rather than a change.
+
+
+          **Exponential keyframe spacing (Alden's).** Right, and it composes -
+          with one structural catch: a
+
+          keyframe is worthless beyond LOG retention, because using a base at
+          edit N needs every entry from N
+
+          to now. So the two are different knobs. Log retention sets what is
+          POSSIBLE; keyframe spacing sets
+
+          how FAST. Exponential is strictly better than the fixed 500 for the
+          same five slots - bases at
+
+          roughly 500 / 1000 / 2000 / 4000 / 8000 back cover 16x the distance,
+          keep undo near the head as
+
+          cheap as it is now, and cap a deep one at a few thousand replayed
+          entries (~50ms).
+
+
+          **Proposed shape.** Raise the log bound from 2000 to something like
+          100k rather than going
+
+          unbounded - caps storage near 40MB and still makes essentially any
+          real project recoverable - then
+
+          switch the ring to exponential spacing. The two hot paths that read
+          the whole log
+          (`recomputeHead`, `canHonourUndo`) need bounding to "above the base"
+          either way. A cheaper variant
+
+          if the storage is unwelcome: keep pruning the WORKING log but archive
+          pruned edits to a cold bundle
+
+          file nothing reads on the hot path - recovery reads it, undo does not.
+
+
+          **What would settle it: count the edits in a real project.** Cheap to
+          instrument, and it turns all of
+
+          the above from arithmetic into a fact. Stage F's phone measurement is
+          the other half.
+
+
+          **Agreed and written up as DAW-38** (2026-09-18): cap the log at 100k
+          rather than going unbounded,
+
+          make the ring geometric (9 slots covering 128k edits for ~2x the
+          storage), bound the two hot paths,
+
+          and offer a fork if a rebuild still cannot produce a usable project.
+
+
+          ### Stage E is done; what is left is stage F
           ### Stage E is done; what is left is stage F
 
 
@@ -9344,6 +9627,221 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-38
+        area: DAW
+        title: A project can always be rebuilt from its log, and deep undo stays fast
+        status: to-do
+        sort_path: "000038"
+        deps:
+          - DAW-34
+        body: >
+          Agreed with Alden 2026-09-18, out of DAW-34 stage E. Two changes that
+          are really one idea: **keep
+
+          enough log to rebuild anything, and enough bases that rebuilding is
+          quick at any depth.**
+
+
+          Replay from empty is already exact (DAW-36 made commands
+          self-contained) and already the mechanism
+
+          - `recomputeHead` starts from an empty store at seq -1 when a project
+          has no keyframe, and stage E
+
+          wrote that state into the ring as a real base. So a complete log can
+          reconstruct any state a corrupt
+
+          or unreachable keyframe leaves behind, which no snapshot can do
+          unless it happens to sit before the
+
+          damage. What stops it today is that the log is pruned to the last
+          2000 edits.
+
+
+          ## The numbers, done before committing to any of it
+
+
+          One edit is one gesture after coalescing. A dense arrangement is
+          10-20k note edits; weeks of
+
+          automation and mixing on top another 10-50k. So a heavily-worked
+          project is order **100k edits**,
+
+          and a pathological one (years, or agent-driven) maybe 500k. A row is
+          **405 bytes, measured** (command
+
+          JSON, a uuid id, author/time/kind/seq, plus indexes and toast - see
+          below).
+
+
+          | | today | proposed |
+
+          |---|---|---|
+
+          | log retained | 2000 edits | **100k edits** (~40MB worst case) |
+
+          | ring slots | 5, fixed 500 apart | **9, geometric** |
+
+          | ring storage | 5MB large / 250KB normal | 9MB large / 450KB normal |
+
+          | range the ring covers | 2000 edits | 128k edits |
+
+
+          **~2x the ring storage to cover 50x the range**, because the rungs go
+          500, 1000, 2000, 4000, 8000,
+
+          16000, 32000, 64000, 128000 rather than five fixed steps.
+
+
+          Replay costs come from the stage-B measurements (23.7ms for 2000
+          edits on a large project, ~12us an
+
+          edit), a phone taken as 4x a laptop:
+
+
+          - **deepest undo** replays at most the rung below it, 64k entries:
+          **0.8s laptop, ~3s phone**
+          - **full recovery** replays at most 100k entries: **1.2s laptop, ~5s
+          phone**
+
+
+          Both sit well inside the 30s Alden set as acceptable for an edge
+          failure case.
+
+
+          ## The work
+
+
+          **1. Raise the server log cap** from `SNAPSHOT_WINDOW` (2000) to
+          ~100k. **Leave the client mirror at
+
+          `MAX_PERSISTED_ENTRIES` (2000)** - 40MB of edits in a browser cache
+          is not a trade worth making for
+
+          offline, and recovery is an online action. The deep log is the
+          authority's.
+
+
+          **2. Make the ring geometric.** Today `planKeyframes` evicts the
+          OLDEST slot, which gives fixed
+
+          spacing and a fixed reach. Evict the **most redundant** slot instead
+          - the one closest to a
+
+          neighbour in log-distance - and the surviving set settles into a
+          geometric ladder on its own, with
+
+          old keyframes promoted up the rungs as the head advances rather than
+          rewritten. `KEYFRAME_RING_SIZE`
+
+          becomes 9. `rebuildBase`/`oldestBase` need no change: they already
+          ask for the newest base below a
+
+          seq, which is exactly right for an uneven ladder.
+
+
+          **3. Bound the two paths that read the whole log.**
+          `Room.recomputeHead` and `Room.canHonourUndo`
+
+          both call `readEdits(-1)`. That is capped at 2000 rows today only by
+          the pruning; at 100k it is a
+
+          per-undo cost nobody should pay. Both want "above the base" instead.
+          This is a prerequisite, not a
+
+          nice-to-have.
+
+
+          **4. The recovery action.** "Rebuild project state?" with a progress
+          indicator rather than a
+
+          several-minutes warning - the numbers above say seconds. If the
+          rebuild itself cannot produce a
+
+          usable project, offer **fork to a new project** from the current
+          state. Alden's read, and it is
+
+          right: the user in that position has been offline for weeks or months
+          and then reconnected into a
+
+          project that moved on, so a fork is close to what they expected
+          anyway.
+
+
+          ## Measure first
+
+
+          **Count the edits in a real project.** Cheap to instrument, and it
+          turns every figure above from
+
+          arithmetic into a fact - in particular whether 100k is generous or
+          mean. (The per-row cost is
+
+          measured now; the COUNT for a real project is the half still open.)
+          Stage F's phone
+
+          measurement is the other half of the same question: if a rebuild is
+          much slower on a phone than 4x,
+
+          the cap comes down.
+
+
+          **The one real datapoint so far** (Alden, 2026-09-18): the deployed
+          Neon database holds **4160 edit
+
+          rows in total, across a few projects** - and no real track has been
+          written with the tool yet, so
+
+          that is incidental testing. It settles one thing: the current 2000
+          window is the same order as
+
+          CASUAL use, so it would be pruning real history rather than ancient
+          history the moment anyone
+
+          writes something. It says nothing yet about the shape of a real
+          project, since a test project is a
+
+          handful of gestures rather than months of arranging - but it makes
+          100k look like the right order
+
+          rather than a generous one.
+
+
+          **Bytes per row, measured** (Alden, same day): 4160 rows occupying
+          1,687,552 bytes including
+
+          indexes and toast = **405 bytes a row**, against the 400 this
+          ticket's arithmetic assumed. So the
+
+          40MB cap figure stands as written, and it is a measurement rather
+          than an estimate.
+
+
+          One shape could skew it upward on a real project: a plural command
+          (`addNotes`, `editNotes`) carries
+
+          an array and can run to several KB in one row - though it also
+          replaces the rows the individual
+
+          edits would have been, so it roughly cancels. Worth re-running the
+          query once a real track exists
+
+          rather than assuming it does.
+
+
+          ## Not this ticket
+
+
+          A **cold archive** - pruning the working log but writing pruned edits
+          to a bundle file nothing reads
+
+          on the hot path - is the variant to reach for if 40MB a project turns
+          out to be unwelcome. It buys
+
+          the same recovery without touching either hot path, at the cost of a
+          second storage shape. Recorded
+
+          rather than chosen, because the simple cap is worth trying first.
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"
