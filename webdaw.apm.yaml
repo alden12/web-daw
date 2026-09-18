@@ -9655,6 +9655,55 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-42
+        area: DAW
+        title: Catching up on a long gap reloads the project once per entry
+        status: to-do
+        sort_path: "000042"
+        deps:
+          - DAW-34
+        body: >
+          Noticed 2026-09-18 while writing DAW-41's tests, which is also how it
+          was measured: driving 2100
+
+          confirmed entries through a `SharedSession` took **14 seconds**, and
+          the same log as notes rather
+
+          than tracks took 4. The test was rewritten to keep the project small;
+          the cost it found was not.
+
+
+          `rebuildLive` runs on every confirmed entry and does
+          `projectStore.load(scratch.snapshot())` - a
+
+          full project load, building every instrument the project describes.
+          Live that is one load per
+
+          peer edit, at a few milliseconds, and nobody notices. **On a
+          catch-up it is one load per entry in
+
+          the gap**, which is precisely the flight case DAW-38 exists for:
+          reconnect after eight hours and
+
+          the session replays thousands of entries, reloading the whole project
+          each time.
+
+
+          The shape of the fix is the one DAW-39 used a level down: the work is
+          only needed when something
+
+          reads the result. A catch-up should fold its entries and load the
+          live store ONCE at the end,
+
+          rather than after each. `foldConfirmed` and `rebuildLive` are already
+          separate calls, so this is
+
+          about giving the snapshot path a batch entry point rather than
+          restructuring either.
+
+
+          Measure before and after with the same harness: deliver N
+          `editApplied` messages, time it.
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
