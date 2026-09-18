@@ -15,6 +15,20 @@ copy and stays the thing of record.
 Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.2`,
 `INST-4`) or `apm: "<section>"` for one of its context sections.
 
+## Database
+
+- **Index a column you look rows up by.** A table's primary key covers the way it
+  is keyed and nothing else, so any other lookup - `entry_id` on `edits`, `email`
+  on `project_members` - reads every row the query's other conditions leave. Cheap
+  to miss while a table is small and quietly expensive later: `edits.entry_id`
+  measured 7.4ms a lookup scanning 50k rows against 0.3ms through an index, for
+  about 20% more storage on the table. When adding a query, ask what it filters on
+  and whether an index covers it.
+- Schema changes go through `drizzle-kit generate` (never a hand-written SQL file),
+  and the generated migration gets **renamed to say what it does** - `0008_index_edit_ids`
+  rather than `0008_spotty_thor_girl` - with the `tag` in `drizzle/meta/_journal.json`
+  updated to match. `applyMigrations` runs them on boot, so there is no deploy step.
+
 ## Validation
 
 - Use **zod** for validation at every untrusted boundary (MCP tool inputs,

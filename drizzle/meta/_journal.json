@@ -57,6 +57,13 @@
       "when": 1789682586735,
       "tag": "0007_retire_claude_voice",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789740825712,
+      "tag": "0008_index_edit_ids",
+      "breakpoints": true
     }
   ]
 }

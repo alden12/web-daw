@@ -1,0 +1,1 @@
+CREATE INDEX "edits_entry_id_idx" ON "edits" USING btree ("project_id","entry_id");

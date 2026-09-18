@@ -32,6 +32,7 @@ import {
   deleteEditsBelow,
   ensureUser,
   maxEditSeq,
+  readEditSeqs,
   readEdits,
   readFile,
   resolveProjectAccess,
@@ -460,8 +461,9 @@ export class Room {
    * undo has that edit baked OUT, and no forward replay puts it back. So a redo needs a base from
    * below its target exactly as an undo does, and is refused on the same terms when there is none.
    *
-   * Reads the log in full. It happens once per undo on the authority, next to a rebuild that reads
-   * the same thing, so the duplicate read is the cheaper half of an operation that is already rare.
+   * Asks the log where one edit sits rather than reading it (DAW-38 step 4). This used to pull every
+   * retained row to find one, which was affordable at a two-thousand-edit window and is not at a
+   * hundred thousand.
    */
   private async reflogReach(undoes: string | undefined): Promise<{ honour: boolean; deep: boolean }> {
     if (undoes === undefined) return { honour: false, deep: false };
@@ -470,15 +472,14 @@ export class Room {
     // the held edit first, exactly so the authority is never told about the tombstone sooner).
     await this.queueAfterWork(async () => {});
     try {
-      const log = await readEdits(this.db, { userId: this.ownerId }, this.projectId, -1);
-      const entry = log.find((each) => each.id === undoes);
+      const seq = (await readEditSeqs(this.db, { userId: this.ownerId }, this.projectId, [undoes])).get(undoes);
       // Pruned, or never stored: there is nothing left to take out, or to put back.
-      if (!entry) return { honour: false, deep: false };
+      if (seq === undefined) return { honour: false, deep: false };
       // In the tail the rebuild replays anyway, which also means every client can rebuild it itself.
-      if (entry.seq > this.lastKeyframeSeq) return { honour: true, deep: false };
+      if (seq > this.lastKeyframeSeq) return { honour: true, deep: false };
       // Baked into the keyframe either way: needs an older base here, and a client may need the
       // result of this rebuild rather than computing its own.
-      return { honour: (await this.retainedBaseFor(entry.seq)) !== null, deep: true };
+      return { honour: (await this.retainedBaseFor(seq)) !== null, deep: true };
     } catch {
       // A read that failed says nothing about reach, and the two ways to be wrong are not equal:
       // refusing would bounce a perfectly good undo on a transient blip, while accepting leaves the
@@ -523,17 +524,42 @@ export class Room {
   private async recomputeHead(): Promise<number> {
     const owner: Accessor = { userId: this.ownerId };
     const projectFile = await readFile(this.db, owner, this.projectId, "project.json");
-    let base: { project: ProjectData; seq: number } = { project: new ProjectStore(false).snapshot(), seq: -1 };
-    if (projectFile?.kind === "json" && projectFile.json) {
-      const { headSeq, ...project } = projectFile.json as ProjectData & { headSeq?: number };
-      base = { project: project as ProjectData, seq: headSeq ?? -1 };
+    const keyframe: { project: ProjectData; seq: number } =
+      projectFile?.kind === "json" && projectFile.json
+        ? (() => {
+            const { headSeq, ...project } = projectFile.json as ProjectData & { headSeq?: number };
+            return { project: project as ProjectData, seq: headSeq ?? -1 };
+          })()
+        : { project: new ProjectStore(false).snapshot(), seq: -1 };
+
+    let base = keyframe;
+    let entries = (await readEdits(this.db, owner, this.projectId, base.seq)) as unknown as EditEntry[];
+    // The tail alone is not always enough, and this is the awkward part of the whole design: a
+    // tombstone up here can name an edit BELOW the keyframe, which the keyframe has already baked in
+    // (or, after a redo, baked out) and no forward replay can settle. That used to be handled by
+    // reading the ENTIRE log so the answer was always in hand - affordable at a two-thousand-edit
+    // window, not at a hundred thousand.
+    //
+    // So ask the narrow question instead: of the edits the tail's reflog entries name, which are not
+    // in the tail? Look up just those, and only widen if one really is below the base.
+    const named = [...new Set(entries.flatMap((entry) => (entry.undoes === undefined ? [] : [entry.undoes])))].filter(
+      (id) => !entries.some((entry) => entry.id === id),
+    );
+    const belowBase = [...(await readEditSeqs(this.db, owner, this.projectId, named)).values()].filter(
+      (seq) => seq <= base.seq,
+    );
+    if (belowBase.length > 0) {
+      const older = await this.retainedBaseFor(Math.min(...belowBase));
+      if (older) {
+        base = older;
+        entries = (await readEdits(this.db, owner, this.projectId, base.seq)) as unknown as EditEntry[];
+      }
     }
-    // The whole retained log, not just the tail above the keyframe: a tombstone up there can take
-    // back an edit baked INTO the keyframe, which `headFromLog` handles by dropping to an older
-    // retained one. Same code the client's `ProjectRepository.load` runs.
-    const log = (await readEdits(this.db, owner, this.projectId, -1)) as unknown as EditEntry[];
-    this.store.load(await headFromLog({ base, entries: log, olderBase: (below) => this.retainedBaseFor(below) }));
-    return base.seq;
+    // `olderBase` is already settled above, with entries read to match it. Letting `headFromLog`
+    // widen again would leave it replaying a tail that starts above the base it chose, which is a
+    // gap - the one way this rebuild can be silently wrong.
+    this.store.load(await headFromLog({ base, entries, olderBase: async () => null }));
+    return keyframe.seq;
   }
 }
 

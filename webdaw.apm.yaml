@@ -10446,8 +10446,16 @@ projects:
             session left the log rebuilding from a base written before the undo, so the next ordinary
             undo put the deep edit straight back. The session now re-bases the log onto what it
             accepted, naming its pending edits so they stay above the new base.
-          - **Step 4** remains (bounding the two whole-log reads), and the
-          recovery action.
+          - **Step 4** - bounding the two whole-log reads, PR #149.
+          `reflogReach` asks `readEditSeqs`
+            where one edit sits instead of pulling every row to find it. `recomputeHead` reads the tail
+            above the keyframe, then asks the same narrow question of the ids the tail's reflog entries
+            name, and widens only when one really is below the base - with the entries re-read to match
+            it, since a widened base replayed against a tail that starts above it is a gap, and the one
+            way this rebuild can be silently wrong.
+          - **Step 5's recovery action** (the "rebuild project state?" prompt,
+          and the fork if even that
+            cannot produce a usable project) is the last of this ticket.
 
           **Also fixed in #149, found by a test that would not seed:**
           `appendEdits` put every entry in ONE
