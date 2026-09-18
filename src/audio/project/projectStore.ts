@@ -206,11 +206,10 @@ export class ProjectStore {
   private customEffectDefs: GraphEffectDef[] = [];
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
-  private cached!: ProjectStructure;
+  private cached: ProjectStructure | null = null;
 
   constructor(seedDefault = true) {
     if (seedDefault) this.addTrack(DEFAULT_INSTRUMENT);
-    else this.rebuild();
   }
 
   /** Short but globally unique, so server- and browser-created ids never collide. */
@@ -233,8 +232,18 @@ export class ProjectStore {
     return `p-${randomUuid().slice(0, 8)}`;
   }
 
-  private rebuild(): void {
-    this.cached = buildStructure(this.tracks, this.groups, {
+  /**
+   * The structural view, built on the first read after a change rather than on the change itself.
+   *
+   * Lazy for the reason `ClipStore.view` is: this walks every track, group, effect and clip in the
+   * project, so doing it per edit made replaying a log cost O(edits x project), which is what a deep
+   * undo rebuild pays. Nothing bulk (replay, `load`, the Node mirror) reads between its own writes,
+   * so a replay now builds the structure once at the end instead of once per entry.
+   *
+   * Still a stable reference between mutations, which is what `useSyncExternalStore` needs.
+   */
+  private rebuild(): ProjectStructure {
+    this.cached ??= buildStructure(this.tracks, this.groups, {
       name: this.projectName,
       tempoBpm: this.tempoBpm,
       lengthBeats: this.lengthBeats,
@@ -245,16 +254,17 @@ export class ProjectStore {
       grooveAmount: this.grooveAmount,
       samples: this.samples,
     });
+    return this.cached;
   }
 
   private emit(): void {
-    this.rebuild();
+    this.cached = null;
     for (const listener of this.listeners) listener();
   }
 
   // --- reads ---
   getStructure(): ProjectStructure {
-    return this.cached;
+    return this.rebuild();
   }
   getTracks(): Track[] {
     return this.tracks;

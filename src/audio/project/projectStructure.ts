@@ -62,7 +62,7 @@ function trackMeta(track: Track): TrackMeta {
           id: clip.id,
           name: clip.name,
           author: clip.author,
-          lengthBeats: clip.store.getClip().lengthBeats,
+          lengthBeats: clip.store.getLength(),
         })),
         activeClipId: track.activeClipId,
         placements: track.placements.map((placement) => ({ ...placement })),
