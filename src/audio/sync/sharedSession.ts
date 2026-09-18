@@ -102,6 +102,14 @@ export interface SharedSessionOptions {
   onConfirmed?: () => void;
   /** Durable local mirror (OPFS) for the pending queue + confirmed stream; omit for no offline durability. */
   localMirror?: LocalMirror;
+  /**
+   * Re-read the authority's stored HEAD (`project.json` and the seq it reflects).
+   *
+   * The recovery for a tombstone this session cannot honour: one naming an edit already folded into
+   * its seed (DAW-41). Omit it and such a tombstone is reported rather than applied, which is the
+   * same call, minus the recovery.
+   */
+  readAuthoritativeHead?: () => Promise<{ project: ProjectData; seq: number } | null>;
 }
 
 /** Only pure-forward edits replay through `applyEdit`; notes / undo-redo markers are skipped. */
@@ -116,6 +124,9 @@ export class SharedSession {
   private readonly onConflict?: (info: ConflictInfo, myState: ProjectData) => void;
   private readonly onConfirmed?: () => void;
   private readonly localMirror?: LocalMirror;
+  private readonly readAuthoritativeHead?: () => Promise<{ project: ProjectData; seq: number } | null>;
+  /** Re-seeds run one at a time and in order, so two tombstones cannot interleave their reads. */
+  private reseeding: Promise<unknown> = Promise.resolve();
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
   private readonly base: ProjectStore;
@@ -156,6 +167,7 @@ export class SharedSession {
     this.onConflict = options.onConflict;
     this.onConfirmed = options.onConfirmed;
     this.localMirror = options.localMirror;
+    this.readAuthoritativeHead = options.readAuthoritativeHead;
     this.headSeq = options.baseSeq ?? -1;
 
     // Seed `base` from the client's already-loaded HEAD, so a peer rebase replays onto real state
@@ -432,15 +444,65 @@ export class SharedSession {
   private foldConfirmed(entry: EditEntry): void {
     this.confirmed.push(entry);
     if (entry.undoes !== undefined && (entry.kind === "undo" || entry.kind === "redo")) {
-      this.rebuildBase();
+      // Fold the window down FIRST. Whether this tombstone can be honoured is a question about what
+      // will still be replayed, and trimming is what decides that - asking before it trims gets the
+      // answer for a window that is about to stop existing.
+      this.trimConfirmed();
+      if (this.canFold(entry)) this.rebuildBase();
+      else void this.reseedFromAuthority(entry);
       return;
     }
     if (isReplayable(entry.kind)) applyEdit(this.base, entry.command, entry.author);
   }
 
-  /** `base` as the confirmed log says it is: the seed, replayed, with its tombstones honoured. */
+  /**
+   * Whether rebuilding from the seed could actually honour this tombstone.
+   *
+   * It can only leave out an edit it still replays, and `trimConfirmed` folds the oldest entries INTO
+   * the seed - where they are baked in and no forward replay can remove them. So a tombstone naming
+   * one of those rebuilds to a project that still contains the edit it takes back, silently, and the
+   * client then disagrees with the authority with nothing to say so (DAW-41).
+   *
+   * A REDO is always foldable: it stops excluding an edit rather than starting to, so a target inside
+   * the seed is already present, which is the outcome it wanted.
+   */
+  private canFold(entry: EditEntry): boolean {
+    if (entry.kind === "redo") return true;
+    return this.confirmed.some((each) => each.id === entry.undoes);
+  }
+
+  /**
+   * Take the authority's word for it: re-read its stored HEAD and rebuild from there.
+   *
+   * The authority rebuilt without the undone edit and wrote the result to `project.json` before
+   * broadcasting (see `Room.applyIncoming`), so that file is a base this session cannot compute for
+   * itself. Entries above it still replay on top, which keeps anything that arrived meanwhile - and
+   * `pending` is replayed by `rebuildLive`, so unsent local work survives the swap.
+   *
+   * Serialized through `reseeding`, and it re-checks the seq it got back: a keyframe still older than
+   * the undone edit cannot help, and applying it would roll the project backwards. Then there is
+   * nothing to do but say so, which is the honest end of "unavailable rather than wrong".
+   */
+  private reseedFromAuthority(entry: EditEntry): Promise<void> {
+    const recover = async () => {
+      const head = await this.readAuthoritativeHead?.().catch(() => null);
+      if (!head || head.seq < entry.seq) {
+        this.onError?.("An undo from another device could not be applied here - reload to catch up");
+        return;
+      }
+      this.seed = head.project;
+      this.confirmed = this.confirmed.filter((each) => each.seq > head.seq);
+      this.headSeq = Math.max(this.headSeq, head.seq);
+      this.rebuildBase();
+      this.rebuildLive();
+    };
+    this.reseeding = this.reseeding.then(recover, recover);
+    return this.reseeding as Promise<void>;
+  }
+
+  /** `base` as the confirmed log says it is: the seed, replayed, with its tombstones honoured.
+   *  The caller trims first, because what survives the trim is what decides whether this can work. */
   private rebuildBase(): void {
-    this.trimConfirmed();
     const scratch = new ProjectStore(false);
     scratch.load(this.seed);
     replayEntries(scratch, this.confirmed);

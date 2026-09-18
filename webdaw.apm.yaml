@@ -9658,7 +9658,7 @@ projects:
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
-        status: to-do
+        status: review
         sort_path: "000041"
         deps:
           - DAW-34
@@ -9744,6 +9744,38 @@ projects:
           "submit, do not simulate"
 
           move DAW-38 and DAW-40 settle on, applied to the receiving side.
+
+
+          ## Built 2026-09-18 (PR #148), and it turned up a second bug
+
+
+          Three parts, and the middle one was not planned:
+
+
+          1. **The authority writes `project.json` the moment it honours a
+          tombstone**, rather than on the
+             hundred-edit cadence. Step 3 of the plan, pulled forward because the client fix reads that
+             exact file and the cadence version could still be the pre-undo snapshot.
+          2. **`headFromLog` asks whether an edit is CONTESTED, not whether it
+          is tombstoned right now.**
+             Writing a keyframe straight after an undo exposed this: undo an edit, let a keyframe land
+             without it, then redo, and the edit never came back - it was no longer tombstoned, so
+             nothing asked for an older base, and forward replay cannot resurrect an edit below the base.
+             **Pre-existing**, reproduced on the branch tip without any of this change: the cadence just
+             made the keyframe land later, and the redo failed the same way.
+          3. **The session detects the unfoldable tombstone and re-seeds.**
+          `trimConfirmed` now runs BEFORE
+             the check rather than inside `rebuildBase`, because whether a tombstone can be honoured is
+             a question about what survives the trim; asking first gets the answer for a window that is
+             about to stop existing.
+
+          `ProjectRepository.readHeadKeyframe` is the read, split out of
+          `load`. `SharedSession` takes it as
+
+          `readAuthoritativeHead`; without it an unfoldable tombstone is
+          reported rather than applied, which
+
+          is the same call minus the recovery.
       - ref: DAW-40
         area: DAW
         title: A client loads the log it needs, not the whole window

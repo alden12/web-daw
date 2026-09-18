@@ -94,10 +94,16 @@ export function replayEntries(project: ProjectStore, entries: readonly EditEntry
  * HEAD as the log says it is: a base keyframe, the entries above it replayed, and the log's own
  * tombstones honoured (DAW-34 stage E).
  *
- * The awkward part, and the reason this is shared rather than written twice: **a tombstone can take
- * back an edit that is already baked into the base**, and replaying forward cannot remove it. So the
- * exclusions are worked out over the whole log BEFORE the base is settled, and a base that turns out
- * to be too new is swapped for an older retained keyframe.
+ * The awkward part, and the reason this is shared rather than written twice: **the base can disagree
+ * with the log about an edit below it, in either direction**, and replaying forward fixes neither.
+ * A tombstone can take back an edit already baked INTO the base; a redo can put back one the base was
+ * written without, and no forward replay resurrects it. So the reflog is read over the whole log
+ * BEFORE the base is settled, and a base that turns out to be too new is swapped for an older
+ * retained keyframe.
+ *
+ * Which is why the test is "is this edit CONTESTED", not "is it tombstoned right now". Asking the
+ * narrower question cost a real bug: undo an edit, let a keyframe land without it, then redo, and the
+ * edit stayed gone - it was no longer tombstoned, so nothing asked for an older base.
  *
  * `olderBase` is how the caller fetches one, because where they live differs: the client reads a
  * bundle file, the authority reads the `files` table. Returning null means the ring does not reach
@@ -112,11 +118,18 @@ export async function headFromLog(options: {
   const { entries, olderBase } = options;
   const tombstoned = tombstonedIds(entries);
   let base = options.base;
-  const bakedIn = entries.filter(
-    (entry) => entry.id !== undefined && tombstoned.has(entry.id) && entry.seq <= base.seq,
+  // Every edit the reflog names at all, whichever way it currently falls: the base was written at
+  // some unknown point in that argument, so it cannot be trusted about any of them.
+  const contested = new Set(
+    entries
+      .filter((entry) => entry.undoes !== undefined && (entry.kind === "undo" || entry.kind === "redo"))
+      .map((entry) => entry.undoes as string),
   );
-  if (bakedIn.length > 0) {
-    const older = await olderBase(Math.min(...bakedIn.map((entry) => entry.seq)));
+  const unsettled = entries.filter(
+    (entry) => entry.id !== undefined && contested.has(entry.id) && entry.seq <= base.seq,
+  );
+  if (unsettled.length > 0) {
+    const older = await olderBase(Math.min(...unsettled.map((entry) => entry.seq)));
     if (older) base = older;
   }
   const store = new ProjectStore(false);
