@@ -15,10 +15,11 @@ import { makeSyncEnv, seedEdits } from "./support/syncEnv";
 import { Harness } from "./support/syncHarness";
 import { Room } from "../server/api/rooms";
 import { files } from "../server/db/schema";
-import { appendEdits, ensureUser, writeFile } from "../server/db/store";
+import { appendEdits, ensureUser, readEdits, writeFile } from "../server/db/store";
 import { KEYFRAME_INDEX_PATH } from "../src/audio/history/keyframes";
 import type { Db } from "../server/db/types";
 import type { EditCommand } from "../src/audio/commands/types";
+import type { ServerMessage } from "../src/contract/ws";
 
 const track = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
 
@@ -122,19 +123,68 @@ describe("a room's start keyframe", () => {
   it("is not offered to a project whose log has moved past the window", async () => {
     const { db } = await makeSyncEnv();
     await ensureUser(db, "local");
-    // As a long-lived project looks: a head far past the retention window, and a ring of bases
-    // inside it. Written straight to the log rather than driven through the room, which would be
-    // two thousand transactions to establish one number.
+    // As a very long-lived project looks: a head past `RETAINED_EDITS` (DAW-38), so compaction has
+    // taken seq 0 with it, and a ring of bases inside what is left. Written straight to the log
+    // rather than driven through the room, which would be a hundred thousand transactions to
+    // establish one number.
     await appendEdits(db, { userId: "local" }, "p1", [
-      { seq: 2500, id: "op-late", command: track("t-late"), author: "you", time: 0, kind: "edit" },
+      { seq: 150_000, id: "op-late", command: track("t-late"), author: "you", time: 0, kind: "edit" },
     ]);
     await writeFile(db, { userId: "local" }, "p1", KEYFRAME_INDEX_PATH, {
       kind: "json",
-      json: [999, 1499, 1999, 2499, null],
+      json: [100_000, 120_000, 140_000, 149_000, null],
     });
 
     await Room.load(db, "local", "p1");
 
     expect(await ring(db)).not.toContain(-1);
+  });
+});
+
+/**
+ * DAW-38: the authority keeps far more log than it puts on the wire.
+ *
+ * One constant used to do both jobs, and raising it for retention would have sent a project's entire
+ * history to every client that connected. These say the two are separate, in the only terms that
+ * matter: how much a subscriber receives, and how much survives compaction.
+ */
+describe("what the authority keeps against what it sends", () => {
+  it("sends a joining client a bounded catch-up feed, not the whole log", async () => {
+    const { db } = await makeSyncEnv();
+    await seedEdits(db, "p1", 2500);
+    const room = await Room.load(db, "local", "p1");
+    const received: ServerMessage[] = [];
+    await room.subscribe({ send: (message) => received.push(message) });
+
+    const snapshot = received.find((message) => message.type === "snapshot");
+    expect(snapshot?.type === "snapshot" && snapshot.entries).toHaveLength(2000);
+    expect(snapshot?.type === "snapshot" && snapshot.headSeq).toBe(2499);
+  });
+
+  it("keeps the log well past that, so the start of the project is still replayable", async () => {
+    const { db } = await makeSyncEnv();
+    await seedEdits(db, "p1", 2500);
+    const room = await Room.load(db, "local", "p1");
+    await fill(room, 1, 2500); // crosses the keyframe interval, so compaction runs
+
+    // Every seed edit is still there: the prune floor follows RETAINED_EDITS, not the feed window.
+    const log = await readEdits(db, { userId: "local" }, "p1", -1);
+    expect(log).toHaveLength(2501);
+    expect(log[0].seq).toBe(0);
+  });
+
+  // The pair the log cap exists for: a project whose keyframe is gone rebuilds from its start.
+  it("rebuilds a project from its start when the head keyframe is unusable", async () => {
+    const { db } = await makeSyncEnv();
+    await seedEdits(db, "p1", 2500);
+    const room = await Room.load(db, "local", "p1");
+    await fill(room, 1, 2500);
+    const before = room.snapshot().tracks.length;
+
+    // The head keyframe goes; only the log and the start base are left to work from.
+    await db.delete(files).where(and(eq(files.projectId, "p1"), eq(files.path, "project.json")));
+
+    const recovered = await Room.load(db, "local", "p1");
+    expect(recovered.snapshot().tracks).toHaveLength(before);
   });
 });

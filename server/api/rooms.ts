@@ -41,12 +41,25 @@ import {
   type EditEntryInput,
 } from "../db/store";
 
-/** How many recent entries a `snapshot` carries (bounded feed window; matches MAX_PERSISTED_ENTRIES). */
+/** How many recent entries a `snapshot` carries: the catch-up feed a client gets on subscribe, which
+ *  is bounded by what a client can hold and show (`MAX_PERSISTED_ENTRIES`), NOT by what the authority
+ *  keeps. The two used to be one constant, which would have put a project's whole retained history on
+ *  the wire every time somebody connected. */
 const SNAPSHOT_WINDOW = 2000;
 
+/**
+ * How much of a project's edit log the authority keeps (DAW-38).
+ *
+ * Deliberately far more than anything replays today. The log is the only thing that can rebuild a
+ * project whose keyframe is unusable, and an edit row measures at 405 bytes, so a hundred thousand of
+ * them is ~40MB - cheap against never being able to reconstruct someone's work. Pruning earlier than
+ * that is a decision to make once there is a real project to measure, rather than in advance.
+ */
+const RETAINED_EDITS = 100_000;
+
 /** Write a keyframe every this many edits since the last one, to bound room-reload replay. Mirrors the
- *  client's `KEYFRAME_EDIT_INTERVAL` (src/audio/persistence.ts); far below `SNAPSHOT_WINDOW`, so
- *  compaction only ever prunes once a project's log exceeds the retained feed window. */
+ *  client's `KEYFRAME_EDIT_INTERVAL` (src/audio/persistence.ts); far below `RETAINED_EDITS`, so
+ *  compaction only ever prunes a project with a very long history. */
 const KEYFRAME_INTERVAL = 100;
 
 /** The seq a project's starting state reflects: before its first edit. See `seedStartKeyframe`. */
@@ -184,7 +197,7 @@ export class Room {
    */
   private async seedStartKeyframe(): Promise<void> {
     if (this.keyframeIndex.includes(START_SEQ)) return;
-    if (this.maxSeq >= SNAPSHOT_WINDOW) return; // the log no longer reaches seq 0
+    if (this.maxSeq >= RETAINED_EDITS) return; // the log no longer reaches seq 0
     const slot = this.keyframeIndex.indexOf(null);
     if (slot < 0) return; // the ring is full, so it already reaches as far back as it can
     const index = this.keyframeIndex.map((seq, each) => (each === slot ? START_SEQ : seq));
@@ -227,10 +240,10 @@ export class Room {
       json: { ...snapshot, headSeq },
     });
     await this.retainKeyframe({ ...snapshot, headSeq }, headSeq);
-    // Compact: prune entries at/below the keyframe, but keep the most-recent SNAPSHOT_WINDOW so the
-    // catch-up feed still has history. `headSeq - SNAPSHOT_WINDOW` is strictly below the keyframe, so the
-    // load replay (which reads seq > headSeq) never needs a pruned entry.
-    const pruneFloor = headSeq - SNAPSHOT_WINDOW;
+    // Compact: prune entries at/below the keyframe, but keep the most-recent RETAINED_EDITS so the log
+    // can still rebuild the project from its start. `headSeq - RETAINED_EDITS` is strictly below the
+    // keyframe, so the load replay (which reads seq > headSeq) never needs a pruned entry.
+    const pruneFloor = headSeq - RETAINED_EDITS;
     if (pruneFloor >= 0) await deleteEditsBelow(this.db, this.projectId, pruneFloor);
   }
 
@@ -267,7 +280,10 @@ export class Room {
    * the index was overwritten under us, so it reads as absent rather than as the wrong base.
    */
   async retainedBaseFor(belowSeq: number): Promise<{ project: ProjectData; seq: number } | null> {
-    const slot = rebuildBase(this.keyframeIndex, belowSeq, this.maxSeq);
+    // The window is how far back the CALLER's log reaches, and the authority's reaches much further
+    // than a client's - which is what keeps the start keyframe usable for a project's whole first
+    // hundred thousand edits rather than only its first two thousand.
+    const slot = rebuildBase(this.keyframeIndex, belowSeq, this.maxSeq, { window: RETAINED_EDITS });
     if (!slot) return null;
     const file = await readFile(this.db, { userId: this.ownerId }, this.projectId, retainedKeyframePath(slot.slot));
     if (file?.kind !== "json" || !file.json) return null;

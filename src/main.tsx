@@ -11,6 +11,7 @@ import "./index.css";
 import { registerServiceWorker } from "./pwa/serviceWorkerUpdate";
 import { applyStoredTheme } from "./ui/theme";
 import App from "./App.tsx";
+import { renderRebuildBench, wantsRebuildBench } from "./ui/rebuildBenchPage";
 
 // Dev/test-only: install the offline-render e2e harness (the window.__daw* hooks the Playwright
 // suite calls). Guarded by import.meta.env so the whole module is dead-code-eliminated from
@@ -43,8 +44,15 @@ registerServiceWorker();
 // Before the first render, so nobody on a non-default theme sees a frame of the wrong one.
 applyStoredTheme();
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// Dev-only: `?bench=rebuild` measures replay cost and renders it, INSTEAD of the app (DAW-34 stage
+// F). A page rather than a console hook because the device that needs measuring is a phone, and a
+// phone has neither an editor nor an easy console - so the number has to arrive on the screen.
+if ((import.meta.env.DEV || import.meta.env.MODE === "test") && wantsRebuildBench()) {
+  void renderRebuildBench();
+} else {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

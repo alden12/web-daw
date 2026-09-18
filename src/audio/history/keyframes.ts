@@ -24,8 +24,16 @@
 /** Edits between retained keyframes. See the storage note above for why it is not tighter. */
 export const KEYFRAME_RETAIN_INTERVAL = 500;
 
-/** How far back the edit log is kept, and so how far back a rebuild can reach. Matches the
- *  authority's `SNAPSHOT_WINDOW` and the client's `MAX_PERSISTED_ENTRIES`. */
+/**
+ * How far back a rebuild can reach, which is how far back the CALLER's edit log goes - a base with
+ * no entries above it to replay arrives nowhere, so one older than this reads as absent.
+ *
+ * This is the client's depth (`MAX_PERSISTED_ENTRIES`). The authority keeps far more
+ * (`RETAINED_EDITS`, DAW-38) and passes its own via the `window` option, which is what lets a start
+ * keyframe stay usable for a project's whole retained history rather than only its last two
+ * thousand edits. Deliberately a default rather than a constant both sides share: they genuinely
+ * differ, and pretending otherwise is how one of them silently replays from a base it cannot reach.
+ */
 export const KEYFRAME_RETAIN_WINDOW = 2000;
 
 /**
