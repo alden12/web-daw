@@ -257,7 +257,9 @@ export class Room {
    * costs undo depth rather than data. The index is cached on the room, which outlives every write.
    */
   private async retainKeyframe(keyframe: Record<string, unknown>, headSeq: number): Promise<void> {
-    const plan = planKeyframes(this.keyframeIndex, headSeq);
+    // The authority's ladder spans its own retention, not the client's (DAW-38): a rung is worth a
+    // slot for as long as the edits above it survive, which here is RETAINED_EDITS.
+    const plan = planKeyframes(this.keyframeIndex, headSeq, { window: RETAINED_EDITS });
     this.keyframeIndex = plan.index;
     if (!plan.write) return;
     const who = { userId: this.ownerId };

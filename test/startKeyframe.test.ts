@@ -16,12 +16,16 @@ import { Harness } from "./support/syncHarness";
 import { Room } from "../server/api/rooms";
 import { files } from "../server/db/schema";
 import { appendEdits, ensureUser, readEdits, writeFile } from "../server/db/store";
-import { KEYFRAME_INDEX_PATH } from "../src/audio/history/keyframes";
+import { KEYFRAME_INDEX_PATH, KEYFRAME_RING_SIZE } from "../src/audio/history/keyframes";
 import type { Db } from "../server/db/types";
 import type { EditCommand } from "../src/audio/commands/types";
 import type { ServerMessage } from "../src/contract/ws";
 
 const track = (id: string): EditCommand => ({ type: "createTrack", instrumentType: "subtractive", id });
+
+/** The ring as `[...slots]` padded to its full length, so a test can write only the slots it means. */
+const slots = (...used: (number | null)[]): (number | null)[] =>
+  Array.from({ length: KEYFRAME_RING_SIZE }, (_, slot) => used[slot] ?? null);
 
 const ring = async (db: Db): Promise<(number | null)[]> => {
   const rows = await db
@@ -54,7 +58,7 @@ describe("a room's start keyframe", () => {
     const room = await Room.load(db, "local", "p1");
     await fill(room, 1, 120); // crosses the keyframe interval, but not the retain one
 
-    expect(await ring(db)).toEqual([-1, null, null, null, null]);
+    expect(await ring(db)).toEqual(slots(-1));
   });
 
   it("becomes the base the retain interval counts from", async () => {
@@ -63,7 +67,7 @@ describe("a room's start keyframe", () => {
     const room = await Room.load(db, "local", "p1");
     await fill(room, 1, 500);
 
-    expect(await ring(db)).toEqual([-1, 500, null, null, null]);
+    expect(await ring(db)).toEqual(slots(-1, 500));
   });
 
   // The case that sent me looking: a client's own first edit, undone after the project moved past

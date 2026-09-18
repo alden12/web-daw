@@ -7,7 +7,7 @@ import { edits, files, projects } from "../server/db/schema";
 import type { ServerMessage } from "../src/contract/ws";
 import type { EditCommand } from "../src/audio/commands/types";
 import type { ProjectData } from "../src/audio/project/types";
-import { KEYFRAME_INDEX_PATH, retainedKeyframePath } from "../src/audio/history/keyframes";
+import { KEYFRAME_INDEX_PATH, KEYFRAME_RING_SIZE, retainedKeyframePath } from "../src/audio/history/keyframes";
 
 // A client stub that just records what the room pushes to it.
 const collector = () => {
@@ -21,6 +21,10 @@ const commitMarker = (message: string): EditCommand => ({ type: "commit", messag
 const applied = (messages: ServerMessage[]) => messages.filter((m) => m.type === "editApplied");
 
 // Drive `count` createTrack edits through the room (seq starts at `start`); used to cross the keyframe interval.
+/** The ring index as `[...slots]` padded out, so a test writes only the slots it means. */
+const ringSlots = (...used: (number | null)[]): (number | null)[] =>
+  Array.from({ length: KEYFRAME_RING_SIZE }, (_, slot) => used[slot] ?? null);
+
 const fillTracks = async (room: Room, count: number, start = 0): Promise<void> => {
   for (let index = start; index < start + count; index += 1) {
     await room.applyIncoming({ command: createTrack(`t-${index}`), opId: `op-${index}` });
@@ -169,7 +173,7 @@ describe("Room (realtime authority)", () => {
     const room = await Room.load(db, "local", "p1");
     await fillTracks(room, 1, 500);
 
-    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 500, null, null, null]);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual(ringSlots(-1, 500));
     const retained = (await readBundleFile(db, "p1", retainedKeyframePath(1))) as ProjectData & { headSeq?: number };
     expect(retained?.headSeq).toBe(500);
     expect(retained?.tracks).toHaveLength(501);
@@ -177,7 +181,7 @@ describe("Room (realtime authority)", () => {
     // A fresh room for the same project continues the ring instead of restarting it.
     const reloaded = await Room.load(db, "local", "p1");
     await fillTracks(reloaded, 100, 501);
-    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual([-1, 500, null, null, null]);
+    expect(await readBundleFile(db, "p1", KEYFRAME_INDEX_PATH)).toEqual(ringSlots(-1, 500));
   });
 
   it("reloads from the keyframe + tail, so a compacted log still reconstructs exact HEAD", async () => {
