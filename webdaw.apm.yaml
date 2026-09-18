@@ -9776,6 +9776,73 @@ projects:
           reported rather than applied, which
 
           is the same call minus the recovery.
+
+
+          ## Revised the same day (PR #149), because the recovery was firing
+          far too often
+
+
+          Alden: "surely that's something we can most often derive on the
+          client side and all we'd need to
+
+          send is the tombstone notification?" Right, and measuring first
+          showed how badly it was needed: a
+
+          session's `confirmed` starts EMPTY when a tab opens, so an undo of
+          anything from before that -
+
+          after a reload, or a tab that joined late - was unfoldable and went
+          to the network. Verified with
+
+          a session loaded at head 5000: an undo of edit 4990 went straight to
+          the recovery read.
+
+
+          The session was asking the wrong object. `EditLog` holds the loaded
+          entries AND a base at the
+
+          oldest retained keyframe, so it reaches back much further and can
+          rebuild the thing locally. It
+
+          now answers first, via `rebuiltWithout(undoes, pending)` - the log
+          rebuilt with the tombstone
+
+          honoured and the caller's unconfirmed edits left out, or null when it
+          cannot reach either.
+
+
+          Which in turn made the authority's write conditional: only a **deep**
+          undo (one at or below the
+
+          last keyframe) writes a keyframe straight away, because only that one
+          might need re-reading.
+
+          Above it the edit is in the recent tail every client's log covers.
+          `undoReach` returns
+
+          `{ honour, deep }` where `canHonourUndo` returned a boolean, since
+          the reach check already knew.
+
+
+          ## Left open
+
+
+          A REDO short-circuits as foldable in `SharedSession.canFold`, on the
+          reasoning that it puts an
+
+          edit back rather than taking one out. That reasoning may not survive
+          `adoptSeed`: a seed adopted
+
+          after a deep undo has the edit baked OUT, and a later redo of it
+          would have nothing in `confirmed`
+
+          to replay. It is the mirror of the "contested" bug fixed on the
+          authority in #148. An attempt to
+
+          reproduce it did not construct the precondition, so it is recorded
+          rather than fixed - worth a
+
+          proper go before trusting the redo path at depth.
       - ref: DAW-40
         area: DAW
         title: A client loads the log it needs, not the whole window

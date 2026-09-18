@@ -535,6 +535,42 @@ export class EditLog {
     this.project.load(rebuildWithout(this.base.project, this.base.seq, this.entries, this.undone));
   }
 
+  /**
+   * The project the log says the AUTHORITY holds: this log rebuilt, with `pending` left out too.
+   *
+   * What `SharedSession` asks when a tombstone names an edit its own window cannot reach (DAW-41).
+   * The session keeps a shallower account of the same history - a seed and the entries confirmed
+   * during this session - so an undo of anything from before the tab opened looks unreachable to it
+   * while this log, which reaches back to the oldest retained keyframe, can rebuild it perfectly
+   * well. Asking here first is what keeps that case local instead of re-reading the whole project
+   * over the network.
+   *
+   * `undoes` is excluded explicitly rather than read from `this.undone`, because the session folds a
+   * confirmed tombstone before handing it here to be recorded - so the log has not heard of this one
+   * yet. Only an UNDO asks: a redo needs nothing taken out, so the session folds it directly.
+   *
+   * Null means this log cannot honour it either, and the caller should go to the authority:
+   *
+   * - the edit being taken back is not in the log, or sits at or below the base, where it is baked
+   *   in and no replay can remove it;
+   * - or some OTHER tombstone is in that position, which would make the rebuild quietly wrong in
+   *   exactly the way this is meant to prevent.
+   */
+  rebuiltWithout(undoes: string, pending: ReadonlySet<string>): ProjectData | null {
+    const seqById = new Map(
+      this.entries.filter((entry) => entry.id !== undefined).map((entry) => [entry.id, entry.seq]),
+    );
+    const reachable = (id: string) => (seqById.get(id) ?? -Infinity) > this.base.seq;
+    if (!reachable(undoes)) return null;
+    if (![...this.undone].every(reachable)) return null;
+    return rebuildWithout(
+      this.base.project,
+      this.base.seq,
+      this.entries,
+      new Set([...this.undone, ...pending, undoes]),
+    );
+  }
+
   /** Record an undo/redo in the activity feed: append-only, like a reflog, authored by whoever
    *  pressed it rather than by whoever made the edit. */
   private noteReflog(id: string, kind: "undo" | "redo"): void {

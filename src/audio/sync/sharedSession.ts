@@ -449,7 +449,7 @@ export class SharedSession {
       // answer for a window that is about to stop existing.
       this.trimConfirmed();
       if (this.canFold(entry)) this.rebuildBase();
-      else void this.reseedFromAuthority(entry);
+      else if (!this.foldFromLog(entry)) void this.reseedFromAuthority(entry);
       return;
     }
     if (isReplayable(entry.kind)) applyEdit(this.base, entry.command, entry.author);
@@ -472,6 +472,25 @@ export class SharedSession {
   }
 
   /**
+   * Derive it from the edit log, which reaches further back than this session does.
+   *
+   * The session's own account of history starts when the tab opened: its seed is the project as
+   * loaded and `confirmed` holds only what has arrived since. So an undo of anything from BEFORE
+   * that - after a reload, or a tab that joined late - is unfoldable here while being perfectly
+   * reachable in `EditLog`, which keeps the loaded entries and a base at the oldest retained
+   * keyframe. That is the common case by some distance, and it needs no network at all.
+   *
+   * Pending is excluded because what is wanted is the authority's state, not ours; `rebuildLive`
+   * puts our unconfirmed edits back on top immediately afterwards.
+   */
+  private foldFromLog(entry: EditEntry): boolean {
+    const rebuilt = this.editLog.rebuiltWithout(entry.undoes as string, new Set(this.pending.map((op) => op.opId)));
+    if (!rebuilt) return false;
+    this.adoptSeed(rebuilt, entry.seq);
+    return true;
+  }
+
+  /**
    * Take the authority's word for it: re-read its stored HEAD and rebuild from there.
    *
    * The authority rebuilt without the undone edit and wrote the result to `project.json` before
@@ -490,14 +509,22 @@ export class SharedSession {
         this.onError?.("An undo from another device could not be applied here - reload to catch up");
         return;
       }
-      this.seed = head.project;
-      this.confirmed = this.confirmed.filter((each) => each.seq > head.seq);
-      this.headSeq = Math.max(this.headSeq, head.seq);
-      this.rebuildBase();
-      this.rebuildLive();
+      this.adoptSeed(head.project, head.seq);
     };
     this.reseeding = this.reseeding.then(recover, recover);
     return this.reseeding as Promise<void>;
+  }
+
+  /**
+   * Take `project` as the confirmed state at `seq`: everything up to there is in the seed, whatever
+   * arrived above it still replays, and `rebuildLive` puts `pending` back on top.
+   */
+  private adoptSeed(project: ProjectData, seq: number): void {
+    this.seed = project;
+    this.confirmed = this.confirmed.filter((each) => each.seq > seq);
+    this.headSeq = Math.max(this.headSeq, seq);
+    this.rebuildBase();
+    this.rebuildLive();
   }
 
   /** `base` as the confirmed log says it is: the seed, replayed, with its tombstones honoured.

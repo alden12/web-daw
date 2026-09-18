@@ -7,8 +7,10 @@
  * to rebuild to a project that still contained the edit it took back, silently: the authority had
  * removed it, this client had not, and nothing said so.
  *
- * The session cannot compute the answer, so it takes the authority's: re-read the `project.json` the
- * authority wrote before broadcasting, and replay what came after on top.
+ * Two answers, in order of cost. The `EditLog` keeps the loaded entries and a base at the oldest
+ * retained keyframe, so it reaches back further than the session does and can usually rebuild the
+ * thing locally. Only when IT cannot reach either does the session re-read the `project.json` the
+ * authority wrote before broadcasting.
  */
 import { describe, expect, it } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
@@ -71,9 +73,10 @@ function makeSession(readAuthoritativeHead?: () => Promise<{ project: ProjectDat
   let counter = 0;
   const nextId = () => `op-${counter++}`;
   const errors: string[] = [];
+  const editLog = new EditLog(store, nextId);
   const session = new SharedSession({
     projectStore: store,
-    editLog: new EditLog(store, nextId),
+    editLog,
     transport,
     projectId: "p1",
     newOpId: nextId,
@@ -83,8 +86,12 @@ function makeSession(readAuthoritativeHead?: () => Promise<{ project: ProjectDat
   session.attach();
   transport.open();
   transport.deliver({ type: "snapshot", projectId: "p1", headSeq: -1, entries: [] });
-  return { store, transport, errors };
+  return { store, transport, errors, editLog };
 }
+
+/** Move the log's rebuild base above `seq`, which is what being out of ITS reach looks like. */
+const baseAbove = (editLog: EditLog, seq: number): void =>
+  editLog.setRebuildBase(new ProjectStore(false).snapshot(), seq);
 
 /** Every note in the project, whichever clip it landed in. */
 const noteIds = (store: ProjectStore): string[] =>
@@ -105,9 +112,10 @@ const authorityHead = (upTo: number): { project: ProjectData; seq: number } => {
 };
 
 describe("an undo of an edit inside the session's seed", () => {
-  it("takes the edit back, by re-reading what the authority rebuilt", async () => {
-    const head = authorityHead(BEYOND_THE_WINDOW);
-    const { store, transport, errors } = makeSession(async () => head);
+  it("folds it from the edit log, which reaches back further, without asking the network", async () => {
+    const { store, transport, errors } = makeSession(async () => {
+      throw new Error("the log could answer this; the network should not have been asked");
+    });
 
     for (let seq = 0; seq < BEYOND_THE_WINDOW; seq += 1) transport.deliver(applied(seq));
     expect(noteIds(store)).toContain(`n-${UNDONE}`);
@@ -116,16 +124,38 @@ describe("an undo of an edit inside the session's seed", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(noteIds(store)).not.toContain(`n-${UNDONE}`);
+    expect(store.snapshot().tracks).toHaveLength(TRACKS);
+    expect(errors).toEqual([]);
+  });
+
+  it("re-reads what the authority rebuilt when the log cannot reach it either", async () => {
+    const head = authorityHead(BEYOND_THE_WINDOW);
+    let reads = 0;
+    const { store, transport, errors, editLog } = makeSession(async () => {
+      reads += 1;
+      return head;
+    });
+
+    for (let seq = 0; seq < BEYOND_THE_WINDOW; seq += 1) transport.deliver(applied(seq));
+    baseAbove(editLog, UNDONE + 1);
+
+    transport.deliver(undoOfTheOldNote(BEYOND_THE_WINDOW));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(reads).toBe(1);
+    expect(noteIds(store)).not.toContain(`n-${UNDONE}`);
     // The rest of the project is untouched: this is a swap of the base, not a reset.
     expect(store.snapshot().tempoBpm).toBe(head.project.tempoBpm);
     expect(store.snapshot().tracks).toHaveLength(TRACKS);
     expect(errors).toEqual([]);
   });
 
-  it("says so rather than going quiet when the authority's head cannot be read", async () => {
-    const { store, transport, errors } = makeSession(async () => null);
+  it("says so rather than going quiet when neither can answer", async () => {
+    const { store, transport, errors, editLog } = makeSession(async () => null);
 
     for (let seq = 0; seq < BEYOND_THE_WINDOW; seq += 1) transport.deliver(applied(seq));
+    baseAbove(editLog, UNDONE + 1);
+
     transport.deliver(undoOfTheOldNote(BEYOND_THE_WINDOW));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
