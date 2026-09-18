@@ -53,27 +53,23 @@ async function projectWithLadder(rungs: readonly number[]) {
   return { db, room: await Room.load(db, "local", "p1") };
 }
 
-const HEAD = 6000;
+/**
+ * Deliberately small. Nothing here scales with the log's length - the ring is stated rather than
+ * grown - so a longer one only buys replay time, and the six-thousand-edit version of this timed out
+ * in CI while passing locally. What the test needs is a ring with every slot taken and rungs spread
+ * across the project, which these proportions give just as well.
+ */
+const HEAD = 150;
 /**
  * What the eviction rule settles into by this depth: dense near head, doubling back to the project's
  * start. Every slot is taken, which is also what makes the negative case below reachable - a ring
  * with a free slot gets a start keyframe seeded into it on load (`seedStartKeyframe`), and would
  * answer the deep undo from that instead.
  */
-const LADDER = [
-  -1,
-  HEAD - 5900,
-  HEAD - 5600,
-  HEAD - 5200,
-  HEAD - 4500,
-  HEAD - 3500,
-  HEAD - 2000,
-  HEAD - 1000,
-  HEAD - 500,
-] as const;
+const LADDER = [-1, HEAD - 140, HEAD - 125, HEAD - 105, HEAD - 80, HEAD - 55, HEAD - 35, HEAD - 20, HEAD - 5] as const;
 
 /** The same ladder with its oldest rung raised above the edit under test: the old fixed reach. */
-const SHALLOW_LADDER = [50, ...LADDER.slice(1)] as const;
+const SHALLOW_LADDER = [8, ...LADDER.slice(1)] as const;
 
 describe("undo reach, after the ring has turned over", () => {
   it("still honours an undo from the start of the project", async () => {
@@ -83,7 +79,7 @@ describe("undo reach, after the ring has turned over", () => {
       command: track("seeded"),
       opId: "u-1",
       kind: "undo",
-      undoes: "seed-10",
+      undoes: "seed-5",
     });
 
     expect(reply.type).toBe("editApplied");
@@ -98,7 +94,7 @@ describe("undo reach, after the ring has turned over", () => {
       command: track("seeded"),
       opId: "u-1",
       kind: "undo",
-      undoes: "seed-10",
+      undoes: "seed-5",
     });
 
     expect(reply.type).toBe("editRejected");
