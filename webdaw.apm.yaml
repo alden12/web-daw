@@ -9904,24 +9904,54 @@ projects:
           base.
 
 
-          **The ladder is still worth building, for the other two reasons**
-          (Alden asked, 2026-09-18, whether
+          **And then a second look said don't build it yet.** Alden asked
+          whether the ladder survives as "a
 
-          it survives as "a data transfer helper rather than a speed thing"):
+          data transfer helper rather than a speed thing". The answer turned
+          out to be neither, because of a
+
+          constant neither of us had looked at: **`MAX_DEPTH = 500`**
+          (`editLog.ts`). The in-memory undo
+
+          stack holds 500 steps. Past that the oldest step is shifted off and
+          the edit is no longer undoable
+
+          by any means - so undo's reach is 500 of your OWN edits, whatever the
+          ring does.
 
 
-          - **Reach, which is the real one.** `rebuildBase` refuses an undo
-          with no retained keyframe below
-            it, so the ring - not the log - decides how far back undo goes. Raising `RETAINED_EDITS` to
-            100k without touching the ring buys recovery-from-log and leaves undo refusing anything older
-            than 2000 edits. The ladder takes that to 128k. It is not an optimization of deep undo, it is
-            what makes deep undo exist.
-          - **Rows read.** With work item 3 done, an undo reads the entries
-          above its base. A nearer base is
-            a smaller read, and at 100k retained that is the cost that actually scales.
+          Which means the current ring is already about the right size.
+          `KEYFRAME_RETAIN_WINDOW` is 2000
 
-          So: same change, same 9 rungs, different justification. Size it
-          against reach and rows, not ms.
+          entries, and 500 of your own edits fits inside 2000 total entries
+          unless three other people are
+
+          editing as fast as you are. A 128k-edit ladder would sit underneath a
+          500-step stack, reachable by
+
+          nothing.
+
+
+          **So the ladder waits on `MAX_DEPTH` rising, and nothing is asking
+          for that.** 500 undo steps is
+
+          generous, and the comment on the constant already says the right
+          thing: deeper history is what the
+
+          version timeline is for, undo is the recent-gesture buffer. Recovery
+          from a corrupt keyframe - the
+
+          reason this ticket exists - needs the LOG, not the ring, since
+          `recomputeHead` replays from empty
+
+          at seq -1 when no keyframe is usable. That half is done.
+
+
+          If `MAX_DEPTH` is ever raised, this becomes live again and the work
+          is small: change the eviction
+
+          rule in `planKeyframes` from "oldest" to "most redundant" and take
+          `KEYFRAME_RING_SIZE` to 9.
 
 
           ## The work
