@@ -15,6 +15,7 @@
  * that hash, so the same file imported twice is stored once and a clip's `fileId`
  * doubles as an integrity check.
  */
+import { ProjectStore } from "./project/projectStore";
 import type { ProjectData } from "./project/types";
 import { projectDataSchema } from "./project/schema";
 import type { Author, EditCommand, EditEntry } from "./commands/types";
@@ -104,6 +105,21 @@ const fromStream = (stream: EditEntry[]): { entries: EditEntry[]; notes: FeedNot
   return { entries, notes };
 };
 
+/** `JSON.parse` that says which bundle file failed, rather than raising a bare SyntaxError from a
+ *  call stack five frames from the filename. */
+function parseJson<T>(raw: string, detail: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (cause) {
+    throw new UnreadableProjectError(detail, { cause });
+  }
+}
+
+/** An empty project at seq -1: a valid rebuild floor only when the log still holds the project's
+ *  first edit, since then there is nothing below it that could have been lost with the keyframe. */
+const genesisBase = (firstSeq: number): { project: ProjectData; seq: number } | null =>
+  firstSeq <= 0 ? { project: new ProjectStore(false).snapshot(), seq: -1 } : null;
+
 const FORMAT_VERSION = 1;
 /** Bound the persisted log (commands are tiny); deeper history is slice 15B. */
 const MAX_PERSISTED_ENTRIES = 2000;
@@ -113,6 +129,28 @@ export interface StoredProject {
   log: EditEntry[];
   /** Feed notes (intent narration); empty for bundles written before notes were persisted. */
   notes: FeedNote[];
+}
+
+/**
+ * There is a project here and it cannot be read: `project.json` is gone or is not a project, or the
+ * log would not replay onto it (DAW-38, the recovery action).
+ *
+ * The distinction this type exists to draw is between that and `load` returning null, which means
+ * "nothing is saved here yet" - and which the caller answers by writing the live store straight over
+ * the top. Making the two the same value is how a damaged bundle got quietly replaced by an empty
+ * one, taking a log that could have rebuilt it along too. So: a project that cannot be read is
+ * offered a rebuild, never overwritten.
+ *
+ * `detail` is for the dialog: one clause saying which part failed, not a stack.
+ */
+export class UnreadableProjectError extends Error {
+  constructor(
+    readonly detail: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`the saved project could not be read: ${detail}`, options);
+    this.name = "UnreadableProjectError";
+  }
 }
 
 /** A bundle as a flat path -> bytes map (what gets zipped into a `.daw.zip`). */
@@ -225,35 +263,57 @@ export class ProjectRepository {
   async readHeadKeyframe(): Promise<{ project: ProjectData; seq: number } | null> {
     const manifestRaw = await this.store.readText("manifest.json");
     if (!manifestRaw) return null;
-    const manifest = JSON.parse(manifestRaw) as Manifest;
+    const manifest = parseJson<Manifest>(manifestRaw, "manifest.json is not readable");
     this.projectId = manifest.projectId;
     const projectRaw = await this.store.readText("project.json");
     if (!projectRaw) return null;
-    const migrated = (await this.upcast(JSON.parse(projectRaw), manifest)) as PersistedProject;
+    const raw = parseJson<unknown>(projectRaw, "project.json is not readable");
+    const migrated = (await this.upcast(raw, manifest).catch((cause: unknown) => {
+      throw new UnreadableProjectError("project.json could not be brought up to date", { cause });
+    })) as PersistedProject;
     const { headSeq, ...base } = migrated;
+    // Shape-checked, not re-materialized: what comes back is fed straight to `ProjectStore.load`, and
+    // a file that parses as JSON but is not a project is exactly the damage the recovery action is
+    // for. The parsed value is thrown away and the original kept, so an unknown key written by a
+    // newer build survives a load by an older one.
+    if (!projectDataSchema.safeParse(base).success) {
+      throw new UnreadableProjectError("project.json is not a project");
+    }
     return { project: base as ProjectData, seq: headSeq ?? -1 };
   }
 
-  /** Load the working snapshot + log; null if no bundle has been written yet. */
+  /** The authored stream, with a log that will not parse reported as damage rather than as a bare
+   *  SyntaxError - it is as much a part of the project as the keyframe is. */
+  private readStream(sinceSeq: number, limit?: number): Promise<EditEntry[]> {
+    return this.store.readEdits(sinceSeq, limit).catch((cause: unknown) => {
+      throw new UnreadableProjectError("the edit log is not readable", { cause });
+    });
+  }
+
+  /**
+   * Load the working snapshot + log; null if no bundle has been written yet.
+   *
+   * Throws `UnreadableProjectError` when there IS a project here and it cannot be read - see that
+   * type. A bundle with no keyframe is only "nothing saved yet" if it has no log either; with a log
+   * it is a project whose state file is gone, and `rebuildFromLog` is how it comes back.
+   */
   async load(): Promise<StoredProject | null> {
     const head = await this.readHeadKeyframe();
-    if (!head) return null;
-    const { project: baseProject, seq: keyframeSeq } = head;
-    const metaRaw = await this.store.readText("meta.json");
-    if (metaRaw) {
-      try {
-        this.name = (JSON.parse(metaRaw) as { name?: string }).name ?? this.name;
-      } catch {
-        // keep the default name
-      }
+    if (!head) {
+      // `readStream`, not a swallowed read: a log that will not parse next to a missing keyframe is
+      // the one combination where reading it as "nothing saved here yet" would overwrite both.
+      if ((await this.readStream(-1, 1)).length === 0) return null;
+      throw new UnreadableProjectError("project.json is missing");
     }
+    const { project: baseProject, seq: keyframeSeq } = head;
+    await this.readName();
     // Read the unified authored stream (edits + notes), bounded to a recent window for the feed.
-    let stream = await this.store.readEdits(-1, MAX_PERSISTED_ENTRIES);
+    let stream = await this.readStream(-1, MAX_PERSISTED_ENTRIES);
     // Guard: if the capped window did not reach back to the keyframe, read the full tail so replay is
     // complete (only fires with > MAX_PERSISTED_ENTRIES edits since the last keyframe - shouldn't
     // happen in normal use, where a keyframe lands every KEYFRAME_EDIT_INTERVAL edits).
     if (stream.length > 0 && stream[0].seq > keyframeSeq + 1) {
-      stream = mergeBySeq(await this.store.readEdits(keyframeSeq), stream);
+      stream = mergeBySeq(await this.readStream(keyframeSeq), stream);
     }
     const { entries, notes } = fromStream(stream);
 
@@ -271,10 +331,59 @@ export class ProjectRepository {
       base: keyframe,
       entries,
       olderBase: (belowSeq) => this.rebuildBaseFor(belowSeq, keyframe.seq),
+    }).catch((cause: unknown) => {
+      throw new UnreadableProjectError("the edit log would not replay onto it", { cause });
     });
     this.lastKeyframeSeq = keyframeSeq;
     // Everything on disk is already sealed history, so nothing at/below the max needs re-sending.
     this.syncedThroughSeq = Math.max(keyframeSeq, highWaterSeq(entries, notes));
+    return { project, log: entries, notes };
+  }
+
+  /** Adopt the bundle's display name from meta.json. A missing or unreadable one costs a label and
+   *  never data, so it is not damage: the name also rides the project state itself. */
+  private async readName(): Promise<void> {
+    const metaRaw = await this.store.readText("meta.json").catch(() => null);
+    if (!metaRaw) return;
+    try {
+      this.name = (JSON.parse(metaRaw) as { name?: string }).name ?? this.name;
+    } catch {
+      // keep the default name
+    }
+  }
+
+  /**
+   * Rebuild the working project from the log alone, for a bundle whose keyframe cannot be read
+   * (DAW-38, the recovery action). Null when there is nothing to rebuild it from.
+   *
+   * This is the client's half of the reason the log is the durable truth and `project.json` only a
+   * cache of where HEAD got to: replay is exact (DAW-36 made commands self-contained), so a keyframe
+   * can be lost without the project going with it. The authority does exactly this on its own behalf
+   * in `Room.recomputeHead`, from an empty store at seq -1 when no keyframe is usable.
+   *
+   * The floor is the newest retained keyframe BELOW the log's first entry - not the oldest one, which
+   * would replay a tail that does not reach it - or an empty project when the log still holds the
+   * project's first edit, since then nothing sits below it to have been lost. Null when neither
+   * exists, because replaying a tail onto the wrong floor yields a project that looks fine and is not
+   * the one that was saved. The caller offers a fork at that point rather than a plausible lie.
+   */
+  async rebuildFromLog(): Promise<StoredProject | null> {
+    const stream = await this.store.readEdits(-1).catch(() => []);
+    if (stream.length === 0) return null;
+    await this.readName();
+    const { entries, notes } = fromStream(stream);
+    const headSeq = highWaterSeq(entries, notes);
+    const base = (await this.rebuildBaseFor(stream[0].seq, headSeq)) ?? genesisBase(stream[0].seq);
+    // A base further down than the log reaches is not a floor, it is a gap: the entries between the
+    // two were pruned, so replaying this tail onto it silently drops them.
+    if (!base || base.seq < stream[0].seq - 1) return null;
+    // `headFromLog` rather than a bare replay, for the same reason `load` uses it: a tombstone in the
+    // tail can take back an edit baked into the floor, and only walking to an older base removes it.
+    const project = await headFromLog({
+      base,
+      entries,
+      olderBase: (belowSeq) => this.rebuildBaseFor(belowSeq, headSeq),
+    });
     return { project, log: entries, notes };
   }
 
