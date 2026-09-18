@@ -86,23 +86,32 @@ const APPLY: ApplyMap = {
   },
   moveTrack: (project, command) => project.moveTrack(command.trackId, command.groupId),
   moveGroup: (project, command) => project.moveGroup(command.groupId, command.parentId),
+  // A parameter the current instrument does not declare is skipped rather than fatal, which is the
+  // same call `ParamStore.load` already makes. It happens for real: undo a `setInstrument` and every
+  // later `setParam` in the log names a parameter of the instrument that is no longer there. Letting
+  // that throw would fail the whole rebuild, so one edit nobody could apply would take the project
+  // with it - and `ParamStore.set` stays strict for the callers that should be rejected (MCP, UI).
   setParam: (project, command) => {
     const track = project.getTrack(command.trackId);
-    if (track?.kind === "instrument") track.params.set(command.id, command.value);
+    if (track?.kind === "instrument" && track.params.has(command.id)) track.params.set(command.id, command.value);
   },
   addEffect: (project, command) => void project.addEffect(command.hostId, command.effectType, command.id),
   removeEffect: (project, command) => project.removeEffect(command.hostId, command.effectId),
   moveEffect: (project, command) => project.moveEffect(command.hostId, command.effectId, command.toIndex),
   bypassEffect: (project, command) => project.setEffectBypass(command.hostId, command.effectId, command.bypassed),
-  setEffectParam: (project, command) =>
-    project.getEffect(command.hostId, command.effectId)?.params.set(command.id, command.value),
+  setEffectParam: (project, command) => {
+    const params = project.getEffect(command.hostId, command.effectId)?.params;
+    if (params?.has(command.id)) params.set(command.id, command.value);
+  },
   addMidiDevice: (project, command) => void project.addMidiDevice(command.trackId, command.deviceType, command.id),
   removeMidiDevice: (project, command) => project.removeMidiDevice(command.trackId, command.deviceId),
   moveMidiDevice: (project, command) => project.moveMidiDevice(command.trackId, command.deviceId, command.toIndex),
   bypassMidiDevice: (project, command) =>
     project.setMidiDeviceBypass(command.trackId, command.deviceId, command.bypassed),
-  setMidiDeviceParam: (project, command) =>
-    project.getMidiDevice(command.trackId, command.deviceId)?.params.set(command.id, command.value),
+  setMidiDeviceParam: (project, command) => {
+    const params = project.getMidiDevice(command.trackId, command.deviceId)?.params;
+    if (params?.has(command.id)) params.set(command.id, command.value);
+  },
   // Note edits name the clip they target. `EditLog.dispatch` resolves it (DAW-36), so a dispatched
   // command always carries one; the active-clip fallback inside `getClipStore` is now only reached
   // by log entries written before that, which replay as they always did. addNotes / editNotes both
