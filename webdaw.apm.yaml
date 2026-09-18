@@ -9627,6 +9627,63 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-40
+        area: DAW
+        title: A client loads the log it needs, not the whole window
+        status: to-do
+        sort_path: "000040"
+        deps:
+          - DAW-38
+        body: >
+          Alden, 2026-09-18, on hearing the log cap would go to 100k: "we don't
+          want to transfer all 100k
+
+          edits to the client on startup. How difficult would it be to only
+          give them the latest 100 or so
+
+          (including at least 1 keyframe) and then request more as needed?"
+
+
+          **Loading a project already works this way, and DAW-38 does not
+          change that.** `project.json` IS a
+
+          keyframe at head, and `ProjectRepository.load` replays only the
+          entries above it
+
+          (`projectRepository.ts`). The 2000 (`MAX_PERSISTED_ENTRIES`) is a
+          ceiling on that tail, not the
+
+          normal cost, and `RETAINED_EDITS` is the authority's floor - the
+          client is never sent it.
+
+
+          What a client does pull a window for is two other things:
+
+
+          - **The activity feed**, which wants history for its own sake.
+          Already ticketed as DAW-8.17
+            (load older on demand), and it is the one that genuinely wants paging.
+          - **Undo depth**, which only needs entries back to the oldest usable
+          base - a few hundred.
+
+          ## The work, which is small
+
+
+          1. **`subscribe` carries the client's `baseSeq`** (`src/contract/ws.ts`,
+          one field), so the
+
+             catch-up feed the room sends is the gap plus a small feed window rather than a fixed 2000.
+          2. **`readEdits` grows a backwards direction.**
+          `server/api/app.ts` and `src/audio/remoteStore.ts`
+             both express "the newest N above `since`". Paging older needs "the N below `before`", which is
+             one more parameter and the same index.
+          3. The feed UI asks for the next page when it reaches the end of what
+          it has (DAW-8.17).
+
+          Worth doing when the cap actually goes up, not before: at 2000
+          retained the current behaviour is
+
+          already the behaviour this describes.
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
