@@ -9824,25 +9824,46 @@ projects:
           the reach check already knew.
 
 
-          ## Left open
+          ## The redo half, which Alden would not let go of
 
 
-          A REDO short-circuits as foldable in `SharedSession.canFold`, on the
-          reasoning that it puts an
+          "Do we not still need to make sure we have the corresponding undo
+          locally, otherwise we need to
 
-          edit back rather than taking one out. That reasoning may not survive
-          `adoptSeed`: a seed adopted
+          rebuild server side?" Yes. The first attempt to reproduce it built
+          the wrong setup and came back
 
-          after a deep undo has the edit baked OUT, and a later redo of it
-          would have nothing in `confirmed`
+          clean; the second one - a session that joined at head 5, an undo of
+          an edit at seq 0 it never
 
-          to replay. It is the mirror of the "contested" bug fixed on the
-          authority in #148. An attempt to
+          saw, then a redo of the same - reproduced it in one go. The redo was
+          silently lost.
 
-          reproduce it did not construct the precondition, so it is recorded
-          rather than fixed - worth a
 
-          proper go before trusting the redo path at depth.
+          The shortcut was `canFold` returning true for any redo, on the
+          reasoning that putting an edit back
+
+          is the harmless direction. It is not, once a seed can be ADOPTED:
+          adopt one after a deep undo and
+
+          the edit is baked out of it, with nothing left in the window to put
+          back. The mirror of the
+
+          "contested" bug fixed on the authority in #148, arriving from the
+          other side.
+
+
+          Fixed in all three places, since the asymmetry ran through all of
+          them:
+
+
+          - `canFold` asks the same question of both kinds.
+          - `EditLog.rebuiltWithout` became `rebuiltFor({ undoes, kind })`,
+          which applies the reflog entry
+            in its own direction: an undo adds its target to the excluded set, a redo takes it out.
+          - `Room.canHonourUndo` became `reflogReach`, and a redo is now
+          refused on the same terms as an
+            undo when no base sits below its target - and marks the write deep the same way.
       - ref: DAW-40
         area: DAW
         title: A client loads the log it needs, not the whole window

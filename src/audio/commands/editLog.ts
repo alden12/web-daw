@@ -545,9 +545,10 @@ export class EditLog {
    * well. Asking here first is what keeps that case local instead of re-reading the whole project
    * over the network.
    *
-   * `undoes` is excluded explicitly rather than read from `this.undone`, because the session folds a
-   * confirmed tombstone before handing it here to be recorded - so the log has not heard of this one
-   * yet. Only an UNDO asks: a redo needs nothing taken out, so the session folds it directly.
+   * The reflog entry's own direction is applied explicitly rather than read from `this.undone`,
+   * because the session folds a confirmed tombstone before handing it here to be recorded - so the
+   * log has not heard of this one yet. An undo adds its target to the excluded set; a redo takes it
+   * back out, which needs the target's entry to be replayable for exactly the same reason.
    *
    * Null means this log cannot honour it either, and the caller should go to the authority:
    *
@@ -556,19 +557,17 @@ export class EditLog {
    * - or some OTHER tombstone is in that position, which would make the rebuild quietly wrong in
    *   exactly the way this is meant to prevent.
    */
-  rebuiltWithout(undoes: string, pending: ReadonlySet<string>): ProjectData | null {
+  rebuiltFor(reflog: { undoes: string; kind: "undo" | "redo" }, pending: ReadonlySet<string>): ProjectData | null {
     const seqById = new Map(
       this.entries.filter((entry) => entry.id !== undefined).map((entry) => [entry.id, entry.seq]),
     );
     const reachable = (id: string) => (seqById.get(id) ?? -Infinity) > this.base.seq;
-    if (!reachable(undoes)) return null;
+    if (!reachable(reflog.undoes)) return null;
     if (![...this.undone].every(reachable)) return null;
-    return rebuildWithout(
-      this.base.project,
-      this.base.seq,
-      this.entries,
-      new Set([...this.undone, ...pending, undoes]),
-    );
+    const excluded = new Set([...this.undone, ...pending]);
+    if (reflog.kind === "undo") excluded.add(reflog.undoes);
+    else excluded.delete(reflog.undoes);
+    return rebuildWithout(this.base.project, this.base.seq, this.entries, excluded);
   }
 
   /** Record an undo/redo in the activity feed: append-only, like a reflog, authored by whoever

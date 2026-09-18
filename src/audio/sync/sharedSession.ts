@@ -463,11 +463,13 @@ export class SharedSession {
    * one of those rebuilds to a project that still contains the edit it takes back, silently, and the
    * client then disagrees with the authority with nothing to say so (DAW-41).
    *
-   * A REDO is always foldable: it stops excluding an edit rather than starting to, so a target inside
-   * the seed is already present, which is the outcome it wanted.
+   * A REDO needs the same thing, which is not what this said at first. It reads as the safe direction
+   * - putting an edit back rather than taking one out - but the seed it replays onto may be one this
+   * session ADOPTED after a deep undo, in which case the edit is baked out of it and there is nothing
+   * in the window to put back. The redo then vanished silently, which is the exact bug this check
+   * exists to prevent, arriving from the other side.
    */
   private canFold(entry: EditEntry): boolean {
-    if (entry.kind === "redo") return true;
     return this.confirmed.some((each) => each.id === entry.undoes);
   }
 
@@ -482,9 +484,15 @@ export class SharedSession {
    *
    * Pending is excluded because what is wanted is the authority's state, not ours; `rebuildLive`
    * puts our unconfirmed edits back on top immediately afterwards.
+   *
+   * Works in both directions: the log is rebuilt with the reflog entry applied, so a redo puts its
+   * edit back just as an undo takes one out.
    */
   private foldFromLog(entry: EditEntry): boolean {
-    const rebuilt = this.editLog.rebuiltWithout(entry.undoes as string, new Set(this.pending.map((op) => op.opId)));
+    const rebuilt = this.editLog.rebuiltFor(
+      { undoes: entry.undoes as string, kind: entry.kind === "redo" ? "redo" : "undo" },
+      new Set(this.pending.map((op) => op.opId)),
+    );
     if (!rebuilt) return false;
     this.adoptSeed(rebuilt, entry.seq);
     return true;
