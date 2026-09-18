@@ -10187,7 +10187,7 @@ projects:
       - ref: DAW-38
         area: DAW
         title: A project can always be rebuilt from its log, and deep undo stays fast
-        status: in-progress
+        status: review
         sort_path: "000038"
         deps:
           - DAW-34
@@ -10529,9 +10529,18 @@ projects:
             name, and widens only when one really is below the base - with the entries re-read to match
             it, since a widened base replayed against a tail that starts above it is a gap, and the one
             way this rebuild can be silently wrong.
-          - **Step 5's recovery action** (the "rebuild project state?" prompt,
-          and the fork if even that
-            cannot produce a usable project) is the last of this ticket.
+          - **Step 5's recovery action**, PR #152, and the last of this
+          ticket. The bug underneath it was not
+            the corruption but what the corruption MEANT: `load` answered "no keyframe" with null,
+            callers read null as "nothing saved here yet", and autosave answered that by writing the
+            empty live store over the top - taking the log that could have rebuilt the project with
+            it. So `UnreadableProjectError` now separates a damaged bundle from an empty one, nothing
+            is written while the question is open, and `rebuildFromLog` replays from the newest
+            retained keyframe below the log's first entry (or an empty project, when the log still
+            reaches the project's first edit) and heals `project.json` with the result. Raised from
+            boot AND from a project switch, which used to reject into nowhere. When there is no floor
+            at all it refuses rather than replaying a tail onto an empty project, and offers a new
+            project beside the damaged one, which stays in the library untouched.
 
           **Also fixed in #149, found by a test that would not seed:**
           `appendEdits` put every entry in ONE

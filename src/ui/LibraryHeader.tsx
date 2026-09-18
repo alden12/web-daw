@@ -14,6 +14,7 @@ import { useEditLog } from "../audio/commands/useEditLog";
 import { useProject } from "../audio/project/useProject";
 import { type ProjectMeta, listProjects, refreshProjects, subscribeProjects } from "../audio/projects/library";
 import { createProject, deleteProject, renameProject, switchProject } from "../audio/projects/operations";
+import { reportUnreadableProject } from "../audio/projects/recovery";
 import { currentProjectId } from "../audio/projectRepository";
 import { authEnabled } from "../auth/session";
 import { exportProjectFile, importProjectFile } from "./projectFile";
@@ -96,7 +97,14 @@ export function LibraryHeader({
       label: meta.name,
       checked: meta.id === currentId,
       onClick: () => {
-        if (meta.id !== currentId) void switchProject(deps, meta.id);
+        // A switch into a project whose saved state cannot be read raises the recovery dialog rather
+        // than rejecting into nowhere (DAW-38). The repository has already repointed at that project,
+        // so the dialog's rebuild acts on the right one.
+        if (meta.id !== currentId) {
+          void switchProject(deps, meta.id).catch((error: unknown) => {
+            if (!reportUnreadableProject(error)) console.warn("[web-daw] project switch failed:", error);
+          });
+        }
       },
     })),
     { label: "New project", onClick: () => void createProject(deps) },
