@@ -195,6 +195,9 @@ export async function writeFile(
   });
 }
 
+/** Rows per insert statement. See the loop in `appendEdits` for what a bigger one does. */
+const EDIT_INSERT_CHUNK = 500;
+
 /**
  * Append authored edits to the project's log. Creates the project on first write and enforces
  * owner. Upserts by `seq` so a coalescing edit re-sent with the same `seq` updates in place (the
@@ -210,15 +213,20 @@ export async function appendEdits(
     await tx.insert(projects).values({ id: projectId, ownerId: who.userId }).onConflictDoNothing();
     if (!(await canAccess(tx, who, projectId))) return { ok: false, reason: "forbidden" };
 
-    if (entries.length > 0) {
-      // Upsert by (projectId, seq): the working edit log is MUTABLE - a coalescing edit (a knob
-      // drag) folds into its entry in place without a new seq, so a re-send must update it. This
-      // is distinct from the write-once *commit* history (which stays append-only). Access is
-      // gated above (owner or member), so only a collaborator on the project can touch its log.
+    // Upsert by (projectId, seq): the working edit log is MUTABLE - a coalescing edit (a knob
+    // drag) folds into its entry in place without a new seq, so a re-send must update it. This
+    // is distinct from the write-once *commit* history (which stays append-only). Access is
+    // gated above (owner or member), so only a collaborator on the project can touch its log.
+    //
+    // In chunks, because one statement holding every row does not merely get slow - past a few
+    // thousand it inserted NOTHING and raised nothing, so the transaction committed an empty log
+    // and the caller was told the max seq of a project that had not been written. Still one
+    // transaction, so a bulk append is all-or-nothing exactly as it was.
+    for (let start = 0; start < entries.length; start += EDIT_INSERT_CHUNK) {
       await tx
         .insert(edits)
         .values(
-          entries.map((entry) => ({
+          entries.slice(start, start + EDIT_INSERT_CHUNK).map((entry) => ({
             projectId,
             seq: entry.seq,
             entryId: entry.id ?? null,

@@ -449,7 +449,7 @@ export class SharedSession {
       // answer for a window that is about to stop existing.
       this.trimConfirmed();
       if (this.canFold(entry)) this.rebuildBase();
-      else void this.reseedFromAuthority(entry);
+      else if (!this.foldFromLog(entry)) void this.reseedFromAuthority(entry);
       return;
     }
     if (isReplayable(entry.kind)) applyEdit(this.base, entry.command, entry.author);
@@ -463,12 +463,39 @@ export class SharedSession {
    * one of those rebuilds to a project that still contains the edit it takes back, silently, and the
    * client then disagrees with the authority with nothing to say so (DAW-41).
    *
-   * A REDO is always foldable: it stops excluding an edit rather than starting to, so a target inside
-   * the seed is already present, which is the outcome it wanted.
+   * A REDO needs the same thing, which is not what this said at first. It reads as the safe direction
+   * - putting an edit back rather than taking one out - but the seed it replays onto may be one this
+   * session ADOPTED after a deep undo, in which case the edit is baked out of it and there is nothing
+   * in the window to put back. The redo then vanished silently, which is the exact bug this check
+   * exists to prevent, arriving from the other side.
    */
   private canFold(entry: EditEntry): boolean {
-    if (entry.kind === "redo") return true;
     return this.confirmed.some((each) => each.id === entry.undoes);
+  }
+
+  /**
+   * Derive it from the edit log, which reaches further back than this session does.
+   *
+   * The session's own account of history starts when the tab opened: its seed is the project as
+   * loaded and `confirmed` holds only what has arrived since. So an undo of anything from BEFORE
+   * that - after a reload, or a tab that joined late - is unfoldable here while being perfectly
+   * reachable in `EditLog`, which keeps the loaded entries and a base at the oldest retained
+   * keyframe. That is the common case by some distance, and it needs no network at all.
+   *
+   * Pending is excluded because what is wanted is the authority's state, not ours; `rebuildLive`
+   * puts our unconfirmed edits back on top immediately afterwards.
+   *
+   * Works in both directions: the log is rebuilt with the reflog entry applied, so a redo puts its
+   * edit back just as an undo takes one out.
+   */
+  private foldFromLog(entry: EditEntry): boolean {
+    const rebuilt = this.editLog.rebuiltFor(
+      { undoes: entry.undoes as string, kind: entry.kind === "redo" ? "redo" : "undo" },
+      new Set(this.pending.map((op) => op.opId)),
+    );
+    if (!rebuilt) return false;
+    this.adoptSeed(rebuilt, entry.seq);
+    return true;
   }
 
   /**
@@ -490,14 +517,26 @@ export class SharedSession {
         this.onError?.("An undo from another device could not be applied here - reload to catch up");
         return;
       }
-      this.seed = head.project;
-      this.confirmed = this.confirmed.filter((each) => each.seq > head.seq);
-      this.headSeq = Math.max(this.headSeq, head.seq);
-      this.rebuildBase();
-      this.rebuildLive();
+      this.adoptSeed(head.project, head.seq);
     };
     this.reseeding = this.reseeding.then(recover, recover);
     return this.reseeding as Promise<void>;
+  }
+
+  /**
+   * Take `project` as the confirmed state at `seq`: everything up to there is in the seed, whatever
+   * arrived above it still replays, and `rebuildLive` puts `pending` back on top.
+   */
+  private adoptSeed(project: ProjectData, seq: number): void {
+    this.seed = project;
+    this.confirmed = this.confirmed.filter((each) => each.seq > seq);
+    this.headSeq = Math.max(this.headSeq, seq);
+    this.rebuildBase();
+    // The log rebuilds undo from its OWN base, which is now behind what we just accepted. Left
+    // alone, the two disagree from here on and the next ordinary undo rebuilds the deep edit back
+    // into the project (DAW-38 step 5). Pending is named so it stays above the new base.
+    this.editLog.rebaseOnto(this.base.snapshot(), new Set(this.pending.map((op) => op.opId)));
+    this.rebuildLive();
   }
 
   /** `base` as the confirmed log says it is: the seed, replayed, with its tombstones honoured.

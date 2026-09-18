@@ -33,9 +33,12 @@ describe("planKeyframes", () => {
     expect(plan([10, null, null], 110).write).not.toBeNull();
   });
 
-  it("overwrites the oldest slot once the ring is full, so nothing is ever deleted", () => {
-    expect(plan([10, 110, 210], 310)).toMatchObject({ write: { slot: 0, seq: 310 }, index: [310, 110, 210] });
-    expect(plan([310, 110, 210], 410)).toMatchObject({ write: { slot: 1, seq: 410 }, index: [310, 410, 210] });
+  // Not the oldest, which is the reach and the whole point of keeping a ring at all (DAW-38). The
+  // middle rung goes: its neighbours are 200 apart either side of it, and it is old enough that the
+  // gap its removal opens is cheap relative to its age. What survives spreads out instead of sliding.
+  it("overwrites the most redundant rung once the ring is full, so nothing is ever deleted", () => {
+    expect(plan([10, 110, 210], 310)).toMatchObject({ write: { slot: 1, seq: 310 }, index: [10, 310, 210] });
+    expect(plan([10, 310, 210], 410)).toMatchObject({ write: { slot: 2, seq: 410 }, index: [10, 310, 410] });
   });
 
   it("treats a seq at or above head as stale and takes its slot", () => {
@@ -53,8 +56,31 @@ describe("planKeyframes", () => {
     expect(emptyKeyframeIndex()).toHaveLength(KEYFRAME_RING_SIZE);
   });
 
-  it("ships a ring that spans the retention window", () => {
-    expect(KEYFRAME_RING_SIZE).toBe(KEYFRAME_RETAIN_WINDOW / KEYFRAME_RETAIN_INTERVAL + 1);
+  /**
+   * The property the ladder exists for, asserted by running it rather than by arithmetic: nine rungs
+   * evenly spaced would reach 4500 edits, and that is the number this replaces.
+   */
+  it("settles into a ladder that reaches far further than even spacing would", () => {
+    const window = 100_000;
+    let index = emptyKeyframeIndex();
+    for (let headSeq = 0; headSeq <= window; headSeq += KEYFRAME_RETAIN_INTERVAL) {
+      index = planKeyframes(index, headSeq, { window }).index;
+    }
+    const behind = index.filter((seq): seq is number => seq !== null).map((seq) => window - seq);
+
+    // Deep at the far end - orders of magnitude past what even spacing reaches.
+    expect(Math.max(...behind)).toBeGreaterThan(40_000);
+    // And still dense at the near end, where most undos land.
+    expect(Math.min(...behind.filter((distance) => distance > 0))).toBeLessThanOrEqual(KEYFRAME_RETAIN_INTERVAL);
+    expect(behind).toHaveLength(KEYFRAME_RING_SIZE);
+  });
+
+  // A rung below the retention floor has had the edits above it pruned, so nothing can replay from
+  // it. Holding the slot would cost a rung of the ladder for a base that can no longer be used.
+  it("recycles a rung the log has been pruned past", () => {
+    expect(planKeyframes([10, 5000, 5100], 5200, { interval: 100, size: 3, window: 1000 })).toMatchObject({
+      write: { slot: 0, seq: 5200 },
+    });
   });
 });
 

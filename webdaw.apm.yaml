@@ -9655,6 +9655,55 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-42
+        area: DAW
+        title: Catching up on a long gap reloads the project once per entry
+        status: to-do
+        sort_path: "000042"
+        deps:
+          - DAW-34
+        body: >
+          Noticed 2026-09-18 while writing DAW-41's tests, which is also how it
+          was measured: driving 2100
+
+          confirmed entries through a `SharedSession` took **14 seconds**, and
+          the same log as notes rather
+
+          than tracks took 4. The test was rewritten to keep the project small;
+          the cost it found was not.
+
+
+          `rebuildLive` runs on every confirmed entry and does
+          `projectStore.load(scratch.snapshot())` - a
+
+          full project load, building every instrument the project describes.
+          Live that is one load per
+
+          peer edit, at a few milliseconds, and nobody notices. **On a
+          catch-up it is one load per entry in
+
+          the gap**, which is precisely the flight case DAW-38 exists for:
+          reconnect after eight hours and
+
+          the session replays thousands of entries, reloading the whole project
+          each time.
+
+
+          The shape of the fix is the one DAW-39 used a level down: the work is
+          only needed when something
+
+          reads the result. A catch-up should fold its entries and load the
+          live store ONCE at the end,
+
+          rather than after each. `foldConfirmed` and `rebuildLive` are already
+          separate calls, so this is
+
+          about giving the snapshot path a batch entry point rather than
+          restructuring either.
+
+
+          Measure before and after with the same harness: deliver N
+          `editApplied` messages, time it.
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
@@ -9776,6 +9825,94 @@ projects:
           reported rather than applied, which
 
           is the same call minus the recovery.
+
+
+          ## Revised the same day (PR #149), because the recovery was firing
+          far too often
+
+
+          Alden: "surely that's something we can most often derive on the
+          client side and all we'd need to
+
+          send is the tombstone notification?" Right, and measuring first
+          showed how badly it was needed: a
+
+          session's `confirmed` starts EMPTY when a tab opens, so an undo of
+          anything from before that -
+
+          after a reload, or a tab that joined late - was unfoldable and went
+          to the network. Verified with
+
+          a session loaded at head 5000: an undo of edit 4990 went straight to
+          the recovery read.
+
+
+          The session was asking the wrong object. `EditLog` holds the loaded
+          entries AND a base at the
+
+          oldest retained keyframe, so it reaches back much further and can
+          rebuild the thing locally. It
+
+          now answers first, via `rebuiltWithout(undoes, pending)` - the log
+          rebuilt with the tombstone
+
+          honoured and the caller's unconfirmed edits left out, or null when it
+          cannot reach either.
+
+
+          Which in turn made the authority's write conditional: only a **deep**
+          undo (one at or below the
+
+          last keyframe) writes a keyframe straight away, because only that one
+          might need re-reading.
+
+          Above it the edit is in the recent tail every client's log covers.
+          `undoReach` returns
+
+          `{ honour, deep }` where `canHonourUndo` returned a boolean, since
+          the reach check already knew.
+
+
+          ## The redo half, which Alden would not let go of
+
+
+          "Do we not still need to make sure we have the corresponding undo
+          locally, otherwise we need to
+
+          rebuild server side?" Yes. The first attempt to reproduce it built
+          the wrong setup and came back
+
+          clean; the second one - a session that joined at head 5, an undo of
+          an edit at seq 0 it never
+
+          saw, then a redo of the same - reproduced it in one go. The redo was
+          silently lost.
+
+
+          The shortcut was `canFold` returning true for any redo, on the
+          reasoning that putting an edit back
+
+          is the harmless direction. It is not, once a seed can be ADOPTED:
+          adopt one after a deep undo and
+
+          the edit is baked out of it, with nothing left in the window to put
+          back. The mirror of the
+
+          "contested" bug fixed on the authority in #148, arriving from the
+          other side.
+
+
+          Fixed in all three places, since the asymmetry ran through all of
+          them:
+
+
+          - `canFold` asks the same question of both kinds.
+          - `EditLog.rebuiltWithout` became `rebuiltFor({ undoes, kind })`,
+          which applies the reflog entry
+            in its own direction: an undo adds its target to the excluded set, a redo takes it out.
+          - `Room.canHonourUndo` became `reflogReach`, and a redo is now
+          refused on the same terms as an
+            undo when no base sits below its target - and marks the write deep the same way.
       - ref: DAW-40
         area: DAW
         title: A client loads the log it needs, not the whole window
@@ -9974,7 +10111,7 @@ projects:
       - ref: DAW-38
         area: DAW
         title: A project can always be rebuilt from its log, and deep undo stays fast
-        status: to-do
+        status: in-progress
         sort_path: "000038"
         deps:
           - DAW-34
@@ -10281,6 +10418,53 @@ projects:
           the ~800KB catch-up window.
 
           Genuinely separate, and the lowest priority of the seven.
+
+
+          ## Progress
+
+
+          - **Step 0** - the four-PR stack, merged 2026-09-18.
+          - **Step 1** - DAW-41, PR #148.
+          - **Step 2** - the geometric ring, PR #149. `planKeyframes` evicts
+          the rung whose removal opens
+            the smallest gap relative to its own age, which settles into a ladder without anything
+            having to plan one. Simulated over 200k edits: at head 100k the rungs sit 500, 1000, 2000,
+            4500, 10500, 22500 and 44000 behind, against 4500 for the whole of an evenly-spaced nine.
+            A rung below the retention floor is now recycled rather than held, so the ladder does not
+            keep a slot open for a base the log can no longer reach.
+          - **Step 3** - the immediate keyframe write, landed early in #148
+          because the client fix needs it.
+          - **Step 5** - the client stops giving up, PR #149.
+          `dropUnreachable` drew the wrong line: it
+            asked whether THIS log could rebuild a step, and dropped it when not. With a remote to ask,
+            a step now survives as long as its edit does, and pressing it forwards the tombstone and
+            waits rather than simulating an answer the base cannot produce. Local-only projects keep
+            the old behaviour, because there is nobody to ask.
+
+          - The piece that was not in the plan: `EditLog.rebaseOnto`. Adopting
+          the authority's answer in the
+            session left the log rebuilding from a base written before the undo, so the next ordinary
+            undo put the deep edit straight back. The session now re-bases the log onto what it
+            accepted, naming its pending edits so they stay above the new base.
+          - **Step 4** remains (bounding the two whole-log reads), and the
+          recovery action.
+
+          **Also fixed in #149, found by a test that would not seed:**
+          `appendEdits` put every entry in ONE
+
+          insert statement, and past roughly 3500 rows that statement inserted
+          nothing and raised nothing -
+
+          the transaction committed an empty log and returned the max seq of a
+          project that had not been
+
+          written. Chunked at 500 rows, still inside the one transaction.
+          Production appends one edit at a
+
+          time so it was never hit there, but a bulk path silently discarding
+          its input is not a thing to
+
+          leave in a store.
 
 
           ## The work

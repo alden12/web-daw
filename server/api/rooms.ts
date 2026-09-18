@@ -257,7 +257,9 @@ export class Room {
    * costs undo depth rather than data. The index is cached on the room, which outlives every write.
    */
   private async retainKeyframe(keyframe: Record<string, unknown>, headSeq: number): Promise<void> {
-    const plan = planKeyframes(this.keyframeIndex, headSeq);
+    // The authority's ladder spans its own retention, not the client's (DAW-38): a rung is worth a
+    // slot for as long as the edits above it survive, which here is RETAINED_EDITS.
+    const plan = planKeyframes(this.keyframeIndex, headSeq, { window: RETAINED_EDITS });
     this.keyframeIndex = plan.index;
     if (!plan.write) return;
     const who = { userId: this.ownerId };
@@ -349,7 +351,11 @@ export class Room {
     // it, so the client that pressed undo and the authority would disagree with nothing to say so.
     // The client puts the edit back and reports it, which is the same "unavailable rather than wrong"
     // call every other rebuild path here makes when it has no base to reach from.
-    if (edit.kind === "undo" && !(await this.canHonourUndo(edit.undoes))) {
+    const reach =
+      edit.kind === "undo" || edit.kind === "redo"
+        ? await this.reflogReach(edit.undoes)
+        : { honour: true, deep: false };
+    if (!reach.honour) {
       const refused: ServerMessage = {
         type: "editRejected",
         opId: edit.opId,
@@ -413,11 +419,16 @@ export class Room {
       // Periodically snapshot HEAD to a keyframe (+ compact the log) so a room reload replays only a
       // bounded tail. Runs after the broadcast, so it never delays peers seeing the edit.
       //
-      // A tombstone writes one straight away rather than waiting for the cadence, because a peer that
-      // cannot fold it locally recovers by re-reading this exact file (DAW-41). On the cadence it
-      // could still be the PRE-undo snapshot, and handing that back would undo the undo. Undos are
-      // rare and a keyframe write is cheap, so the trade is not close.
-      if (tombstone || this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
+      // A DEEP undo or redo writes one straight away rather than waiting for the cadence, because a
+      // client that cannot rebuild it locally recovers by re-reading this exact file (DAW-41), and on
+      // the cadence that file could still be the snapshot from before - handing it back would take
+      // the undo straight off again.
+      //
+      // Only a deep one, meaning its target sits at or below the last keyframe. Above it, the edit is
+      // in the recent tail that every client's own log covers, so clients rebuild it from what they
+      // already hold and nobody reads this file. That is the overwhelming majority of undos, and they
+      // now cost no more than any other edit.
+      if (reach.deep || this.maxSeq - this.lastKeyframeSeq >= KEYFRAME_INTERVAL) await this.persistKeyframe();
     });
     return applied;
   }
@@ -433,7 +444,9 @@ export class Room {
   }
 
   /**
-   * Whether a rebuild could actually leave `undoes` out.
+   * Whether a rebuild could actually leave `undoes` out, and whether it is DEEP - at or below the
+   * last keyframe, so the rebuild drops to a retained base and a client may have to re-read the
+   * result rather than computing it for itself (DAW-41).
    *
    * Three ways it cannot, and they are all "too far back" rather than "invalid": the entry is no
    * longer in the retained log (compaction pruned it), or it is at or below the keyframe that is the
@@ -442,14 +455,16 @@ export class Room {
    * legitimately disagree: a client undoing offline still reaches an edit the authority has since
    * moved past.
    *
-   * A REDO never needs this. It stops excluding an edit rather than starting to, so the worst a
-   * too-old one can do is ask for an edit the base already has - which is the outcome anyway.
+   * A redo asks the same question, which is not what this said at first. It reads as the harmless
+   * direction - putting an edit back rather than taking one out - but a keyframe written after the
+   * undo has that edit baked OUT, and no forward replay puts it back. So a redo needs a base from
+   * below its target exactly as an undo does, and is refused on the same terms when there is none.
    *
    * Reads the log in full. It happens once per undo on the authority, next to a rebuild that reads
    * the same thing, so the duplicate read is the cheaper half of an operation that is already rare.
    */
-  private async canHonourUndo(undoes: string | undefined): Promise<boolean> {
-    if (undoes === undefined) return false;
+  private async reflogReach(undoes: string | undefined): Promise<{ honour: boolean; deep: boolean }> {
+    if (undoes === undefined) return { honour: false, deep: false };
     // Everything ordered before this message has to have reached the log first: the edit being
     // undone is often the one sent a moment earlier, still in the persist queue (an undo forwards
     // the held edit first, exactly so the authority is never told about the tombstone sooner).
@@ -457,15 +472,20 @@ export class Room {
     try {
       const log = await readEdits(this.db, { userId: this.ownerId }, this.projectId, -1);
       const entry = log.find((each) => each.id === undoes);
-      if (!entry) return false; // pruned, or never stored: there is nothing left to exclude
-      if (entry.seq > this.lastKeyframeSeq) return true; // in the tail the rebuild replays anyway
-      return (await this.retainedBaseFor(entry.seq)) !== null; // baked in: needs an older base
+      // Pruned, or never stored: there is nothing left to take out, or to put back.
+      if (!entry) return { honour: false, deep: false };
+      // In the tail the rebuild replays anyway, which also means every client can rebuild it itself.
+      if (entry.seq > this.lastKeyframeSeq) return { honour: true, deep: false };
+      // Baked into the keyframe either way: needs an older base here, and a client may need the
+      // result of this rebuild rather than computing its own.
+      return { honour: (await this.retainedBaseFor(entry.seq)) !== null, deep: true };
     } catch {
       // A read that failed says nothing about reach, and the two ways to be wrong are not equal:
       // refusing would bounce a perfectly good undo on a transient blip, while accepting leaves the
       // tombstone in the log for the next rebuild that works to honour - and `rebuildHead` blocks
-      // the keyframe write until one does, so nothing bakes in meanwhile.
-      return true;
+      // the keyframe write until one does, so nothing bakes in meanwhile. Deep, because a read that
+      // failed cannot say the undo was a shallow one, and writing is the recoverable direction.
+      return { honour: true, deep: true };
     }
   }
 

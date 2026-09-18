@@ -11,10 +11,10 @@
  * ring needs none of it: a new keyframe OVERWRITES the slot holding the oldest one, so storage is
  * bounded by construction at exactly `KEYFRAME_RING_SIZE` snapshots per project, forever.
  *
- * The cost is storage and only storage: a rebuild replaying the whole retained window measures at
- * 4ms on a normal project and 24ms on a large one, so a tighter interval buys nothing worth having.
- * 500 sits one notch off the cheapest option purely for headroom, at roughly 250KB per normal
- * project and 5MB per large one.
+ * The cost is storage and only storage: replaying a hundred thousand edits measures at 129ms on a
+ * laptop and 182ms on a phone (DAW-39), so no reachable depth is slow enough to want a tighter
+ * interval. Nine slots is roughly 450KB per normal project and 9MB per large one - twice the old
+ * five-slot ring, for a reach that grows with the project rather than stopping at 2000 edits.
  *
  * Zero-dependency and DOM-free on purpose, like `paths.ts` next door: the authority
  * (`server/api/rooms.ts`) and the client (`projectRepository.ts`) both write this ring, and they
@@ -37,14 +37,19 @@ export const KEYFRAME_RETAIN_INTERVAL = 500;
 export const KEYFRAME_RETAIN_WINDOW = 2000;
 
 /**
- * Slots in the ring: enough to span the window, plus the one currently being filled.
+ * Slots in the ring (DAW-38).
  *
- * Rounded UP, because a fractional count is both meaningless and fatal - `emptyKeyframeIndex` would
- * ask for `new Array(5.4)` and throw - and because the two constants above are tuning knobs that
- * need not divide. Up rather than down: the ring has to reach back at least as far as the window,
- * and a spare slot costs one snapshot.
+ * Nine, and no longer derived from the interval, because the slots are no longer evenly spaced: the
+ * ring keeps a GEOMETRIC ladder (see `planKeyframes`), so each extra slot roughly doubles the reach
+ * instead of adding one interval to it. Nine rungs at 500, 1000, 2000 ... reach about 128,000 edits
+ * back for twice the storage of the old five evenly-spaced ones.
+ *
+ * Reach is the point rather than speed. Undo rebuilds from the newest keyframe BELOW the edit being
+ * taken back, so the ring - not the log - decides how far back undo goes at all. Someone offline for
+ * a flight comes back to a head that has moved thousands of edits, and their own steps are only
+ * undoable if a base still sits below them.
  */
-export const KEYFRAME_RING_SIZE = Math.ceil(KEYFRAME_RETAIN_WINDOW / KEYFRAME_RETAIN_INTERVAL) + 1;
+export const KEYFRAME_RING_SIZE = 9;
 
 /**
  * Storage path for a retained keyframe, addressed by RING SLOT rather than by seq - that is what
@@ -80,22 +85,49 @@ const normalize = (index: KeyframeIndex, size: number): (number | null)[] =>
   });
 
 /**
+ * The slot to overwrite when every one is taken: the most REDUNDANT rung, not the oldest (DAW-38).
+ *
+ * Evicting the oldest gives fixed spacing and therefore fixed reach - five slots 500 apart reach
+ * 2000 edits and no further, however long the project runs. Evicting the most redundant instead
+ * leaves the survivors to settle into a geometric ladder on their own: a rung is promoted up the
+ * ladder as the head advances, rather than being rewritten.
+ *
+ * "Redundant" is the gap a rung's removal would open, measured against its own age. A young rung
+ * with a close neighbour is cheap to lose, since the ladder is dense there anyway; an old one is
+ * expensive, because nothing else covers that distance. Dividing by age is what makes the spacing
+ * geometric rather than uniform.
+ *
+ * The oldest is never evicted - it is the reach, and the whole point. Nor is the one just written.
+ */
+const redundantSlot = (live: readonly { slot: number; seq: number }[], headSeq: number): number => {
+  const ladder = [...live, { slot: -1, seq: headSeq }].sort((first, second) => first.seq - second.seq);
+  const candidates = ladder.slice(1, -1).map((rung, index) => ({
+    slot: rung.slot,
+    // `index` counts from the first candidate, so its neighbours in `ladder` are at index and index + 2.
+    cost: (ladder[index + 2].seq - ladder[index].seq) / Math.max(headSeq - rung.seq, 1),
+  }));
+  return candidates.reduce((cheapest, each) => (each.cost < cheapest.cost ? each : cheapest)).slot;
+};
+
+/**
  * Decide what to write, having just taken a head snapshot at `headSeq`.
  *
- * The slot chosen is an empty one, or failing that the one holding the oldest seq - which is the
- * keyframe furthest past its usefulness, since a base only helps while the edits above it survive.
+ * The slot chosen is an empty one, or failing that the most redundant rung (see `redundantSlot`).
  */
 export function planKeyframes(
   index: KeyframeIndex,
   headSeq: number,
-  options: { interval?: number; size?: number } = {},
+  options: { interval?: number; size?: number; window?: number } = {},
 ): KeyframePlan {
   const size = options.size ?? KEYFRAME_RING_SIZE;
   const interval = options.interval ?? KEYFRAME_RETAIN_INTERVAL;
+  const floor = headSeq - (options.window ?? KEYFRAME_RETAIN_WINDOW);
   const slots = normalize(index, size);
-  // A seq at or above head can only be stale (a rewound or re-created project reusing the bundle),
-  // so it does not count as a recent keyframe and its slot is free to take.
-  const live = slots.map((seq) => (seq !== null && seq < headSeq ? seq : null));
+  // Two ways a slot counts as free. A seq at or above head can only be stale (a rewound or
+  // re-created project reusing the bundle). One below the retention floor has had the edits above it
+  // pruned, so nothing can replay from it - `rebuildBase` already ignores those, and recycling the
+  // slot puts it back to work instead of holding the ladder's oldest rung open forever.
+  const live = slots.map((seq) => (seq !== null && seq < headSeq && seq >= floor ? seq : null));
   const newest = live.reduce<number | null>(
     (best, seq) => (seq !== null && (best === null || seq > best) ? seq : best),
     null,
@@ -106,9 +138,10 @@ export function planKeyframes(
   const slot =
     empty >= 0
       ? empty
-      : live
-          .map((seq, each) => ({ seq: seq ?? Number.POSITIVE_INFINITY, each }))
-          .reduce((oldest, candidate) => (candidate.seq < oldest.seq ? candidate : oldest)).each;
+      : redundantSlot(
+          live.flatMap((seq, each) => (seq === null ? [] : [{ slot: each, seq }])),
+          headSeq,
+        );
   const written = [...slots];
   written[slot] = headSeq;
   return { write: { slot, seq: headSeq }, index: written };
