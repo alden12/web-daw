@@ -7626,7 +7626,7 @@ projects:
       - ref: DAW-34
         area: DAW
         title: Undo by rebuilding history, not by whole-project snapshot
-        status: in-progress
+        status: done
         sort_path: "000034"
         body: >
           Undo checkpoints were whole-`ProjectData` snapshots, which is why undo
@@ -9655,6 +9655,82 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
+      - ref: DAW-43
+        area: DAW
+        title: The client keeps its history twice, and the gap between the two is where the bugs live
+        status: to-do
+        sort_path: "000043"
+        deps:
+          - DAW-38
+        body: >
+          Named 2026-09-18 during a stock-take of the undo system, having
+          patched the same seam four times
+
+          in one day. Alden asked for it to go on the list.
+
+
+          ## The two accounts
+
+
+          **`EditLog`**: `entries` (the loaded window), `base` (a retained
+          keyframe and the seq it reflects),
+
+          `undone`, and the undo/redo stacks. Rebuilds by replaying entries
+          over the base.
+
+
+          **`SharedSession`**: `seed` (the project as loaded), `confirmed`
+          (entries since this session began),
+
+          `pending` (unsent local edits), `base` (a store). Rebuilds by
+          replaying confirmed over the seed.
+
+
+          They describe the same history from different starting points, and
+          the session's is strictly
+
+          shallower - `confirmed` begins EMPTY when a tab opens, where the log
+          keeps what it loaded.
+
+
+          ## What the gap has cost so far
+
+
+          Every one of these is the same seam, found separately:
+
+
+          - **DAW-41**: a tombstone naming an edit folded into the session's
+          seed rebuilt to a project that
+            still contained it. Silently.
+          - **DAW-41 again**: a redo of an edit below the seed, lost the same
+          way from the other side.
+          - **DAW-38 step 5**: `foldFromLog` - the session asking the log,
+          because the log can reach what it
+            cannot. A patch over the asymmetry rather than a removal of it.
+          - **`EditLog.rebaseOnto`**: after the session adopts the authority's
+          answer, the log has to be told,
+            or the next ordinary undo rebuilds from a base written before the undo and puts the edit back.
+
+          ## The shape of the fix
+
+
+          One account. The session holds `pending` and the transport; the log
+          holds history and answers "what
+
+          is the authoritative project", which it can already do better than
+          the session can. `foldFromLog`,
+
+          `rebaseOnto`, `adoptSeed`, `canFold` and `trimConfirmed` are all
+          plumbing between the two, and most
+
+          of them should not survive it.
+
+
+          Not small, and not urgent - what exists is correct and tested. But
+          every future change to undo pays
+
+          this tax, and the four bugs above were each cheap to fix and
+          expensive to find.
       - ref: DAW-42
         area: DAW
         title: Catching up on a long gap reloads the project once per entry
@@ -9707,7 +9783,7 @@ projects:
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
-        status: review
+        status: done
         sort_path: "000041"
         deps:
           - DAW-34
@@ -9994,7 +10070,7 @@ projects:
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
-        status: review
+        status: done
         sort_path: "000039"
         deps:
           - DAW-34

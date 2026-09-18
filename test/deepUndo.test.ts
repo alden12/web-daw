@@ -46,10 +46,20 @@ describe("an undo step below the rebuild base", () => {
     expect(log.getState().canUndo).toBe(true);
   });
 
-  it("is dropped on a local-only project, where nobody could honour it", () => {
-    const { log } = pastTheBase(false);
+  // Kept at rest rather than at restore, because the session attaches AFTER the log is restored -
+  // deciding it up front would answer "no remote" on every reload and drop the steps a reload exists
+  // to bring back. So the question is asked when the step is pressed.
+  it("is consumed rather than honoured on a local-only project, where nobody could answer", () => {
+    const { store, log } = pastTheBase(false);
+    log.undo(); // e-2, above the base: rebuilt here
+    expect(trackIds(store)).toEqual(["t-0", "t-1"]);
 
-    expect(log.getCheckpoints().undo).toEqual(["e-2"]);
+    log.undo(); // e-1, below it and nobody to ask: the step goes rather than failing where it stands
+
+    expect(trackIds(store)).toEqual(["t-0", "t-1"]);
+    expect(log.getCheckpoints().undo).toEqual(["e-0"]);
+    // Only the first undo left something to redo; the consumed step did not.
+    expect(log.getCheckpoints().redo).toEqual(["e-2"]);
   });
 
   it("is forwarded rather than simulated, leaving the project alone until the answer comes", () => {
