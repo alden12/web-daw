@@ -8998,15 +8998,43 @@ projects:
           and offer a fork if a rebuild still cannot produce a usable project.
 
 
-          ### Stage E is done; what is left is stage F
-          ### Stage E is done; what is left is stage F
+          ### Stage E is done, and stage F now has its answer
 
 
-          **F. Measure on a phone.** Not building - measuring. The gate on
-          whether any of `invert.ts` comes
+          **F. Measure on a phone. Done 2026-09-18, and the answer is a clear
+          no to `invert.ts`.** Alden ran
 
-          back. Not a blocker on anything; it decides whether this item is
-          finished or grows a fast path.
+          `?bench=rebuild` on an Android phone (Chrome 153):
+
+
+          | edits | replay on the phone | on a laptop |
+
+          |---|---|---|
+
+          | 2,000 | 5.5ms | 15ms |
+
+          | 10,000 | 20ms | 20ms |
+
+          | 50,000 | 103ms | 46ms |
+
+          | 100,000 | **182ms** | 129ms |
+
+
+          A phone is **1.4x a laptop, not the 4x this ticket assumed** - and
+          the modern-phone figure beats the
+
+          laptop at the small sizes, which says the laptop number is a
+          cold-JIT artefact more than anything.
+
+          A hundred thousand edits replay in under a fifth of a second on the
+          device we were worried about.
+
+
+          So the rebuild approach stands with no fast path, and the per-command
+          inverses stay deleted. (Both
+
+          columns are post-DAW-39; before it the same phone would have been
+          measuring twelve seconds.)
 
 
           ## Dropped
@@ -9684,6 +9712,27 @@ projects:
           retained the current behaviour is
 
           already the behaviour this describes.
+
+
+          **Revised 2026-09-18, and it got smaller.** The offline case in
+          DAW-38 prices client-side paging at
+
+          ~12MB onto a phone to take back one edit, against an authority that
+          can rebuild the same thing in
+
+          ~200ms. So the deep-undo half of this is not paging at all: **stop
+          dropping a step whose entry the
+
+          client holds just because its own base is too new**, submit the
+          tombstone, and wait for the
+
+          authority's answer on the conflict-hold path the client already has.
+          Paging stays only for what
+
+          genuinely wants history on the client, which is the activity feed
+          (DAW-8.17) and the ~800KB-per-
+
+          connection catch-up window.
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
@@ -9947,11 +9996,88 @@ projects:
           at seq -1 when no keyframe is usable. That half is done.
 
 
-          If `MAX_DEPTH` is ever raised, this becomes live again and the work
-          is small: change the eviction
+          **And then Alden named the case that makes it live anyway
+          (2026-09-18), which is the case the whole
 
-          rule in `planKeyframes` from "oldest" to "most redundant" and take
-          `KEYFRAME_RING_SIZE` to 9.
+          ticket came from: being offline for a flight while someone else
+          keeps working.**
+
+
+          The reasoning above measured `MAX_DEPTH` against a solo timeline,
+          where 500 of your own steps and
+
+          2000 log entries are about the same distance. They are not the same
+          AXIS. `MAX_DEPTH` bounds how
+
+          many steps you hold; the ring bounds **how far below HEAD those
+          steps may sit** - and an 8-hour
+
+          flight stretches the second one without touching the first:
+
+
+          - Alice edits to seq 1000, goes offline.
+          - Bob works for eight hours; head reaches seq 30,000.
+          - Alice reconnects. Her offline edits append near head and stay
+          undoable. Her PRE-flight edits sit
+            29,000 entries below the oldest retained keyframe, so `dropUnreachable` silently drops every
+            one of those steps.
+
+          She has 500 perfectly good undo steps and no base to rebuild any of
+          them from. That is the scenario
+
+          the deep log was for, and without a deeper ring the log does not
+          help, since a rebuild needs a base
+
+          BELOW the edit. **So: build the ladder.** Reaching 128k covers a
+          flight, a weekend, a fortnight.
+
+
+          ## But do not page the log to the client to do it
+
+
+          The tempting follow-on is to page old entries down to the client so
+          IT can rebuild. Price it first:
+
+          Alice's rebuild needs every entry from a base below seq 1000 up to
+          head, which is 30,000 rows, and
+
+          at a measured 405 bytes that is **~12MB onto a phone to take back one
+          edit**.
+
+
+          The authority already holds all of it, and DAW-39 made the replay
+          itself cost ~200ms. So a deep undo
+
+          should be **submitted, not simulated**: the client sends the
+          tombstone (it already does), the
+
+          authority rebuilds and broadcasts the new head (it already does), and
+          the client waits instead of
+
+          rebuilding locally - the same conflict-hold path it already takes
+          when it cannot compute a local
+
+          answer. What the client needs to keep is the entry IDS of its own old
+          edits, which are small and
+
+          which it already persists.
+
+
+          That reframes the client-side work in DAW-40: **stop dropping a step
+          whose entry the client holds
+
+          just because its own base is too new.** Let the authority answer, and
+          page nothing.
+
+
+          The remaining ring work is small: change the eviction rule in
+          `planKeyframes` from "oldest" to "most
+
+          redundant" and take `KEYFRAME_RING_SIZE` to 9. `rebuildBase` and
+          `oldestBase` need no change - they
+
+          already ask for the newest base below a seq, which is exactly right
+          for an uneven ladder.
 
 
           ## The work

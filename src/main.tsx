@@ -11,21 +11,12 @@ import "./index.css";
 import { registerServiceWorker } from "./pwa/serviceWorkerUpdate";
 import { applyStoredTheme } from "./ui/theme";
 import App from "./App.tsx";
-import { renderRebuildBench, wantsRebuildBench } from "./ui/rebuildBenchPage";
+import { installDevTools } from "./devTools";
 
-// Dev/test-only: install the offline-render e2e harness (the window.__daw* hooks the Playwright
-// suite calls). Guarded by import.meta.env so the whole module is dead-code-eliminated from
-// production builds and never ships. See ./audio/engine/renderHarness.ts and AGENT-4.1.
-if (import.meta.env.DEV || import.meta.env.MODE === "test") {
-  void import("./audio/engine/renderHarness").then(({ installRenderHarness }) => installRenderHarness());
-  // Safe-area insets, on the console rather than behind an import: the thing you want to try
-  // them on is a phone, and a phone has no editor to add an import statement in. See
-  // `ui/shell/safeAreaSimulation.ts` for what to pass and why it exists (MOBILE-8).
-  void import("./ui/shell/safeAreaSimulation").then(({ simulateInsets, applySimulatedInsets }) => {
-    (window as unknown as { simulateInsets: typeof simulateInsets }).simulateInsets = simulateInsets;
-    applySimulatedInsets();
-  });
-}
+// Dev/test-only extras (the e2e render harness, safe-area simulation, the rebuild bench), guarded by
+// import.meta.env so the whole module is dead-code-eliminated from production builds and never
+// ships. True when one of them has taken over the page, and the app must not mount over it.
+const devToolOwnsThePage = (import.meta.env.DEV || import.meta.env.MODE === "test") && installDevTools();
 
 /**
  * Install the service worker (MOBILE-3), so the app has its own files before it is asked for
@@ -44,12 +35,7 @@ registerServiceWorker();
 // Before the first render, so nobody on a non-default theme sees a frame of the wrong one.
 applyStoredTheme();
 
-// Dev-only: `?bench=rebuild` measures replay cost and renders it, INSTEAD of the app (DAW-34 stage
-// F). A page rather than a console hook because the device that needs measuring is a phone, and a
-// phone has neither an editor nor an easy console - so the number has to arrive on the screen.
-if ((import.meta.env.DEV || import.meta.env.MODE === "test") && wantsRebuildBench()) {
-  void renderRebuildBench();
-} else {
+if (!devToolOwnsThePage) {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />
