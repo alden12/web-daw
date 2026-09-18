@@ -36,8 +36,9 @@ const ms = (value: number): string => (value < 10 ? value.toFixed(2) : Math.roun
 /**
  * Run the sweep and render it. Returns when every size has been measured.
  *
- * `await null` between sizes hands the frame back so each row paints as it lands - on a phone the
- * hundred-thousand-edit run is seconds, and a blank screen for that long reads as a hang.
+ * `await null` between sizes hands the frame back so each row paints as it lands. It costs nothing
+ * and it is what kept the page readable when the biggest size took twelve seconds (DAW-39); a phone
+ * slow enough to bring that back would otherwise just show a blank screen, which reads as a hang.
  */
 export async function renderRebuildBench(): Promise<void> {
   document.body.innerHTML = "";
