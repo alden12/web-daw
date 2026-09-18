@@ -9897,17 +9897,31 @@ projects:
           keyframe at all.
 
 
-          That mostly dissolves the case for a geometric ladder as a LATENCY
-          measure: reaching back the whole
+          That dissolves the case for a geometric ladder as a LATENCY measure:
+          reaching back the whole 100k
 
-          100k costs half a second, so no undo depth is slow enough to need a
-          nearer base. What survives is
+          costs half a second, so no undo depth is slow enough to need a nearer
+          base.
 
-          work item 3 - the cost of READING 100k rows out of Postgres on every
-          undo, which the ring bounds
 
-          and replay speed does not. Size the ring against that, not against
-          replay time.
+          **The ladder is still worth building, for the other two reasons**
+          (Alden asked, 2026-09-18, whether
+
+          it survives as "a data transfer helper rather than a speed thing"):
+
+
+          - **Reach, which is the real one.** `rebuildBase` refuses an undo
+          with no retained keyframe below
+            it, so the ring - not the log - decides how far back undo goes. Raising `RETAINED_EDITS` to
+            100k without touching the ring buys recovery-from-log and leaves undo refusing anything older
+            than 2000 edits. The ladder takes that to 128k. It is not an optimization of deep undo, it is
+            what makes deep undo exist.
+          - **Rows read.** With work item 3 done, an undo reads the entries
+          above its base. A nearer base is
+            a smaller read, and at 100k retained that is the cost that actually scales.
+
+          So: same change, same 9 rungs, different justification. Size it
+          against reach and rows, not ms.
 
 
           ## The work
