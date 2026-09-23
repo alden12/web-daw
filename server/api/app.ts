@@ -17,6 +17,7 @@
  * (test/syncApi.test.ts) while production passes postgres.js.
  */
 import { Hono, type Context, type MiddlewareHandler } from "hono";
+import type { JWTVerifyGetKey } from "jose";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
@@ -64,6 +65,8 @@ export interface AppOptions {
   /** Inject a pre-built principal resolver (tests use this to verify against a local key set). Takes
    *  precedence over `auth`/`ownerId`. */
   resolvePrincipal?: ResolvePrincipal;
+  /** Verify against this key set instead of fetching `auth.jwksUrl` (tests sign their own tokens). */
+  jwks?: JWTVerifyGetKey;
   /** Dev-stub: the single principal every request maps to (local dev / tests; default "local"). */
   ownerId?: string;
   /** Allowed CORS origin(s). Default "*" (the app runs on a different port in dev, and the
@@ -75,8 +78,12 @@ export interface AppOptions {
   maxSampleBytes?: number;
   /** Log each HTTP request (method, path, status, duration) to the console. On in dev, off in prod. */
   logRequests?: boolean;
-  /** Serve the hosted MCP server on `/mcp` (AGENT-28), editing projects through these rooms. */
-  mcp?: { registry: RoomRegistry };
+  /**
+   * Serve the hosted MCP server on `/mcp` (AGENT-28), editing projects through these rooms. With real
+   * auth it needs `resource` (its own public URL, `MCP_RESOURCE_URL`), which a token's audience must
+   * match; `resolvePrincipal` stands in for the verifier in tests, as the top-level one does.
+   */
+  mcp?: { registry: RoomRegistry; resource?: string; resolvePrincipal?: ResolvePrincipal };
 }
 
 export function createApp(db: Db, options: AppOptions = {}) {
@@ -84,7 +91,9 @@ export function createApp(db: Db, options: AppOptions = {}) {
   // the dev-stub principal. Handlers below are principal-agnostic - they read `c.get("ownerId")`.
   const resolvePrincipal =
     options.resolvePrincipal ??
-    (options.auth ? makeJwtResolver(db, options.auth) : makeDevResolver(db, { devUserId: options.ownerId }));
+    (options.auth
+      ? makeJwtResolver(db, options.auth, options.jwks)
+      : makeDevResolver(db, { devUserId: options.ownerId }));
   const corsOrigin = options.corsOrigin ?? "*";
   const maxJsonBytes = options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES;
   const maxSampleBytes = options.maxSampleBytes ?? DEFAULT_MAX_SAMPLE_BYTES;
@@ -231,11 +240,39 @@ export function createApp(db: Db, options: AppOptions = {}) {
       return c.body(null, 204);
     });
   // Outside the `/projects` gate on purpose: it authenticates itself, and answers MCP's own way.
-  if (options.mcp) {
-    const authorizationServer = options.auth?.issuer;
-    app.all(MCP_PATH, hostedMcpHandler({ db, registry: options.mcp.registry, resolvePrincipal, authorizationServer }));
-    if (authorizationServer)
-      for (const path of METADATA_PATHS) app.get(path, protectedResourceHandler(authorizationServer));
-  }
+  if (options.mcp) mountHostedMcp(app, db, options, resolvePrincipal);
   return app;
+}
+
+/**
+ * `/mcp` and its discovery document. With real auth it verifies tokens against its own resource URL
+ * rather than the app's `authenticated` audience, and refuses to mount without one: an MCP server
+ * that accepted any token from the project would be exactly the check it is meant to make.
+ */
+function mountHostedMcp(app: Hono<Env>, db: Db, options: AppOptions, appResolver: ResolvePrincipal): void {
+  const mcp = options.mcp!;
+  if (!options.auth) {
+    app.all(
+      MCP_PATH,
+      hostedMcpHandler({ db, registry: mcp.registry, resolvePrincipal: mcp.resolvePrincipal ?? appResolver }),
+    );
+    return;
+  }
+  const resource = mcp.resource;
+  if (!resource || new URL(resource).pathname !== MCP_PATH) {
+    console.warn(
+      `[corrente] hosted MCP is OFF: set MCP_RESOURCE_URL to this server's public ${MCP_PATH} URL ` +
+        `(e.g. https://web-daw.fly.dev${MCP_PATH}); tokens are checked against it.`,
+    );
+    return;
+  }
+  const issuer = options.auth.issuer;
+  const resolvePrincipal =
+    mcp.resolvePrincipal ??
+    makeJwtResolver(db, { ...options.auth, audience: resource }, options.jwks, (reason) =>
+      console.warn(`[corrente] /mcp token refused: ${reason}`),
+    );
+  const discovery = { resource, authorizationServer: issuer };
+  app.all(MCP_PATH, hostedMcpHandler({ db, registry: mcp.registry, resolvePrincipal, discovery }));
+  for (const path of METADATA_PATHS) app.get(path, protectedResourceHandler(resource, issuer));
 }

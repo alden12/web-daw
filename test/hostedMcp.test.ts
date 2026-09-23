@@ -10,6 +10,8 @@ import { makeSyncEnv, seedEdits } from "./support/syncEnv";
 import { createApp } from "../server/api/app";
 import { RoomRegistry, type RoomClient } from "../server/api/rooms";
 import type { ServerMessage } from "../src/contract/ws";
+import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
+import { allowEmail } from "../server/db/access";
 
 type TextResult = { isError?: boolean; content: { type: string; text: string }[] };
 
@@ -86,23 +88,50 @@ describe("the hosted MCP server", () => {
   });
 });
 
-describe("discovery for OAuth clients", () => {
+describe("OAuth: discovery, and a token for this resource and no other", () => {
   const ISSUER = "https://project.supabase.co/auth/v1";
+  const RESOURCE = "https://corrente.test/mcp";
+  const EMAIL = "alden@example.com";
 
-  async function withAuth() {
+  async function withAuth(resource: string | undefined = RESOURCE) {
     const { db } = await makeSyncEnv();
-    const registry = new RoomRegistry(db);
-    // A resolver that refuses everyone: these tests are about what a client is told, not who gets in.
-    return createApp(db, {
+    await allowEmail(db, EMAIL);
+    const { publicKey, privateKey } = await generateKeyPair("ES256");
+    const jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(publicKey)), alg: "ES256", kid: "k" }] });
+    const tokenFor = (audience: string) =>
+      new SignJWT({ email: EMAIL })
+        .setProtectedHeader({ alg: "ES256", kid: "k" })
+        .setSubject("user-1")
+        .setIssuer(ISSUER)
+        .setAudience(audience)
+        .setExpirationTime("5m")
+        .sign(privateKey);
+    const app = createApp(db, {
       auth: { issuer: ISSUER, jwksUrl: `${ISSUER}/.well-known/jwks.json` },
-      resolvePrincipal: async () => null,
-      mcp: { registry },
+      jwks,
+      mcp: { registry: new RoomRegistry(db), resource },
     });
+    const initialize = (token?: string) =>
+      app.request(RESOURCE, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+        }),
+      });
+    return { app, tokenFor, initialize };
   }
 
   it("answers an unauthenticated call with a challenge naming the metadata", async () => {
-    const app = await withAuth();
-    const response = await app.request("https://corrente.test/mcp", { method: "POST", body: "{}" });
+    const { initialize } = await withAuth();
+    const response = await initialize();
     expect(response.status).toBe(401);
     expect(response.headers.get("WWW-Authenticate")).toContain(
       'resource_metadata="https://corrente.test/.well-known/oauth-protected-resource/mcp"',
@@ -110,14 +139,31 @@ describe("discovery for OAuth clients", () => {
   });
 
   it("names this resource and the Supabase project as its authorization server", async () => {
-    const app = await withAuth();
-    const response = await app.request("http://corrente.test/.well-known/oauth-protected-resource/mcp", {
-      // Behind Fly's proxy the request is plain http; the resource must still say https.
-      headers: { "X-Forwarded-Proto": "https" },
+    const { app } = await withAuth();
+    const response = await app.request("http://corrente.test/.well-known/oauth-protected-resource/mcp");
+    expect(await response.json()).toMatchObject({ resource: RESOURCE, authorization_servers: [ISSUER] });
+  });
+
+  it("accepts a token minted for this resource", async () => {
+    const { tokenFor, initialize } = await withAuth();
+    expect((await initialize(await tokenFor(RESOURCE))).status).toBe(200);
+  });
+
+  it("refuses the app's own sign-in token, which is for the app and not for this", async () => {
+    const { tokenFor, initialize } = await withAuth();
+    expect((await initialize(await tokenFor("authenticated"))).status).toBe(401);
+  });
+
+  it("keeps a connected app's token out of the app's API", async () => {
+    const { app, tokenFor } = await withAuth();
+    const response = await app.request("https://corrente.test/projects", {
+      headers: { authorization: `Bearer ${await tokenFor(RESOURCE)}` },
     });
-    expect(await response.json()).toMatchObject({
-      resource: "https://corrente.test/mcp",
-      authorization_servers: [ISSUER],
-    });
+    expect(response.status).toBe(401);
+  });
+
+  it("stays off, rather than open, without its resource URL", async () => {
+    const { tokenFor, initialize } = await withAuth(undefined);
+    expect((await initialize(await tokenFor("authenticated"))).status).not.toBe(200);
   });
 });

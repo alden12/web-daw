@@ -23,9 +23,18 @@ the project Corrente signs in with.
    Claude registers itself as a client when you connect. Claude Code refuses outright without this
    ("does not support dynamic client registration"), because it has nowhere to put a
    hand-configured client id.
-3. **Nothing else.** In particular, no custom access token hook. ai-project-manager needs one to
-   stamp its own URL as the token audience. Corrente does not, because this Supabase project mints
-   tokens for Corrente alone, and the API already accepts any of them.
+3. **Add the audience hook.** Paste [supabase/mcp-audience-hook.sql](supabase/mcp-audience-hook.sql)
+   into the SQL editor, then pick `corrente_access_token_hook` under Authentication → Hooks →
+   *Customize Access Token (JWT) Claims*. It stamps `https://web-daw.fly.dev/mcp` as the audience
+   of tokens issued to connected apps, and leaves the app's own sign-in tokens alone.
+4. **Set the resource URL on Fly:** `fly secrets set MCP_RESOURCE_URL=https://web-daw.fly.dev/mcp`.
+   `/mcp` only accepts tokens whose audience is exactly this, and stays off, with a warning in the
+   logs, until it is set.
+
+**Why the audience matters.** A token's audience says which service it is for. Checking it means a
+token issued for anything else this Supabase project ever serves cannot open the MCP server. It also
+works the other way: a connected app's token opens `/mcp` and nothing else, because the app's API
+wants `authenticated`.
 
 Who may connect is the same allowlist as the app: an address must be allowed (`allowed_emails`)
 and in Google's test-user list to sign in at all.
@@ -41,6 +50,11 @@ the connection. Check the address it shows: an app can call itself anything, but
 that address one it does not control.
 
 ## If it fails after you approve
+
+`fly logs` shows `/mcp token refused: <reason>` for every refused token. An `unexpected "aud" claim
+value` means the hook is not stamping it: check the hook is selected, and that the URL in it matches
+`MCP_RESOURCE_URL`. If the hook stamps nothing at all, Supabase may not put `client_id` on these
+tokens; decode one (jwt.io) and match on whatever claim marks it as an OAuth app's instead.
 
 The one step you cannot see is Claude exchanging its code for a token. ai-project-manager found that
 Claude authenticates there with `client_secret_post`, so a client registered by hand for
