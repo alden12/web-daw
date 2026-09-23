@@ -144,12 +144,14 @@ export interface StoredProject {
  * `detail` is for the dialog: one clause saying which part failed, not a stack.
  */
 export class UnreadableProjectError extends Error {
-  constructor(
-    readonly detail: string,
-    options?: { cause?: unknown },
-  ) {
+  // A declared field assigned in the body, rather than a `readonly detail` parameter property:
+  // the tsconfigs set `erasableSyntaxOnly`, which rules out the syntax that emits code.
+  readonly detail: string;
+
+  constructor(detail: string, options?: { cause?: unknown }) {
     super(`the saved project could not be read: ${detail}`, options);
     this.name = "UnreadableProjectError";
+    this.detail = detail;
   }
 }
 
