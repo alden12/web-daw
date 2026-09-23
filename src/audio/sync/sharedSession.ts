@@ -63,6 +63,8 @@ export interface PendingOp {
  */
 const CONFIRMED_WINDOW = 2000;
 
+type Snapshot = Extract<ServerMessage, { type: "snapshot" }>;
+
 /**
  * The durable local mirror (OPFS, cache-only) that makes offline work survive a reload:
  * - the pending write-queue (`loadPending`/`savePending`) - unconfirmed ops re-applied to the live
@@ -127,6 +129,8 @@ export class SharedSession {
   private readonly readAuthoritativeHead?: () => Promise<{ project: ProjectData; seq: number } | null>;
   /** Re-seeds run one at a time and in order, so two tombstones cannot interleave their reads. */
   private reseeding: Promise<unknown> = Promise.resolve();
+  /** Messages held behind a catch-up that is still reading the authority's head; null when none is. */
+  private inbox: Promise<void> | null = null;
 
   /** Confirmed, server-ordered state (headless): advanced by `applyEdit` in `seq` order. */
   private readonly base: ProjectStore;
@@ -293,6 +297,23 @@ export class SharedSession {
 
   private onMessage(message: ServerMessage): void {
     if (this.closed) return;
+    // A catch-up across a gap is still reading the authority's head: everything after it waits its turn,
+    // or a peer's edit would fold onto the stale base the catch-up is about to replace.
+    if (this.inbox) this.holdInbox(() => this.dispatch(message));
+    else this.dispatch(message);
+  }
+
+  /** Run `work` once everything already held has run, and stop holding when the last of it has. */
+  private holdInbox(work: () => void | Promise<void>): void {
+    const next = (this.inbox ?? Promise.resolve()).then(work).catch(() => {});
+    this.inbox = next;
+    void next.then(() => {
+      if (this.inbox === next) this.inbox = null;
+    });
+  }
+
+  private dispatch(message: ServerMessage): void {
+    if (this.closed) return;
     const handlers: Record<ServerMessage["type"], () => void> = {
       snapshot: () => message.type === "snapshot" && this.onSnapshot(message),
       editApplied: () => message.type === "editApplied" && this.onEditApplied(message),
@@ -308,28 +329,76 @@ export class SharedSession {
    * flush our held pending ops or - if they clash with a peer's edits since we last synced - hold them
    * and raise the conflict for the UI to resolve.
    */
-  private onSnapshot(message: Extract<ServerMessage, { type: "snapshot" }>): void {
+  private onSnapshot(message: Snapshot): void {
+    if (this.spansGap(message)) {
+      this.holdInbox(() => this.catchUpAcrossGap(message));
+      return;
+    }
     // My optimistic state right now (base + pending) is the "keep mine" fork source - capture it before
     // folding the peer's edits shifts `base`.
+    this.foldSnapshot(message, this.projectStore.snapshot(), this.headSeq);
+  }
+
+  /**
+   * Whether the snapshot fails to reach back to where this client left off.
+   *
+   * It carries the newest `SNAPSHOT_WINDOW` entries, not everything since the client's head, so a
+   * client away for longer than that many edits gets a window that starts above it. Folding that
+   * window forward replays the recent edits onto a base missing everything in between - silently,
+   * since each entry applies fine on its own.
+   */
+  private spansGap(message: Snapshot): boolean {
+    const nextNeeded = this.headSeq + 1;
+    const firstUnseen = message.entries.find((entry) => entry.seq > this.headSeq);
+    return firstUnseen ? firstUnseen.seq > nextNeeded : message.headSeq >= nextNeeded;
+  }
+
+  /**
+   * Bridge a gap by starting from the authority's stored head instead of this client's.
+   *
+   * `project.json` is rewritten every `KEYFRAME_INTERVAL` edits (100), far inside the window (2000),
+   * so it lands somewhere the window can take over from: adopt it as the seed and fold the entries
+   * above it as usual. The conflict check still sees every edit sent since this client's own head,
+   * including the ones now baked into the adopted seed.
+   *
+   * A head the window cannot take over from leaves nothing honest to fold, so held edits stay held
+   * and the user is told to reload, which rebuilds from the authority's files.
+   */
+  private async catchUpAcrossGap(message: Snapshot): Promise<void> {
     const myState = this.projectStore.snapshot();
-    const missed: { command: EditCommand; author: Author }[] = [];
-    for (const entry of message.entries) {
-      if (entry.seq <= this.headSeq) continue;
-      this.foldConfirmed(entry as EditEntry);
-      this.mirrorConfirmed(entry as EditEntry); // persist for offline reload
+    const since = this.headSeq;
+    const firstSent = message.entries.find((entry) => entry.seq > since)?.seq ?? message.headSeq + 1;
+    const head = await this.readAuthoritativeHead?.().catch(() => null);
+    if (this.closed) return;
+    if (!head || head.seq < firstSent - 1) {
+      this.onError?.("This project moved on too far while you were away to catch up here - reload to see it");
+      return;
+    }
+    this.adoptSeed(head.project, head.seq);
+    this.foldSnapshot(message, myState, since);
+  }
+
+  /** Fold a snapshot that reaches this client's head, then flush held edits or raise a conflict. */
+  private foldSnapshot(message: Snapshot, myState: ProjectData, since: number): void {
+    const fresh = message.entries.filter((entry) => entry.seq > this.headSeq) as EditEntry[];
+    for (const entry of fresh) {
+      this.foldConfirmed(entry);
+      this.mirrorConfirmed(entry); // persist for offline reload
       this.headSeq = entry.seq;
-      missed.push({ command: entry.command as EditCommand, author: entry.author });
     }
     // The authority's head can exceed the window we were sent; trust it as the floor for future edits.
     this.headSeq = Math.max(this.headSeq, message.headSeq);
     // Folded catch-up entries: the log advanced, so let history re-read (markers may have arrived).
-    if (missed.length > 0) this.onConfirmed?.();
+    if (fresh.length > 0) this.onConfirmed?.();
 
-    // A reconnect can clash: held offline edits vs the peer edits we just folded. Compare only edits
-    // authored by someone else - an entry authored by us is our own op recovered via the snapshot (its
-    // echo was missed before the drop), not a peer's, so it must never count as a conflict against itself.
+    // A reconnect can clash: held offline edits vs the peer edits made since we last synced. Compare only
+    // edits authored by someone else - an entry authored by us is our own op recovered via the snapshot
+    // (its echo was missed before the drop), not a peer's, so it must never count as a conflict against
+    // itself.
     const mineAuthors = new Set(this.pending.map((op) => op.author));
-    const peerEdits = missed.filter((entry) => !mineAuthors.has(entry.author));
+    const peerEdits = message.entries
+      .filter((entry) => entry.seq > since && !mineAuthors.has(entry.author))
+      .map((entry) => ({ command: entry.command as EditCommand, author: entry.author }));
     const held = this.pending.map((op) => ({ command: op.command, author: op.author }));
     const conflict = this.conflictHold ? null : detectConflict(peerEdits, held, this.describe);
     if (conflict) {

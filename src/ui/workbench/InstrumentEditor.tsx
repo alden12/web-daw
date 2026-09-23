@@ -62,7 +62,7 @@ export function InstrumentEditor({
   compact?: boolean;
 }) {
   const isDrumkit = track.instrumentType === "drumkit";
-  const [mode, setMode] = usePersistentString<DrumEditor>(`web-daw:drum-editor:${track.id}`, "keys", DRUM_EDITORS);
+  const [mode, setMode] = usePersistentString<DrumEditor>(`corrente:drum-editor:${track.id}`, "keys", DRUM_EDITORS);
   const active = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
 
   return (

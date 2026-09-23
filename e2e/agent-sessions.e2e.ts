@@ -8,7 +8,7 @@ import { dismissStart } from "./support/app";
  */
 test.use({ viewport: { width: 1320, height: 900 } });
 
-const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
+const AGENT_CONFIG_KEY = "corrente:agent-config:v2";
 
 async function seedKey(page: Page) {
   await page.addInitScript(

@@ -48,19 +48,19 @@ export interface PadSettings {
 }
 
 export function usePadSettings(octavesPerRow: number, maxRows: number): PadSettings {
-  const [tonic, setTonic] = usePersistentNumber("web-daw:pads-tonic", 0, 0, PITCH_CLASSES.length - 1);
-  const [scale, setScale] = usePersistentString<ScaleName>("web-daw:pads-scale", "major", SCALE_NAMES);
+  const [tonic, setTonic] = usePersistentNumber("corrente:pads-tonic", 0, 0, PITCH_CLASSES.length - 1);
+  const [scale, setScale] = usePersistentString<ScaleName>("corrente:pads-scale", "major", SCALE_NAMES);
   const [storedOctave, setLowOctave] = usePersistentNumber(
-    "web-daw:pads-octave",
+    "corrente:pads-octave",
     3,
     OCTAVE_RANGE.min,
     OCTAVE_RANGE.max,
   );
-  const [storedOctaves, setOctaves] = usePersistentNumber("web-daw:pads-octaves", 1, 1, OCTAVE_RANGE.max);
+  const [storedOctaves, setOctaves] = usePersistentNumber("corrente:pads-octaves", 1, 1, OCTAVE_RANGE.max);
   // On by default: the pads still show the whole chromatic octave, they just show it as a
   // shape. Switching them off gives a row you cannot play a wrong note in, which may yet
   // prove the better default on a phone - that is a question for real use, not for now.
-  const [accidentals, setAccidentals] = usePersistentBoolean("web-daw:pads-accidentals", true);
+  const [accidentals, setAccidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
 
   // Both ceilings, in one place: what the room allows (`geometry.ts`) and what the pitch
   // range holds. The stored value is kept as asked for, so throwing the sheet up gives back

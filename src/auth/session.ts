@@ -77,7 +77,7 @@ export function subscribeAuth(listener: () => void): () => void {
 }
 
 /** Where we were when we left for the provider, so the round trip can put us back (HOST-17). */
-const RETURN_PATH_KEY = "web-daw:auth-return";
+const RETURN_PATH_KEY = "corrente:auth-return";
 
 /**
  * The path this tab was on before it left to sign in, consumed on read.

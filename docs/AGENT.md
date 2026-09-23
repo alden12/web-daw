@@ -2,7 +2,7 @@
 
 > **Status: design.** Nothing described here is built yet. This is the map we build
 > against and update as we go, so the whole thing stays legible. Companion to
-> the apm project `web-daw` (the "agent-right" direction, AGENT-2) and
+> the apm project `corrente` (the "agent-right" direction, AGENT-2) and
 > [BRIEF.md](./BRIEF.md). No em-dash characters in this file (repo convention).
 
 The goal is a built-in AI collaborator that lives in the reserved right rail and can
@@ -234,7 +234,7 @@ from the tab. This makes local == deployed: there is no proxy to run.
 
 > **Built** ([providers.ts](../src/audio/agent/providers.ts) + [config.ts](../src/audio/agent/config.ts)):
 > a data-driven registry of providers (id, label, base URL, default + suggested models,
-> key URL, extra headers). Config in `localStorage` (`web-daw:agent-config:v2`) holds the
+> key URL, extra headers). Config in `localStorage` (`corrente:agent-config:v2`) holds the
 > selected provider plus a **key and model per provider**, so several can be saved at once
 > and switched between. A Settings dialog ([AgentSettings.tsx](../src/ui/AgentSettings.tsx),
 > opened from the gear at the bottom of the activity rail) has the provider selector, the

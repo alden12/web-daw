@@ -9,7 +9,7 @@
  * that store, so nothing else needs to know about the session.
  */
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
-import { BRAND_MARK } from "./brand";
+import { BrandMark } from "./BrandMark";
 import { authEnabled, readAuthState, subscribeAuth, signInWithProvider } from "../auth/session";
 import { writeCurrentUser, DEFAULT_USER } from "./currentUser";
 
@@ -41,7 +41,7 @@ function GatedApp({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** The StartDialog-style centered card (matches src/ui/StartDialog.tsx), with the brand orb. */
+/** The StartDialog-style centered card (matches src/ui/StartDialog.tsx), with the brand mark. */
 function GateCard({ children }: { children: ReactNode }) {
   return (
     <div
@@ -51,7 +51,7 @@ function GateCard({ children }: { children: ReactNode }) {
       aria-labelledby="auth-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <span className="w-9 h-9 rounded-full" style={{ background: BRAND_MARK }} />
+        <BrandMark size={72} />
         {children}
       </div>
     </div>
@@ -69,7 +69,7 @@ function LoginScreen() {
   return (
     <GateCard>
       <h2 id="auth-title" className="text-lg font-semibold text-strong">
-        Sign in to web-daw
+        Sign in to Corrente
       </h2>
       <p className="text-sm text-muted leading-relaxed">
         Your projects sync to your account. Sign in to pick up where you left off, from any device.

@@ -46,7 +46,7 @@ export interface Patch {
   category?: string;
 }
 
-const STORAGE_KEY = "web-daw:patches:v1";
+const STORAGE_KEY = "corrente:patches:v1";
 const listeners = new Set<() => void>();
 
 function store(): Storage | null {

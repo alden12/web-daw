@@ -14,7 +14,7 @@
 /** The default id for a user who has not set one (also the solo-mode author, coloured teal). */
 export const DEFAULT_USER = "you";
 
-const STORAGE_KEY = "web-daw:current-user:v1";
+const STORAGE_KEY = "corrente:current-user:v1";
 const MAX_LEN = 64;
 const listeners = new Set<() => void>();
 

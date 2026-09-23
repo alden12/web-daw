@@ -47,7 +47,7 @@ export const SWATCHES: Swatch[] = [
 /** author id -> chosen hex. Only overrides are stored; unset authors fall back. */
 export type AuthorColorConfig = Record<string, string>;
 
-const STORAGE_KEY = "web-daw:author-colors:v1";
+const STORAGE_KEY = "corrente:author-colors:v1";
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const listeners = new Set<() => void>();
 

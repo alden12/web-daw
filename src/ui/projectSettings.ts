@@ -19,7 +19,7 @@ import type { Dispatch } from "../audio/commands/types";
 import type { ProjectStructure } from "../audio/project/projectStore";
 
 /** Bars of count-in before a take starts. Persisted, and pushed to the recorder by the timeline. */
-export const useCountInBars = () => usePersistentNumber("web-daw:count-in-bars", 1, 0, 2);
+export const useCountInBars = () => usePersistentNumber("corrente:count-in-bars", 1, 0, 2);
 
 const COUNT_IN_CHOICES = [
   { bars: 0, label: "No count-in" },

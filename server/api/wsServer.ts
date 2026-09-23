@@ -40,7 +40,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
       : makeDevResolver(options.db, { devUserId: options.ownerId }));
   const registry = new RoomRegistry(options.db);
   const wss = new WebSocketServer({ server, path: channels.main.path });
-  const log = options.log ? (message: string) => console.log(`[web-daw ws] ${message}`) : () => {};
+  const log = options.log ? (message: string) => console.log(`[corrente ws] ${message}`) : () => {};
 
   wss.on("connection", (socket, request) => {
     // Verify identity at the upgrade (a browser WebSocket can't set headers, so the credential rides

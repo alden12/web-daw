@@ -18,7 +18,7 @@ import { usePersistentString } from "./usePersistent";
 export const THEME_CHOICES = ["system", "dark", "light"] as const;
 export type ThemeChoice = (typeof THEME_CHOICES)[number];
 
-const STORAGE_KEY = "web-daw:theme";
+const STORAGE_KEY = "corrente:theme";
 
 /**
  * The colour the browser paints its own chrome with around an installed app (MOBILE-3): the

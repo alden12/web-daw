@@ -193,11 +193,11 @@ export function PianoRoll({
   const len = clip.lengthBeats;
   const viewBeats = len + TRAIL_BEATS;
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
-  const [rowH, setRowH] = usePersistentNumber("web-daw:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
+  const [rowH, setRowH] = usePersistentNumber("corrente:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
   const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
-  const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:roll-snap-on", true);
-  const [velH, setVelH] = usePersistentNumber("web-daw:roll-vel-height", 56, VEL.min, VEL.max);
+  const [snapOn, setSnapOn] = usePersistentBoolean("corrente:roll-snap-on", true);
+  const [velH, setVelH] = usePersistentNumber("corrente:roll-vel-height", 56, VEL.min, VEL.max);
   // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
   // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
   // Toggled from the roll's settings menu, so it is reachable in both shells.
@@ -210,7 +210,7 @@ export function PianoRoll({
   // key meant opening the lane on a desktop pinned it open on the phone too, where it is exactly
   // the thing that does not fit. The two screens want different answers, so they get their own.
   const [velOpen, setVelOpen] = usePersistentBoolean(
-    compact ? "web-daw:roll-vel-open:compact" : "web-daw:roll-vel-open",
+    compact ? "corrente:roll-vel-open:compact" : "corrente:roll-vel-open",
     !compact,
   );
 

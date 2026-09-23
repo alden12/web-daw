@@ -14,6 +14,7 @@ import { colorForAuthor } from "./authorColors";
 import { agentDriver, isAgentAuthor } from "../audio/commands/authors";
 import { withLightness } from "./oklch";
 import type { AuthorPresence } from "./authorColorsContext";
+import { DEFAULT_USER } from "./currentUser";
 
 /** #rrggbb -> rgba() at `alpha`, so an accent can tint fills/borders at any opacity (Tailwind's `/NN`). */
 function withAlpha(hex: string, alpha: number): string {
@@ -95,9 +96,15 @@ export const authorMiniStyle = (author: string, presence: AuthorPresence): CSSPr
  * An agent edit names the user who drove it, so the label says whose agent it was - except when it
  * was the viewer's own, where "Agent" is what they mean by it. That is the one place the driver is
  * visible: every agent shares the one violet, so the label is what tells two of them apart.
+ *
+ * "You" is whoever `self` says it is, and that has to be asked rather than assumed. This used to
+ * answer "You" for the literal id `"you"` outright, which is right in local/dev - where that string
+ * IS your identity - and wrong the moment anyone signs in, because the edits a project carries from
+ * before then belong to a different author who merely has that name. Signed in, those show their id
+ * like any other stranger's.
  */
-export const authorLabel = (author: string, self = "you"): string => {
-  if (author === "you") return "You";
+export const authorLabel = (author: string, self = DEFAULT_USER): string => {
+  if (author === self) return "You";
   const driver = agentDriver(author);
   if (driver !== null) return driver === self ? "Agent" : `Agent (${driver})`;
   if (isAgentAuthor(author)) return "Agent";

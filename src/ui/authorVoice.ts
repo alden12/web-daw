@@ -14,7 +14,7 @@ export type Voice = "you" | "agent";
 /** The default accent hex per voice. User overrides layer on top (authorColors.ts). */
 export const DEFAULT_VOICE_COLORS: Record<Voice, string> = {
   you: "#56c7c2",
-  agent: "#a884f3",
+  agent: "#8a5cf0",
 };
 
 const LABEL: Record<Voice, string> = { you: "You", agent: "Agent" };

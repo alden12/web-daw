@@ -1,5 +1,11 @@
 /**
- * Rasterise `public/favicon.svg` into the PNGs a manifest and iOS need (MOBILE-3).
+ * Rasterise the app icon into the PNGs a manifest and iOS need (MOBILE-3).
+ *
+ * **The source is not `public/favicon.svg`, and that is deliberate.** A tab draws its icon at 16px
+ * and a home screen draws this one at 192 or more, which is a big enough gap that they want
+ * different drawings of the same mark: the favicon is the outlined silhouette and these are the
+ * filled disc, which reads as one confident shape from across a home screen. One mark, a treatment
+ * per size, rather than one file stretched across both.
  *
  * Run by hand when the mark changes: `tsx scripts/generateIcons.ts`. Not part of the build,
  * because the source is a static file that changes about once a year and a build step that
@@ -45,7 +51,10 @@ const ICONS = [
   { file: "public/apple-touch-icon.png", size: 180, background: GROUND },
 ];
 
-const svg = readFileSync("public/favicon.svg", "utf8");
+/** The treatment the app icon wears, from the baked set (`scripts/generateLogoVariants.ts`). */
+const APP_ICON = "src/assets/logo/disc-plum.svg";
+
+const svg = readFileSync(APP_ICON, "utf8");
 const browser = await chromium.launch();
 
 for (const { file, size, background } of ICONS) {

@@ -155,7 +155,7 @@ export function ClipRail({
               active ? "border-you/60 bg-you/15 text-strong" : "border-line bg-card text-muted hover:bg-ground"
             }`}
             onClick={() => projectStore.selectClip(trackId, clip.id)}
-            title={`${authorLabel(clip.author)} - drag onto the lane to place`}
+            title={`${authorLabel(clip.author, presence.self)} - drag onto the lane to place`}
           >
             <button
               type="button"

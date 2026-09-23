@@ -5,7 +5,7 @@ against primary user evidence (forum threads, issue trackers, post-mortems). It 
 biased toward **disconfirming** evidence: the goal was to find out where the design is wrong, not
 to build a case for it.
 
-The **apm project `web-daw`** is the single source of truth for the roadmap. This file holds the
+The **apm project `corrente`** is the single source of truth for the roadmap. This file holds the
 evidence and the reasoning; any ticket it argues for lives there, not here.
 
 > **Note (2026-07-29):** this is a point-in-time evidence file. `docs/DESIGN.md` was migrated into

@@ -7,10 +7,10 @@
 import { type QuantizeSettings } from "../audio/sequencer/quantize";
 
 export const QUANT_KEYS = {
-  grid: "web-daw:roll-snap-div",
-  strength: "web-daw:quantize-strength",
-  ends: "web-daw:quantize-ends",
-  onRecord: "web-daw:quantize-on-record",
+  grid: "corrente:roll-snap-div",
+  strength: "corrente:quantize-strength",
+  ends: "corrente:quantize-ends",
+  onRecord: "corrente:quantize-on-record",
 } as const;
 
 const readNumber = (key: string, fallback: number): number => {

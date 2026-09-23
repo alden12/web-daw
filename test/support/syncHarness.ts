@@ -56,6 +56,9 @@ export class Harness {
    * have reached the authority by the time the test asserts on it.
    */
   async pump(): Promise<void> {
+    // A client catching up across a gap reads the authority's head asynchronously and holds its
+    // inbox until it has; let that land first, as the network round trip would.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     for (const client of this.clients) client.editLog.flushForward();
     while (this.serverQueue.length) await this.serverQueue.shift()!();
   }
@@ -111,6 +114,8 @@ export class Client {
       newOpId: () => `op-${opCounter++}`,
       onConflict: (info, myState) => this.conflicts.push({ info, myState }),
       onError: (message) => this.errors.push(message),
+      // The app re-reads `project.json`; the room's in-memory HEAD is the same project, minus the I/O.
+      readAuthoritativeHead: async () => ({ project: room.snapshot(), seq: room.headSeq }),
     });
     this.session.attach();
     this.reopen(); // initial connect fires onOpen -> the session subscribes

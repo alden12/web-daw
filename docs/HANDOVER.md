@@ -5,7 +5,7 @@ A snapshot to pick the project back up on a fresh machine / new session, capturi
 architecture are in the other docs (below); this file is the operational and status layer that would
 otherwise only exist in a session's memory.
 
-## What web-daw is
+## What Corrente is
 
 An open-source, web-based DAW. One declarative **parameter schema** is the keystone that UI, MCP, automation
 and persistence all project from. DSP is written once (shared between an offline `.wav` test renderer and the
@@ -15,7 +15,7 @@ Now a hosted, multi-user web app with real sign-in.
 ## Where the canonical docs are (source of truth, all in git)
 
 - `docs/BRIEF.md` - original project brief + v1 scope.
-- `webdaw.apm.yaml` - the big one: architecture, UI direction, persistence + semantic VCS, multiplayer,
+- `corrente.apm.yaml` - the big one: architecture, UI direction, persistence + semantic VCS, multiplayer,
   hosting/scaling, migrations, licensing/business model, and the full roadmap. Read this first, starting
   with its `protocol` section; it is plain YAML holding markdown, so an editor is enough. The `apm` MCP
   server in `.mcp.json` renders and queries it (that server lives outside this repo, so the entry only

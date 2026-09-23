@@ -7,7 +7,7 @@
  * a take. Increase it if takes still sit late; the recorder reads it at capture time
  * (like readAutoQuantize), while the settings UI edits it via usePersistentNumber.
  */
-export const RECORD_OFFSET_KEY = "web-daw:record-offset-ms";
+export const RECORD_OFFSET_KEY = "corrente:record-offset-ms";
 export const RECORD_OFFSET_RANGE = { min: -200, max: 500 } as const;
 
 /** Extra milliseconds to shift a recorded take earlier (0 = auto estimate only). */

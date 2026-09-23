@@ -60,7 +60,7 @@ const PRESETS: Record<string, Insets> = {
   "notch-landscape": { top: 0, bottom: 21, left: 59, right: 59 },
 };
 
-const STORAGE_KEY = "web-daw:sim-insets";
+const STORAGE_KEY = "corrente:sim-insets";
 
 /** `notch`, `notch-landscape`, `off`, or `top,bottom,left,right` in px. */
 function parseInsets(value: string): Insets | null {

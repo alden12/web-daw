@@ -236,6 +236,11 @@ export class Room {
     return this.store.snapshot();
   }
 
+  /** The seq `snapshot()` reflects, once any rebuild owed by a tombstone has run. */
+  get headSeq(): number {
+    return this.maxSeq;
+  }
+
   /**
    * Persist a keyframe: write `project.json` (the HEAD snapshot + an embedded `headSeq`), then compact the
    * working edit log behind it. `Room.load` reads this keyframe and replays only the tail after `headSeq`,

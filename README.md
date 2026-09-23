@@ -1,4 +1,4 @@
-# web-daw
+# Corrente
 
 An open-source, web-based DAW that owns its core layers (parameter model, DSP, instruments, effects) instead of leaning on a plugin ecosystem the web doesn't have.
 

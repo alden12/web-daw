@@ -10,15 +10,18 @@
  */
 import type { ConflictInfo, ConflictEntry } from "../audio/sync/conflict";
 import { authorLabel } from "./authorStyle";
+import { useAuthorPresence } from "./authorColorsContext";
 
 function ChangeList({ title, entries }: { title: string; entries: ConflictEntry[] }): React.ReactElement {
+  const { self } = useAuthorPresence();
+
   return (
     <div className="flex-1 min-w-0">
       <div className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint mb-1.5">{title}</div>
       <ul className="flex flex-col gap-1">
         {entries.map((entry, index) => (
           <li key={index} className="text-[13px] text-ink leading-snug">
-            <span className="text-muted">{authorLabel(entry.author)}: </span>
+            <span className="text-muted">{authorLabel(entry.author, self)}: </span>
             {entry.text}
           </li>
         ))}

@@ -24,4 +24,4 @@ const run = (command: string) => execSync(command, { stdio: "inherit" });
 run("docker compose down -v");
 run("docker compose up -d --wait");
 await applyMigrations(url);
-console.log("[web-daw] local database reset and migrated.");
+console.log("[corrente] local database reset and migrated.");

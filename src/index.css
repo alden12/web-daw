@@ -40,8 +40,22 @@
   --color-faint: #5f656f;
 
   --color-you: #56c7c2;
-  --color-agent: #a884f3;
+  --color-agent: #8a5cf0;
   --color-hot: #d9775a;
+
+  /* The brand mark's colour, and the one token here that is NOT UI state. It is the same teal
+     `you` defaults to, deliberately, so the mark looks like the app it opens - but it is its own
+     token because `you` is live: the user can recolour it in Authors, and `useSyncAuthorColorVars`
+     writes it inline on <html>. A logo that moves when someone picks a different voice colour is
+     not a logo. It does follow the *theme*, and only because it has to: this teal on white is
+     about 2:1 and reads washed out, so light gets a deeper one of the same hue. */
+  --color-brand: #56c7c2;
+
+  /* How much ink the brand mark's chip mixes in: its wash, its hairline edge, and what that edge
+     goes to when the control it sits in is hovered. */
+  --brand-chip-fill: 20%;
+  --brand-chip-edge: 50%;
+  --brand-chip-edge-hover: 95%;
 
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
@@ -135,6 +149,10 @@
        (`colorForAuthor`), for the surfaces that tint by author: knob arcs, fader fills,
        notes, clip blocks. Theme-adjusting the CSS copy would put two different teals on
        screen at once. A voice identifies a *person*, so it stays put across themes. */
+    --color-brand: #17827d;
+    --brand-chip-fill: 7%;
+    --brand-chip-edge: 20%;
+    --brand-chip-edge-hover: 80%;
     --color-good: #15a34a;
     --color-warn: #b07908;
     --color-recess: rgba(20, 24, 32, 0.06);
@@ -157,6 +175,10 @@
   --color-strong: #0b0d11;
   --color-muted: #4f5866;
   --color-faint: #5d6675;
+  --color-brand: #17827d;
+  --brand-chip-fill: 7%;
+  --brand-chip-edge: 20%;
+  --brand-chip-edge-hover: 80%;
   --color-good: #15a34a;
   --color-warn: #b07908;
   --color-recess: rgba(20, 24, 32, 0.06);
@@ -234,6 +256,50 @@
    grid-template-columns (drag-resized + persisted in AppShell); the transition
    here animates the agent collapse to/from the rail. Utilities can't animate
    grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
+/* The wash and the hairline edge a brand-mark treatment can wear (`src/ui/BrandMark.tsx`). Two
+   classes rather than one, because a filled disc wants the edge without the wash. Both are mixed from `--color-ink`, which is the point - ink is
+   near-white on the dark ground and near-black on the light one, so the same rule lifts the mark off
+   whichever frame it lands on instead of needing a colour per theme. A white disc could not do that;
+   on the light frame it disappeared.
+
+   The two alphas are tokens rather than one pair of numbers because the same alpha is not the same
+   weight on both grounds: 20% of near-white over near-black is a faint lift, while 20% of near-black
+   over a pale frame is a solid grey button. Light gets less of both.
+
+   The edge stays a hairline at every size rather than scaling with the mark, because that is what
+   makes it read as a container rather than a second ring around the logo. */
+.brand-mark-wash {
+  background: color-mix(in srgb, var(--color-ink) var(--brand-chip-fill), transparent);
+}
+
+/* The edge reads `--brand-chip-edge` rather than naming a weight, so an enclosing control can raise
+   it on hover by setting that variable - custom properties inherit, so the button sets it and the
+   mark inside picks it up without either knowing about the other. */
+.brand-mark-edge {
+  border: 0.5px solid color-mix(in srgb, var(--color-ink) var(--brand-chip-edge), transparent);
+  transition: border-color 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark-edge {
+    transition: none;
+  }
+}
+
+/* The stroked treatments of the brand mark (`src/ui/BrandMark.tsx`). The mark is inlined SVG, so its
+   path takes a stroke from here, and what that stroke is doing depends on its colour: on a disc it is
+   the disc's own, so it widens the holes in the path (the gunwale line, the guitar's outline) rather
+   than thickening the shapes; on the outlined mark it is white, which does the same to the holes and
+   draws a sticker edge outside as well. The plain bare mark wants neither, which is why this is a
+   class and not a base rule. */
+.brand-mark-stroked > svg path {
+  stroke: var(--brand-stroke);
+  stroke-width: 100;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  paint-order: stroke;
+}
+
 .app-body {
   display: grid;
   grid-template-columns: 48px 200px minmax(0, 1fr) 320px;

@@ -56,9 +56,8 @@ import { MobileShell } from "./shell/MobileShell";
 import { useDeviceShape } from "./shell/useDeviceShape";
 import { useBackgroundAudio } from "./shell/useBackgroundAudio";
 import type { ShellProps } from "./shell/types";
-import { SettingsPanel } from "./SettingsPanel";
+import { SettingsPanel, type SettingsTab } from "./SettingsPanel";
 import { SharePanel } from "./SharePanel";
-import { AccountPanel } from "./AccountPanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
 import { useResolvedTheme } from "./theme";
@@ -153,15 +152,16 @@ export function AppShell() {
   // live here rather than in the desktop shell because `selectView` / `onSearch` below
   // expand the library panel as a side effect of changing the view. Panel *geometry*
   // (widths, the timeline split) is private to the desktop shell.
-  const [libCollapsed, setLibCollapsed] = usePersistentBoolean("web-daw:lib-collapsed", false);
-  const [libView, setLibView] = usePersistentString<LibraryView>("web-daw:lib-view", "instruments", LIBRARY_VIEWS);
-  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", true);
+  const [libCollapsed, setLibCollapsed] = usePersistentBoolean("corrente:lib-collapsed", false);
+  const [libView, setLibView] = usePersistentString<LibraryView>("corrente:lib-view", "instruments", LIBRARY_VIEWS);
+  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("corrente:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const deviceShape = useDeviceShape();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Null when the settings panel is closed, otherwise the tab it opened on: the gear asks for
+  // Agent, the rail's mark and the touch shell's avatar ask for Account. One panel either way.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   // The project being shared (its id + name), or null when the Share panel is closed.
   const [share, setShare] = useState<{ id: string; name: string } | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
@@ -278,7 +278,7 @@ export function AppShell() {
             projectId: currentProjectId(),
             baseSeq,
             localMirror: cacheBundle ? bundleLocalMirror(cacheBundle) : undefined,
-            onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+            onError: (message) => console.warn(`[corrente] sync: ${message}`),
             // A peer's edit: mark the project collaborative (so the offline banner warns), and on a rename
             // update our library-list label straight from the edit (the store already applied it) so the
             // dropdown reflects it live without a reload.
@@ -333,7 +333,7 @@ export function AppShell() {
         // log is still here and can rebuild it, and the one thing that must not happen meanwhile is
         // an autosave writing the empty live store over it. Reported rather than set directly, so the
         // switch path (`LibraryHeader`) raises the same dialog.
-        if (!reportUnreadableProject(error)) console.warn("[web-daw] project load failed:", error);
+        if (!reportUnreadableProject(error)) console.warn("[corrente] project load failed:", error);
       })
       .finally(() => {
         if (active) setProjectLoaded(true);
@@ -465,8 +465,8 @@ export function AppShell() {
     onToggleLibCollapsed: () => setLibCollapsed(!libCollapsed),
     agentCollapsed,
     onSetAgentCollapsed: setAgentCollapsed,
-    onOpenSettings: () => setSettingsOpen(true),
-    onOpenAccount: () => setAccountOpen(true),
+    onOpenSettings: () => setSettingsTab("agent"),
+    onOpenAccount: () => setSettingsTab("account"),
     onOpenShare: (id, name) => setShare({ id, name }),
   };
 
@@ -482,7 +482,7 @@ export function AppShell() {
         ) : (
           <MobileShell {...shellProps} shape={deviceShape} />
         )}
-        {settingsOpen && (
+        {settingsTab && (
           <SettingsPanel
             agentConfig={agentConfig}
             authorColors={authorColors}
@@ -490,11 +490,11 @@ export function AppShell() {
             midiInput={midiInput}
             recorder={recorder}
             engine={engine}
-            onClose={() => setSettingsOpen(false)}
+            initialTab={settingsTab}
+            onClose={() => setSettingsTab(null)}
           />
         )}
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
-        {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} error={startError} />}
         {!projectLoaded && <LoadingOverlay />}
         {recovery && (
@@ -534,7 +534,7 @@ export function AppShell() {
                   setCurrentProject(id);
                   window.location.reload();
                 } catch (error) {
-                  console.warn("[web-daw] keep-mine fork failed:", error);
+                  console.warn("[corrente] keep-mine fork failed:", error);
                 }
               })();
             }}

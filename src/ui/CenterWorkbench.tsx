@@ -91,10 +91,10 @@ export function CenterWorkbench({
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
   // The instrument+effects rack is a resizable panel below the editor.
-  const [deviceH, setDeviceH] = usePersistentNumber("web-daw:devices-height", 200, 80, 620);
+  const [deviceH, setDeviceH] = usePersistentNumber("corrente:devices-height", 200, 80, 620);
   const deviceRef = useRef<HTMLDivElement>(null);
   // The clip rail beside the editor is drag-resizable too (its own width).
-  const [clipRailW, setClipRailW] = usePersistentNumber("web-daw:clip-rail-width", 96, 72, 260);
+  const [clipRailW, setClipRailW] = usePersistentNumber("corrente:clip-rail-width", 96, 72, 260);
   const clipRailRef = useRef<HTMLDivElement>(null);
 
   // The device rack is the fixed-height one and the editor above it is flexible, so an

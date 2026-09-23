@@ -57,14 +57,14 @@ describe("the per-tab undo store", () => {
   // Stored text is not to be trusted: it survives across app versions, and a shape change here
   // must cost one tab's undo rather than the project failing to open.
   it("treats unreadable or out-of-shape content as absent", () => {
-    expect(readUndoSession("p-1", fakeStore({ "web-daw:undo:p-1": "{ not json at all" }))).toBeNull();
+    expect(readUndoSession("p-1", fakeStore({ "corrente:undo:p-1": "{ not json at all" }))).toBeNull();
     // The shape an older build wrote: seqs rather than ids.
     expect(
-      readUndoSession("p-1", fakeStore({ "web-daw:undo:p-1": JSON.stringify({ undo: [0, 1], redo: [] }) })),
+      readUndoSession("p-1", fakeStore({ "corrente:undo:p-1": JSON.stringify({ undo: [0, 1], redo: [] }) })),
     ).toEqual({ undo: [], redo: [] });
     // And the shape before that: a base snapshot and steps.
     expect(
-      readUndoSession("p-1", fakeStore({ "web-daw:undo:p-1": JSON.stringify({ undo: { base: null }, redo: null }) })),
+      readUndoSession("p-1", fakeStore({ "corrente:undo:p-1": JSON.stringify({ undo: { base: null }, redo: null }) })),
     ).toEqual({ undo: [], redo: [] });
   });
 

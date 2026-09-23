@@ -1,6 +1,6 @@
 projects:
-  - key: web-daw
-    name: Web DAW
+  - key: corrente
+    name: Corrente
     type: software
     status: active
     direction: The open-source browser DAW whose projects are complete, readable
@@ -22,7 +22,7 @@ projects:
     updated_at: 2026-07-29T13:34:58.278Z
     context:
       protocol: >-
-        **Overview.** web-daw is an open-source, browser-based DAW built on one
+        **Overview.** Corrente is an open-source, browser-based DAW built on one
         idea: **the parameter schema is the keystone**, and the UI, the MCP
         control plane, automation, and persistence are all projections of it.
         The second idea is that the session is a document **co-edited by a human
@@ -1805,10 +1805,39 @@ projects:
 
 
         **Sequencing:** cheap brand hygiene now (a distinctive,
-        invented/arbitrary name - descriptive marks like "web-daw" are largely
-        unregistrable/unenforceable; grab domain + handles) -> file UK at public
-        launch under the brand -> within 6 months add EU/US *if traction
-        warrants* -> Madrid for further countries reactively.
+        invented/arbitrary name - descriptive marks like the old placeholder
+        "web-daw" are largely unregistrable/unenforceable; grab domain +
+        handles) -> file UK at public launch under the brand -> within 6 months
+        add EU/US *if traction warrants* -> Madrid for further countries
+        reactively.
+
+
+        **The name, settled 2026-09-23: Corrente.** Italian for "current", and
+        also a baroque dance movement, so it is allusive rather than descriptive
+        for music software - which is the side of that line a registrable mark
+        wants to be on. Searched before committing: the UK register holds two
+        live marks on the word, UK00811301488 in class 35 (advertising/business
+        services) and UK00003833728 "LA CORRENTE" in class 43 (hospitality).
+        Neither sits in class 9 or 42, so neither is an earlier right against a
+        software filing, and the goods are far enough apart that the examiner's
+        search report is unlikely to cite them at all. No audio or music product
+        of the name exists. `corrente` is held on npm.
+
+
+        The cost of the choice is domains: `.com` is a broker page and
+        `.app`/`.dev`/`.io`/`.studio`/`.org`/`.net` are all registered, leaving
+        `.audio`, `.fm` and `.music`. Weighed against Notturno, which was the
+        other finalist and which loses on every axis that matters - the handle,
+        two live businesses on its domains, the EBU's Euroclassic Notturno
+        radio strand using the word for classical music, and "nocturne" being a
+        genre name rather than an allusion.
+
+
+        **The reactive-streams library (formerly RxFM) takes Affluente**, which
+        had held `corrente` on npm as a placeholder. Affluente is a tributary,
+        which is the better fit for it anyway, and it cleared everywhere
+        searched: no marks on the UK register, no company of the name, npm free,
+        every sensible domain free but `.com` (a parking lander).
 
 
         ## Decisions / triggers (deferred, not blocking)
@@ -1822,9 +1851,10 @@ projects:
         outside PR (CLA-lite vs full CLA vs accept AGPL-lock). Preserve
         sole-copyright SPDX headers until then.
 
-        - **Trademark:** no action until public launch under the brand.
-        Actionable now only: pick a distinctive name and grab domain + handles
-        at naming time.
+        - **Trademark:** name settled (Corrente), register searched
+        2026-09-23, nothing blocking in classes 9 or 42. File UK 9 + 42 at
+        public launch (~£220). Open brand hygiene: the free domains and social
+        handles are not yet grabbed.
       Slice history: >-
         The build order, kept because the sequencing rationale is itself the
         record of how the thesis was tested. Slice numbers appear throughout
@@ -2020,7 +2050,7 @@ projects:
         at: 2026-07-29T17:43:49.280Z
         actor: claude
       - body: "Decision: the apm MCP server stays **local-only** for now. So
-          `webdaw.apm.yaml` is the portable thing of record - it is committed
+          `corrente.apm.yaml` is the portable thing of record - it is committed
           and is plain YAML holding markdown, readable in an editor without any
           tooling. CLAUDE.md, CONTRIBUTING.md and docs/HANDOVER.md were updated
           to point at the **file**, with the MCP server described as the nicer
@@ -3108,13 +3138,13 @@ projects:
           `server/index.ts` binds a fixed `ws://localhost:8765` and calls
           `process.exit(1)` on `EADDRINUSE`. That is deliberate and correct for
           avoiding orphans, but it means **the second concurrent MCP client on
-          the same machine silently gets no web-daw tools**: its server spawns,
+          the same machine silently gets no corrente tools**: its server spawns,
           exits immediately, and the tool list is simply missing with no in-app
           signal.
 
 
           **Hit in practice on 2026-07-30.** A day-old VS Code Claude session
-          still held the port; a new session in the same repo had no `web-daw`
+          still held the port; a new session in the same repo had no `corrente`
           MCP at all. Diagnosing it meant `lsof`-ing the port and walking the
           process tree back to the other editor window. The failure presents to
           the user as "my MCP won't connect", with nothing pointing at the real
@@ -3178,7 +3208,7 @@ projects:
               the MCP indicator when disconnected") and it is right for the
               common case, where MCP is not in use and a permanent dead dot
               would be noise. But it means the collision is invisible from both
-              ends at once: no `web-daw` tools in the MCP client, no indicator
+              ends at once: no `corrente` tools in the MCP client, no indicator
               in the tab, and nothing anywhere saying something tried to connect
               and failed.
 
@@ -3965,7 +3995,7 @@ projects:
           **We were already paying for the misfiling.** `usePersistent*` was a
           plain `useState` seeded once on mount with **no cross-instance
           notification**, so two components reading one key diverged silently
-          the moment either wrote. Not hypothetical: `web-daw:metronome` is read
+          the moment either wrote. Not hypothetical: `corrente:metronome` is read
           by both `TransportBar.tsx:41` and `MobileShell.tsx:341`, mounted
           together on touch, and only stayed correct because of a hand-written
           guard (`if (compact) return`) standing one copy down. Ownership was
@@ -9734,7 +9764,7 @@ projects:
       - ref: DAW-42
         area: DAW
         title: Catching up on a long gap reloads the project once per entry
-        status: to-do
+        status: review
         sort_path: "000042"
         deps:
           - DAW-34
@@ -9780,6 +9810,28 @@ projects:
 
           Measure before and after with the same harness: deliver N
           `editApplied` messages, time it.
+
+
+          **Resolved 2026-09-23: the measured path is not the catch-up path.**
+          A reconnect's catch-up arrives as ONE `snapshot` message, and
+          `onSnapshot` already folds every entry and calls `rebuildLive` once
+          at the end. The 14 seconds came from a test delivering 2100
+          `editApplied` messages one by one, which is live peer traffic, where
+          one load per edit is the right cost. Nothing to batch.
+
+
+          **What looking found instead:** the snapshot carries the newest 2000
+          entries (`SNAPSHOT_WINDOW`), not everything since the client's head.
+          A client away for more than 2000 edits folded a window that started
+          above it, onto a base missing everything in between, with nothing to
+          say so. `SharedSession.spansGap` now spots that, and
+          `catchUpAcrossGap` adopts the authority's `project.json` (rewritten
+          every 100 edits, so always inside the window) before folding, holding
+          later messages until it has. A head the window cannot take over from
+          reports "reload" rather than folding over the hole.
+          `test/snapshotGap.test.ts`; `unreachableUndo.test.ts` had been
+          passing over exactly this hole (its pruned log starts above the
+          client) and now goes through the recovery.
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
@@ -10067,6 +10119,13 @@ projects:
           (DAW-8.17) and the ~800KB-per-
 
           connection catch-up window.
+
+
+          **2026-09-23:** step 1 is no longer needed for correctness. A client
+          whose head is below the snapshot window now bridges the gap itself
+          from `project.json` (see DAW-42), so `subscribe` carrying `baseSeq`
+          would only trim the wire, not fix anything. What is left here is
+          the feed's paging, which is DAW-8.17.
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
@@ -12904,7 +12963,7 @@ projects:
           **registration API is done** (see INST-1).
 
 
-          **Carve out a small permissive SDK package** (e.g. `web-daw-sdk`,
+          **Carve out a small permissive SDK package** (e.g. `corrente-sdk`,
           MIT/Apache) holding only the stable contract a plugin imports: the
           param-spec types, the `specToZod` derivation (`params/zod.ts`), the
           instrument/effect definition interfaces, and the pure-`Float32Array`
@@ -13827,7 +13886,7 @@ projects:
               now live in one `rollControls` list with two homes (the roll's
               kebab on desktop, the shell's ⋮ on touch); the toolbar keeps label
               + menu + Quantize + zoom. (3) The **velocity lane is now
-              collapsible** (`web-daw:roll-vel-open`, toggled from the same
+              collapsible** (`corrente:roll-vel-open`, toggled from the same
               list) and clamped to 40% of the roll's viewport, because at ~390px
               tall the lane plus ruler was most of the available height."
             audience: user
@@ -14052,12 +14111,12 @@ projects:
               **Three separate zoom states, all persisted and clamped** - pinch
               must write through the same setters or the surfaces desync:
 
-              - arrangement: `web-daw:arr-zoom` (`ZOOM` 6-96), read by *both*
+              - arrangement: `corrente:arr-zoom` (`ZOOM` 6-96), read by *both*
               `ArrangementTimeline` and `LaneStrip`, so this one is shared and
               x-only today;
 
-              - piano roll: `web-daw:roll-zoom-x` (`ZOOM_X`) and
-              `web-daw:roll-zoom-y` (`ZOOM_Y`) - two axes, so the roll wants a
+              - piano roll: `corrente:roll-zoom-x` (`ZOOM_X`) and
+              `corrente:roll-zoom-y` (`ZOOM_Y`) - two axes, so the roll wants a
               genuine two-axis pinch while the arrangement wants one.
 
 
@@ -15506,7 +15565,7 @@ projects:
 
 
           Note `velOpen` is a *persisted* boolean under one global key
-          (`web-daw:roll-vel-open`), so `compact` only decides its **initial**
+          (`corrente:roll-vel-open`), so `compact` only decides its **initial**
           value. Anyone who has already opened a drum roll on a phone has the
           lane pinned open in localStorage, and threading the prop will not
           close it for them. Worth deciding whether the key should be per-tier

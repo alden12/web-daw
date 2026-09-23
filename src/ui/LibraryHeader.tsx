@@ -102,7 +102,7 @@ export function LibraryHeader({
         // so the dialog's rebuild acts on the right one.
         if (meta.id !== currentId) {
           void switchProject(deps, meta.id).catch((error: unknown) => {
-            if (!reportUnreadableProject(error)) console.warn("[web-daw] project switch failed:", error);
+            if (!reportUnreadableProject(error)) console.warn("[corrente] project switch failed:", error);
           });
         }
       },

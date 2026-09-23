@@ -1,4 +1,4 @@
-# Contributing to web-daw
+# Contributing to Corrente
 
 Thanks for your interest in contributing! This project is licensed under the
 [GNU AGPL-3.0-or-later](LICENSE), and contributions are accepted under the same
@@ -19,7 +19,7 @@ yarn check:server # type-check the Node MCP server
 Please keep the gates green: `yarn test`, `yarn build`, `yarn lint`, and
 `yarn check:server` should all pass before you open a pull request. The coding
 conventions live in [CLAUDE.md](CLAUDE.md), and the architecture and roadmap in
-[webdaw.apm.yaml](webdaw.apm.yaml) - plain YAML holding markdown, so it reads fine
+[corrente.apm.yaml](corrente.apm.yaml) - plain YAML holding markdown, so it reads fine
 in an editor. Skim both before a substantial change.
 
 ## Sign-off: the Developer Certificate of Origin

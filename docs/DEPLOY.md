@@ -1,6 +1,6 @@
-# Deploying web-daw
+# Deploying Corrente
 
-web-daw deploys as **one always-available Node service** that serves the built client, the Hono API, and
+Corrente deploys as **one always-available Node service** that serves the built client, the Hono API, and
 the `/ws` realtime socket from a **single origin**. There is no separate frontend host: the same server
 serves `dist/`. Backing store is a **managed Postgres** (Neon); identity is **Supabase** (JWT issuer only
 - our server verifies the token, Supabase holds no project data).
@@ -206,8 +206,8 @@ DATABASE_URL=postgres://webdaw:webdaw@localhost:5432/webdaw API_PORT=8080 NODE_E
 Then prove the image:
 
 ```sh
-docker build -t web-daw --build-arg VITE_DAW_API_URL=http://localhost:8080 .
-docker run --rm -e DATABASE_URL='postgres://host.docker.internal:5432/webdaw' -p 8080:8080 web-daw
+docker build -t corrente --build-arg VITE_DAW_API_URL=http://localhost:8080 .
+docker run --rm -e DATABASE_URL='postgres://host.docker.internal:5432/webdaw' -p 8080:8080 corrente
 ```
 
 ## Notes
