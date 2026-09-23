@@ -9761,6 +9761,9 @@ projects:
 
           this tax, and the four bugs above were each cheap to fix and
           expensive to find.
+        id: 01a0d019-39b6-77ab-a1ee-9f4fb9e54edd
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-42
         area: DAW
         title: Catching up on a long gap reloads the project once per entry
@@ -9832,6 +9835,9 @@ projects:
           `test/snapshotGap.test.ts`; `unreachableUndo.test.ts` had been
           passing over exactly this hole (its pruned log starts above the
           client) and now goes through the recovery.
+        id: 01a0d019-39b6-77ab-a1ee-a0641665c5ec
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
@@ -10041,6 +10047,9 @@ projects:
           - `Room.canHonourUndo` became `reflogReach`, and a redo is now
           refused on the same terms as an
             undo when no base sits below its target - and marks the write deep the same way.
+        id: 01a0d019-39b6-77ab-a1ee-a5924c582faa
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-40
         area: DAW
         title: A client loads the log it needs, not the whole window
@@ -10126,6 +10135,9 @@ projects:
           from `project.json` (see DAW-42), so `subscribe` carrying `baseSeq`
           would only trim the wire, not fix anything. What is left here is
           the feed's paging, which is DAW-8.17.
+        id: 01a0d019-39b6-77ab-a1ee-ab7cbb43c157
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
@@ -10243,6 +10255,9 @@ projects:
           - The profile disagreed with my diagnosis, and the diagnosis was
           wrong. The first fix measured as
             exactly zero improvement, which is the only reason it got profiled rather than believed.
+        id: 01a0d019-39b6-77ab-a1ee-ac1b249a957b
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-38
         area: DAW
         title: A project can always be rebuilt from its log, and deep undo stays fast
@@ -10752,6 +10767,9 @@ projects:
           second storage shape. Recorded
 
           rather than chosen, because the simple cap is worth trying first.
+        id: 01a0d019-39b6-77ab-a1ee-b3144b0361be
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"

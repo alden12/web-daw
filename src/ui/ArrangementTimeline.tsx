@@ -23,9 +23,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
-import type { GroupMeta, Placement, TrackMeta } from "../audio/project/types";
+import type { ClipContent, GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
-import { newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
+import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
+import { clipContentOf } from "./clipContent";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu, type MenuItem } from "./Menu";
 import { useCountInBars, useProjectSettingItems } from "./projectSettings";
@@ -165,10 +166,12 @@ export function ArrangementTimeline({
     beat: number;
   } | null>(null);
   const [viewportW, setViewportW] = useState(0);
+  /** A copied placement: its window, and its clip's content so a paste can land on another track. */
   const clipboard = useRef<{
     clipId: string;
     offset: number;
     length: number;
+    content: ClipContent;
   } | null>(null);
 
   const beatsPerBar = beatsPerBarOf(project.timeSignature);
@@ -240,23 +243,26 @@ export function ArrangementTimeline({
     return () => window.removeEventListener("keydown", onKey);
   }, [selection, dispatch]);
 
-  /** Put a placement's window on the clipboard, for a paste to reproduce on the same track. */
+  /** Put a placement's window on the clipboard, with its clip's content for a paste elsewhere. */
   const copyPlacement = (trackId: string, placementId: string): boolean => {
     const placement = projectStore.getTrack(trackId)?.placements.find((candidate) => candidate.id === placementId);
-    if (!placement) return false;
-    clipboard.current = { clipId: placement.clipId, offset: placement.offset, length: placement.length };
+    const content = placement && clipContentOf(projectStore, trackId, placement.clipId);
+    if (!placement || !content) return false;
+    clipboard.current = { clipId: placement.clipId, offset: placement.offset, length: placement.length, content };
     return true;
   };
 
-  /** Whether a paste has something to land on this track: the clipboard's clip must be one of its own. */
-  const canPasteTo = (trackId: string): boolean => {
-    const copied = clipboard.current;
-    return !!copied && !!projectStore.getTrack(trackId)?.clips.some((clip) => clip.id === copied.clipId);
-  };
+  /** Whether a paste can land on this track: any track of the same kind as the copied clip. */
+  const canPasteTo = (trackId: string): boolean =>
+    !!clipboard.current && projectStore.getTrack(trackId)?.kind === clipboard.current.content.kind;
 
   /**
    * Place the clipboard on a track: at `beat` when there is one (the marker), else after `anchorId`'s
    * placement (so pastes chain), else at the track's end. Selects what it placed.
+   *
+   * On the clip's own track it places the same clip, so an edit to it shows everywhere it plays.
+   * On another track it copies the clip into that track's pool first - the same thing a rail drop
+   * onto another lane does - since a placement can only play a clip its own track holds.
    */
   const pasteTo = (trackId: string, beat: number | null, anchorId?: string): boolean => {
     const copied = clipboard.current;
@@ -268,12 +274,15 @@ export function ArrangementTimeline({
       0,
     );
     const startBeat = beat ?? (anchor ? anchor.startBeat + anchor.length : trackEnd);
+    const ownClip = track.clips.some((clip) => clip.id === copied.clipId);
+    const clipId = ownClip ? copied.clipId : newClipId();
+    if (!ownClip) dispatch({ type: "pasteClip", trackId: track.id, id: clipId, content: copied.content });
     const id = newPlacementId();
     dispatch({
       type: "addPlacement",
       trackId: track.id,
       id,
-      clipId: copied.clipId,
+      clipId,
       startBeat,
       offset: copied.offset,
       length: copied.length,
@@ -281,7 +290,7 @@ export function ArrangementTimeline({
     setMarker(null);
     setSelection({ trackId: track.id, id });
     projectStore.selectTrack(track.id);
-    projectStore.selectClip(track.id, copied.clipId);
+    projectStore.selectClip(track.id, clipId);
     return true;
   };
 

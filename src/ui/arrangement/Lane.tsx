@@ -361,10 +361,25 @@ export function Lane({
     onSelect(track.id, { id, clipId, startBeat: start, offset: 0, length });
   };
 
+  /**
+   * The marker drops on the tap's CLICK rather than its pointerup, and that is load-bearing. The
+   * browser dispatches the click after pointerup, at the same point, to whatever is under it by
+   * then - and the marker brings a kebab with it. Dropped on pointerup, the kebab rendered in time
+   * to catch the click and opened its own menu, so the tap meant to open it closed it instead.
+   * Dropped here, the click has already been delivered and nothing new is under the finger.
+   */
+  const pendingMark = useRef<number | null>(null);
+  const onLaneClick = () => {
+    if (pendingMark.current === null) return;
+    onMark(track.id, pendingMark.current);
+    pendingMark.current = null;
+  };
+
   // Press on empty lane: a clean click drops a paste marker at that beat; a drag
   // sketches a new empty clip sized to the drag.
   const onLaneDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    pendingMark.current = null; // a tap whose click never came (a scroll took it) drops nothing
     const downBeat = beatAt(e.clientX);
     const downX = e.clientX;
     let moved = false;
@@ -382,8 +397,8 @@ export function Lane({
     beginPointerDrag(onMove, (ev) => {
       setDraft(null);
       if (!moved) {
-        // Click: drop a paste marker (copy/paste lands here).
-        onMark(track.id, Math.max(0, floorB(downBeat)));
+        // A clean tap: the marker drops on the click that follows, not here - see `onLaneClick`.
+        pendingMark.current = Math.max(0, floorB(downBeat));
         return;
       }
       // Drag: an empty clip sized to the drag.
@@ -418,6 +433,7 @@ export function Lane({
       ref={ref}
       data-testid="lane"
       onPointerDown={onLaneDown}
+      onClick={onLaneClick}
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={`${ROW} relative border-b border-line-soft cursor-copy`}
