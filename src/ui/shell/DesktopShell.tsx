@@ -50,9 +50,9 @@ export function DesktopShell({
   onOpenShare,
 }: ShellProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [libWidth, setLibWidth] = usePersistentNumber("web-daw:lib-width", 200, 150, 420);
-  const [agentWidth, setAgentWidth] = usePersistentNumber("web-daw:agent-width", 320, 240, 620);
-  const [timelineH, setTimelineH] = usePersistentNumber("web-daw:timeline-height", 244, 120, 2000);
+  const [libWidth, setLibWidth] = usePersistentNumber("corrente:lib-width", 200, 150, 420);
+  const [agentWidth, setAgentWidth] = usePersistentNumber("corrente:agent-width", 320, 240, 620);
+  const [timelineH, setTimelineH] = usePersistentNumber("corrente:timeline-height", 244, 120, 2000);
   const [dragging, setDragging] = useState(false);
 
   // Track the body height so the timeline can never crowd out the workbench:

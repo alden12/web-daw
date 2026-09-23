@@ -1,6 +1,6 @@
-# web-daw - conventions
+# Corrente - conventions
 
-Architecture and project direction live in **`webdaw.apm.yaml`** - the project map
+Architecture and project direction live in **`corrente.apm.yaml`** - the project map
 (tickets, statuses, dependencies) plus the design narrative as context sections.
 It is committed, and it is plain YAML holding markdown, so **read it directly** if
 you have no tooling; start with its `protocol` section. This file is the short list
@@ -127,7 +127,7 @@ Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.
 
 ## Roadmap
 
-- **`webdaw.apm.yaml`** is the **single source of truth for the project map.** Tickets carry their own
+- **`corrente.apm.yaml`** is the **single source of truth for the project map.** Tickets carry their own
   status and dependency edges; `open_viewer` (via the `apm` MCP server) renders the graph. Ticket refs
   match the old `docs/DESIGN.md` markers exactly (including dotted sub-tickets like `DAW-8.1` /
   `HOST-6.2`), so references in older commits and comments still resolve.

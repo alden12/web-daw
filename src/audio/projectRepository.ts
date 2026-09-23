@@ -750,7 +750,7 @@ async function sha256hex(buf: ArrayBuffer): Promise<string> {
 }
 
 /** localStorage key holding the current project id (shared source of truth with the library). */
-const CURRENT_PROJECT_KEY = "web-daw:current-project";
+const CURRENT_PROJECT_KEY = "corrente:current-project";
 
 let current: { id: string; repo: ProjectRepository } | null = null;
 

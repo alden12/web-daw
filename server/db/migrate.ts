@@ -22,5 +22,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
   await applyMigrations(url);
-  console.log("[web-daw] migrations applied");
+  console.log("[corrente] migrations applied");
 }

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "web-daw": {
+    "corrente": {
       "command": "npx",
       "args": ["tsx", "server/index.ts"]
     },
@@ -11,7 +11,7 @@
         "../ai-project-manager",
         "../ai-project-manager/src/mcp/server.ts",
         "--store",
-        "webdaw.apm.yaml"
+        "corrente.apm.yaml"
       ]
     }
   }

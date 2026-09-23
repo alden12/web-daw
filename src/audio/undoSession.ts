@@ -21,7 +21,7 @@
  */
 import type { UndoState } from "./commands/editLog";
 
-const key = (projectId: string): string => `web-daw:undo:${projectId}`;
+const key = (projectId: string): string => `corrente:undo:${projectId}`;
 
 /** The slice of `Storage` this needs. Injectable so the round trip is testable without a DOM. */
 export interface SessionStore {

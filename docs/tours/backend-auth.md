@@ -5,7 +5,7 @@ mode: b            # default drive mode: b = auto-jump editor + links, a = links
 
 # Authentication & Authorization Walkthrough
 
-How web-daw answers two questions on every request: **who are you?** (authentication)
+How Corrente answers two questions on every request: **who are you?** (authentication)
 and **are you allowed to touch this project?** (authorization). We follow one request
 from the browser to the database, in the order the system actually checks things:
 identity is minted at sign-in, rides along on every request, gets verified on the

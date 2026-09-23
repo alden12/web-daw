@@ -21,7 +21,7 @@ export interface AgentConfig {
   models: Partial<Record<ProviderId, string>>;
 }
 
-const STORAGE_KEY = "web-daw:agent-config:v2";
+const STORAGE_KEY = "corrente:agent-config:v2";
 const EMPTY: AgentConfig = { provider: "gemini", keys: {}, models: {} };
 const listeners = new Set<() => void>();
 

@@ -26,7 +26,7 @@ const staleProjects = await findStaleProjects(getDb(), PROJECT_SCHEMA);
 if (staleProjects.length > 0) {
   const summary = staleProjects.map((project) => `${project.id} (v${project.projectSchema})`).join(", ");
   console.warn(
-    `[web-daw] ${staleProjects.length} project(s) below document schema v${PROJECT_SCHEMA}: ${summary}. ` +
+    `[corrente] ${staleProjects.length} project(s) below document schema v${PROJECT_SCHEMA}: ${summary}. ` +
       `They upcast lazily on next load.`,
   );
 }
@@ -37,7 +37,7 @@ const corsOrigin = process.env.DAW_CORS_ORIGIN?.split(",").map((origin) => origi
 // a JWT against the provider's JWKS (the principal is the token's user). Absent config fails closed in
 // production and runs the open dev-stub only in local dev - see resolveAuthConfig.
 const auth = resolveAuthConfig(process.env);
-if (auth) console.log(`[web-daw] auth: verifying JWTs against ${auth.issuer}`);
+if (auth) console.log(`[corrente] auth: verifying JWTs against ${auth.issuer}`);
 // Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
 const verbose = process.env.NODE_ENV !== "production";
 const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose });
@@ -55,4 +55,4 @@ app.get("*", serveStatic({ path: "./dist/index.html" }));
 // The realtime multiplayer socket shares the HTTP server/port (path /ws), so it is one origin.
 const server = serve({ fetch: app.fetch, port }) as Server;
 attachWsServer(server, { db: getDb(), auth, log: verbose });
-console.log(`[web-daw] sync API listening on http://localhost:${port} (+ ws on /ws)`);
+console.log(`[corrente] sync API listening on http://localhost:${port} (+ ws on /ws)`);

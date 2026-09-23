@@ -69,7 +69,7 @@ function LoginScreen() {
   return (
     <GateCard>
       <h2 id="auth-title" className="text-lg font-semibold text-strong">
-        Sign in to web-daw
+        Sign in to Corrente
       </h2>
       <p className="text-sm text-muted leading-relaxed">
         Your projects sync to your account. Sign in to pick up where you left off, from any device.

@@ -42,7 +42,7 @@ export function TransportBar({
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
-  const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
+  const [metronome, setMetronome] = usePersistentBoolean("corrente:metronome", false);
 
   // The scheduler reads this flag each tick; keep it in sync with the preference. While
   // compact the shell's ⋮ owns the metronome instead, so this stands down rather than

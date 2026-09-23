@@ -110,7 +110,7 @@ test("a sign-in round trip comes back to the project it left", async ({ page }) 
   // An OAuth return lands on the bare origin with the path in the tab's memory - `redirectTo`
   // is the origin, because Supabase silently falls back to its configured Site URL for any
   // path it has not been told to allow. This is that return, without the provider.
-  await page.addInitScript((remembered) => sessionStorage.setItem("web-daw:auth-return", remembered), path);
+  await page.addInitScript((remembered) => sessionStorage.setItem("corrente:auth-return", remembered), path);
   await page.goto("/");
   await dismissStart(page);
 

@@ -66,7 +66,7 @@ export function resolveAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefine
     );
   }
   console.warn(
-    '[web-daw] WARNING: no auth configured - running the OPEN dev-stub (single "local" owner, no gate). ' +
+    '[corrente] WARNING: no auth configured - running the OPEN dev-stub (single "local" owner, no gate). ' +
       "Fine for local dev; never deploy this way.",
   );
   return undefined;

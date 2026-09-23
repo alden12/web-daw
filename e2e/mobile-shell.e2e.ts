@@ -255,14 +255,14 @@ test.describe("phone", () => {
     // only written once something changes it, so an unseeded baseline of 0 is beaten by any
     // write at all - the assertion would have passed on a pinch that set the wrong value.
     const BASELINE = 24;
-    await page.addInitScript((zoom) => localStorage.setItem("web-daw:arr-zoom", String(zoom)), BASELINE);
+    await page.addInitScript((zoom) => localStorage.setItem("corrente:arr-zoom", String(zoom)), BASELINE);
     await page.goto("/");
     await dismissStart(page);
     await setDetent(page, "peek");
 
     const scroller = page.getByTestId("arr-scroll");
     const box = (await scroller.boundingBox())!;
-    const zoom = () => page.evaluate(() => Number(localStorage.getItem("web-daw:arr-zoom")));
+    const zoom = () => page.evaluate(() => Number(localStorage.getItem("corrente:arr-zoom")));
     expect(await zoom()).toBe(BASELINE);
 
     // `visualViewport.scale` is the browser's own page zoom. It is 1 until something pinches
@@ -312,8 +312,8 @@ test.describe("phone", () => {
     const BEATS = 64;
     await page.addInitScript(
       ([rows, beats]) => {
-        localStorage.setItem("web-daw:roll-zoom-y", String(rows));
-        localStorage.setItem("web-daw:roll-zoom-x", String(beats));
+        localStorage.setItem("corrente:roll-zoom-y", String(rows));
+        localStorage.setItem("corrente:roll-zoom-x", String(beats));
       },
       [ROWS, BEATS],
     );
@@ -338,8 +338,8 @@ test.describe("phone", () => {
     }
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 
-    await expect.poll(() => stored("web-daw:roll-zoom-y"), { message: "rows got taller" }).toBeGreaterThan(ROWS);
-    expect(await stored("web-daw:roll-zoom-x"), "the time axis was left alone").toBe(BEATS);
+    await expect.poll(() => stored("corrente:roll-zoom-y"), { message: "rows got taller" }).toBeGreaterThan(ROWS);
+    expect(await stored("corrente:roll-zoom-x"), "the time axis was left alone").toBe(BEATS);
   });
 
   /**
@@ -1321,7 +1321,7 @@ test.describe("phone, landscape", () => {
   test("needs no special case: the editor has the sheet to itself", async ({ page }) => {
     // A rack taller than the viewport used to squeeze the roll to nothing when the two
     // shared a surface. They no longer do.
-    await page.addInitScript(() => localStorage.setItem("web-daw:devices-height", "600"));
+    await page.addInitScript(() => localStorage.setItem("corrente:devices-height", "600"));
     await page.goto("/");
     await dismissStart(page);
     await setDetent(page, "full");

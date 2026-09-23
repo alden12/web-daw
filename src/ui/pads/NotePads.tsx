@@ -43,10 +43,10 @@ export function NotePads({
   /** The editor's height at the committed detent: what the roll and the pads share. */
   room: number;
 }) {
-  const [open, setOpen] = usePersistentBoolean("web-daw:pads-open", true);
+  const [open, setOpen] = usePersistentBoolean("corrente:pads-open", true);
   // Read before the settings, because how many rows fit depends on whether the accidentals
   // are taking a band above each one.
-  const [accidentals] = usePersistentBoolean("web-daw:pads-accidentals", true);
+  const [accidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
   const fit = fitPads(room, accidentals);
   const settings = usePadSettings(octavesPerRow, fit.rows);
   const touch = usePadTouch(notes);

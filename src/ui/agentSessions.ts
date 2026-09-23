@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ChatTurn } from "./useAgentChat";
 import { randomUuid } from "../audio/randomUuid";
 
-const KEY = "web-daw:agent-sessions:v1";
+const KEY = "corrente:agent-sessions:v1";
 const NEW_TITLE = "New chat";
 
 export interface AgentSession {

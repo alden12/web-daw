@@ -1,4 +1,4 @@
-# Web DAW — Project Brief
+# Corrente - Project Brief
 
 ## Goal
 Build an open-source, web-based DAW that isn't bogged down by the constraints of native tools like Ableton Live. Start small and own the core layers (parameter model, DSP, instruments, effects) rather than relying on existing npm packages, since the web has no real plugin ecosystem equivalent to VST/AU.

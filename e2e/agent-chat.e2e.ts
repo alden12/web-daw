@@ -11,7 +11,7 @@ import { dismissStart } from "./support/app";
  */
 test.use({ viewport: { width: 1320, height: 900 } });
 
-const AGENT_CONFIG_KEY = "web-daw:agent-config:v2";
+const AGENT_CONFIG_KEY = "corrente:agent-config:v2";
 
 /** Seed a BYOK key so the provider actually calls out (and the route stub is hit). */
 async function seedKey(page: Page) {

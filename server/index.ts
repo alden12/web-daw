@@ -17,7 +17,7 @@ const { server, close } = createDawMcp({
   port,
   onError: (err) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`[web-daw] Port ${port} is already in use - another server instance is running. Exiting.`);
+      console.error(`[corrente] Port ${port} is already in use - another server instance is running. Exiting.`);
       process.exit(1);
     }
   },
@@ -45,4 +45,4 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 await server.connect(new StdioServerTransport());
-console.error(`[web-daw] MCP server ready; DAW WebSocket on ws://localhost:${port}`);
+console.error(`[corrente] MCP server ready; DAW WebSocket on ws://localhost:${port}`);

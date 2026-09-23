@@ -2,7 +2,7 @@
  * The arrangement's shared horizontal view: which beat sits at the left edge of the
  * time axis.
  *
- * Zoom already survives across mounts because it is persisted (`web-daw:arr-zoom`); scroll
+ * Zoom already survives across mounts because it is persisted (`corrente:arr-zoom`); scroll
  * position lived in a DOM ref inside `ArrangementTimeline`, which loses your place whenever
  * that component unmounts. It was introduced for MOBILE-1, where the arrangement and the
  * selected track's lane strip were separate tabs and only one could be mounted at a time.

@@ -142,10 +142,10 @@ export function ArrangementTimeline({
     else if (below > scroller.scrollTop) scroller.scrollTop = below;
   }, [selectedTrackId, pinSelectedTrack]);
 
-  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("web-daw:arr-zoom", 24, ZOOM.min, ZOOM.max);
-  const [headerW, setHeaderW] = usePersistentNumber("web-daw:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
-  const [snapOn, setSnapOn] = usePersistentBoolean("web-daw:arr-snap-on", true);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("web-daw:arr-snap-div", 1, 0.5, 4);
+  const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:arr-zoom", 24, ZOOM.min, ZOOM.max);
+  const [headerW, setHeaderW] = usePersistentNumber("corrente:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
+  const [snapOn, setSnapOn] = usePersistentBoolean("corrente:arr-snap-on", true);
+  const [snapDiv, setSnapDiv] = usePersistentNumber("corrente:arr-snap-div", 1, 0.5, 4);
   // The count-in is a persisted preference pushed to the recorder from here, because this
   // component is mounted in both shells; the rows that *set* it are project settings and are
   // built alongside groove in `projectSettings.ts`. (The Record button stays in the transport.)

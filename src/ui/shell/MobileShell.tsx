@@ -416,7 +416,7 @@ export function MobileShell({
   const recording = rec.status === "recording" || rec.status === "counting";
   // The compact transport drops the metronome button, so the shell's ⋮ owns it - reading
   // and writing the same persisted preference the desktop transport uses.
-  const [metronome, setMetronome] = usePersistentBoolean("web-daw:metronome", false);
+  const [metronome, setMetronome] = usePersistentBoolean("corrente:metronome", false);
   const { canUndo, canRedo } = useEditLog(editLog);
 
   // Every mounted workspace's own controls, in menu order (`surfaceControls.ts`).

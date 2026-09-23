@@ -6,7 +6,7 @@
  * **Why shared rather than per-component.** These were once independent `useState`s
  * seeded from storage on mount, so two components reading one key diverged the moment
  * either wrote - the second kept whatever it read when it mounted, forever. That is not
- * hypothetical: `web-daw:metronome` is read by both the transport bar and the touch
+ * hypothetical: `corrente:metronome` is read by both the transport bar and the touch
  * shell, mounted together, and only stayed correct because one of them was hand-guarded
  * into standing down. See ARCH: editing preferences are app state, not component state.
  *

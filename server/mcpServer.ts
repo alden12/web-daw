@@ -153,7 +153,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
   const wss = new WebSocketServer({ port, host: "127.0.0.1" });
 
   wss.on("error", (err: NodeJS.ErrnoException) => {
-    console.error(`[web-daw] WebSocket server error: ${err.message}`);
+    console.error(`[corrente] WebSocket server error: ${err.message}`);
     options.onError?.(err);
   });
 
@@ -287,7 +287,7 @@ export function createDawMcp(options: { port?: number; onError?: (err: NodeJS.Er
     sequenceTimers = [];
   };
 
-  const server = new McpServer({ name: "web-daw", version: "0.1.0" });
+  const server = new McpServer({ name: "corrente", version: "0.1.0" });
   const trackArg = { track: z.string().optional().describe("track id; defaults to the selected track") };
 
   // --- Tracks ---------------------------------------------------------------

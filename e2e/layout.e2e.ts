@@ -74,7 +74,7 @@ test("dragging the library handle resizes it and persists across reload", async 
 });
 
 test("an oversized persisted timeline height cannot crowd out the workbench", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("web-daw:timeline-height", "5000"));
+  await page.addInitScript(() => localStorage.setItem("corrente:timeline-height", "5000"));
   await page.goto("/");
   await dismissStart(page);
 

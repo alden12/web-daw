@@ -153,9 +153,9 @@ export function AppShell() {
   // live here rather than in the desktop shell because `selectView` / `onSearch` below
   // expand the library panel as a side effect of changing the view. Panel *geometry*
   // (widths, the timeline split) is private to the desktop shell.
-  const [libCollapsed, setLibCollapsed] = usePersistentBoolean("web-daw:lib-collapsed", false);
-  const [libView, setLibView] = usePersistentString<LibraryView>("web-daw:lib-view", "instruments", LIBRARY_VIEWS);
-  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("web-daw:agent-collapsed", true);
+  const [libCollapsed, setLibCollapsed] = usePersistentBoolean("corrente:lib-collapsed", false);
+  const [libView, setLibView] = usePersistentString<LibraryView>("corrente:lib-view", "instruments", LIBRARY_VIEWS);
+  const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("corrente:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const deviceShape = useDeviceShape();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -278,7 +278,7 @@ export function AppShell() {
             projectId: currentProjectId(),
             baseSeq,
             localMirror: cacheBundle ? bundleLocalMirror(cacheBundle) : undefined,
-            onError: (message) => console.warn(`[web-daw] sync: ${message}`),
+            onError: (message) => console.warn(`[corrente] sync: ${message}`),
             // A peer's edit: mark the project collaborative (so the offline banner warns), and on a rename
             // update our library-list label straight from the edit (the store already applied it) so the
             // dropdown reflects it live without a reload.
@@ -333,7 +333,7 @@ export function AppShell() {
         // log is still here and can rebuild it, and the one thing that must not happen meanwhile is
         // an autosave writing the empty live store over it. Reported rather than set directly, so the
         // switch path (`LibraryHeader`) raises the same dialog.
-        if (!reportUnreadableProject(error)) console.warn("[web-daw] project load failed:", error);
+        if (!reportUnreadableProject(error)) console.warn("[corrente] project load failed:", error);
       })
       .finally(() => {
         if (active) setProjectLoaded(true);
@@ -534,7 +534,7 @@ export function AppShell() {
                   setCurrentProject(id);
                   window.location.reload();
                 } catch (error) {
-                  console.warn("[web-daw] keep-mine fork failed:", error);
+                  console.warn("[corrente] keep-mine fork failed:", error);
                 }
               })();
             }}
