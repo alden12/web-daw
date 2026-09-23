@@ -244,6 +244,18 @@
    grid-template-columns (drag-resized + persisted in AppShell); the transition
    here animates the agent collapse to/from the rail. Utilities can't animate
    grid-template-columns, so it lives in CSS; AppShell disables it mid-drag. */
+/* The disc treatments of the brand mark (`src/ui/BrandMark.tsx`). The mark is inlined SVG, so its
+   path takes a stroke from here; it is the *disc's* colour, which widens the holes in the path (the
+   gunwale line, the guitar's outline) so the shapes still separate at small sizes instead of closing
+   into a blob. The bare treatment wants none of this, which is why it is a class and not a base rule. */
+.brand-mark-disc > svg path {
+  stroke: var(--brand-disc);
+  stroke-width: 100;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  paint-order: stroke;
+}
+
 .app-body {
   display: grid;
   grid-template-columns: 48px 200px minmax(0, 1fr) 320px;
