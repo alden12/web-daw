@@ -28,6 +28,12 @@ export interface WsOptions {
   ownerId?: string;
   /** Trace connection lifecycle + each message to the console. On in dev, off in prod. */
   log?: boolean;
+  /**
+   * The rooms, when something else edits them too. The hosted MCP server (AGENT-28) applies the
+   * agent's edits to the same room an open tab is subscribed to, which is what makes them appear
+   * live; two registries would be two rooms for one project, neither hearing the other.
+   */
+  registry?: RoomRegistry;
 }
 
 /** Attach the multiplayer socket server to an existing HTTP server. Returns it for lifecycle control. */
@@ -38,7 +44,7 @@ export function attachWsServer(server: Server, options: WsOptions): WebSocketSer
     (options.auth
       ? makeJwtResolver(options.db, options.auth)
       : makeDevResolver(options.db, { devUserId: options.ownerId }));
-  const registry = new RoomRegistry(options.db);
+  const registry = options.registry ?? new RoomRegistry(options.db);
   const wss = new WebSocketServer({ server, path: channels.main.path });
   const log = options.log ? (message: string) => console.log(`[corrente ws] ${message}`) : () => {};
 

@@ -14,7 +14,13 @@ import type {
 import { makeGroupId } from "./shared";
 import type { DawTarget } from "./target";
 
-export function makeToolContext(server: McpServer, target: DawTarget) {
+/**
+ * Where tools get registered. Only `registerTool` is used, so the hosted server can hand in a wrapper
+ * that adds a `project` argument to every tool and opens that project before the tool runs.
+ */
+export type ToolHost = Pick<McpServer, "registerTool">;
+
+export function makeToolContext(server: ToolHost, target: DawTarget) {
   const trackArg = { track: z.string().optional().describe("track id; defaults to the selected track") };
 
   /** Resolve a track id (explicit, else selected). */
