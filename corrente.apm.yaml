@@ -3641,7 +3641,7 @@ projects:
       - ref: AGENT-28
         area: AGENT
         title: Hosted MCP over the stored project, and defer the in-app agent panel
-        status: in-progress
+        status: review
         sort_path: "000028"
         body: >
           **Decided 2026-09-06.** Make the DAW something Claude can drive

@@ -41,7 +41,7 @@ import { validateBundleFile } from "../../src/audio/project/schema";
 import { routes, isBinaryPath } from "../../src/contract/http";
 import { makeDevResolver, makeJwtResolver, type AuthConfig, type ResolvePrincipal } from "./principal";
 import type { RoomRegistry } from "./rooms";
-import { hostedMcpHandler } from "./mcpHttp";
+import { hostedMcpHandler, protectedResourceHandler, MCP_PATH, METADATA_PATHS } from "./mcpHttp";
 
 type Env = { Variables: { ownerId: string; userEmail?: string } };
 
@@ -231,6 +231,11 @@ export function createApp(db: Db, options: AppOptions = {}) {
       return c.body(null, 204);
     });
   // Outside the `/projects` gate on purpose: it authenticates itself, and answers MCP's own way.
-  if (options.mcp) app.all("/mcp", hostedMcpHandler({ db, registry: options.mcp.registry, resolvePrincipal }));
+  if (options.mcp) {
+    const authorizationServer = options.auth?.issuer;
+    app.all(MCP_PATH, hostedMcpHandler({ db, registry: options.mcp.registry, resolvePrincipal, authorizationServer }));
+    if (authorizationServer)
+      for (const path of METADATA_PATHS) app.get(path, protectedResourceHandler(authorizationServer));
+  }
   return app;
 }

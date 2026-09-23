@@ -85,3 +85,39 @@ describe("the hosted MCP server", () => {
     expect(result.content[0].text).toContain('No project "nope"');
   });
 });
+
+describe("discovery for OAuth clients", () => {
+  const ISSUER = "https://project.supabase.co/auth/v1";
+
+  async function withAuth() {
+    const { db } = await makeSyncEnv();
+    const registry = new RoomRegistry(db);
+    // A resolver that refuses everyone: these tests are about what a client is told, not who gets in.
+    return createApp(db, {
+      auth: { issuer: ISSUER, jwksUrl: `${ISSUER}/.well-known/jwks.json` },
+      resolvePrincipal: async () => null,
+      mcp: { registry },
+    });
+  }
+
+  it("answers an unauthenticated call with a challenge naming the metadata", async () => {
+    const app = await withAuth();
+    const response = await app.request("https://corrente.test/mcp", { method: "POST", body: "{}" });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("WWW-Authenticate")).toContain(
+      'resource_metadata="https://corrente.test/.well-known/oauth-protected-resource/mcp"',
+    );
+  });
+
+  it("names this resource and the Supabase project as its authorization server", async () => {
+    const app = await withAuth();
+    const response = await app.request("http://corrente.test/.well-known/oauth-protected-resource/mcp", {
+      // Behind Fly's proxy the request is plain http; the resource must still say https.
+      headers: { "X-Forwarded-Proto": "https" },
+    });
+    expect(await response.json()).toMatchObject({
+      resource: "https://corrente.test/mcp",
+      authorization_servers: [ISSUER],
+    });
+  });
+});

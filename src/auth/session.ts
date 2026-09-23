@@ -45,6 +45,7 @@ function displayName(session: Session): string {
 }
 
 function apply(session: Session | null): void {
+  if (session) resumeConsent();
   token = session?.access_token;
   state = session
     ? {
@@ -106,7 +107,11 @@ export function takeAuthReturnPath(): string | null {
  */
 export async function signInWithProvider(provider: "google" | "github"): Promise<void> {
   if (!supabase) return;
-  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RETURN_PATH_KEY, window.location.pathname);
+  // The consent page is the one path whose query is the point (its `authorization_id`), and it holds
+  // no provider `?code=` at this moment - the code only arrives on the way back, at the origin.
+  const onConsent = window.location.pathname === OAUTH_CONSENT_PATH;
+  const here = onConsent ? window.location.pathname + window.location.search : window.location.pathname;
+  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RETURN_PATH_KEY, here);
   await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
 }
 
@@ -114,4 +119,60 @@ export async function signInWithProvider(provider: "google" | "github"): Promise
 export async function signOut(): Promise<void> {
   if (!supabase) return;
   await supabase.auth.signOut();
+}
+
+/**
+ * Where Supabase's OAuth server sends a person to approve an app, such as Claude, connecting to
+ * Corrente's hosted MCP server (AGENT-28). The Supabase project's OAuth server settings point here.
+ */
+export const OAUTH_CONSENT_PATH = "/oauth/consent";
+
+/**
+ * Back to a consent request that sent this tab off to sign in.
+ *
+ * Sign-in returns to the origin (see `signInWithProvider`), where the app would boot and the request
+ * would be lost. Run once a session exists, which is after the provider's code has been exchanged -
+ * leaving before that would take the code with it.
+ */
+function resumeConsent(): void {
+  if (typeof sessionStorage === "undefined" || typeof window === "undefined") return;
+  const path = sessionStorage.getItem(RETURN_PATH_KEY);
+  if (!path?.startsWith(OAUTH_CONSENT_PATH) || window.location.pathname === OAUTH_CONSENT_PATH) return;
+  sessionStorage.removeItem(RETURN_PATH_KEY);
+  window.location.replace(path);
+}
+
+/** A consent request as the page needs it: something to ask, somewhere to go, or why not. */
+export type ConsentRequest =
+  | { kind: "ask"; clientName: string; redirectOrigin: string; email: string }
+  | { kind: "redirect"; url: string }
+  | { kind: "error"; message: string };
+
+/**
+ * Read an authorization request. Already approved (the same app connecting again) comes back as just
+ * a redirect, which the page follows without asking twice.
+ */
+export async function readConsentRequest(authorizationId: string): Promise<ConsentRequest> {
+  if (!supabase) return { kind: "error", message: "Sign-in is not configured on this server." };
+  const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+  if (error || !data) return { kind: "error", message: error?.message ?? "That request could not be found." };
+  if ("redirect_url" in data) return { kind: "redirect", url: data.redirect_url };
+  return {
+    kind: "ask",
+    clientName: data.client.name,
+    // What a person should check: an app can call itself anything, but not send the code elsewhere.
+    redirectOrigin: new URL(data.redirect_uri).origin,
+    email: data.user.email,
+  };
+}
+
+/** Approve or deny, returning where the app wants the browser next. */
+export async function decideConsent(authorizationId: string, approve: boolean): Promise<ConsentRequest> {
+  if (!supabase) return { kind: "error", message: "Sign-in is not configured on this server." };
+  const options = { skipBrowserRedirect: true };
+  const { data, error } = approve
+    ? await supabase.auth.oauth.approveAuthorization(authorizationId, options)
+    : await supabase.auth.oauth.denyAuthorization(authorizationId, options);
+  if (error || !data) return { kind: "error", message: error?.message ?? "That request could not be completed." };
+  return { kind: "redirect", url: data.redirect_url };
 }
