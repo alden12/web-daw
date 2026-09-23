@@ -14,7 +14,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { EditLog } from "../audio/commands/editLog";
 import { useEditLog } from "../audio/commands/useEditLog";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
-import { writeAuthorColors, colorForAuthor, SWATCHES, type AuthorColorConfig } from "./authorColors";
+import { writeAuthorColors, colorForAuthor, isViewer, SWATCHES, type AuthorColorConfig } from "./authorColors";
 import { authorLabel } from "./authorStyle";
 import { voiceLabel, type Voice } from "./authorVoice";
 import { isAgentAuthor } from "../audio/commands/authors";
@@ -33,7 +33,7 @@ export function AuthorColorSettings({ config, editLog }: { config: AuthorColorCo
   const collaborators = useMemo(() => {
     const seen = new Set<string>();
     for (const entry of entries) {
-      if (!isAgentAuthor(entry.author) && entry.author !== currentUser) seen.add(entry.author);
+      if (!isAgentAuthor(entry.author) && !isViewer(entry.author, currentUser)) seen.add(entry.author);
     }
     return [...seen];
   }, [entries, currentUser]);

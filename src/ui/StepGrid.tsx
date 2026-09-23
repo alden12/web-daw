@@ -70,13 +70,12 @@ export function StepGrid({
   };
 
   // Follow the transport: re-render only when the current step changes (a few times a
-  // second), not every frame. -1 when stopped.
+  // second), not every frame. -1 when this clip is not the one playing (DAW-8.9).
   useAnimationFrame(() => {
-    const next = scheduler.isPlaying
-      ? Math.floor(((scheduler.getPositionBeats() % clip.lengthBeats) / STEP) % steps)
-      : -1;
+    const inClip = scheduler.clipPositionBeats(trackId, clipId);
+    const next = inClip === null ? -1 : Math.floor((inClip / STEP) % steps);
     setPlayStep((prev) => (prev === next ? prev : next));
-  }, [scheduler, clip.lengthBeats, steps]);
+  }, [scheduler, trackId, clipId, steps]);
 
   if (pads.length === 0) {
     return (

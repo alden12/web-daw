@@ -11,11 +11,21 @@ import {
 } from "../src/audio/commands/authorship";
 import { colorForAuthor, SWATCHES } from "../src/ui/authorColors";
 import { DEFAULT_VOICE_COLORS } from "../src/ui/authorVoice";
+import { seedClipId } from "../src/audio/project/seedClip";
+import { applyEdit } from "../src/audio/commands/applyEdit";
 
 describe("authorshipEffect - command -> object keys", () => {
+  it("gives a new track's own clip to whoever created the track", () => {
+    const project = new ProjectStore(false);
+    applyEdit(project, { type: "createTrack", id: "t1", instrumentType: "subtractive" }, "bob");
+    expect(project.authorOf(clipKey(seedClipId("t1")))).toBe("bob");
+  });
+
   it("stamps the track for a create, plus finer keys for notes and params", () => {
+    // The clip a new track comes holding is the creator's too (DAW-8.10).
     expect(authorshipEffect({ type: "createTrack", id: "t1", instrumentType: "subtractive" }).touched).toEqual([
       trackKey("t1"),
+      clipKey(seedClipId("t1")),
     ]);
     expect(
       authorshipEffect({

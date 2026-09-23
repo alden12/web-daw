@@ -10,6 +10,7 @@
  * one spelling of `track:<id>` / `note:<id>` / `param:<trackId>:<id>`, never a duplicated string.
  */
 import type { EditCommand } from "./types";
+import { seedClipId } from "../project/seedClip";
 
 export const trackKey = (id: string): string => `track:${id}`;
 export const noteKey = (id: string): string => `note:${id}`;
@@ -38,9 +39,15 @@ type EffectMap = {
 // a track row shows its last editor and each element shows its own. Project-level commands (tempo,
 // groove, length, sample library) tint no object, so they are simply absent from the map.
 const EFFECTS: EffectMap = {
-  createTrack: (command) => ({ touched: [trackKey(command.id)] }),
+  // A new track comes holding a clip, and that clip is the creator's too: without the stamp its
+  // block fell back to the store's placeholder author rather than whoever made the track (DAW-8.10).
+  createTrack: (command) => ({ touched: [trackKey(command.id), clipKey(seedClipId(command.id))] }),
   createTrackFromPatch: (command) => ({
-    touched: [trackKey(command.id), ...command.effects.map((effect) => effectKey(effect.id))],
+    touched: [
+      trackKey(command.id),
+      clipKey(seedClipId(command.id)),
+      ...command.effects.map((effect) => effectKey(effect.id)),
+    ],
   }),
   applyPatch: (command) => ({
     // A patch replaces the instrument + params + chain, so old per-param authorship is stale.
@@ -48,7 +55,7 @@ const EFFECTS: EffectMap = {
     removed: [`param:${command.trackId}:`],
   }),
   createAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
-  addAudioTrack: (command) => ({ touched: [trackKey(command.id)] }),
+  addAudioTrack: (command) => ({ touched: [trackKey(command.id), clipKey(seedClipId(command.id))] }),
   // The `midiDeviceParam:` prefix was missing, which left stamps behind on a track that no longer
   // existed. Still incomplete: the things inside a track that are NOT keyed by track id (its
   // effects, MIDI devices, clips, notes and placements) cannot be reached by a prefix, so their

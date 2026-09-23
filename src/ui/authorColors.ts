@@ -18,6 +18,7 @@
  */
 import { DEFAULT_VOICE_COLORS } from "./authorVoice";
 import { isAgentAuthor } from "../audio/commands/authors";
+import { DEFAULT_USER } from "./currentUser";
 
 /** A pickable colour. `hex` is what lands in the CSS var / inline style. */
 export interface Swatch {
@@ -109,16 +110,25 @@ function hashString(value: string): number {
 /**
  * The colour (hex) for an author, from the viewer's perspective. A configured override wins; then the
  * viewer's own id (`self`) takes the "you" hue (teal), so my edits always read teal on my screen; then
- * the agent voice, whoever drove it; otherwise the id is hashed deterministically into the palette
- * - so every collaborator (including a peer whose id is the default "you", when it is not me) gets a
- * stable, distinct hue. `self` defaults to "you" (solo/back-compat: the lone user's edits are teal).
+ * the agent voice, whoever drove it; otherwise the id is hashed deterministically into the palette,
+ * so every collaborator gets a stable, distinct hue. `self` defaults to "you" (solo: the lone user's
+ * edits are teal).
+ *
+ * **The literal `"you"` also reads as the viewer (DAW-8.10).** It is the stamp for "nobody in
+ * particular": a new track's default clip, a control nobody has touched, the project a first visit
+ * seeds, edits made before there were accounts. Hashing it like a stranger's id painted all of those
+ * in a random swatch the moment anyone signed in, which read as the agent's violet. Real people have
+ * real ids under auth, so nobody else is literally "you".
  */
+/** Whether an author reads as the viewer: their own id, or the unattributed `"you"` stamp. */
+export const isViewer = (author: string, self: string): boolean => author === self || author === DEFAULT_USER;
+
 export function colorForAuthor(author: string, config: AuthorColorConfig = cached, self = "you"): string {
   // An override is configured per VOICE, so every agent reads the one agent colour however many
   // people are driving one - the settings panel offers one agent row, not one per collaborator.
   const override = config[isAgentAuthor(author) ? "agent" : author];
   if (override) return override;
-  if (author === self) return DEFAULT_VOICE_COLORS.you; // my own edits: the "you" hue, whoever I am
+  if (isViewer(author, self)) return DEFAULT_VOICE_COLORS.you; // my own edits: the "you" hue, whoever I am
   if (isAgentAuthor(author)) return DEFAULT_VOICE_COLORS.agent;
   return SWATCHES[hashString(author) % SWATCHES.length].hex;
 }
