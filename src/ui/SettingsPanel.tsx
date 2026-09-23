@@ -1,13 +1,18 @@
 /**
  * The settings modal: a small tabbed panel opened from the gear at the bottom of the activity
- * rail. "Agent" holds the BYOK provider/key/model config; "Authors" holds the per-voice colour
- * swatches; "MIDI" holds hardware MIDI input; "Appearance" holds the theme. Each tab renders
- * its own section; Agent is the default so the BYOK flow opens straight to it.
+ * rail. "Account" is everyone in the project and how they are coloured, you first, plus the way
+ * out; "Agent" holds the BYOK provider/key/model config; "MIDI" holds hardware MIDI input;
+ * "Appearance" holds the theme.
+ *
+ * Account used to be a modal of its own, opened from the rail avatar, and the colours of everyone
+ * else were a separate Authors tab - with your own identity and colour living in whichever of the
+ * two a build flag chose. One tab now, because they were always one subject. `initialTab` is how a
+ * caller that means "account" opens straight to it; Agent stays the default so BYOK is unchanged.
  */
 import { useState } from "react";
+import { AccountSettings } from "./AccountSettings";
 import { AgentSettingsSection } from "./AgentSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
-import { AuthorColorSettings } from "./AuthorColorSettings";
 import { MidiSettings } from "./MidiSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import type { AgentConfig } from "../audio/agent/config";
@@ -17,10 +22,10 @@ import type { MidiInput } from "../audio/midi/midiInput";
 import type { Recorder } from "../audio/recording/recorder";
 import type { AudioEngine } from "../audio/engine/AudioEngine";
 
-type Tab = "agent" | "authors" | "midi" | "recording" | "appearance";
-const TABS: { id: Tab; label: string }[] = [
+export type SettingsTab = "account" | "agent" | "midi" | "recording" | "appearance";
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: "account", label: "Account" },
   { id: "agent", label: "Agent" },
-  { id: "authors", label: "Authors" },
   { id: "midi", label: "MIDI" },
   { id: "recording", label: "Recording" },
   { id: "appearance", label: "Appearance" },
@@ -33,6 +38,7 @@ export function SettingsPanel({
   midiInput,
   recorder,
   engine,
+  initialTab = "agent",
   onClose,
 }: {
   agentConfig: AgentConfig;
@@ -41,9 +47,11 @@ export function SettingsPanel({
   midiInput: MidiInput;
   recorder: Recorder;
   engine: AudioEngine;
+  /** Which tab to open on. "account" is what the rail's mark asks for; everything else gets Agent. */
+  initialTab?: SettingsTab;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>("agent");
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
 
   return (
     <div
@@ -89,8 +97,8 @@ export function SettingsPanel({
           ))}
         </div>
 
+        {tab === "account" && <AccountSettings config={authorColors} editLog={editLog} onClose={onClose} />}
         {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
-        {tab === "authors" && <AuthorColorSettings config={authorColors} editLog={editLog} />}
         {tab === "midi" && <MidiSettings midiInput={midiInput} />}
         {tab === "recording" && <RecordingSettings recorder={recorder} engine={engine} />}
         {tab === "appearance" && <AppearanceSettings />}

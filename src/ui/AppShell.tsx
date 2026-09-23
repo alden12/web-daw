@@ -56,9 +56,8 @@ import { MobileShell } from "./shell/MobileShell";
 import { useDeviceShape } from "./shell/useDeviceShape";
 import { useBackgroundAudio } from "./shell/useBackgroundAudio";
 import type { ShellProps } from "./shell/types";
-import { SettingsPanel } from "./SettingsPanel";
+import { SettingsPanel, type SettingsTab } from "./SettingsPanel";
 import { SharePanel } from "./SharePanel";
-import { AccountPanel } from "./AccountPanel";
 import { useAgentConfig } from "./useAgentConfig";
 import { useAuthorColors, useSyncAuthorColorVars } from "./useAuthorColors";
 import { useResolvedTheme } from "./theme";
@@ -158,10 +157,11 @@ export function AppShell() {
   const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("corrente:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const deviceShape = useDeviceShape();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Null when the settings panel is closed, otherwise the tab it opened on: the gear asks for
+  // Agent, the rail's mark and the touch shell's avatar ask for Account. One panel either way.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   // The project being shared (its id + name), or null when the Share panel is closed.
   const [share, setShare] = useState<{ id: string; name: string } | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
   const agentConfig = useAgentConfig();
   const authorColors = useAuthorColors();
   useSyncAuthorColorVars(authorColors);
@@ -465,8 +465,8 @@ export function AppShell() {
     onToggleLibCollapsed: () => setLibCollapsed(!libCollapsed),
     agentCollapsed,
     onSetAgentCollapsed: setAgentCollapsed,
-    onOpenSettings: () => setSettingsOpen(true),
-    onOpenAccount: () => setAccountOpen(true),
+    onOpenSettings: () => setSettingsTab("agent"),
+    onOpenAccount: () => setSettingsTab("account"),
     onOpenShare: (id, name) => setShare({ id, name }),
   };
 
@@ -482,7 +482,7 @@ export function AppShell() {
         ) : (
           <MobileShell {...shellProps} shape={deviceShape} />
         )}
-        {settingsOpen && (
+        {settingsTab && (
           <SettingsPanel
             agentConfig={agentConfig}
             authorColors={authorColors}
@@ -490,11 +490,11 @@ export function AppShell() {
             midiInput={midiInput}
             recorder={recorder}
             engine={engine}
-            onClose={() => setSettingsOpen(false)}
+            initialTab={settingsTab}
+            onClose={() => setSettingsTab(null)}
           />
         )}
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
-        {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} error={startError} />}
         {!projectLoaded && <LoadingOverlay />}
         {recovery && (
