@@ -3,7 +3,7 @@
  * user interacts with the page, so we make that requirement explicit with a modal
  * rather than an easy-to-miss button. Shown until the engine has started.
  */
-import { BRAND_MARK } from "./brand";
+import { BrandMark } from "./BrandMark";
 
 export function StartDialog({ onStart, error }: { onStart: () => void; error?: string }) {
   return (
@@ -14,8 +14,11 @@ export function StartDialog({ onStart, error }: { onStart: () => void; error?: s
       aria-labelledby="start-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <span className="w-9 h-9 rounded-full" style={{ background: BRAND_MARK }} />
-        <h2 id="start-title" className="text-lg font-semibold text-strong">
+        <BrandMark />
+        {/* The name, since this is the first thing anyone sees. The heading under it stays the
+         *task*, because that is what the dialog is asking for and what labels it. */}
+        <p className="-mt-1 text-2xl font-semibold tracking-tight text-strong">Corrente</p>
+        <h2 id="start-title" className="-mt-2 text-base font-medium text-ink">
           Start the audio engine
         </h2>
         <p className="text-sm text-muted leading-relaxed">

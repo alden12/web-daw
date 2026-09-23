@@ -7,6 +7,7 @@
  * shared with the touch shell's strip, so adding one is a single entry there.
  */
 import { AccountAvatar } from "./AccountAvatar";
+import { BrandMark } from "./BrandMark";
 import { RAIL_ITEMS, type LibraryView } from "./libraryViews";
 
 export type { LibraryView, RailItem } from "./libraryViews";
@@ -56,6 +57,13 @@ export function ActivityRail({
       aria-label="Library views"
       className="[grid-area:rail] h-full bg-frame border-r border-line flex flex-col items-center py-1.5"
     >
+      {/* The mark, above the views. Deliberately not a button: every other control in this column
+          switches the library panel, and a logo that did something else from the same place would
+          read as one more view. The rule below separates it from the set it is not part of. */}
+      <div className="flex items-center justify-center w-full h-10 mb-1.5 border-b border-line">
+        <BrandMark size={26} />
+      </div>
+
       {RAIL_ITEMS.map((item) => {
         const selected = item.view === active && !collapsed;
         return (

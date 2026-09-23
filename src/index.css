@@ -43,6 +43,14 @@
   --color-agent: #a884f3;
   --color-hot: #d9775a;
 
+  /* The brand mark's colour, and the one token here that is NOT UI state. It is the same teal
+     `you` defaults to, deliberately, so the mark looks like the app it opens - but it is its own
+     token because `you` is live: the user can recolour it in Authors, and `useSyncAuthorColorVars`
+     writes it inline on <html>. A logo that moves when someone picks a different voice colour is
+     not a logo. It does follow the *theme*, and only because it has to: this teal on white is
+     about 2:1 and reads washed out, so light gets a deeper one of the same hue. */
+  --color-brand: #56c7c2;
+
   --color-good: #2ecc71;
   --color-warn: #f1c40f;
 
@@ -135,6 +143,7 @@
        (`colorForAuthor`), for the surfaces that tint by author: knob arcs, fader fills,
        notes, clip blocks. Theme-adjusting the CSS copy would put two different teals on
        screen at once. A voice identifies a *person*, so it stays put across themes. */
+    --color-brand: #17827d;
     --color-good: #15a34a;
     --color-warn: #b07908;
     --color-recess: rgba(20, 24, 32, 0.06);
@@ -157,6 +166,7 @@
   --color-strong: #0b0d11;
   --color-muted: #4f5866;
   --color-faint: #5d6675;
+  --color-brand: #17827d;
   --color-good: #15a34a;
   --color-warn: #b07908;
   --color-recess: rgba(20, 24, 32, 0.06);
