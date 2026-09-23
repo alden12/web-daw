@@ -26,6 +26,12 @@ import {
   setCurrentProject,
   subscribeCurrentProject,
 } from "../audio/projectRepository";
+import {
+  reportUnreadableProject,
+  rebuildProjectState,
+  startProjectBeside,
+  subscribeUnreadableProject,
+} from "../audio/projects/recovery";
 import { readCurrentUser, subscribeCurrentUser } from "./currentUser";
 import { SharedSession } from "../audio/sync/sharedSession";
 import type { ConflictInfo } from "../audio/sync/conflict";
@@ -37,6 +43,7 @@ import { OfflineBanner, LoadingOverlay } from "./ConnectionStatus";
 import { UpdateNotice } from "./UpdateNotice";
 import { applyUpdate, useUpdateWaiting } from "../pwa/serviceWorkerUpdate";
 import { ConflictDialog } from "./ConflictDialog";
+import { RecoveryDialog } from "./RecoveryDialog";
 import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
@@ -129,6 +136,11 @@ export function AppShell() {
   // A reconnect conflict awaiting the user's choice (remote mode only). Held by the shared session; the
   // dialog resolves it. `sessionRef` lets the dialog call back into the live session.
   const [conflict, setConflict] = useState<{ info: ConflictInfo; myState: ProjectData } | null>(null);
+  // A project whose saved state could not be read (DAW-38). Nothing is being autosaved while this is
+  // set - the boot chain stopped before attaching it - so the damaged bundle stays as it was found
+  // until the dialog resolves.
+  const [recovery, setRecovery] = useState<{ detail: string } | null>(null);
+  useEffect(() => subscribeUnreadableProject((detail) => setRecovery({ detail })), []);
   const sessionRef = useRef<SharedSession | null>(null);
   const projectList = useSyncExternalStore(subscribeProjects, listProjects);
   // Shared = someone shared it with us (role "editor") or we have seen a peer edit this session (so an
@@ -316,7 +328,13 @@ export function AppShell() {
         disposeUndo = attachUndoPersistence(editLog);
         disposeCheckpoints = versionStore.attach();
       })
-      .catch((error) => console.warn("[web-daw] project load failed:", error))
+      .catch((error) => {
+        // A project that cannot be read is a question for the user, not a line in the console: the
+        // log is still here and can rebuild it, and the one thing that must not happen meanwhile is
+        // an autosave writing the empty live store over it. Reported rather than set directly, so the
+        // switch path (`LibraryHeader`) raises the same dialog.
+        if (!reportUnreadableProject(error)) console.warn("[web-daw] project load failed:", error);
+      })
       .finally(() => {
         if (active) setProjectLoaded(true);
       });
@@ -479,6 +497,25 @@ export function AppShell() {
         {accountOpen && <AccountPanel onClose={() => setAccountOpen(false)} />}
         {!started && <StartDialog onStart={handleStart} error={startError} />}
         {!projectLoaded && <LoadingOverlay />}
+        {recovery && (
+          <RecoveryDialog
+            detail={recovery.detail}
+            // A reload rather than re-running the boot chain by hand: the bundle is well-formed again,
+            // so an ordinary start is the whole of the recovery. Same move the fork below makes.
+            onRebuild={async () => {
+              const outcome = await rebuildProjectState();
+              if (outcome.status === "rebuilt") window.location.reload();
+              return outcome.status === "rebuilt";
+            }}
+            onFork={async () => {
+              // Named off the library listing rather than the live store: after a failed SWITCH the
+              // store still holds the project we came from, and this is about the one we could not open.
+              const damaged = projectList.find((meta) => meta.id === currentProjectId())?.name ?? "Untitled";
+              await startProjectBeside(`${damaged} (recovered)`);
+              window.location.reload();
+            }}
+          />
+        )}
         {conflict && (
           <ConflictDialog
             info={conflict.info}
