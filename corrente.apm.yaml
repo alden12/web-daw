@@ -9764,7 +9764,7 @@ projects:
       - ref: DAW-42
         area: DAW
         title: Catching up on a long gap reloads the project once per entry
-        status: to-do
+        status: review
         sort_path: "000042"
         deps:
           - DAW-34
@@ -9810,6 +9810,28 @@ projects:
 
           Measure before and after with the same harness: deliver N
           `editApplied` messages, time it.
+
+
+          **Resolved 2026-09-23: the measured path is not the catch-up path.**
+          A reconnect's catch-up arrives as ONE `snapshot` message, and
+          `onSnapshot` already folds every entry and calls `rebuildLive` once
+          at the end. The 14 seconds came from a test delivering 2100
+          `editApplied` messages one by one, which is live peer traffic, where
+          one load per edit is the right cost. Nothing to batch.
+
+
+          **What looking found instead:** the snapshot carries the newest 2000
+          entries (`SNAPSHOT_WINDOW`), not everything since the client's head.
+          A client away for more than 2000 edits folded a window that started
+          above it, onto a base missing everything in between, with nothing to
+          say so. `SharedSession.spansGap` now spots that, and
+          `catchUpAcrossGap` adopts the authority's `project.json` (rewritten
+          every 100 edits, so always inside the window) before folding, holding
+          later messages until it has. A head the window cannot take over from
+          reports "reload" rather than folding over the hole.
+          `test/snapshotGap.test.ts`; `unreachableUndo.test.ts` had been
+          passing over exactly this hole (its pruned log starts above the
+          client) and now goes through the recovery.
       - ref: DAW-41
         area: DAW
         title: A tombstone for an edit inside a session's seed is silently ignored
@@ -10097,6 +10119,13 @@ projects:
           (DAW-8.17) and the ~800KB-per-
 
           connection catch-up window.
+
+
+          **2026-09-23:** step 1 is no longer needed for correctness. A client
+          whose head is below the snapshot window now bridges the gap itself
+          from `project.json` (see DAW-42), so `subscribe` carrying `baseSeq`
+          would only trim the wire, not fix anything. What is left here is
+          the feed's paging, which is DAW-8.17.
       - ref: DAW-39
         area: DAW
         title: Rebuilding a project from its log is linear in the log
