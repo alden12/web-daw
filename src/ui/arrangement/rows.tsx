@@ -192,6 +192,9 @@ export function TrackRow({
   dropBeat,
   onSelect,
   onMark,
+  onCopy,
+  canPaste,
+  onPaste,
   onHover,
   scrollRef,
   stickyHeader = true,
@@ -217,6 +220,9 @@ export function TrackRow({
   dropBeat: number | null;
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
+  onCopy: (placement: Placement) => void;
+  canPaste: () => boolean;
+  onPaste: (beat: number) => void;
   onHover: (beat: number | null) => void;
   /** The timeline's scroller, passed down so a selected clip's kebab can be clamped into view. */
   scrollRef: RefObject<HTMLElement | null>;
@@ -251,6 +257,9 @@ export function TrackRow({
           scrollRef={scrollRef}
           onSelect={onSelect}
           onMark={onMark}
+          onCopy={onCopy}
+          canPaste={canPaste}
+          onPaste={onPaste}
           onHover={onHover}
           dispatch={dispatch}
           projectStore={projectStore}

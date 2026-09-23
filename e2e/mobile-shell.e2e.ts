@@ -845,6 +845,54 @@ test.describe("phone", () => {
     expect(raised.y + raised.height).toBeLessThanOrEqual(sheetBox.y + 2);
   });
 
+  /**
+   * MOBILE-17. Placing a clip was HTML5 drag-and-drop from the rail, which touch never fires, so a
+   * phone could not put a clip on the timeline at all. A tap on empty lane drops the paste marker,
+   * and the marker's kebab offers the active clip, Paste and Create clip.
+   */
+  test("a tap on empty lane offers to place the active clip there", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
+    const lane = page.getByTestId("lane").first();
+    const placements = lane.getByTestId("placement");
+    const before = await placements.count();
+
+    // Past the default clip, which fills the whole visible lane on a phone.
+    const box = (await lane.boundingBox())!;
+    await lane.tap({ position: { x: box.width - 40, y: box.height / 2 } });
+    await page.getByTestId("marker-actions").getByRole("button", { name: "Marker actions" }).tap();
+    await page.getByRole("menuitem", { name: /^Place .* here$/ }).tap();
+
+    await expect(placements).toHaveCount(before + 1);
+  });
+
+  test("the marker's kebab creates a clip, and pastes one copied from a clip's kebab", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await setDetent(page, "peek");
+    const lane = page.getByTestId("lane").first();
+    const placements = lane.getByTestId("placement");
+    const before = await placements.count();
+    const box = (await lane.boundingBox())!;
+    const tapLaneAt = (fraction: number) => lane.tap({ position: { x: box.width * fraction, y: box.height / 2 } });
+    const markerMenu = () => page.getByTestId("marker-actions").getByRole("button", { name: "Marker actions" }).tap();
+
+    await tapLaneAt(0.9);
+    await markerMenu();
+    await expect(page.getByRole("menuitem", { name: "Paste" })).toBeDisabled();
+    await page.getByRole("menuitem", { name: "Create clip" }).tap();
+    await expect(placements).toHaveCount(before + 1);
+
+    // The new clip is selected; copy it from its own kebab, then paste it at a fresh marker.
+    await page.getByTestId("clip-actions").getByRole("button", { name: "Clip actions" }).tap();
+    await page.getByRole("menuitem", { name: "Copy" }).tap();
+    await tapLaneAt(0.7);
+    await markerMenu();
+    await page.getByRole("menuitem", { name: "Paste" }).tap();
+    await expect(placements).toHaveCount(before + 2);
+  });
+
   test("tapping a track selects it without moving the sheet - it is not modal", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

@@ -21,6 +21,8 @@ import { Waveform } from "../Waveform";
 import { CLIP_DND_TYPE, clipDndKindType, getDraggedClip } from "../clipDnd";
 import { beatToX, floorBeat, snapBeat, xToBeat } from "../timeline/timeGrid";
 import { ObjectHandles } from "../editing/ObjectHandles";
+import type { MenuItem } from "../Menu";
+import { MarkerMenu } from "./MarkerMenu";
 import { ROW, ROW_PX, RULER_H, RESIZE_PX, DRAG_THRESH, type Selection } from "./shared";
 
 /** The block's `top-1.5 bottom-1.5` inset, as a number the handles can be placed against. */
@@ -158,6 +160,9 @@ export function Lane({
   scrollRef,
   onSelect,
   onMark,
+  onCopy,
+  canPaste,
+  onPaste,
   onHover,
   dispatch,
   projectStore,
@@ -179,6 +184,12 @@ export function Lane({
   scrollRef: RefObject<HTMLElement | null>;
   onSelect: (trackId: string, p: Placement) => void;
   onMark: (trackId: string, beat: number) => void;
+  /** Copy a placement to the timeline's clipboard (the clip kebab's Copy). */
+  onCopy: (placement: Placement) => void;
+  /** Whether the clipboard holds a clip this track can take, asked while the marker's menu is open. */
+  canPaste: () => boolean;
+  /** Paste the clipboard at a beat on this track. */
+  onPaste: (beat: number) => void;
   onHover: (beat: number | null) => void;
   dispatch: Dispatch;
   projectStore: ProjectStore;
@@ -190,6 +201,13 @@ export function Lane({
   const beatAt = (clientX: number) => xToBeat(clientX - (ref.current?.getBoundingClientRect().left ?? 0), pxPerBeat);
   const snapB = (b: number) => (snapOn ? snapBeat(b, snapDiv) : b);
   const floorB = (b: number) => floorBeat(b, snapOn ? snapDiv : GRID);
+
+  /** Place one of this track's own clips at a beat, and select the placement. */
+  const placeClipAt = (clipId: string, startBeat: number) => {
+    const id = newPlacementId();
+    dispatch({ type: "addPlacement", trackId: track.id, id, clipId, startBeat });
+    onSelect(track.id, { id, clipId, startBeat, offset: 0, length: 0 });
+  };
 
   // Drop a clip dragged from a clip rail at the cursor. Any same-kind track's lane
   // accepts: dropping on the clip's own track places the existing clip; dropping on
@@ -209,22 +227,7 @@ export function Lane({
     const startBeat = Math.max(0, floorB(beatAt(e.clientX)));
     const draggedId = e.dataTransfer.getData(CLIP_DND_TYPE);
     if (draggedId && track.clips.some((clip) => clip.id === draggedId)) {
-      // Same track: place the existing clip.
-      const id = newPlacementId();
-      dispatch({
-        type: "addPlacement",
-        trackId: track.id,
-        id,
-        clipId: draggedId,
-        startBeat,
-      });
-      onSelect(track.id, {
-        id,
-        clipId: draggedId,
-        startBeat,
-        offset: 0,
-        length: 0,
-      });
+      placeClipAt(draggedId, startBeat); // same track: place the existing clip
       return;
     }
     // Cross-track: copy the dragged clip's content into this track, then place it.
@@ -390,6 +393,21 @@ export function Lane({
     });
   };
 
+  /**
+   * What a tap on empty lane space offers (MOBILE-17). Touch never fires HTML5 drag-and-drop, so
+   * this menu is how a phone places a clip at all: tap a clip in the rail to make it active, tap
+   * the lane, and place it. Paste and Create clip ride along, since they act at the same marker.
+   */
+  const markerMenuItems = (beat: number): MenuItem[] => {
+    const active = track.clips.find((clip) => clip.id === track.activeClipId);
+    const place: MenuItem[] = active
+      ? [{ label: `Place ${active.name ?? "clip"} here`, onClick: () => placeClipAt(active.id, beat) }]
+      : [];
+    const create: MenuItem[] =
+      track.kind === "instrument" ? [{ label: "Create clip", onClick: () => createClip(beat, beatsPerBar) }] : [];
+    return [...place, { label: "Paste", disabled: !canPaste(), onClick: () => onPaste(beat) }, ...create];
+  };
+
   const laneBg = [
     `repeating-linear-gradient(90deg, var(--color-line) 0 1px, transparent 1px ${pxPerBeat * beatsPerBar}px)`,
     `repeating-linear-gradient(90deg, var(--color-line-soft) 0 1px, transparent 1px ${pxPerBeat}px)`,
@@ -452,6 +470,7 @@ export function Lane({
           scrollRef={scrollRef}
           onResize={(edge, e) => beginPlacementDrag(selectedPlacement, edge, e)}
           menuItems={[
+            { label: "Copy", onClick: () => onCopy(selectedPlacement) },
             { label: "Duplicate", onClick: () => duplicatePlacement(selectedPlacement) },
             {
               label: "Delete",
@@ -482,6 +501,9 @@ export function Lane({
         >
           <span className="absolute -top-0.5 -left-1 w-2 h-2 rotate-45 bg-strong" />
         </div>
+      )}
+      {markerBeat !== null && (
+        <MarkerMenu left={beatToX(markerBeat, pxPerBeat)} items={() => markerMenuItems(markerBeat)} />
       )}
       {track.launchedClipId && (
         <div className="absolute inset-0 bg-ground/60 pointer-events-none flex items-center px-2 z-10">

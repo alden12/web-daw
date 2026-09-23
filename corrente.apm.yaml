@@ -2414,7 +2414,7 @@ projects:
       - ref: AGENT-4.7
         area: AGENT
         title: "Render fidelity: match the live output"
-        status: review
+        status: done
         sort_path: "000004.000007"
         parent: AGENT-4
         deps:
@@ -2534,7 +2534,7 @@ projects:
       - ref: AGENT-7
         area: AGENT
         title: zod validation of model responses
-        status: review
+        status: done
         sort_path: "000007"
         deps:
           - AGENT-2
@@ -2673,7 +2673,7 @@ projects:
       - ref: AGENT-10
         area: AGENT
         title: Agentic loop, run-until-done
-        status: review
+        status: done
         sort_path: "000010"
         deps:
           - AGENT-2
@@ -5268,7 +5268,7 @@ projects:
       - ref: DAW-8.8
         area: DAW
         title: "Bug: note-drag snapping off-grid"
-        status: review
+        status: done
         sort_path: "000008.000008"
         parent: DAW-8
         body: >-
@@ -5425,7 +5425,7 @@ projects:
       - ref: DAW-8.12
         area: DAW
         title: "Bug: the clip-length handle edits the active clip, not the open one"
-        status: review
+        status: done
         sort_path: "000008.000012"
         parent: DAW-8
         body: >-
@@ -6104,7 +6104,7 @@ projects:
       - ref: DAW-10
         area: DAW
         title: Changeable time signature
-        status: review
+        status: done
         sort_path: "000010"
         deps:
           - DAW-4
@@ -7112,7 +7112,7 @@ projects:
       - ref: DAW-29.1
         area: DAW
         title: Token ramp, controls, workbench layout, Google Sans
-        status: review
+        status: done
         sort_path: "000029.000001"
         parent: DAW-29
         body: >
@@ -7164,7 +7164,7 @@ projects:
       - ref: DAW-29.2
         area: DAW
         title: Light mode
-        status: review
+        status: done
         sort_path: "000029.000002"
         parent: DAW-29
         body: >
@@ -7233,7 +7233,7 @@ projects:
       - ref: DAW-29.3
         area: DAW
         title: A button system, and the segmented control
-        status: review
+        status: done
         sort_path: "000029.000003"
         parent: DAW-29
         body: >
@@ -7434,7 +7434,7 @@ projects:
       - ref: DAW-32
         area: DAW
         title: A stalled scheduler replays the gap instead of skipping it
-        status: review
+        status: done
         sort_path: "000032"
         body: >
           Reported from an installed PWA on a phone (2026-09-05): playback
@@ -7563,7 +7563,7 @@ projects:
       - ref: DAW-33
         area: DAW
         title: Hiding a touch app stops the transport and parks the audio thread
-        status: review
+        status: done
         sort_path: "000033"
         body: >
           Reported from an installed PWA (2026-09-05): minimising while playing
@@ -11113,7 +11113,7 @@ projects:
       - ref: HOST-2
         area: HOST
         title: "Auth: principal, login, sharing"
-        status: review
+        status: done
         sort_path: "000002"
         deps:
           - HOST-1
@@ -11406,7 +11406,7 @@ projects:
       - ref: HOST-5
         area: HOST
         title: Offline foundation
-        status: review
+        status: done
         sort_path: "000005"
         deps:
           - HOST-1
@@ -11791,7 +11791,7 @@ projects:
       - ref: HOST-8.4
         area: HOST
         title: Fail closed without auth config
-        status: review
+        status: done
         sort_path: "000008.000004"
         parent: HOST-8
         body: >-
@@ -12133,7 +12133,7 @@ projects:
       - ref: HOST-17
         area: HOST
         title: A project has a link
-        status: review
+        status: done
         sort_path: "000017"
         deps:
           - HOST-2
@@ -12418,7 +12418,7 @@ projects:
       - ref: HOST-20
         area: HOST
         title: An email allowlist, because Google's testing mode does not gate sign-in
-        status: review
+        status: done
         sort_path: "000020"
         body: >
           **Google's OAuth "testing mode" test-user list does not restrict who
@@ -12823,7 +12823,7 @@ projects:
       - ref: INST-4
         area: INST
         title: User-authored declarative DSP
-        status: review
+        status: done
         sort_path: "000004"
         body: >-
           **The direction in one line.** Make the **declarative primitive graph
@@ -14002,7 +14002,7 @@ projects:
       - ref: MOBILE-2
         area: MOBILE
         title: "Touch gestures: pinch-zoom, two-finger pan, hit-target floors"
-        status: review
+        status: done
         sort_path: "000002"
         deps:
           - MOBILE-1
@@ -14210,7 +14210,7 @@ projects:
       - ref: MOBILE-3
         area: MOBILE
         title: "PWA packaging: manifest, service worker, icons"
-        status: review
+        status: done
         sort_path: "000003"
         deps:
           - HOST-5
@@ -14284,7 +14284,7 @@ projects:
       - ref: MOBILE-5
         area: MOBILE
         title: "The editor sheet: throwable detents over the arrangement"
-        status: review
+        status: done
         sort_path: "000005"
         deps:
           - MOBILE-1
@@ -14421,7 +14421,7 @@ projects:
       - ref: MOBILE-6
         area: MOBILE
         title: Pads and clips as sections under the roll
-        status: review
+        status: done
         sort_path: "000006"
         deps:
           - MOBILE-5
@@ -14880,7 +14880,7 @@ projects:
       - ref: MOBILE-8
         area: MOBILE
         title: "Safe areas: pad all four insets, not just the bottom"
-        status: review
+        status: done
         sort_path: "000008"
         deps:
           - MOBILE-1
@@ -14953,7 +14953,7 @@ projects:
       - ref: MOBILE-9
         area: MOBILE
         title: Adding from the library should get out of the way on a phone
-        status: review
+        status: done
         sort_path: "000009"
         deps:
           - MOBILE-5
@@ -15124,7 +15124,7 @@ projects:
       - ref: MOBILE-11
         area: MOBILE
         title: Project settings are unreachable while the sheet is up
-        status: review
+        status: done
         sort_path: "000011"
         deps:
           - MOBILE-5
@@ -15397,7 +15397,7 @@ projects:
       - ref: MOBILE-16
         area: MOBILE
         title: Pinned headers are a question about room, not about tier
-        status: review
+        status: done
         sort_path: "000016"
         deps:
           - MOBILE-1
@@ -15452,7 +15452,7 @@ projects:
       - ref: MOBILE-17
         area: MOBILE
         title: "Bug: a clip cannot be placed on the timeline at all on touch"
-        status: to-do
+        status: review
         sort_path: "000017"
         body: >-
           Raised 2026-09-06 from a phone session: "cannot drag or place a clip
@@ -15535,7 +15535,7 @@ projects:
         area: MOBILE
         title: "Bug: the drum roll misses the touch treatment - it still shows the
           toolbar and velocity lane"
-        status: review
+        status: done
         sort_path: "000018"
         body: >-
           Raised 2026-09-06: "drum loops still have velocity lane where they

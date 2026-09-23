@@ -240,6 +240,51 @@ export function ArrangementTimeline({
     return () => window.removeEventListener("keydown", onKey);
   }, [selection, dispatch]);
 
+  /** Put a placement's window on the clipboard, for a paste to reproduce on the same track. */
+  const copyPlacement = (trackId: string, placementId: string): boolean => {
+    const placement = projectStore.getTrack(trackId)?.placements.find((candidate) => candidate.id === placementId);
+    if (!placement) return false;
+    clipboard.current = { clipId: placement.clipId, offset: placement.offset, length: placement.length };
+    return true;
+  };
+
+  /** Whether a paste has something to land on this track: the clipboard's clip must be one of its own. */
+  const canPasteTo = (trackId: string): boolean => {
+    const copied = clipboard.current;
+    return !!copied && !!projectStore.getTrack(trackId)?.clips.some((clip) => clip.id === copied.clipId);
+  };
+
+  /**
+   * Place the clipboard on a track: at `beat` when there is one (the marker), else after `anchorId`'s
+   * placement (so pastes chain), else at the track's end. Selects what it placed.
+   */
+  const pasteTo = (trackId: string, beat: number | null, anchorId?: string): boolean => {
+    const copied = clipboard.current;
+    const track = projectStore.getTrack(trackId);
+    if (!copied || !track || !canPasteTo(trackId)) return false;
+    const anchor = anchorId ? track.placements.find((placement) => placement.id === anchorId) : undefined;
+    const trackEnd = track.placements.reduce(
+      (max, placement) => Math.max(max, placement.startBeat + placement.length),
+      0,
+    );
+    const startBeat = beat ?? (anchor ? anchor.startBeat + anchor.length : trackEnd);
+    const id = newPlacementId();
+    dispatch({
+      type: "addPlacement",
+      trackId: track.id,
+      id,
+      clipId: copied.clipId,
+      startBeat,
+      offset: copied.offset,
+      length: copied.length,
+    });
+    setMarker(null);
+    setSelection({ trackId: track.id, id });
+    projectStore.selectTrack(track.id);
+    projectStore.selectClip(track.id, copied.clipId);
+    return true;
+  };
+
   // Copy / cut / paste the selected placement. Capture phase + stopImmediate so
   // the piano roll's own C/X/V handler doesn't also fire (a placement, not a
   // note, is selected here). Paste lands after the selection, so it chains.
@@ -252,17 +297,9 @@ export function ArrangementTimeline({
       if (key !== "c" && key !== "x" && key !== "v") return;
 
       if (key === "c" || key === "x") {
-        if (!selection) return;
-        const t = projectStore.getTrack(selection.trackId);
-        const p = t?.placements.find((placement) => placement.id === selection.id);
-        if (!p) return;
+        if (!selection || !copyPlacement(selection.trackId, selection.id)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        clipboard.current = {
-          clipId: p.clipId,
-          offset: p.offset,
-          length: p.length,
-        };
         if (key === "x") {
           dispatch({
             type: "removePlacement",
@@ -274,38 +311,15 @@ export function ArrangementTimeline({
         return;
       }
 
-      // paste: needs a clipboard and a target track that owns the clip. Prefer the
-      // marker (track + beat); else after the selection; else the track's end.
-      const cb = clipboard.current;
+      // paste: prefer the marker (track + beat); else after the selection; else the track's end.
       const targetId = marker?.trackId ?? selection?.trackId ?? projectStore.selectedId ?? undefined;
-      const t = targetId ? projectStore.getTrack(targetId) : undefined;
-      if (!cb || !t || !t.clips.some((clip) => clip.id === cb.clipId)) return;
+      if (!targetId || !pasteTo(targetId, marker ? marker.beat : null, selection?.id)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const anchor = selection ? t.placements.find((placement) => placement.id === selection.id) : null;
-      const trackEnd = t.placements.reduce(
-        (max, placement) => Math.max(max, placement.startBeat + placement.length),
-        0,
-      );
-      const startBeat = marker ? marker.beat : anchor ? anchor.startBeat + anchor.length : trackEnd;
-      const id = newPlacementId();
-      dispatch({
-        type: "addPlacement",
-        trackId: t.id,
-        id,
-        clipId: cb.clipId,
-        startBeat,
-        offset: cb.offset,
-        length: cb.length,
-      });
-      setMarker(null);
-      setSelection({ trackId: t.id, id });
-      projectStore.selectTrack(t.id);
-      projectStore.selectClip(t.id, cb.clipId);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [selection, marker, dispatch, projectStore]);
+  });
 
   // Clear the clip-drag drop indicator when any drag ends (drop or cancel).
   useEffect(() => {
@@ -615,6 +629,9 @@ export function ArrangementTimeline({
                     dropBeat={dropTarget?.trackId === row.track.id ? dropTarget.beat : null}
                     onSelect={selectPlacement}
                     onMark={placeMarker}
+                    onCopy={(placement) => copyPlacement(row.track.id, placement.id)}
+                    canPaste={() => canPasteTo(row.track.id)}
+                    onPaste={(beat) => pasteTo(row.track.id, beat)}
                     onHover={(beat) => setDropTarget(beat === null ? null : { trackId: row.track.id, beat })}
                     scrollRef={scrollRef}
                     stickyHeader={stickyHeaders}
