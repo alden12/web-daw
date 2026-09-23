@@ -95,7 +95,6 @@ export function DesktopShell({
         collapsed={libCollapsed}
         onSelect={onSelectView}
         onToggleCollapse={onToggleLibCollapsed}
-        onOpenSettings={onOpenSettings}
         onOpenAccount={onOpenAccount}
       />
       {!libCollapsed && (

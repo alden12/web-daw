@@ -51,7 +51,7 @@ function GateCard({ children }: { children: ReactNode }) {
       aria-labelledby="auth-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <BrandMark />
+        <BrandMark size={72} />
         {children}
       </div>
     </div>

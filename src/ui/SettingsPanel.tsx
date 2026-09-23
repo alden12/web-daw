@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import { AccountSettings } from "./AccountSettings";
+import { BrandMark } from "./BrandMark";
 import { AgentSettingsSection } from "./AgentSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { MidiSettings } from "./MidiSettings";
@@ -66,6 +67,7 @@ export function SettingsPanel({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-2">
+          <BrandMark size={22} />
           <h2 id="settings-title" className="text-[15px] font-semibold text-strong">
             Settings
           </h2>

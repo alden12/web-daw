@@ -122,8 +122,10 @@ test("selecting a provider in settings routes the request to it", async ({ page 
   await page.goto("/");
   await dismissStart(page);
 
-  // Configure OpenAI through the Settings UI (no key seeded - we set it here).
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  // Configure OpenAI through the Settings UI (no key seeded - we set it here). The rail's mark is
+  // the way in now that the gear beside it is gone, and it opens on Account, so Agent is a tab away.
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  await page.getByRole("tab", { name: "Agent" }).click();
   await page.getByLabel("Provider").selectOption("openai");
   await page.getByLabel("API key").fill("sk-test-openai");
   await page.getByRole("button", { name: "Save", exact: true }).click();

@@ -10,60 +10,86 @@
  * The SVG arrives as text (`?raw`) rather than through `<img src>`, because `currentColor` only
  * resolves for inline SVG - an external file has no colour to inherit. It is a local asset inlined
  * at build time, so there is no untrusted markup here to sanitise. Inlining it is also what lets
- * the disc treatments below exist without a second copy of a 27KB path: they are the same markup
- * with a background, an inset and a stroke applied over it.
+ * every treatment below exist without another copy of a 27KB path: they are the same markup with
+ * a background, an inset and a stroke applied over it.
  *
- * The standalone files in `src/assets/logo/` are the same three treatments baked out for anything
- * that cannot run React - the favicon, a README, a slide. `scripts/generateLogoVariants.ts` writes
+ * The standalone files in `src/assets/logo/` are these same treatments baked out for anything that
+ * cannot run React - the favicon, a README, a slide. `scripts/generateLogoVariants.ts` writes
  * them, and its header is where the treatments are explained at length.
  */
 import markSvg from "../assets/logo/mark.svg?raw";
-import { BRAND_WHITE, LOGO_HUES, type BrandTreatment, type LogoHue } from "./brand";
+import {
+  BRAND_TREATMENT,
+  BRAND_WHITE,
+  LOGO_HUES,
+  type BrandTreatment,
+  type BrandTreatmentPair,
+  type LogoHue,
+} from "./brand";
+import { useResolvedTheme } from "./theme";
 
-/** How much of the 48-unit box the mark fills in a disc treatment, as the padding either side. */
-const DISC_INSET = (48 - 38) / 2 / 48;
+/**
+ * What each treatment paints, in the baked variants' units. Each colour slot names a source rather
+ * than a value - "hue" is whichever hue the caller or the theme supplies, "white" is white, "disc"
+ * means "whatever fills the circle" - so the table reads as intent and the component resolves it
+ * once. `wash` and `edge` are the two pieces CSS has to draw instead, because both are mixed from
+ * `--color-ink` and only CSS knows which theme is live.
+ *
+ * `span` is how much of the 48-unit box the mark fills, and it is smaller wherever a treatment
+ * needs room: that difference becomes padding on the wrapper, and the inlined SVG is given
+ * `overflow-visible` so a stroke can paint into it. The master's viewBox is the path's own bounding
+ * box, which leaves a stroke nothing to spill into - without both halves of this the outlined mark
+ * loses its halo to the viewBox edge. The outline reaches about 2 of the 48 units past the path,
+ * hence 43; a disc wants its edge clear, hence 38; a ring or a chip wants clearance from a line
+ * drawn at that edge, hence 34.
+ */
+type Paint = "hue" | "white";
+
+const TREATMENTS: Record<
+  BrandTreatment,
+  { span: number; disc: Paint | null; mark: Paint; stroke: Paint | "disc"; edge: boolean }
+> = {
+  // A disc strokes the mark in the disc's own colour, which widens the holes in the path rather
+  // than thickening the shapes - the trick that keeps the canoe reading as a canoe at 16px.
+  disc: { span: 38, disc: "hue", mark: "white", stroke: "disc", edge: true },
+  // The mark painted the disc's own colour, so the fill vanishes into it and only the white stroke
+  // is left: line art rather than a silhouette.
+  "disc-outline": { span: 34, disc: "hue", mark: "hue", stroke: "white", edge: true },
+  "mark-outlined": { span: 43, disc: null, mark: "hue", stroke: "white", edge: false },
+};
 
 export function BrandMark({
   size = 56,
-  treatment = "mark",
-  hue,
+  treatment = BRAND_TREATMENT,
+  hue = "plum",
 }: {
   /** In px rather than a class, since callers generally want it bigger than the type around it. */
   size?: number;
-  treatment?: BrandTreatment;
-  /** Omitted on `mark` means `--color-brand`; the disc treatments need one and default to teal. */
+  /** One treatment, or one per ground. Defaults to `BRAND_TREATMENT`, which is a pair. */
+  treatment?: BrandTreatment | BrandTreatmentPair;
+  /** The mark ships in one hue; the parameter is here so the generator and the app agree. */
   hue?: LogoHue;
 }): React.ReactElement {
-  const hueValue = hue ? LOGO_HUES[hue] : undefined;
+  const theme = useResolvedTheme();
+  const spec = TREATMENTS[typeof treatment === "string" ? treatment : treatment[theme]];
+  const hueValue = LOGO_HUES[hue];
+  const paint = (source: Paint) => (source === "hue" ? hueValue : BRAND_WHITE);
 
-  if (treatment === "mark") {
-    return (
-      <span
-        aria-hidden="true"
-        className={`${hueValue ? "" : "text-brand"} shrink-0 [&>svg]:w-full [&>svg]:h-full [&>svg]:block`}
-        style={{ width: size, height: size, color: hueValue }}
-        dangerouslySetInnerHTML={{ __html: markSvg }}
-      />
-    );
-  }
-
-  const inverted = treatment === "disc-inverted";
-  const disc = inverted ? BRAND_WHITE : (hueValue ?? LOGO_HUES.teal);
-  const mark = inverted ? (hueValue ?? LOGO_HUES.teal) : BRAND_WHITE;
+  const disc = spec.disc ? paint(spec.disc) : undefined;
+  const stroke = spec.stroke === "disc" ? disc : paint(spec.stroke);
 
   return (
     <span
       aria-hidden="true"
-      className="brand-mark-disc shrink-0 rounded-full block box-border [&>svg]:w-full [&>svg]:h-full [&>svg]:block"
+      className={`brand-mark-stroked ${spec.edge ? "brand-mark-edge rounded-full" : ""} shrink-0 block box-border [&>svg]:w-full [&>svg]:h-full [&>svg]:block [&>svg]:overflow-visible`}
       style={{
         width: size,
         height: size,
-        padding: size * DISC_INSET,
+        padding: (size * (48 - spec.span)) / 2 / 48,
         background: disc,
-        color: mark,
-        // Read by `.brand-mark-disc` in index.css: the stroke is the *disc's* colour, not the
-        // mark's, so it widens the holes in the path instead of thickening the shapes.
-        ["--brand-disc" as string]: disc,
+        color: paint(spec.mark),
+        // Read by `.brand-mark-stroked` in index.css, which cannot reach an inline style directly.
+        ["--brand-stroke" as string]: stroke,
       }}
       dangerouslySetInnerHTML={{ __html: markSvg }}
     />

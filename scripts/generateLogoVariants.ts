@@ -11,38 +11,40 @@
  *
  * ## The three treatments
  *
- * **`mark-<hue>`** is the bare silhouette, no disc, filled with the hue. It is the one that
- * survives an unknown background - it has no disc to be lost against a light or dark chrome -
- * and the one to reach for wherever something else already supplies the surface.
+ * **`disc-<hue>`** is the badge: the mark in white on a filled disc. One confident shape, which is
+ * what a surface nobody chose needs - a launcher, a home screen, a light frame.
  *
- * **`disc-<hue>`** is the badge: the mark in white on a filled disc, the treatment for anywhere
- * the icon has to hold its own shape against a background nobody chose (a browser tab, a home
- * screen, a launcher).
+ * **`disc-<hue>-outline`** fills the disc with the hue and paints the mark that same hue, so its
+ * fill vanishes into the ground and only the white stroke is left: line art rather than a
+ * silhouette. It wants a dark surround and around 32px before it earns its keep. The one thing the
+ * baked file cannot carry is the hairline edge the in-app version wears, because that is mixed from
+ * `--color-ink` and so belongs to a live theme.
  *
- * **`disc-<hue>-inverted`** swaps them, and comes with a caveat worth writing down: the white
- * disc disappears against a white ground, so the badge silently becomes the bare mark. It reads
- * best on a mid-tone or dark surface, which means it is a lockup for places where the background
- * is known, never a favicon.
+ * **`mark-<hue>-outlined`** is the bare silhouette with the white sticker outline the trace
+ * originally shipped with. On white it is indistinguishable from the plain mark, since the halo
+ * falls outside the shape; on anything darker it draws a sticker edge and opens the interior
+ * separations. The favicon's treatment, because at 16px line art closes into a smudge.
  *
  * ## Two numbers
  *
- * The disc variants inset the mark to 38 of the 48 units, and re-add the 100-unit stroke the
- * master drops (see `mark.svg`), in the *disc* colour. Both are for small sizes: the inset keeps
- * the mark off the disc's edge, and the stroke widens the holes in the path so the shapes still
- * separate at 16px instead of closing into a blob. The bare variants take neither - at 46 units
- * they fill the box, and with no disc behind them there is no background colour to stroke with.
+ * Each treatment insets the mark by however much its own stroke and surround need, and the number
+ * is not arbitrary in any of them. The 100-unit stroke re-adds what `mark.svg` drops, and it is
+ * what keeps the holes in the path (the gunwale line, the guitar's outline) open at 16px instead
+ * of closing into a blob.
+ *
+ * - `disc`: 38 of 48, stroked in the disc's own colour. The inset is what keeps the mark off the
+ *   disc's edge.
+ * - `disc-outline`: 34, the mark in the disc's own colour, stroked white.
+ * - `mark-outlined`: 43, stroked white. A 100-unit stroke reaches 50 units past the path on each
+ *   side, which at this scale is about 2 units of the 48 - so 43 is the largest the mark can be
+ *   drawn before its own halo is clipped by the viewBox.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 
 /** The mark's own bounding box within the 1254-unit master viewBox; it is not centred in it. */
 const BOUNDS = { x: 69.874, y: 93.738, width: 1106.133, height: 1072.059 };
 
-const HUES: Record<string, string> = {
-  teal: "#2a9d97",
-  "deep-teal": "#17827d",
-  "river-blue": "#1f6fa8",
-  plum: "#6b4fc0",
-};
+const HUES: Record<string, string> = { plum: "#6b4fc0" };
 
 const WHITE = "#ffffff";
 const MASTER = "src/assets/logo/mark.svg";
@@ -64,7 +66,7 @@ function placeMark(span: number, fill: string, stroke: string | null): string {
   ].join("\n");
 }
 
-function variant(note: string, disc: string | null, fill: string, span: number): string {
+function variant(note: string, disc: string | null, fill: string, span: number, stroke = disc): string {
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<!-- ${note}`,
@@ -72,18 +74,21 @@ function variant(note: string, disc: string | null, fill: string, span: number):
     `     change the master or the script and rerun \`tsx scripts/generateLogoVariants.ts\`. -->`,
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">`,
     ...(disc ? [`  <circle cx="24" cy="24" r="24" fill="${disc}"/>`] : []),
-    placeMark(span, fill, disc),
+    placeMark(span, fill, stroke),
     `</svg>`,
     ``,
   ].join("\n");
 }
 
 const written = Object.entries(HUES).flatMap(([name, hue]) => [
-  [`src/assets/logo/mark-${name}.svg`, variant(`Corrente's mark in ${name} (${hue}), no disc.`, null, hue, 46)],
   [`src/assets/logo/disc-${name}.svg`, variant(`Corrente's mark in white on a ${name} (${hue}) disc.`, hue, WHITE, 38)],
   [
-    `src/assets/logo/disc-${name}-inverted.svg`,
-    variant(`Corrente's mark in ${name} (${hue}) on a white disc. Needs a mid-tone or dark ground.`, WHITE, hue, 38),
+    `src/assets/logo/disc-${name}-outline.svg`,
+    variant(`Corrente's mark as white line art on a ${name} (${hue}) disc.`, hue, hue, 34, WHITE),
+  ],
+  [
+    `src/assets/logo/mark-${name}-outlined.svg`,
+    variant(`Corrente's mark in ${name} (${hue}), no disc, with the white sticker outline.`, null, hue, 43, WHITE),
   ],
 ]);
 

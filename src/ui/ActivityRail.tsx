@@ -6,15 +6,15 @@
  * that view (expanding first if collapsed). The set of views is data (libraryViews.tsx),
  * shared with the touch shell's strip, so adding one is a single entry there.
  */
-import { AccountAvatar } from "./AccountAvatar";
 import { BrandMark } from "./BrandMark";
 import { RAIL_ITEMS, type LibraryView } from "./libraryViews";
 
 export type { LibraryView, RailItem } from "./libraryViews";
 
 /**
- * The settings cog. Its own component (a 24-unit grid for the toothed ring, unlike the
- * 16-grid view icons) so the rail and the touch shell's view strip share one icon.
+ * The settings cog. It no longer appears in this rail - the mark at the bottom opens the panel now -
+ * but the touch shell still shows one, and this is where it has always lived. Its own component
+ * because the toothed ring is drawn on a 24-unit grid, unlike the 16-grid view icons.
  */
 export function SettingsIcon({ className = "w-4.5 h-4.5" }: { className?: string }) {
   return (
@@ -39,7 +39,6 @@ export function ActivityRail({
   collapsed,
   onSelect,
   onToggleCollapse,
-  onOpenSettings,
   onOpenAccount,
 }: {
   active: LibraryView;
@@ -47,9 +46,7 @@ export function ActivityRail({
   onSelect: (view: LibraryView) => void;
   /** Fired when the *active* icon is clicked: collapse the panel to the rail (or reopen). */
   onToggleCollapse: () => void;
-  /** Fired by the gear at the bottom: open the agent settings dialog. */
-  onOpenSettings: () => void;
-  /** Fired by the account avatar (above the gear): open the account panel. */
+  /** Fired by the mark at the bottom: open the settings panel on its Account tab. */
   onOpenAccount: () => void;
 }) {
   return (
@@ -57,13 +54,6 @@ export function ActivityRail({
       aria-label="Library views"
       className="[grid-area:rail] h-full bg-frame border-r border-line flex flex-col items-center py-1.5"
     >
-      {/* The mark, above the views. Deliberately not a button: every other control in this column
-          switches the library panel, and a logo that did something else from the same place would
-          read as one more view. The rule below separates it from the set it is not part of. */}
-      <div className="flex items-center justify-center w-full h-10 mb-1.5 border-b border-line">
-        <BrandMark size={26} />
-      </div>
-
       {RAIL_ITEMS.map((item) => {
         const selected = item.view === active && !collapsed;
         return (
@@ -89,19 +79,21 @@ export function ActivityRail({
         );
       })}
 
-      {/* Bottom group, pinned below the views: the account avatar (when signed in) above the settings
-          gear. The avatar renders nothing in local/dev mode, so the gear stays put. */}
+      {/* Pinned below the views: the mark, and the rail's only control that is not one. It holds the
+          slot the account avatar used to, and has taken that button's job - so unlike the views
+          above it opens a panel rather than switching one. The settings gear that used to sit under
+          it is gone, because account and settings are now one panel and two buttons onto the same
+          thing is one too many. Unlike the avatar it renders in local/dev too, so the brand is
+          there whether or not anyone is signed in. */}
       <div className="mt-auto flex flex-col items-center w-full">
-        <AccountAvatar onClick={onOpenAccount} />
-        {/* Agent settings (BYOK key + provider). */}
         <button
           type="button"
-          title="Settings"
-          aria-label="Settings"
-          onClick={onOpenSettings}
-          className="flex items-center justify-center w-full h-11 cursor-pointer text-faint hover:text-ink"
+          title="Account and settings"
+          aria-label="Account and settings"
+          onClick={onOpenAccount}
+          className="flex items-center justify-center w-full h-11 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
         >
-          <SettingsIcon />
+          <BrandMark size={34} />
         </button>
       </div>
     </nav>

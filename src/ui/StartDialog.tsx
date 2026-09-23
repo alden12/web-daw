@@ -14,7 +14,7 @@ export function StartDialog({ onStart, error }: { onStart: () => void; error?: s
       aria-labelledby="start-title"
     >
       <div className="bg-panel border border-line rounded-2xl p-8 max-w-sm mx-4 text-center flex flex-col items-center gap-4 shadow-2xl">
-        <BrandMark />
+        <BrandMark size={72} />
         {/* The name, since this is the first thing anyone sees. The heading under it stays the
          *task*, because that is what the dialog is asking for and what labels it. */}
         <p className="-mt-1 text-2xl font-semibold tracking-tight text-strong">Corrente</p>
