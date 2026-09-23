@@ -4,7 +4,7 @@
  * **The source is not `public/favicon.svg`, and that is deliberate.** A tab draws its icon at 16px
  * and a home screen draws this one at 192 or more, which is a big enough gap that they want
  * different drawings of the same mark: the favicon is the outlined silhouette and these are the
- * filled disc, which reads as one confident shape from across a home screen. One mark, a treatment
+ * plum disc with the mark drawn as white line art. One mark, a treatment
  * per size, rather than one file stretched across both.
  *
  * Run by hand when the mark changes: `tsx scripts/generateIcons.ts`. Not part of the build,
@@ -16,59 +16,63 @@
  *
  * ## How big the mark is drawn, which is the only interesting part
  *
- * **Inscribed: the disc touches all four edges and is not clipped by any of them.** Both of the
- * obvious alternatives were tried and are worse.
+ * **Two treatments, by whether the surface crops.**
  *
- * *Insetting it* to the 80% "safe zone" is the standard advice for a maskable icon, because a
- * launcher crops one to whatever shape it likes and the safe zone is what no crop can reach.
- * That advice is for a mark the crop could eat; **a mark already the shape of the crop has
- * nothing to lose**, and a circle inset inside a circular crop is a small circle in a thick
- * dark ring. That was the first attempt and a phone reported it as a black border.
+ * *Shown as-is* (`any`): the disc inscribed in the square, transparent corners. Nothing crops it, so
+ * the disc is the shape.
  *
- * *Overshooting the edge* to avoid a hairline of ground under a mask that lands exactly on the
- * disc costs more than it saves: the overshoot is clipped by the image itself, so the disc
- * arrives at the launcher with four flat sides.
- *
- * Inscribed leaves ground only in the corners, where a circular crop never looks and a squircle
- * reads it as a frame. If those corners ever look wrong, the remaining option is to scale past
- * the diagonal (~1.42) so every mask crops into artwork and no ground can show at all - at the
- * price of the circle, whose silhouette goes with it.
+ * *Cropped by the launcher* (`maskable`, and iOS): **the whole square is plum and the mark sits in the
+ * middle**, so whatever shape the launcher cuts - circle, squircle, rounded square - becomes the disc.
+ * This used to be the inscribed disc on the dark ground, on the argument that a circle has nothing to
+ * lose to a circular crop. It does: a launcher does not crop at the disc's edge but zooms in past it.
+ * The web spec only promises the middle 80% survives, and Android's adaptive icons keep nearer 61% -
+ * so on a phone the artwork, which filled 79% of the image, lost its edges. Sizing the ARTWORK to the
+ * safe zone, rather than the disc, is what the safe zone is actually about.
  */
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 
-/** The palette's dark ground: what a squircle or rounded-square crop finds in the corners. */
-const GROUND = "#0a0c0e";
+/** The disc colour, which fills a cropped icon edge to edge so the launcher's shape becomes the disc. */
+const PLUM = "#6b4fc0";
+
+/**
+ * How much of a cropped icon's width the artwork spans. Android's adaptive-icon safe zone is about
+ * 61% (66 of 108dp), and the mark is roughly as tall as it is wide, so this keeps its corners inside
+ * a circular crop with a little air.
+ */
+const ART_FRACTION = 0.5;
+
+/** How much of the source SVG's width its artwork spans (the outline disc draws it 34 units of 48). */
+const SOURCE_ART_FRACTION = 34 / 48;
 
 const ICONS = [
-  // The `any` icons are shown as-is rather than cropped, so they keep transparent corners and
-  // whatever backdrop the surface puts behind them.
-  { file: "public/icon-192.png", size: 192, background: "transparent" },
-  { file: "public/icon-512.png", size: 512, background: "transparent" },
-  { file: "public/icon-maskable-512.png", size: 512, background: GROUND },
-  // iOS masks to a rounded square and composites on black, so it wants the same treatment as
-  // maskable rather than the transparent one.
-  { file: "public/apple-touch-icon.png", size: 180, background: GROUND },
+  // Shown as-is rather than cropped: the disc, with transparent corners.
+  { file: "public/icon-192.png", size: 192, cropped: false },
+  { file: "public/icon-512.png", size: 512, cropped: false },
+  // Cropped to the launcher's shape: plum edge to edge, the mark inside the safe zone. iOS masks to a
+  // rounded square and composites on black, so it wants the same.
+  { file: "public/icon-maskable-512.png", size: 512, cropped: true },
+  { file: "public/apple-touch-icon.png", size: 180, cropped: true },
 ];
 
 /** The treatment the app icon wears, from the baked set (`scripts/generateLogoVariants.ts`). */
-const APP_ICON = "src/assets/logo/disc-plum.svg";
+const APP_ICON = "src/assets/logo/disc-plum-outline.svg";
 
 const svg = readFileSync(APP_ICON, "utf8");
 const browser = await chromium.launch();
 
-for (const { file, size, background } of ICONS) {
+for (const { file, size, cropped } of ICONS) {
+  const drawn = cropped ? Math.round((size * ART_FRACTION) / SOURCE_ART_FRACTION) : size;
   const page = await browser.newPage({ viewport: { width: size, height: size } });
   await page.setContent(
     `<style>
-       html, body { margin: 0; width: ${size}px; height: ${size}px; background: ${background};
+       html, body { margin: 0; width: ${size}px; height: ${size}px; background: ${cropped ? PLUM : "transparent"};
                     display: flex; align-items: center; justify-content: center; overflow: hidden; }
-       svg { width: ${size}px; height: ${size}px; flex: none; }
+       svg { width: ${drawn}px; height: ${drawn}px; flex: none; }
      </style>${svg}`,
   );
-  writeFileSync(file, await page.screenshot({ omitBackground: background === "transparent" }));
+  writeFileSync(file, await page.screenshot({ omitBackground: !cropped }));
   await page.close();
-  console.log(`${file}  ${size}px  ${background}`);
+  console.log(`${file}  ${size}px  ${cropped ? "cropped" : "as-is"}`);
 }
-
 await browser.close();
