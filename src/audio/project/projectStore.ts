@@ -37,7 +37,7 @@ import {
 import { hasEffect, effectSchema, registerEffect, unregisterEffect, DEFAULT_EFFECT } from "../effects/catalog";
 import { hasMidiDevice, midiDeviceSchema, DEFAULT_MIDI_DEVICE } from "../midi/device/catalog";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
-import { parseCustomDevices } from "../graph/zod";
+import { parseCustomDevices, type UnreadableDevices } from "../graph/zod";
 import { DEFAULT_GROOVE_ID } from "../grooves/catalog";
 import {
   DEFAULT_TIME_SIGNATURE,
@@ -205,6 +205,8 @@ export class ProjectStore {
   // registers the audio factories (it owns Web Audio, keeping this store DOM-free).
   private customInstrumentDefs: GraphInstrumentDef[] = [];
   private customEffectDefs: GraphEffectDef[] = [];
+  /** Custom devices this build could not read, kept as stored and written back out (parseCustomDevices). */
+  private unreadableDevices: UnreadableDevices = { instruments: [], effects: [] };
   private selectedTrackId: string | null = null;
   private readonly listeners = new Set<() => void>();
   private cached: ProjectStructure | null = null;
@@ -1434,8 +1436,12 @@ export class ProjectStore {
       // - the rebuild tests assert exactly that, and a keyframe's bytes should not churn on a
       // reordering either (DAW-34). Sorting also hands out a copy rather than the live map.
       authorship: sortedByKey(this.authorship),
-      customInstruments: this.customInstrumentDefs,
-      customEffects: this.customEffectDefs,
+      // Ones this build could not read go back out as they came in, for a build that can.
+      customInstruments: [
+        ...this.customInstrumentDefs,
+        ...(this.unreadableDevices.instruments as GraphInstrumentDef[]),
+      ],
+      customEffects: [...this.customEffectDefs, ...(this.unreadableDevices.effects as GraphEffectDef[])],
     });
   }
 
@@ -1504,9 +1510,10 @@ export class ProjectStore {
   private syncCustomDevices(data: ProjectData): void {
     for (const def of this.customInstrumentDefs) unregisterInstrument(def.type);
     for (const def of this.customEffectDefs) unregisterEffect(def.type);
-    const { instruments, effects } = parseCustomDevices(data);
+    const { instruments, effects, unreadable } = parseCustomDevices(data);
     this.customInstrumentDefs = instruments;
     this.customEffectDefs = effects;
+    this.unreadableDevices = unreadable;
     for (const def of instruments) this.registerInstrumentDef(def);
     for (const def of effects) this.registerEffectDef(def);
   }

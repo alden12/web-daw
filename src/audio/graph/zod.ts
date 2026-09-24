@@ -215,32 +215,50 @@ export function parseEffectDef(raw: unknown): DefResult<GraphEffectDef> {
   return { ok: true, def: parsed.data as GraphEffectDef };
 }
 
+/** The defs `parseCustomDevices` could not read, exactly as they were stored. */
+export interface UnreadableDevices {
+  instruments: unknown[];
+  effects: unknown[];
+}
+
 /**
  * Validate a project's custom devices, dropping any that don't pass (with a warning).
  * Never throws: an unknown format version or a malformed def must not stop the project
  * from opening.
+ *
+ * What it drops comes back as `unreadable`, untouched, for the project to write back out. A def
+ * this build cannot read may be one a newer build can - a block kind added since - and opening
+ * the project here must not be what deletes it.
  */
 export function parseCustomDevices(data: {
   customInstruments?: unknown;
   customEffects?: unknown;
   deviceFormatVersion?: number;
-}): { instruments: GraphInstrumentDef[]; effects: GraphEffectDef[] } {
+}): { instruments: GraphInstrumentDef[]; effects: GraphEffectDef[]; unreadable: UnreadableDevices } {
+  const entries = (raw: unknown): unknown[] => (Array.isArray(raw) ? raw : []);
   if (data.deviceFormatVersion !== undefined && data.deviceFormatVersion !== DEVICE_FORMAT_VERSION) {
     console.warn(`Ignoring custom devices: format version ${data.deviceFormatVersion} != ${DEVICE_FORMAT_VERSION}.`);
-    return { instruments: [], effects: [] };
+    return {
+      instruments: [],
+      effects: [],
+      unreadable: { instruments: entries(data.customInstruments), effects: entries(data.customEffects) },
+    };
   }
-  const keep = <T>(raw: unknown, parse: (value: unknown) => DefResult<T>, label: string): T[] => {
-    if (!Array.isArray(raw)) return [];
-    const kept: T[] = [];
-    for (const entry of raw) {
-      const result = parse(entry);
-      if (result.ok) kept.push(result.def);
-      else console.warn(`Dropping invalid custom ${label}: ${result.errors.join("; ")}`);
-    }
-    return kept;
+  const sort = <T>(raw: unknown, parse: (value: unknown) => DefResult<T>, label: string) => {
+    const results = entries(raw).map((entry) => ({ entry, result: parse(entry) }));
+    results.forEach(({ result }) => {
+      if (!result.ok) console.warn(`Dropping invalid custom ${label}: ${result.errors.join("; ")}`);
+    });
+    return {
+      kept: results.flatMap(({ result }) => (result.ok ? [result.def] : [])),
+      dropped: results.filter(({ result }) => !result.ok).map(({ entry }) => entry),
+    };
   };
+  const instruments = sort(data.customInstruments, parseInstrumentDef, "instrument");
+  const effects = sort(data.customEffects, parseEffectDef, "effect");
   return {
-    instruments: keep(data.customInstruments, parseInstrumentDef, "instrument"),
-    effects: keep(data.customEffects, parseEffectDef, "effect"),
+    instruments: instruments.kept,
+    effects: effects.kept,
+    unreadable: { instruments: instruments.dropped, effects: effects.dropped },
   };
 }
