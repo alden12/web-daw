@@ -80,6 +80,20 @@ describe("the hosted MCP server", () => {
     expect(names).not.toContain("play_note");
   });
 
+  it("keeps every tool's input schema small, or a client may never surface the tool", async () => {
+    // The authoring tools once carried the whole device format as ~17.6KB of nested unions, and the
+    // claude.ai client did not list them at all. Validation belongs in the handler, not the schema.
+    const { client } = await hosted();
+    const { tools } = await client.listTools();
+    const oversized = tools
+      .map((tool) => ({ name: tool.name, bytes: JSON.stringify(tool.inputSchema).length }))
+      .filter(({ bytes }) => bytes > 3000);
+    expect(oversized).toEqual([]);
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["create_instrument", "create_effect", "update_instrument", "update_effect"]),
+    );
+  });
+
   it("says which project it could not find, rather than editing another", async () => {
     const { call } = await hosted();
     const result = await call("list_tracks", { project: "nope" });
