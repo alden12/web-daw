@@ -22,7 +22,15 @@ import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "
 import { PITCH_CLASSES, SCALE_NAMES, pitchAt, type ScaleName } from "../../audio/theory/scales";
 import { pitchName } from "../noteNames";
 import { CHORD_ROW_LIMIT, type ChordFamily, type ChordPrefs } from "../../audio/theory/chords";
-import { parseChordPrefs } from "../../audio/theory/chordPrefs";
+import {
+  basePrefs,
+  customBase,
+  customise,
+  parseChordArrangeSettings,
+  prefsFor,
+  resetScale,
+  type ChordArrangeMode,
+} from "../../audio/theory/chordPrefs";
 
 /**
  * The lowest and highest octave the range may sit in, in the roll's numbering (C4 = 60).
@@ -52,9 +60,17 @@ export interface PadSettings {
   chords: boolean;
   /** Chord rows on show, the base row of triads included. The rest are a scroll away. */
   chordRows: number;
-  /** How the chord columns are arranged: order, hidden and favourites. Saved per browser. */
+  /** How the chord columns are arranged in this scale: order, hidden and favourites. */
   chordPrefs: ChordPrefs;
+  /** Save an edited arrangement: it becomes this scale's Custom one, switching to Custom. */
   setChordPrefs: (prefs: ChordPrefs) => void;
+  /** Popular, Type or Custom. Saved per browser; Custom is per scale. */
+  chordArrangeMode: ChordArrangeMode;
+  setChordArrangeMode: (mode: ChordArrangeMode) => void;
+  /** What this scale's Custom arrangement started from: what "Reset column" hands a column back to. */
+  chordBase: ChordPrefs;
+  /** Forget this scale's Custom arrangement, back to what it started from. */
+  resetChordArrangement: () => void;
   /** Arranging the chords rather than playing them: a tap on a pad selects it for editing. */
   editingChords: boolean;
   setEditingChords: (on: boolean) => void;
@@ -97,8 +113,9 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
   const chordRows = Math.max(1, Math.min(storedChordRows, maxRows, CHORD_ROW_LIMIT));
   // Stored as JSON and read through a parser, since this browser's storage may hold any
   // version's shape (or someone's hand edit): anything unreadable is simply the defaults.
-  const [rawChordPrefs, setRawChordPrefs] = usePersistentString<string>("corrente:pads-chord-prefs", "");
-  const chordPrefs = parseChordPrefs(rawChordPrefs || null);
+  const [rawArrangement, setRawArrangement] = usePersistentString<string>("corrente:pads-chord-prefs", "");
+  const arrangement = parseChordArrangeSettings(rawArrangement || null);
+  const saveArrangement = (next: typeof arrangement) => setRawArrangement(JSON.stringify(next));
   // Not persisted: coming back to the pads to find them silently not playing would read as broken.
   const [editing, setEditing] = useState(false);
   const editingChords = chords && editing;
@@ -142,8 +159,12 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     accidentals,
     chords,
     chordRows,
-    chordPrefs,
-    setChordPrefs: (prefs) => setRawChordPrefs(JSON.stringify(prefs)),
+    chordPrefs: prefsFor(arrangement, scale),
+    setChordPrefs: (prefs) => saveArrangement(customise(arrangement, scale, prefs)),
+    chordArrangeMode: arrangement.mode,
+    setChordArrangeMode: (mode) => saveArrangement({ ...arrangement, mode }),
+    chordBase: basePrefs(customBase(arrangement, scale), scale),
+    resetChordArrangement: () => saveArrangement(resetScale(arrangement, scale)),
     editingChords,
     setEditingChords,
     chordSelection: editingChords ? chordSelection : null,

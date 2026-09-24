@@ -1276,13 +1276,24 @@ test.describe("phone", () => {
     await page.getByRole("menuitemradio", { name: "Chords" }).click();
     await setDetent(page, "full");
 
-    // Every variation is reachable by scrolling, however few rows are on show: D7 is the top row.
+    // Every variation is reachable by scrolling, however few rows are on show.
     const scroller = pads(page).locator("[data-chord-scroll]");
-    await expect(pad(page, "D7")).not.toBeInViewport();
+    const top = scroller.locator("[data-chord-row]").last();
+    await expect(top).not.toBeInViewport();
     await scroller.evaluate((element) => element.scrollTo({ top: -element.scrollHeight }));
-    await expect(pad(page, "D7")).toBeInViewport();
+    await expect(top).toBeInViewport();
     await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
     await page.screenshot({ path: "test-results/chord-pads.png" });
+
+    // Popular by default: the iii column leads with E, the V of vi, not its 7th.
+    await expect(
+      pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "E", exact: true }),
+    ).toBeVisible();
+    // Type puts the same family in every row.
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Arrange by" }).click();
+    await page.getByRole("menuitemradio", { name: "Type" }).click();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
 
     await page.getByRole("button", { name: "Key and scale" }).tap();
     await page.getByRole("menuitem", { name: "Edit chords…" }).click();
@@ -1304,7 +1315,7 @@ test.describe("phone", () => {
     await pads(page).getByRole("button", { name: "Hide" }).tap();
     await pads(page).getByRole("button", { name: "Done" }).tap();
     await expect(pad(page, "Dsus4")).toHaveCount(0);
-    // And the arrangement is kept across a reload.
+    // Editing switched it to Custom, and the arrangement is kept across a reload.
     await page.reload();
     await dismissStart(page);
     await setDetent(page, "full");

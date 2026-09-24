@@ -21,12 +21,20 @@ import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
 import { ACCIDENTAL_HEIGHT, PAD_GAP, rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
+import type { ChordArrangeMode } from "../../audio/theory/chordPrefs";
 import { PadButton } from "./PadButton";
 import { IconButton } from "../controls/IconButton";
 import { CONTROL_BASE } from "../controls/tone";
 import type { PadTouch } from "./usePadTouch";
 import { ChordPads } from "./ChordPads";
 import { ChordEditBar } from "./ChordEditBar";
+
+/** The ways to arrange the chords, as the key menu offers them. Custom is whatever you made. */
+const ARRANGE_MODES: { mode: ChordArrangeMode; label: string }[] = [
+  { mode: "popular", label: "Popular" },
+  { mode: "type", label: "Type" },
+  { mode: "custom", label: "Custom" },
+];
 
 /**
  * The key and the octave range. A row of its own where there is height for one, and folded
@@ -67,7 +75,19 @@ export function ScalePadControls({
     { separator: true },
     { label: "Chords", checked: chords, onClick: () => settings.setChords(!chords) },
     // Only with chords on: it arranges them, and there is nothing to arrange otherwise.
-    ...(chords ? [{ label: "Edit chords…", onClick: () => settings.setEditingChords(true) }] : []),
+    ...(chords
+      ? [
+          { label: "Edit chords…", onClick: () => settings.setEditingChords(true) },
+          {
+            label: "Arrange by",
+            submenu: ARRANGE_MODES.map(({ mode, label }) => ({
+              label,
+              checked: settings.chordArrangeMode === mode,
+              onClick: () => settings.setChordArrangeMode(mode),
+            })),
+          },
+        ]
+      : []),
     // Chords are all in the key, so there is nothing for the band above them to hold.
     {
       label: "Accidentals",

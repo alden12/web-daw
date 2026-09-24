@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { chordRows, type ChordPrefs } from "../src/audio/theory/chords";
 import {
+  DEFAULT_ARRANGE_SETTINGS,
   DEFAULT_CHORD_PREFS,
-  parseChordPrefs,
+  customise,
+  parseChordArrangeSettings,
+  prefsFor,
   resetColumn,
+  resetScale,
   setHidden,
   swapFamilies,
   toggleFavourite,
@@ -74,22 +78,86 @@ describe("chord arrangement", () => {
   });
 });
 
-describe("parseChordPrefs", () => {
+describe("arranging by Popular, Type or Custom", () => {
+  it("starts on Popular, whose columns each lead with their own favourites", () => {
+    const prefs = prefsFor(DEFAULT_ARRANGE_SETTINGS, "major");
+    const [tonic, second, third, , fifth] = columns(prefs);
+    expect(tonic[1]).toBe("Cmaj7");
+    expect(second.slice(1, 3)).toEqual(["Dm7", "D"]); // the ii's m7, then V of V
+    expect(third[1]).toBe("E"); // V of vi, pop's way into the relative minor
+    expect(fifth.slice(1, 3)).toEqual(["G7", "Gsus4"]);
+  });
+
+  it("gives a minor key's V its major chord first, the cadence it wants", () => {
+    const prefs = prefsFor(DEFAULT_ARRANGE_SETTINGS, "minor");
+    const rows = chordRows({ tonic: 9, scale: "minor", lowOctave: 3, prefs });
+    expect(rows[0][4]?.name).toBe("Em");
+    expect(rows[1][4]?.name).toBe("E");
+    expect(rows[2][4]?.name).toBe("E7");
+  });
+
+  it("lines a pentatonic up by interval, so its V gets the V's list", () => {
+    const prefs = prefsFor(DEFAULT_ARRANGE_SETTINGS, "major pentatonic");
+    const rows = chordRows({ tonic: 0, scale: "major pentatonic", lowOctave: 3, prefs });
+    // G is the pentatonic's fourth note; with no triad it stands on Gsus4, and G's list comes next.
+    expect(rows[0][3]?.name).toBe("Gsus4");
+  });
+
+  it("uses one order for every column on Type", () => {
+    const prefs = prefsFor({ ...DEFAULT_ARRANGE_SETTINGS, mode: "type" }, "major");
+    expect(prefs).toEqual(DEFAULT_CHORD_PREFS);
+  });
+
+  it("switches to Custom on an edit, starting from what was on show, per scale", () => {
+    const popular = prefsFor(DEFAULT_ARRANGE_SETTINGS, "major");
+    const edited = customise(DEFAULT_ARRANGE_SETTINGS, "major", toggleFavourite(popular, II, "add9"));
+    expect(edited.mode).toBe("custom");
+    expect(columns(prefsFor(edited, "major"))[1][1]).toBe("Dmadd9");
+    // Other scales are untouched: a Custom scale with nothing saved is its Popular arrangement.
+    expect(prefsFor(edited, "minor")).toEqual(prefsFor(DEFAULT_ARRANGE_SETTINGS, "minor"));
+  });
+
+  it("resets a column to what the Custom arrangement started from", () => {
+    const popular = prefsFor(DEFAULT_ARRANGE_SETTINGS, "major");
+    const moved = swapFamilies(popular, II, "flip", "seventh", "column");
+    expect(columns(resetColumn(moved, II, popular))[1]).toEqual(columns(popular)[1]);
+  });
+
+  it("forgets a scale's Custom arrangement, back to the mode it started from", () => {
+    const onType = { ...DEFAULT_ARRANGE_SETTINGS, mode: "type" as const };
+    const edited = customise(onType, "major", swapFamilies(DEFAULT_CHORD_PREFS, II, "sus2", "sus4", "all"));
+    const reset = resetScale(edited, "major");
+    expect(reset.mode).toBe("type");
+    expect(reset.custom.major).toBeUndefined();
+  });
+});
+
+describe("parseChordArrangeSettings", () => {
   it("round-trips what it is given", () => {
-    const prefs = toggleFavourite(setHidden(DEFAULT_CHORD_PREFS, II, "power", true, "all"), II, "add9");
-    expect(parseChordPrefs(JSON.stringify(prefs))).toEqual(prefs);
+    const settings = customise(DEFAULT_ARRANGE_SETTINGS, "dorian", toggleFavourite(DEFAULT_CHORD_PREFS, II, "add9"));
+    expect(parseChordArrangeSettings(JSON.stringify(settings))).toEqual(settings);
   });
 
   it("falls back to the defaults for anything unreadable", () => {
-    expect(parseChordPrefs(null)).toEqual(DEFAULT_CHORD_PREFS);
-    expect(parseChordPrefs("not json")).toEqual(DEFAULT_CHORD_PREFS);
-    expect(parseChordPrefs(JSON.stringify({ order: ["nonsense"] }))).toEqual(DEFAULT_CHORD_PREFS);
+    expect(parseChordArrangeSettings(null)).toEqual(DEFAULT_ARRANGE_SETTINGS);
+    expect(parseChordArrangeSettings("not json")).toEqual(DEFAULT_ARRANGE_SETTINGS);
+    expect(parseChordArrangeSettings(JSON.stringify({ mode: "nonsense" }))).toEqual(DEFAULT_ARRANGE_SETTINGS);
+  });
+
+  it("keeps an arrangement from before there were modes, as the major scale's Custom one", () => {
+    const old = toggleFavourite(DEFAULT_CHORD_PREFS, II, "add9");
+    const parsed = parseChordArrangeSettings(JSON.stringify(old));
+    expect(parsed.mode).toBe("custom");
+    expect(parsed.custom.major?.prefs.favourites).toEqual(old.favourites);
   });
 
   it("adds a family missing from a saved order on the end, so a new one is offered", () => {
-    const saved = { ...DEFAULT_CHORD_PREFS, order: ["sus2", "seventh"] };
-    const parsed = parseChordPrefs(JSON.stringify(saved));
-    expect(parsed.order.slice(0, 2)).toEqual(["sus2", "seventh"]);
-    expect(new Set(parsed.order)).toEqual(new Set(DEFAULT_CHORD_PREFS.order));
+    const saved = {
+      mode: "custom",
+      custom: { major: { from: "type", prefs: { ...DEFAULT_CHORD_PREFS, order: ["sus2", "seventh"] } } },
+    };
+    const order = parseChordArrangeSettings(JSON.stringify(saved)).custom.major!.prefs.order;
+    expect(order.slice(0, 2)).toEqual(["sus2", "seventh"]);
+    expect(new Set(order)).toEqual(new Set(DEFAULT_CHORD_PREFS.order));
   });
 });
