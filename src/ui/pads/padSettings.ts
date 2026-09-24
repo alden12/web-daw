@@ -12,10 +12,15 @@
  * which fits two octaves to a row - octaves come and go in pairs and every row stays the
  * same width as its neighbours. A lopsided last row is the one thing that makes the stack
  * stop reading as a keyboard.
+ *
+ * **In chords mode the same two pairs keep their jobs, on different things** (MOBILE-12): the
+ * arrows move the chords an octave, exactly as they move the notes, and `+`/`-` add and remove
+ * rows of variations above the base row of triads, within the same room-based ceiling.
  */
 import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "../usePersistent";
 import { PITCH_CLASSES, SCALE_NAMES, pitchAt, type ScaleName } from "../../audio/theory/scales";
 import { pitchName } from "../noteNames";
+import { DEFAULT_CHORD_ORDER, chordRowLimit, type ChordFamily } from "../../audio/theory/chords";
 
 /**
  * The lowest and highest octave the range may sit in, in the roll's numbering (C4 = 60).
@@ -26,6 +31,9 @@ import { pitchName } from "../noteNames";
  */
 export const OCTAVE_RANGE = { min: 0, max: 8 };
 
+/** Read by `NotePads` before the settings too, since chord rows are laid out without accidentals. */
+export const CHORDS_KEY = "corrente:pads-chords";
+
 export interface PadSettings {
   tonic: number;
   scale: ScaleName;
@@ -33,9 +41,16 @@ export interface PadSettings {
   /** Octaves on show. Always a whole number of rows. */
   octaves: number;
   accidentals: boolean;
+  /** Each pad a chord rather than a note (MOBILE-12). */
+  chords: boolean;
+  /** Chord rows on show, the base row of triads included. */
+  chordRows: number;
+  /** The chord families, most wanted first: the order the rows above the triads fill in. */
+  chordOrder: readonly ChordFamily[];
   setTonic: (tonic: number) => void;
   setScale: (scale: ScaleName) => void;
   setAccidentals: (on: boolean) => void;
+  setChords: (on: boolean) => void;
   /** Move the range, and size it. Each is a no-op at its limit; the flags say which. */
   moveRange: (direction: -1 | 1) => void;
   sizeRange: (direction: -1 | 1) => void;
@@ -43,7 +58,8 @@ export interface PadSettings {
   canSize: (direction: -1 | 1) => boolean;
   /** "C major", for the control that opens the key menu. */
   keyLabel: string;
-  /** "C3 - C4": the range both pairs of buttons act on, shared between them. */
+  /** "C3 - C4": the range both pairs of buttons act on, shared between them. Just "C3" for chords,
+   *  which sit in one octave and reach up out of it. */
   rangeLabel: string;
 }
 
@@ -61,6 +77,16 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
   // shape. Switching them off gives a row you cannot play a wrong note in, which may yet
   // prove the better default on a phone - that is a question for real use, not for now.
   const [accidentals, setAccidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
+  const [chords, setChords] = usePersistentBoolean(CHORDS_KEY, false);
+  const chordOrder = DEFAULT_CHORD_ORDER;
+  const [storedChordRows, setChordRows] = usePersistentNumber(
+    "corrente:pads-chord-rows",
+    3,
+    1,
+    chordRowLimit(chordOrder),
+  );
+  // Kept as asked for, like the octaves, so raising the sheet gives back rows that did not fit.
+  const chordRows = Math.max(1, Math.min(storedChordRows, maxRows, chordRowLimit(chordOrder)));
 
   // Both ceilings, in one place: what the room allows (`geometry.ts`) and what the pitch
   // range holds. The stored value is kept as asked for, so throwing the sheet up gives back
@@ -69,10 +95,10 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
   // Rounded down to whole rows, because `octavesPerRow` changes underneath the stored value
   // when a phone is rotated into the tablet tier: three octaves is one and a half rows there,
   // and half a row is the lopsided thing this control exists to avoid.
-  const octaves = Math.min(
-    maxOctaves,
-    Math.max(octavesPerRow, Math.floor(storedOctaves / octavesPerRow) * octavesPerRow),
-  );
+  // Chords sit in one octave whatever the device, so the range is one octave to move.
+  const octaves = chords
+    ? 1
+    : Math.min(maxOctaves, Math.max(octavesPerRow, Math.floor(storedOctaves / octavesPerRow) * octavesPerRow));
   // The top of the range is a hard ceiling (the range grows *downwards* when it has to), so
   // a low octave is only valid if the whole range still fits beneath it.
   const highestLow = OCTAVE_RANGE.max - octaves;
@@ -80,7 +106,13 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
 
   const canMove = (direction: -1 | 1) => (direction < 0 ? lowOctave > OCTAVE_RANGE.min : lowOctave < highestLow);
   const canSize = (direction: -1 | 1) =>
-    direction < 0 ? octaves > octavesPerRow : octaves + octavesPerRow <= maxOctaves;
+    chords
+      ? direction < 0
+        ? chordRows > 1
+        : chordRows < Math.min(maxRows, chordRowLimit(chordOrder))
+      : direction < 0
+        ? octaves > octavesPerRow
+        : octaves + octavesPerRow <= maxOctaves;
 
   return {
     tonic,
@@ -88,14 +120,19 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     lowOctave,
     octaves,
     accidentals,
+    chords,
+    chordRows,
+    chordOrder,
     setTonic,
     setScale,
     setAccidentals,
+    setChords,
     moveRange: (direction) => {
       if (canMove(direction)) setLowOctave(lowOctave + direction);
     },
     sizeRange: (direction) => {
       if (!canSize(direction)) return;
+      if (chords) return setChordRows(chordRows + direction);
       const next = octaves + direction * octavesPerRow;
       setOctaves(next);
       // Growing off the top of the range takes the extra from below instead of refusing.
@@ -104,6 +141,8 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     canMove,
     canSize,
     keyLabel: `${PITCH_CLASSES[tonic]} ${scale}`,
-    rangeLabel: `${pitchName(pitchAt(tonic, lowOctave))} - ${pitchName(pitchAt(tonic, lowOctave + octaves))}`,
+    rangeLabel: chords
+      ? pitchName(pitchAt(tonic, lowOctave))
+      : `${pitchName(pitchAt(tonic, lowOctave))} - ${pitchName(pitchAt(tonic, lowOctave + octaves))}`,
   };
 }

@@ -1203,7 +1203,7 @@ test.describe("phone", () => {
     // In C major the in-scale pads are the white keys, closing on the octave above - the
     // closing tonic is what gives the leading tone a gap to sit in.
     const names = await pads(page)
-      .locator("[data-pitch]")
+      .locator("[data-pitches]")
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
     expect(names).toEqual(["C#3", "D#3", "F#3", "G#3", "A#3", "C3", "D3", "E3", "F3", "G3", "A3", "B3", "C4"]);
     // Under the roll, not beside it: you play a phrase and watch it land without moving.
@@ -1234,6 +1234,40 @@ test.describe("phone", () => {
     await record.tap();
     await expect(record).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByTestId("lane").getByText("Take 1")).toBeVisible();
+  });
+
+  test("chords mode turns each pad into its chord, with the variations stacked above", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+
+    // The base row is each degree's triad, closing on the tonic, as the note row does.
+    const base = await pads(page)
+      .locator('[data-chord-row="0"] [data-pitches]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+    expect(base).toEqual(["C", "Dm", "Em", "F", "G", "Am", "B°", "C"]);
+    // Rows of variations come with room: raise the sheet and ask for one.
+    await setDetent(page, "full");
+    await pads(page).getByRole("button", { name: "More chord rows" }).tap();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "G7" })).toBeVisible();
+
+    // One press plays the whole chord, and it records as its notes.
+    const record = page.getByRole("button", { name: "Record", exact: true });
+    await openOverflow(page);
+    await page.getByRole("menuitem", { name: "Count-in" }).click();
+    await page.getByRole("menuitemradio", { name: "No count-in" }).click();
+    await record.tap();
+    await holdPad(page, "Am", 140);
+    await expect(page.getByTestId("ghost-note")).toHaveCount(3);
+    await record.tap();
+
+    // The octave arrows move the chords, as they move the notes.
+    await expect(pads(page).getByText("C3", { exact: true })).toBeVisible();
+    await pads(page).getByRole("button", { name: "Higher octave" }).tap();
+    await expect(pads(page).getByText("C4", { exact: true })).toBeVisible();
+    await expect(pad(page, "C").first()).toHaveAttribute("data-pitches", "60,64,67");
   });
 
   test("sliding sideways runs the notes under your finger, without latching them", async ({ page }) => {
@@ -1441,7 +1475,7 @@ test.describe("phone, landscape", () => {
     // the numbers are shuffled. Full is, once the controls fold into the section's header.
     await setDetent(page, "half");
     await expect(pads(page)).toContainText("Raise the sheet to play");
-    await expect(pads(page).locator("[data-pitch]")).toHaveCount(0);
+    await expect(pads(page).locator("[data-pitches]")).toHaveCount(0);
 
     await setDetent(page, "full");
     await expect(pads(page).locator("[data-pad-row]")).toHaveCount(1);

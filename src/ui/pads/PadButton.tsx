@@ -6,7 +6,7 @@
  * for scrolling before the first move event arrives, and the sustain gesture never happens.
  */
 import type { CSSProperties, ReactNode } from "react";
-import type { PadTouch } from "./usePadTouch";
+import { padKey, type PadNotes, type PadTouch } from "./usePadTouch";
 
 /**
  * Fill, not outline. Every pad wears the same grey and they are separated by the gaps between
@@ -28,7 +28,7 @@ export function PadButton({
   sublabel,
   tone = "in-scale",
   touch,
-  pitch,
+  pitches,
   className = "",
   style,
 }: {
@@ -40,19 +40,20 @@ export function PadButton({
   sublabel?: string;
   tone?: keyof typeof TONE_CLASS;
   touch: PadTouch;
-  pitch: number;
+  /** What it plays: one note, or a chord's. */
+  pitches: PadNotes;
   className?: string;
   style?: CSSProperties;
 }) {
-  const sounding = touch.isSounding(pitch);
-  const latched = touch.isLatched(pitch);
+  const sounding = touch.isSounding(pitches);
+  const latched = touch.isLatched(pitches);
   return (
     <button
       type="button"
       aria-label={name}
       aria-pressed={sounding}
-      data-pitch={pitch}
-      {...touch.padProps(pitch)}
+      data-pitches={padKey(pitches)}
+      {...touch.padProps(pitches)}
       // No position utility here: the accidentals position themselves absolutely, and two
       // Tailwind classes for the same property are settled by stylesheet order rather than
       // by which one the caller passed - so the base class would win at random.

@@ -46,7 +46,7 @@ export function KitPads({ params, samples, touch }: { params: ParamStore; sample
         return (
           <PadButton
             key={pad.index}
-            pitch={pad.note}
+            pitches={[pad.note]}
             name={`${label} (${pitchName(pad.note)})`}
             label={<span className="max-w-full truncate px-1">{label}</span>}
             sublabel={pitchName(pad.note)}
