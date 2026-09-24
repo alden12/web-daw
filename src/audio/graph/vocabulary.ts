@@ -18,10 +18,17 @@ export interface KindVocabulary {
 export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
   osc: { audioParams: ["frequency", "detune"], properties: ["waveform"] },
   gain: { audioParams: ["gain"], properties: [] },
-  biquad: { audioParams: ["frequency", "q", "gain"], properties: ["filterType"] },
+  // `detune` is in cents, so an envelope into it sweeps the cutoff by musical intervals, not Hz.
+  biquad: { audioParams: ["frequency", "detune", "q", "gain"], properties: ["filterType"] },
   delay: { audioParams: ["delayTime"], properties: [] },
   shaper: { audioParams: [], properties: [] }, // `curve` is a composite field, not a plain AudioParam
+  // Its fields are times read at note-on and note-off, not AudioParams: an envelope is a source to
+  // wire elsewhere, and nothing modulates it.
+  env: { audioParams: [], properties: [] },
 };
+
+/** Kinds that follow a played note, so only make sense in an instrument voice. */
+export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env"];
 
 export const NODE_KINDS = Object.keys(VOCABULARY) as NodeSpec["kind"][];
 

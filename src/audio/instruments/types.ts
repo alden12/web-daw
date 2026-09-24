@@ -43,4 +43,16 @@ export interface VoiceHandle {
   level?: number;
   attackStart?: number;
   attackEnd?: number;
+  /** The voice's own envelopes, when it has any (a graph voice with `env` nodes, INST-12). */
+  envelope?: VoiceEnvelope;
+}
+
+export interface VoiceEnvelope {
+  /**
+   * Whether they shape the voice's amplitude (a graph wired to `out`). The base's attack/release
+   * then steps aside for a few milliseconds' fade at either end, which only stops the clicks.
+   */
+  ownsAmplitude: boolean;
+  /** Let go of the note at `at`; returns how many seconds the voice must keep sounding. */
+  release(at: number): number;
 }

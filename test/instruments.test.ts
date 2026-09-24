@@ -39,7 +39,10 @@ function fakeCtx() {
     createGain: () => fakeNode({ gain: fakeParam() }),
     createOscillator: () =>
       fakeNode({ type: "sine", frequency: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
-    createBiquadFilter: () => fakeNode({ type: "lowpass", frequency: fakeParam(), Q: fakeParam() }),
+    createBiquadFilter: () =>
+      fakeNode({ type: "lowpass", frequency: fakeParam(), detune: fakeParam(), Q: fakeParam(), gain: fakeParam() }),
+    // A graph voice's envelope (INST-12) is a constant source it schedules.
+    createConstantSource: () => fakeNode({ offset: fakeParam(), start() {}, stop() {}, onended: null }),
     // The sampler builds an AudioBufferSourceNode per voice and a silent buffer up front.
     createBufferSource: () =>
       fakeNode({ buffer: null, playbackRate: fakeParam(), start() {}, stop() {}, onended: null }),

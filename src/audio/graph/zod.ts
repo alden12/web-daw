@@ -60,6 +60,16 @@ const nodeSpec = z.discriminatedUnion("kind", [
       curve: z.object({ shape: z.string(), amount: numberField }).strict(),
     })
     .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("env"),
+      attack: numberField.optional(),
+      decay: numberField.optional(),
+      sustain: numberField.optional(),
+      release: numberField.optional(),
+    })
+    .strict(),
 ]);
 
 const graph = z.object({ nodes: z.array(nodeSpec), connections: z.array(z.tuple([z.string(), z.string()])) }).strict();

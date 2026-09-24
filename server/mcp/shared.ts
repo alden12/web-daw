@@ -20,7 +20,7 @@ export const deviceFormatDoc = () => ({
   overview:
     "A custom instrument is { label?, schema, voice }; a custom effect is { label?, schema, graph }. " +
     "`schema` is the parameter list (the keystone - drives UI/automation/persistence). `voice`/`graph` is a node graph. " +
-    "Include amp.level + env.attack + env.release in an instrument schema for level/envelope control; include `mix` in an effect schema for dry/wet.",
+    "Include amp.level in an instrument schema for its level; include `mix` in an effect schema for dry/wet.",
   nodeKinds: NODE_KINDS.map((kind) => ({
     kind,
     audioParams: VOCABULARY[kind].audioParams,
@@ -30,11 +30,21 @@ export const deviceFormatDoc = () => ({
   binding:
     "A node field is a literal, or { param: <schema id>, scale?, offset? } to bind it (value = param*scale + offset). Enum fields (waveform, filterType) are a literal string or a param.",
   connection:
-    "[from, to]; `to` is a node id (audio input) or `nodeId.param` to modulate that AudioParam. Reserved ids are the amp/in/wet endpoints above.",
+    "[from, to]; `to` is a node id (audio input) or `nodeId.param` to modulate that AudioParam. Reserved ids are the endpoints above.",
+  voiceOutput:
+    "An instrument voice ends at `amp` or `out`, never both. `amp` applies a built-in attack/release envelope " +
+    "(params env.attack + env.release, in ms). `out` passes the voice through as-is, for a voice that shapes its own " +
+    "amplitude with an `env` into a VCA gain - use it for plucks, pads, anything that needs decay and sustain.",
+  envelopes:
+    "An `env` node (instruments only) is an ADSR control signal: 0 -> 1 over attack, down to sustain over decay, " +
+    "held while the note is, then to 0 over release. Fields attack/decay/release are ms, sustain is 0..1; each is a " +
+    "literal or a param. It has no input; wire it like an LFO: into `vca.gain` (a gain with gain: 0) to shape amplitude, " +
+    "or through a gain that sets its depth into any `.param` - `filter.detune` (cents) for a filter sweep in musical " +
+    "intervals, `osc.detune` for a pitch drop, an FM depth gain's `.gain` for a brightness envelope. Use as many as you like.",
   oscFrequency:
     "An osc tracks the played note by default; `noteRatio` multiplies the note (FM/sub-oscillator); `frequency` sets an absolute Hz (an LFO).",
   example: {
-    label: "My Synth",
+    label: "Pluck",
     schema: [
       {
         id: "filter.cutoff",
@@ -42,21 +52,37 @@ export const deviceFormatDoc = () => ({
         kind: "number",
         min: 20,
         max: 20000,
-        default: 4000,
+        default: 400,
         taper: "exponential",
       },
+      { id: "filter.env", label: "Filter Env", kind: "number", min: 0, max: 48, default: 36, unit: "st" },
       { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 },
-      { id: "env.attack", label: "Attack", kind: "number", min: 1, max: 2000, default: 5, unit: "ms" },
-      { id: "env.release", label: "Release", kind: "number", min: 1, max: 4000, default: 200, unit: "ms" },
+      { id: "env.decay", label: "Decay", kind: "number", min: 1, max: 4000, default: 400, unit: "ms" },
+      { id: "env.release", label: "Release", kind: "number", min: 1, max: 4000, default: 300, unit: "ms" },
     ],
     voice: {
       nodes: [
         { id: "osc", kind: "osc", waveform: "sawtooth" },
         { id: "filter", kind: "biquad", filterType: "lowpass", frequency: { param: "filter.cutoff" } },
+        { id: "filterEnv", kind: "env", attack: 2, decay: 250, sustain: 0 },
+        { id: "filterDepth", kind: "gain", gain: { param: "filter.env", scale: 100 } },
+        {
+          id: "ampEnv",
+          kind: "env",
+          attack: 2,
+          decay: { param: "env.decay" },
+          sustain: 0,
+          release: { param: "env.release" },
+        },
+        { id: "vca", kind: "gain", gain: 0 },
       ],
       connections: [
         ["osc", "filter"],
-        ["filter", "amp"],
+        ["filter", "vca"],
+        ["filterEnv", "filterDepth"],
+        ["filterDepth", "filter.detune"],
+        ["ampEnv", "vca.gain"],
+        ["vca", "out"],
       ],
     },
   },

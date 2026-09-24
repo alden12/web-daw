@@ -8,11 +8,13 @@
  * Field values are literal or `{ param, scale?, offset? }` (value*scale + offset).
  * Two fields are computed rather than plain: an oscillator's frequency (tracks the
  * note, optionally times a ratio) and a waveshaper's curve (rebuilt from its family).
+ * An envelope's fields are times, read when the note starts and ends (envelope.ts).
  */
 import type { ParamValue } from "../params/types";
 import { rampParam } from "../params/binding";
-import type { Graph, NodeSpec, NumberField, EnumField, OscNodeSpec, ShaperNodeSpec } from "./types";
+import type { Graph, NodeSpec, NumberField, EnumField, OscNodeSpec, ShaperNodeSpec, EnvNodeSpec } from "./types";
 import { NODE_IMPLS, SHAPER_CURVES } from "./nodes";
+import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
 
 export interface GraphContext {
   ctx: BaseAudioContext;
@@ -31,6 +33,11 @@ export interface BuiltGraph {
   sources: AudioScheduledSourceNode[];
   /** Apply a parameter change to this live graph. */
   apply(paramId: string, value: ParamValue, smoothMs?: number): void;
+  /**
+   * Let go of the note at `at`: start every envelope's release, and return how many seconds the
+   * longest takes, which is how long the voice must keep sounding. 0 for a graph with none.
+   */
+  release(at: number): number;
   /** Disconnect every node (effect teardown; instrument voices are torn down by the base). */
   disconnect(): void;
 }
@@ -52,6 +59,7 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
   const addTarget = (paramId: string, apply: (value: ParamValue, smoothMs?: number) => void): void => {
     (targets.get(paramId) ?? targets.set(paramId, []).get(paramId)!).push(apply);
   };
+  const releases: Release[] = [];
 
   // 1. Create nodes.
   for (const spec of graph.nodes) {
@@ -63,7 +71,9 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
 
   // 2. Apply each node's fields (initial value now; a bound field also registers a
   //    live target so parameter changes reach it).
-  for (const spec of graph.nodes) applyFields(spec, nodes.get(spec.id)!.node, ctx, context, addTarget);
+  for (const spec of graph.nodes) {
+    applyFields(spec, nodes.get(spec.id)!.node, ctx, context, addTarget, (release) => releases.push(release));
+  }
 
   // 3. Wire connections: `to` is a node input, or `nodeId.param` to modulate a param.
   for (const [from, to] of graph.connections) {
@@ -82,6 +92,7 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
     apply: (paramId, value, smoothMs) => {
       for (const applyTarget of targets.get(paramId) ?? []) applyTarget(value, smoothMs);
     },
+    release: (at) => releases.reduce((longest, release) => Math.max(longest, release(at)), 0),
     disconnect: () => {
       for (const { node } of nodes.values()) node.disconnect();
     },
@@ -89,6 +100,8 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
 }
 
 type AddTarget = (paramId: string, apply: (value: ParamValue, smoothMs?: number) => void) => void;
+/** Start one envelope's release at `at`, returning how many seconds it takes. */
+type Release = (at: number) => number;
 
 /** Apply one node's declared fields, per kind. */
 function applyFields(
@@ -97,6 +110,7 @@ function applyFields(
   ctx: BaseAudioContext,
   context: GraphContext,
   addTarget: AddTarget,
+  addRelease: (release: Release) => void,
 ): void {
   const impl = NODE_IMPLS[spec.kind];
   const startTime = context.startTime ?? ctx.currentTime;
@@ -129,6 +143,9 @@ function applyFields(
       break;
     case "shaper":
       bindShaperCurve(spec, node as WaveShaperNode, context.readParam, addTarget);
+      break;
+    case "env":
+      addRelease(startEnvelope(spec, (node as ConstantSourceNode).offset, startTime, context.readParam));
       break;
   }
 }
@@ -216,4 +233,38 @@ function bindShaperCurve(
   }
   setCurve(resolveLinear(readParam(amount.param) as number, amount));
   addTarget(amount.param, (value) => setCurve(resolveLinear(value as number, amount)));
+}
+
+/** Envelope defaults, in the units the fields are authored in: milliseconds, and 0..1 sustain. */
+const ENV_DEFAULTS = { attack: 5, decay: 200, sustain: 1, release: 200 };
+
+/** A number field's value right now: literal, bound param, or the default when it is left out. */
+const readNumber = (field: NumberField | undefined, fallback: number, readParam: (id: string) => ParamValue) =>
+  field === undefined
+    ? fallback
+    : typeof field === "number"
+      ? field
+      : resolveLinear(readParam(field.param) as number, field);
+
+/** Schedule an envelope's attack, decay and sustain from the note's start; return its release. */
+function startEnvelope(
+  spec: EnvNodeSpec,
+  level: AudioParam,
+  startTime: number,
+  readParam: (id: string) => ParamValue,
+): Release {
+  const seconds = (field: NumberField | undefined, fallbackMs: number) =>
+    readNumber(field, fallbackMs, readParam) / 1000;
+  const shape = normalizeShape({
+    attack: seconds(spec.attack, ENV_DEFAULTS.attack),
+    decay: seconds(spec.decay, ENV_DEFAULTS.decay),
+    sustain: readNumber(spec.sustain, ENV_DEFAULTS.sustain, readParam),
+  });
+  scheduleAttack(level, shape, startTime);
+  // Release is read when the note ends, so a knob turned while it is held still counts.
+  return (at) => {
+    const release = normalizeRelease(seconds(spec.release, ENV_DEFAULTS.release));
+    scheduleRelease(level, shape, startTime, at, release);
+    return release;
+  };
 }
