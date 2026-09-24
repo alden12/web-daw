@@ -17,8 +17,9 @@
  * **Three ways to arrange them, chosen per browser: Popular, Type and Custom** (`ChordArrangeSettings`).
  * Popular is curated per degree (chordPopular.ts), Type is one order for every column, and Custom is
  * yours, **per scale** - a minor key's columns want different things from a major key's, so an
- * arrangement made in one does not rearrange the other. Editing while on Popular or Type switches to
- * Custom, starting from what was on show, so nothing jumps.
+ * arrangement made in one does not rearrange the other. **Editing is always of Custom**: opening the
+ * editor switches to it first (`startEditing`), to the scale's saved arrangement if it has one, or
+ * else to a copy of what was on show - so an edit never overwrites a saved arrangement unseen.
  */
 import { z } from "zod";
 import {
@@ -133,6 +134,20 @@ export const customBase = (settings: ChordArrangeSettings, scale: ScaleName): Ch
 export function prefsFor(settings: ChordArrangeSettings, scale: ScaleName): ChordPrefs {
   if (settings.mode !== "custom") return basePrefs(settings.mode, scale);
   return settings.custom[scale]?.prefs ?? basePrefs(customBase(settings, scale), scale);
+}
+
+/**
+ * Open the editor on Custom: the scale's saved arrangement if it has one, or else a copy of the
+ * Popular or Type one on show, remembered as what it started from. Before this, an edit made on
+ * Popular replaced a saved Custom arrangement without ever showing it.
+ */
+export function startEditing(settings: ChordArrangeSettings, scale: ScaleName): ChordArrangeSettings {
+  if (settings.mode === "custom") return settings;
+  if (settings.custom[scale]) return { ...settings, mode: "custom" };
+  return {
+    mode: "custom",
+    custom: { ...settings.custom, [scale]: { from: settings.mode, prefs: basePrefs(settings.mode, scale) } },
+  };
 }
 
 /** Save an edit as the scale's Custom arrangement, switching to Custom if it was not already. */

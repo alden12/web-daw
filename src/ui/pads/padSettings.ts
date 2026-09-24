@@ -29,6 +29,7 @@ import {
   parseChordArrangeSettings,
   prefsFor,
   resetScale,
+  startEditing,
   type ChordArrangeMode,
 } from "../../audio/theory/chordPrefs";
 
@@ -123,6 +124,8 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
   const setEditingChords = (on: boolean) => {
     setEditing(on);
     setChordSelection(null);
+    // Editing is always of Custom, switched to before the first tap (`startEditing`).
+    if (on) saveArrangement(startEditing(arrangement, scale));
   };
 
   // Both ceilings, in one place: what the room allows (`geometry.ts`) and what the pitch

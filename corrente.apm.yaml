@@ -6902,14 +6902,16 @@ projects:
             - The fitting also stopped charging for a gap after the last row, and now counts the accidental band's own gap. `SHEET_HEADER_HEIGHT` is corrected to the real 58px (it was 65), and the room subtracts the home-indicator inset (`insetPixels`).
             - The growing section clips, so at the lowest detent the ROLL header no longer draws over PADS.
 
-          ## Arrange by Popular, Type or Custom (third PR)
+          ## Arrange by Popular, Type or Custom (third PR, #179)
 
           - **Popular** (the default, `chordPopular.ts`) is curated per degree, not measured. Hooktheory has real data but it isn't open, so these tables encode common practice, meant to be tuned by ear:
             - In major: ii leads with m7 then D (V/V), iii with E (V/vi), V with G7 then Gsus4.
             - In minor: v leads with its major chord and V7, the cadence a minor key wants.
             - Tables are **keyed by semitones above the tonic**, so a pentatonic's fourth note (the V) gets the V's list. Each scale borrows the major or minor table by its third.
           - **Type** is the one order for every column (the arrangement as it was before).
-          - **Custom** is yours, **per scale**. Editing on Popular or Type switches to Custom, starting from what was on show, so nothing jumps.
+          - **Custom** is yours, **per scale**, and **editing is always of Custom**.
+            - Opening "Edit chords…" switches to Custom first (`startEditing`). If the scale has a saved Custom arrangement, that's what you edit. Otherwise you get a copy of the Popular or Type arrangement that was on show, remembered as what it started from.
+            - This was decided after an early version seeded Custom on the first edit: an edit made while on Popular then replaced a saved Custom arrangement without ever showing it.
             - "Reset column" hands a column back to what Custom started from. "Reset all" forgets the scale's Custom arrangement and returns to that mode.
             - An arrangement saved before modes existed becomes the major scale's Custom one.
           - "Arrange by ▸ Popular / Type / Custom" is in the key menu, under Edit chords….
@@ -6917,7 +6919,7 @@ projects:
           **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T21:07:05.298Z
+        updated_at: 2026-09-24T21:18:42.223Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing

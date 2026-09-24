@@ -9,6 +9,7 @@ import {
   resetColumn,
   resetScale,
   setHidden,
+  startEditing,
   swapFamilies,
   toggleFavourite,
 } from "../src/audio/theory/chordPrefs";
@@ -106,6 +107,19 @@ describe("arranging by Popular, Type or Custom", () => {
   it("uses one order for every column on Type", () => {
     const prefs = prefsFor({ ...DEFAULT_ARRANGE_SETTINGS, mode: "type" }, "major");
     expect(prefs).toEqual(DEFAULT_CHORD_PREFS);
+  });
+
+  it("opens the editor on Custom: the saved arrangement if there is one, or a copy of what was on show", () => {
+    const onType = { ...DEFAULT_ARRANGE_SETTINGS, mode: "type" as const };
+    const fresh = startEditing(onType, "major");
+    expect(fresh.mode).toBe("custom");
+    expect(fresh.custom.major).toEqual({ from: "type", prefs: DEFAULT_CHORD_PREFS });
+
+    // A saved arrangement is what gets edited, not overwritten by a copy of Popular.
+    const saved = customise(onType, "major", toggleFavourite(DEFAULT_CHORD_PREFS, II, "add9"));
+    const reopened = startEditing({ ...saved, mode: "popular" }, "major");
+    expect(reopened.mode).toBe("custom");
+    expect(reopened.custom.major).toEqual(saved.custom.major);
   });
 
   it("switches to Custom on an edit, starting from what was on show, per scale", () => {
