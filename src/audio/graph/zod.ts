@@ -190,10 +190,35 @@ export const effectDefSchema = z
 
 /**
  * Tool-input shapes: an author supplies everything but the `type` id (the server mints that).
- * Used as MCP `inputSchema` so the tool self-documents the def format.
+ *
+ * **Deliberately an outline, not the format.** These were the strict schemas above, which made
+ * each authoring tool's JSON schema ~17.6KB of nested unions against under 1KB for any other tool
+ * - and the claude.ai client never surfaced `create_instrument`, `create_effect` or the two
+ * `update_` tools at all, while their small neighbours loaded fine. The shape is here so a client
+ * knows what to send; the format is `describe_device_format`'s to explain, and every def is
+ * still checked in full by `parseInstrumentDef` / `parseEffectDef`, whose errors name the exact
+ * field.
  */
-export const instrumentDefInputSchema = z.object({ label: z.string().optional(), schema: paramSchema, voice: graph });
-export const effectDefInputSchema = z.object({ label: z.string().optional(), schema: paramSchema, graph: graph });
+const outlineObject = z.record(z.string(), z.unknown());
+const outlineGraph = z.object({
+  nodes: z.array(outlineObject).describe("Nodes, each { id, kind, ...fields } - see describe_device_format."),
+  connections: z
+    .array(z.tuple([z.string(), z.string()]))
+    .describe('[from, to] pairs; `to` is a node id or "nodeId.param" to modulate it.'),
+});
+const outlineSchema = z
+  .array(outlineObject)
+  .describe("Parameter declarations, each { id, label, kind, ... } - see describe_device_format.");
+export const instrumentDefInputSchema = z.object({
+  label: z.string().optional(),
+  schema: outlineSchema,
+  voice: outlineGraph.describe("The per-note voice graph, wired to `amp` or `out`."),
+});
+export const effectDefInputSchema = z.object({
+  label: z.string().optional(),
+  schema: outlineSchema,
+  graph: outlineGraph.describe("The effect graph, from `in` to `wet`."),
+});
 
 export type DefResult<T> = { ok: true; def: T } | { ok: false; errors: string[] };
 
