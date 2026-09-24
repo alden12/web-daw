@@ -3,9 +3,10 @@
  * such as Claude, connecting to Corrente's hosted MCP server.
  *
  * It sits behind the same login gate as the rest of the app, so the sign-in is Corrente's own and
- * there is no second login screen to keep in step with the first. What it shows is the part a person
- * should actually check: the address the app will receive its code at. An app can call itself
- * anything; it cannot make the redirect point somewhere it does not control.
+ * there is no second login screen to keep in step with the first. It only offers to approve an app
+ * that receives its code at one of Claude's addresses, and refuses anything else outright: an app can
+ * call itself anything, but it cannot make the redirect point somewhere it does not control
+ * (trustedRedirect.ts).
  */
 import { useEffect, useState } from "react";
 import { decideConsent, readConsentRequest, type ConsentRequest } from "../auth/session";
@@ -38,6 +39,13 @@ export function OAuthConsent() {
 
   if (!authorizationId) return <Message title="Nothing to approve" body="This link has no request in it." />;
   if (screen.kind === "error") return <Message title="That request has expired" body={screen.message} />;
+  if (screen.kind === "refused")
+    return (
+      <Message
+        title="Corrente only connects to Claude"
+        body={`This request would send access to ${screen.redirectOrigin}, which is not Claude, so it has been stopped. To connect Claude, start again from its connector settings.`}
+      />
+    );
   if (screen.kind !== "ask") return <Message title="One moment" body="Checking the request..." />;
   return (
     <GateCard>
@@ -49,8 +57,7 @@ export function OAuthConsent() {
         show as the agent's, and you can undo them.
       </p>
       <p className="text-xs text-faint leading-relaxed">
-        Access is sent to <span className="font-mono text-ink">{screen.redirectOrigin}</span>. Only allow this if you
-        started connecting from there.
+        Access is sent to <span className="font-mono text-ink">{screen.redirectOrigin}</span>.
       </p>
       <div className="mt-1 flex gap-2 w-full">
         <button

@@ -88,6 +88,36 @@ describe("the hosted MCP server", () => {
   });
 });
 
+describe("the hosted MCP server's HTTP edges", () => {
+  const app = async (maxJsonBytes?: number) => {
+    const { db } = await makeSyncEnv();
+    return createApp(db, { mcp: { registry: new RoomRegistry(db) }, maxJsonBytes });
+  };
+
+  it("refuses a call bigger than a project document, before reading it", async () => {
+    const response = await (
+      await app(1024)
+    ).request("http://corrente.test/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ padding: "x".repeat(2048) }),
+    });
+    expect(response.status).toBe(413);
+  });
+
+  it("lets a browser-based MCP client post, and read the sign-in challenge", async () => {
+    const response = await (
+      await app()
+    ).request("http://corrente.test/mcp", {
+      method: "OPTIONS",
+      headers: { Origin: "https://inspector.example", "Access-Control-Request-Method": "POST" },
+    });
+    expect(response.headers.get("Access-Control-Allow-Methods")).toContain("POST");
+    const challenge = await (await app()).request("http://corrente.test/mcp", { method: "POST" });
+    expect(challenge.headers.get("Access-Control-Expose-Headers")).toContain("WWW-Authenticate");
+  });
+});
+
 describe("OAuth: discovery, and a token for this resource and no other", () => {
   const ISSUER = "https://project.supabase.co/auth/v1";
   const RESOURCE = "https://corrente.test/mcp";

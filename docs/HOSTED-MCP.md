@@ -46,8 +46,13 @@ and in Google's test-user list to sign in at all.
 - **Claude Code:** `claude mcp add --transport http corrente https://web-daw.fly.dev/mcp`.
 
 Either way you are sent to Corrente to sign in, if you are not already, and then asked to approve
-the connection. Check the address it shows: an app can call itself anything, but it cannot make
-that address one it does not control.
+the connection.
+
+**Only Claude can be approved.** Dynamic registration means anyone can register an app and call it
+"Claude", so the consent page ignores the name and checks where the app receives its code, which it
+cannot fake: claude.ai or claude.com over HTTPS, or a loopback address (Claude Code). Anything else
+is refused before an Allow button is shown (`src/auth/trustedRedirect.ts`). If Claude ever moves its
+callback to a new host, add it there.
 
 ## If it fails after you approve
 
