@@ -100,25 +100,23 @@ test("an envelope into a ladder's detune sweeps it down as the note goes on", as
   expect(late.brightness).toBeLessThan(early.brightness * 0.6);
 });
 
-test("an instrument using a custom block plays at most 8 notes at once; a native one is not capped", async ({
+test("an instrument with two custom blocks plays at most 12 notes at once; a native one is not capped", async ({
   page,
 }) => {
   const unison = (count: number): Played => ({ notes: Array(count).fill(57), at: 0.05, seconds: 0.8 });
   const window: [number, number][] = [[0.3, 0.6]];
-  // Identical notes add up exactly, so loudness counts how many are sounding.
-  const [eightCapped] = await renderVoice(page, sawThroughLadder({ frequency: 2000 }), INTO_LADDER, unison(8), window);
-  const [twelveCapped] = await renderVoice(
-    page,
-    sawThroughLadder({ frequency: 2000 }),
-    INTO_LADDER,
-    unison(12),
-    window,
-  );
+  // Two blocks, so 24 copies go 12 notes each. Identical notes add up exactly: loudness counts them.
+  const twoBlocks: VoiceNode[] = [
+    { id: "osc", kind: "analogOsc", waveform: "saw" },
+    { id: "filter", kind: "ladder", frequency: 2000 },
+  ];
+  const [twelveCapped] = await renderVoice(page, twoBlocks, INTO_LADDER, unison(12), window);
+  const [sixteenCapped] = await renderVoice(page, twoBlocks, INTO_LADDER, unison(16), window);
   const native: VoiceNode[] = [{ id: "osc", kind: "osc", waveform: "sawtooth" }];
-  const [eightNative] = await renderVoice(page, native, [["osc", "amp"]], unison(8), window);
   const [twelveNative] = await renderVoice(page, native, [["osc", "amp"]], unison(12), window);
-  expect(twelveCapped.rms / eightCapped.rms).toBeCloseTo(1, 1);
-  expect(twelveNative.rms / eightNative.rms).toBeCloseTo(1.5, 1);
+  const [sixteenNative] = await renderVoice(page, native, [["osc", "amp"]], unison(16), window);
+  expect(sixteenCapped.rms / twelveCapped.rms).toBeCloseTo(1, 1);
+  expect(sixteenNative.rms / twelveNative.rms).toBeCloseTo(16 / 12, 1);
 });
 
 test("the Bitcrusher, now a graph, crushes a tone to a few levels", async ({ page }) => {

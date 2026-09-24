@@ -130,12 +130,24 @@ export const WORKLET_KINDS: readonly NodeSpec["kind"][] = (Object.keys(VOCABULAR
 );
 
 /**
- * How many notes an instrument whose voice uses a custom-DSP block plays at once: each note runs its
- * own copy of every block, and each copy costs a fixed amount every audio block however little it
- * does. The oldest note gives way to a new one past this. Native-only voices are not capped.
- * Running every voice inside one worklet (INST-19) is what would lift it.
+ * How many copies of custom-DSP blocks an instrument may run at once, across its notes. Each note
+ * runs its own copy of every block in the voice, and each copy costs a fixed amount every audio
+ * block however little it does, so the cost is copies, not notes. 24 is comfortable on a laptop;
+ * lower it if phones crackle. Running every voice inside one worklet (INST-19) is the real fix.
  */
-export const WORKLET_VOICE_CAP = 8;
+export const WORKLET_BUDGET = 24;
+/** The fewest notes an instrument with custom-DSP blocks plays at once, however heavy its voice. */
+export const MIN_WORKLET_VOICES = 8;
+
+/**
+ * How many notes an instrument with this voice plays at once: its share of the budget (24 for one
+ * block, 12 for two - a four-note chord across three octaves - 8 for three or more), or no limit for
+ * a voice of native nodes only. Past it, the oldest note gives way to a new one.
+ */
+export function voiceCapFor(voice: { nodes: readonly { kind: NodeSpec["kind"] }[] }): number {
+  const blocks = voice.nodes.filter((node) => WORKLET_KINDS.includes(node.kind)).length;
+  return blocks === 0 ? Infinity : Math.max(MIN_WORKLET_VOICES, Math.floor(WORKLET_BUDGET / blocks));
+}
 
 /** Kinds that make sound on their own, rather than processing an input. */
 export const SOURCE_KINDS: readonly NodeSpec["kind"][] = [

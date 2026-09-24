@@ -8,7 +8,7 @@ import { ParamStore } from "../src/audio/params/store";
 import { GraphInstrument } from "../src/audio/graph/GraphInstrument";
 import { parseInstrumentDef, parseEffectDef } from "../src/audio/graph/zod";
 import { validateGraph, EFFECT_RESERVED } from "../src/audio/graph/validate";
-import { WORKLET_KINDS, WORKLET_VOICE_CAP } from "../src/audio/graph/vocabulary";
+import { WORKLET_KINDS, voiceCapFor } from "../src/audio/graph/vocabulary";
 import type { GraphInstrumentDef } from "../src/audio/graph/types";
 import { bitcrusher } from "../src/audio/effects/graph/bitcrusher";
 
@@ -97,12 +97,19 @@ describe("custom-DSP kinds as data", () => {
 });
 
 describe("the voice cap for an instrument using a custom-DSP block", () => {
-  it(`plays at most ${WORKLET_VOICE_CAP} notes, cutting the oldest in a few milliseconds for a new one`, () => {
+  it("shares a budget of block copies out between notes, never fewer than 8", () => {
+    const voiceWith = (blocks: number) => ({
+      nodes: [{ kind: "osc" as const }, ...Array.from({ length: blocks }, () => ({ kind: "ladder" as const }))],
+    });
+    expect([0, 1, 2, 3, 5].map((blocks) => voiceCapFor(voiceWith(blocks)))).toEqual([Infinity, 24, 12, 8, 8]);
+  });
+
+  it("plays at most its cap of notes, cutting the oldest in a few milliseconds for a new one", () => {
     const { context, stops } = fakeContext();
     const synth = new GraphInstrument(context as never, new ParamStore(ladderSynth.schema), ladderSynth);
-    for (let note = 0; note < WORKLET_VOICE_CAP; note++) synth.noteOn(48 + note, 1, 1);
+    for (let note = 0; note < voiceCapFor(ladderSynth.voice); note++) synth.noteOn(48 + note, 1, 1);
     expect(stops).toEqual([]);
-    synth.noteOn(60, 1, 2); // one past the cap
+    synth.noteOn(100, 1, 2); // one past the cap
     // The oldest voice's two sources (osc, env) stop just after a short fade at the new note.
     expect(stops).toHaveLength(2);
     expect(stops.every((at) => at > 2 && at < 2.05)).toBe(true);
@@ -114,10 +121,10 @@ describe("the voice cap for an instrument using a custom-DSP block", () => {
   it("takes a note already let go before one still held", () => {
     const { context, stops } = fakeContext();
     const synth = new GraphInstrument(context as never, new ParamStore(ladderSynth.schema), ladderSynth);
-    for (let note = 0; note < WORKLET_VOICE_CAP; note++) synth.noteOn(48 + note, 1, 1);
+    for (let note = 0; note < voiceCapFor(ladderSynth.voice); note++) synth.noteOn(48 + note, 1, 1);
     synth.noteOff(52, 1.5); // releasing, schedules its own stop
     const releaseStops = stops.length;
-    synth.noteOn(60, 1, 2);
+    synth.noteOn(100, 1, 2);
     // The released note is cut (its sources re-stopped near 2s), not note 48, the oldest held.
     expect(stops.slice(releaseStops).every((at) => at > 2 && at < 2.05)).toBe(true);
     synth.noteOff(48, 3); // still held, so this schedules a release
@@ -202,7 +209,7 @@ describe("the analogOsc block", () => {
     synth.playNote(60, 0.5, 1, 1);
     // Two sources per voice: the oscillator's gate and the LFO, both stopped after the release.
     expect(stops).toHaveLength(2);
-    for (let note = 0; note < WORKLET_VOICE_CAP; note++) synth.noteOn(40 + note, 1, 2);
+    for (let note = 0; note < voiceCapFor(pwmSynth.voice); note++) synth.noteOn(40 + note, 1, 2);
     expect(stops.length).toBe(2 + 2); // the ninth note cut the oldest held one
   });
 
