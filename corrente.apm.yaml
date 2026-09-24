@@ -6243,6 +6243,21 @@ projects:
         created_at: 2026-09-24T17:25:37.071Z
         updated_at: 2026-09-24T18:08:57.169Z
         closed_at: 2026-09-24T18:08:57.169Z
+      - ref: INST-22
+        area: INST
+        title: "Sampler Start: skip into a sample, to trim a recording's late start"
+        status: review
+        sort_path: "000022"
+        body: |-
+          Asked for 2026-09-24: a recorded sample often catches some silence or a false start before the sound, and without an editor to trim it, there has to be a way to start later into it.
+
+          - The `buffer` node gains a **`start`** field (milliseconds, a NumberField, read when the note starts). The Sampler binds it to a new **`sampler.start`** param, "Start", 0 to 2000 ms.
+          - The base starts every voice's sources with a time only, so the offset rides on the buffer node's own `start` (wrapped in `startSample`) rather than being threaded through `VoiceHandle`.
+          - A one-shot's `playsUntil` subtracts the skipped part, so the voice ends when the sample does.
+          - Defaults to 0, so saved projects play as before. Any custom instrument can use it, a drum kit pad included.
+        id: 01a0d4df-fd80-75be-b8b9-63d7e454b7c4
+        created_at: 2026-09-24T19:24:04.353Z
+        updated_at: 2026-09-24T19:24:04.353Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device

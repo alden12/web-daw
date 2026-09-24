@@ -85,7 +85,7 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     audioParams: ["playbackRate", "detune"],
     properties: [],
     summary:
-      "Sample player, instruments only: `sample` a ref from list_samples or a `sample` param; plays at its pitch on `root` (MIDI, default 60) and follows the note unless `keytrack: false`. `oneShot` (default true) plays to the end for drums; false stops with the note. `note` makes it sound only for that MIDI note - a drum kit is one buffer per pad.",
+      "Sample player, instruments only: `sample` a ref from list_samples or a `sample` param; plays at its pitch on `root` (MIDI, default 60) and follows the note unless `keytrack: false`. `oneShot` (default true) plays to the end for drums; false stops with the note. `start` skips that many ms into the sample (trim a late start). `note` makes it sound only for that MIDI note - a drum kit is one buffer per pad.",
   },
   convolver: {
     audioParams: [],
