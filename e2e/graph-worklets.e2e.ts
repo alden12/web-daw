@@ -146,6 +146,38 @@ test("the Bitcrusher, now a graph, crushes a tone to a few levels", async ({ pag
   expect(levels).toBeLessThanOrEqual(4);
 });
 
+test("the Bitcrusher keeps working after its input is disconnected and reconnected", async ({ page }) => {
+  // The engine rewires an effect chain in place; a processor that took a moment's disconnection as
+  // the end of its life went silent for good (until a reload).
+  const [before, after] = await page.evaluate(async () => {
+    const { createEffect, effectSchema } = await import(/* @vite-ignore */ "/src/audio/effects/registry.ts");
+    const { ParamStore } = await import(/* @vite-ignore */ "/src/audio/params/store.ts");
+    const { loadWorklets } = await import(/* @vite-ignore */ "/src/audio/worklets/index.ts");
+    const sampleRate = 44100;
+    const context = new OfflineAudioContext(1, sampleRate, sampleRate);
+    await loadWorklets(context);
+    const store = new ParamStore(effectSchema("bitcrusher"));
+    store.set("mix", 1);
+    const effect = createEffect("bitcrusher", context, store);
+    effect.output.connect(context.destination);
+    const trackInput = context.createGain();
+    trackInput.connect(effect.input);
+    const tone = context.createOscillator();
+    tone.connect(trackInput);
+    tone.start(0);
+    void context.suspend(0.3).then(() => (trackInput.disconnect(), context.resume()));
+    void context.suspend(0.4).then(() => (trackInput.connect(effect.input), context.resume()));
+    const samples = (await context.startRendering()).getChannelData(0);
+    const rms = (from: number, to: number) => {
+      const window = samples.subarray(from * sampleRate, to * sampleRate);
+      return Math.sqrt(window.reduce((sum, sample) => sum + sample * sample, 0) / window.length);
+    };
+    return [rms(0.1, 0.25), rms(0.5, 0.9)];
+  });
+  expect(before).toBeGreaterThan(0.3);
+  expect(after).toBeGreaterThan(before * 0.9);
+});
+
 const A3: Played = { notes: [57], at: 0.2, seconds: 0.6 }; // 220Hz, starting well after it is built
 
 test("an analogOsc plays the note, and its pulse width shapes the harmonics", async ({ page }) => {

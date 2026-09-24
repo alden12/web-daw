@@ -12,10 +12,17 @@
 import { ANALOG_WAVEFORMS, WAVETABLE_BANKS } from "./types";
 import type { ImpulseShape, NodeSpec, NoiseColor, ShaperShape } from "./types";
 import { VOCABULARY } from "./vocabulary";
+import type { GraphNodeOptions } from "../worklets/lifetime";
 
 export interface NodeImpl {
   /** Build the bare node (construction-only args like delay length are read from the spec). */
-  create(ctx: BaseAudioContext, spec: NodeSpec): { node: AudioNode; source?: AudioScheduledSourceNode };
+  /** Build the bare node. `inVoice`: it is part of one note's copy of an instrument voice, so lives
+   *  no longer than the note (matters only to custom-DSP blocks, see worklets/lifetime.ts). */
+  create(
+    ctx: BaseAudioContext,
+    spec: NodeSpec,
+    inVoice: boolean,
+  ): { node: AudioNode; source?: AudioScheduledSourceNode };
   /** The AudioParam for a field, if it is one (else undefined - it's a property). */
   audioParam(node: AudioNode, field: string): AudioParam | undefined;
   /** Set an enum/string property (waveform, filter type). */
@@ -37,10 +44,12 @@ function tryWorklet(
   ctx: BaseAudioContext,
   processor: string,
   instead: string,
+  inVoice: boolean,
   options?: AudioWorkletNodeOptions,
 ): AudioWorkletNode | null {
   try {
-    return new AudioWorkletNode(ctx, processor, options);
+    const processorOptions: GraphNodeOptions = { transient: inVoice };
+    return new AudioWorkletNode(ctx, processor, { ...options, processorOptions });
   } catch (error) {
     if (!missingProcessors.has(processor)) {
       missingProcessors.add(processor);
@@ -59,8 +68,8 @@ const workletParam = (node: AudioNode, field: string): AudioParam | undefined =>
  * rather than the voice failing to build.
  */
 const workletLeaf = (processor: string): NodeImpl => ({
-  create: (ctx) => ({
-    node: tryWorklet(ctx, processor, "passing audio through unprocessed") ?? ctx.createGain(),
+  create: (ctx, _spec, inVoice) => ({
+    node: tryWorklet(ctx, processor, "passing audio through unprocessed", inVoice) ?? ctx.createGain(),
   }),
   audioParam: workletParam,
   setProperty: () => {},
@@ -90,8 +99,8 @@ interface OscillatorChoice {
  * oscillator stands in: the nearest waveform, and only frequency and detune.
  */
 const workletOscillator = (processor: string, choice: OscillatorChoice): NodeImpl => ({
-  create: (ctx) => {
-    const node = tryWorklet(ctx, processor, "playing a plain oscillator instead", {
+  create: (ctx, _spec, inVoice) => {
+    const node = tryWorklet(ctx, processor, "playing a plain oscillator instead", inVoice, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],

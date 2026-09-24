@@ -91,9 +91,11 @@ export function buildGraph(whole: Graph, context: GraphContext): BuiltGraph {
   const releases: Release[] = [];
   let playsUntil = 0;
 
+  // An instrument voice is one note's copy, built with the note; an effect is built once.
+  const inVoice = context.note !== undefined;
   // 1. Create nodes.
   for (const spec of graph.nodes) {
-    const { node, source } = NODE_IMPLS[spec.kind].create(ctx, spec);
+    const { node, source } = NODE_IMPLS[spec.kind].create(ctx, spec, inVoice);
     nodes.set(spec.id, { node, kind: spec.kind });
     if (source) sources.push(source);
   }

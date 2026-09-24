@@ -10,7 +10,7 @@
  * the note - is up, from phase 0, and outputs silence otherwise.
  */
 import { buildBanks, sampleTable } from "../dsp/wavetable";
-import { keepAlive } from "./lifetime";
+import { isTransient, lifetime } from "./lifetime";
 
 const BANKS = buildBanks();
 
@@ -25,7 +25,12 @@ class WavetableOscProcessor extends AudioWorkletProcessor {
   }
 
   private phase = 0;
-  private readonly alive = keepAlive();
+  private readonly alive: ReturnType<typeof lifetime>;
+
+  constructor(options?: AudioWorkletNodeOptions) {
+    super();
+    this.alive = lifetime(isTransient(options));
+  }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const gate = inputs[0];

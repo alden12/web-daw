@@ -162,11 +162,12 @@ describe("a custom-DSP block whose code did not load", () => {
 });
 
 describe("a custom-DSP processor's lifetime", () => {
-  it("runs until input first arrives, then only while it lasts", async () => {
-    const { keepAlive } = await import("../src/audio/worklets/lifetime");
-    const alive = keepAlive();
-    const silence: Float32Array[] = [];
-    const playing = [new Float32Array(128)];
+  const silence: Float32Array[] = [];
+  const playing = [new Float32Array(128)];
+
+  it("in a voice, runs until input first arrives, then only while it lasts", async () => {
+    const { lifetime } = await import("../src/audio/worklets/lifetime");
+    const alive = lifetime(true);
     expect([alive(silence), alive(silence), alive(playing), alive(playing), alive(silence)]).toEqual([
       true,
       true,
@@ -174,6 +175,12 @@ describe("a custom-DSP processor's lifetime", () => {
       true,
       false,
     ]);
+  });
+
+  it("in an effect, runs for as long as the node exists, through any gap in its input", async () => {
+    const { lifetime } = await import("../src/audio/worklets/lifetime");
+    const alive = lifetime(false);
+    expect([alive(playing), alive(silence), alive(playing)]).toEqual([true, true, true]);
   });
 });
 

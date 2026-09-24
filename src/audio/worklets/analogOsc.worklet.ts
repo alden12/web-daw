@@ -9,7 +9,7 @@
  * `shape` (0 saw, 1 pulse) is the waveform, set by the graph rather than modulated.
  */
 import { polyBlepPulse, polyBlepSaw } from "../dsp/oscillators";
-import { keepAlive } from "./lifetime";
+import { isTransient, lifetime } from "./lifetime";
 
 /** Keep a pulse from vanishing at the extremes of its width, where it would be silence. */
 const MIN_WIDTH = 0.02;
@@ -25,7 +25,12 @@ class AnalogOscProcessor extends AudioWorkletProcessor {
   }
 
   private phase = 0;
-  private readonly alive = keepAlive();
+  private readonly alive: ReturnType<typeof lifetime>;
+
+  constructor(options?: AudioWorkletNodeOptions) {
+    super();
+    this.alive = lifetime(isTransient(options));
+  }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const gate = inputs[0];
