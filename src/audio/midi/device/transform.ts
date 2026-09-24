@@ -14,6 +14,7 @@
  */
 import type { ParamSchema, ParamValue } from "../../params/types";
 import type { NumberField, ParamRef } from "../../graph/types";
+import { resolveNumber } from "../../graph/table";
 
 /** A boolean field: a fixed value, or bound to a (boolean) parameter. */
 export type BooleanField = boolean | ParamRef;
@@ -77,11 +78,10 @@ export interface EmittedNote {
   beats: number;
 }
 
-const resolveNumber = (field: NumberField | undefined, fallback: number, ctx: TransformContext): number => {
+const readNumber = (field: NumberField | undefined, fallback: number, ctx: TransformContext): number => {
   if (field === undefined) return fallback;
   if (typeof field === "number") return field;
-  const raw = ctx.readParam(field.param) as number;
-  return raw * (field.scale ?? 1) + (field.offset ?? 0);
+  return resolveNumber(ctx.readParam(field.param) as number, field);
 };
 
 const resolveBoolean = (field: BooleanField | undefined, fallback: boolean, ctx: TransformContext): boolean => {
@@ -104,9 +104,9 @@ export function applyTransform(
   return transform.taps
     .filter((tap) => resolveBoolean(tap.enabled, true, ctx))
     .map((tap) => ({
-      midi: midi + Math.round(resolveNumber(tap.semitones, 0, ctx)),
-      velocity: velocity * resolveNumber(tap.velocityScale, 1, ctx),
-      beats: resolveNumber(tap.beats, 0, ctx),
+      midi: midi + Math.round(readNumber(tap.semitones, 0, ctx)),
+      velocity: velocity * readNumber(tap.velocityScale, 1, ctx),
+      beats: readNumber(tap.beats, 0, ctx),
     }))
     .filter((note) => note.midi >= 0 && note.midi <= 127);
 }

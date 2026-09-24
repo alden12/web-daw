@@ -161,7 +161,7 @@ export const fmSchema: ParamSchema = [
 ] as const;
 
 export const supersawSchema: ParamSchema = [
-  { id: "super.voices", label: "Voices", kind: "number", min: 1, max: 9, default: 7, taper: "linear" },
+  { id: "super.voices", label: "Voices", kind: "number", min: 1, max: 9, default: 7, step: 1, taper: "linear" },
   {
     id: "super.detune",
     label: "Detune",
