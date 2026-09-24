@@ -110,8 +110,9 @@ export async function signInWithProvider(provider: "google" | "github"): Promise
   if (!supabase) return;
   // The consent page is the one path whose query is the point (its `authorization_id`), and it holds
   // no provider `?code=` at this moment - the code only arrives on the way back, at the origin.
-  const onConsent = window.location.pathname === OAUTH_CONSENT_PATH;
-  const here = onConsent ? window.location.pathname + window.location.search : window.location.pathname;
+  // The consent page is remembered by its canonical path, however the tab spelled it.
+  const onConsent = isConsentPath(window.location.pathname);
+  const here = onConsent ? OAUTH_CONSENT_PATH + window.location.search : window.location.pathname;
   if (typeof sessionStorage !== "undefined") sessionStorage.setItem(RETURN_PATH_KEY, here);
   await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
 }
@@ -128,6 +129,11 @@ export async function signOut(): Promise<void> {
  */
 export const OAUTH_CONSENT_PATH = "/oauth/consent";
 
+/** Whether a path is the consent page, forgiving a trailing or doubled slash: a Site URL ending in
+ *  `/` joined to the authorization path gives `//oauth/consent`, which must not open the DAW. */
+export const isConsentPath = (pathname: string): boolean =>
+  pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") === OAUTH_CONSENT_PATH;
+
 /**
  * Back to a consent request that sent this tab off to sign in.
  *
@@ -138,7 +144,8 @@ export const OAUTH_CONSENT_PATH = "/oauth/consent";
 function resumeConsent(): void {
   if (typeof sessionStorage === "undefined" || typeof window === "undefined") return;
   const path = sessionStorage.getItem(RETURN_PATH_KEY);
-  if (!path?.startsWith(OAUTH_CONSENT_PATH) || window.location.pathname === OAUTH_CONSENT_PATH) return;
+  // A prefix check on a path we stored ourselves, never a parse: `//host/...` parses as another site.
+  if (!path?.startsWith(`${OAUTH_CONSENT_PATH}?`) || isConsentPath(window.location.pathname)) return;
   sessionStorage.removeItem(RETURN_PATH_KEY);
   window.location.replace(path);
 }

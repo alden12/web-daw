@@ -16,3 +16,15 @@ test("the consent route without a request says there is nothing to approve", asy
   await page.goto("/oauth/consent");
   await expect(page.getByRole("heading", { name: "Nothing to approve" })).toBeVisible();
 });
+
+test("the consent route still opens with a stray slash, as a Site URL ending in / produces", async ({
+  page,
+  baseURL,
+}) => {
+  // Built by hand: a bare `//oauth/...` would be read as a different host, not a path.
+  for (const path of ["//oauth/consent?authorization_id=abc", "/oauth/consent/?authorization_id=abc"]) {
+    await page.goto(`${baseURL}${path}`);
+    await expect(page.getByRole("heading", { name: "That request has expired" })).toBeVisible();
+    await expect(page.getByTestId("lane")).toHaveCount(0);
+  }
+});
