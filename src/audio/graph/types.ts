@@ -74,8 +74,9 @@ export interface DelayNodeSpec {
   delayTime?: NumberField;
 }
 
-/** A named, curated waveshaper curve family (see nodes.ts `SHAPER_CURVES`). */
-export type ShaperShape = "classic";
+/** The curated waveshaper curve families (see nodes.ts `SHAPER_CURVES`); `amount` is the drive. */
+export const SHAPER_SHAPES = ["classic", "tanh", "hardClip", "fold"] as const;
+export type ShaperShape = (typeof SHAPER_SHAPES)[number];
 
 export interface ShaperNodeSpec {
   id: string;
@@ -101,7 +102,69 @@ export interface EnvNodeSpec {
   release?: NumberField;
 }
 
-export type NodeSpec = OscNodeSpec | GainNodeSpec | BiquadNodeSpec | DelayNodeSpec | ShaperNodeSpec | EnvNodeSpec;
+/** Noise colours: white is flat; pink falls 3 dB an octave, softer and closer to rain than hiss. */
+export const NOISE_COLORS = ["white", "pink"] as const;
+export type NoiseColor = (typeof NOISE_COLORS)[number];
+
+/** A noise source (INST-13): hats, snares, breath, wind. Runs until the voice or effect stops. */
+export interface NoiseNodeSpec {
+  id: string;
+  kind: "noise";
+  color?: NoiseColor;
+}
+
+/** A steady signal at `offset`: an offset to add to a modulation, or a level to scale. */
+export interface ConstantNodeSpec {
+  id: string;
+  kind: "constant";
+  offset?: NumberField;
+}
+
+/** Stereo placement, -1 (left) to 1 (right). */
+export interface PanNodeSpec {
+  id: string;
+  kind: "pan";
+  pan?: NumberField;
+}
+
+/** A dynamics compressor. Threshold and knee in dB, attack and release in seconds, as Web Audio has them. */
+export interface CompressorNodeSpec {
+  id: string;
+  kind: "compressor";
+  threshold?: NumberField;
+  knee?: NumberField;
+  ratio?: NumberField;
+  attack?: NumberField;
+  release?: NumberField;
+}
+
+/** The curated impulse families a convolver can be given (see nodes.ts `IMPULSES`). */
+export const IMPULSE_SHAPES = ["decay"] as const;
+export type ImpulseShape = (typeof IMPULSE_SHAPES)[number];
+
+/**
+ * Convolution, for reverb: the input played through an impulse response. The impulse is generated
+ * rather than recorded - `decay` is noise fading over `seconds`, the original Reverb's tail - so a
+ * def carries no audio and nothing needs licensing.
+ */
+export interface ConvolverNodeSpec {
+  id: string;
+  kind: "convolver";
+  impulse: { shape: ImpulseShape; seconds: NumberField };
+}
+
+export type NodeSpec =
+  | OscNodeSpec
+  | GainNodeSpec
+  | BiquadNodeSpec
+  | DelayNodeSpec
+  | ShaperNodeSpec
+  | EnvNodeSpec
+  | NoiseNodeSpec
+  | ConstantNodeSpec
+  | PanNodeSpec
+  | CompressorNodeSpec
+  | ConvolverNodeSpec;
 
 /**
  * A connection `[from, to]`. `to` is a node id (connect into its audio input) or

@@ -73,6 +73,9 @@ describe("MCP server (tracks)", () => {
     expect(kinds).toContain("biquad");
     expect(doc.reserved.instrument).toContain("amp");
     expect(kinds).toContain("env");
+    expect(kinds).toContain("noise");
+    // Every kind comes with its line of how to use it, or the agent is left guessing.
+    expect(doc.nodeKinds.every((entry: { summary?: string }) => (entry.summary ?? "").length > 20)).toBe(true);
   });
 
   it("describe_device_format's example is a def that validates, so it teaches a working one", async () => {

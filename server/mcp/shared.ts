@@ -23,6 +23,7 @@ export const deviceFormatDoc = () => ({
     "Include amp.level in an instrument schema for its level; include `mix` in an effect schema for dry/wet.",
   nodeKinds: NODE_KINDS.map((kind) => ({
     kind,
+    summary: VOCABULARY[kind].summary,
     audioParams: VOCABULARY[kind].audioParams,
     properties: VOCABULARY[kind].properties,
   })),

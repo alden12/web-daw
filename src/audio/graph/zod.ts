@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 import type { ParamSchema } from "../params/types";
+import { IMPULSE_SHAPES, NOISE_COLORS, SHAPER_SHAPES } from "./types";
 import type { Graph, GraphInstrumentDef, GraphEffectDef } from "./types";
 import { validateGraph, INSTRUMENT_RESERVED, EFFECT_RESERVED } from "./validate";
 
@@ -57,7 +58,7 @@ const nodeSpec = z.discriminatedUnion("kind", [
       id: z.string(),
       kind: z.literal("shaper"),
       oversample: z.string().optional(),
-      curve: z.object({ shape: z.string(), amount: numberField }).strict(),
+      curve: z.object({ shape: z.enum(SHAPER_SHAPES), amount: numberField }).strict(),
     })
     .strict(),
   z
@@ -68,6 +69,27 @@ const nodeSpec = z.discriminatedUnion("kind", [
       decay: numberField.optional(),
       sustain: numberField.optional(),
       release: numberField.optional(),
+    })
+    .strict(),
+  z.object({ id: z.string(), kind: z.literal("noise"), color: z.enum(NOISE_COLORS).optional() }).strict(),
+  z.object({ id: z.string(), kind: z.literal("constant"), offset: numberField.optional() }).strict(),
+  z.object({ id: z.string(), kind: z.literal("pan"), pan: numberField.optional() }).strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("compressor"),
+      threshold: numberField.optional(),
+      knee: numberField.optional(),
+      ratio: numberField.optional(),
+      attack: numberField.optional(),
+      release: numberField.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("convolver"),
+      impulse: z.object({ shape: z.enum(IMPULSE_SHAPES), seconds: numberField }).strict(),
     })
     .strict(),
 ]);
