@@ -70,8 +70,20 @@ const worker = await page.evaluate(async () => (await navigator.serviceWorker.re
 check(worker.endsWith("/sw.js"), `a service worker installs and activates (${worker || "none"})`);
 
 // `clientsClaim` is what makes this true without a reload, which is the difference between
-// "offline works" and "offline works if you happened to load the page twice".
-const controller = await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL ?? "");
+// "offline works" and "offline works if you happened to load the page twice". The claim runs in the
+// worker's activate handler, a moment after `ready` resolves, so wait for it rather than reading
+// straight away - on a slow runner the read can land in that gap and fail a worker that works.
+const CLAIM_TIMEOUT_MS = 5000;
+const controller = await page.evaluate(
+  (timeoutMs) =>
+    new Promise<string>((resolve) => {
+      if (navigator.serviceWorker.controller) return resolve(navigator.serviceWorker.controller.scriptURL);
+      const settle = () => resolve(navigator.serviceWorker.controller?.scriptURL ?? "");
+      navigator.serviceWorker.addEventListener("controllerchange", settle, { once: true });
+      setTimeout(settle, timeoutMs);
+    }),
+  CLAIM_TIMEOUT_MS,
+);
 check(controller.endsWith("/sw.js"), "and takes control of the page that installed it");
 
 await context.setOffline(true);
