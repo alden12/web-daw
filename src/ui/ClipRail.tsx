@@ -176,9 +176,9 @@ export function ClipRail({
                   e.stopPropagation();
                   deleteClip(clip.id);
                 }}
-                // Touch has no hover, so the grid shows it outright rather than on reveal.
+                // The grid shows it outright; the rail reveals it on hover, where there is hover.
                 className={`font-mono text-[11px] w-4 h-4 rounded text-faint hover:text-ink cursor-pointer ${
-                  grid ? "" : "opacity-0 group-hover:opacity-100"
+                  grid ? "" : "reveal-on-hover"
                 }`}
               >
                 ×

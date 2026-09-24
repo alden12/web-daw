@@ -177,8 +177,9 @@ export interface ConvolverNodeSpec {
  * the note and its release - a sustained sound. Samples are decoded when the instrument loads, and a
  * note played before its sample is ready is silent rather than an error.
  *
- * `start` skips that many milliseconds into the sample, to trim a recording that caught some silence
- * or a false start before the sound.
+ * `start` skips that many milliseconds into the sample, and `trimEnd` cuts that many off its end, to
+ * trim a recording that caught silence, a false start or a tail either side of the sound. The cuts
+ * are faded over a few milliseconds so they do not click (sampleTrim.ts).
  *
  * `note` makes it sound only for that MIDI note, which is how a drum kit is built: one buffer per
  * pad, each on its own note. Nodes for the other pads are left out of the voice (prune.ts).
@@ -194,6 +195,8 @@ export interface BufferNodeSpec {
   oneShot?: BoolField;
   /** Milliseconds into the sample to start playing from (default 0). Read when the note starts. */
   start?: NumberField;
+  /** Milliseconds cut off the end of the sample (default 0). Read when the note starts. */
+  trimEnd?: NumberField;
 }
 
 /**

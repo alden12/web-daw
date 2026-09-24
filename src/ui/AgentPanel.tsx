@@ -252,7 +252,7 @@ export function AgentPanel({
                     }}
                     aria-label={`Delete chat: ${session.title}`}
                     title="Delete chat"
-                    className="shrink-0 text-[13px] leading-none text-faint hover:text-warn opacity-0 group-hover:opacity-100 cursor-pointer px-1"
+                    className="shrink-0 text-[13px] leading-none text-faint hover:text-warn reveal-on-hover cursor-pointer px-1"
                   >
                     ×
                   </button>
