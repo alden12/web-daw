@@ -101,6 +101,13 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     summary:
       "Analog-style oscillator: waveform saw|pulse, alias-free, and `pulseWidth` 0..1 (0.5 a square) you can modulate - an LFO into `.pulseWidth` is PWM. Follows the note like `osc` (`noteRatio`, or `frequency` Hz). Custom DSP (see `cost`); use `osc` unless you want PWM or a brighter top end.",
   },
+  wavetableOsc: {
+    audioParams: ["frequency", "detune", "position"],
+    properties: ["bank"],
+    processor: "wavetable-osc-processor",
+    summary:
+      "Wavetable oscillator: `position` 0..1 morphs through a `bank` of waveforms, dark to bright - classic (sine, triangle, square, saw), harmonics (1 to 16 equal harmonics, organ-like) or pulse (square to thin pulse). An env or LFO into `.position` makes the timbre move. Follows the note like `osc`. Custom DSP (see `cost`).",
+  },
   ladder: {
     audioParams: ["frequency", "resonance", "detune"],
     properties: [],
@@ -131,7 +138,15 @@ export const WORKLET_KINDS: readonly NodeSpec["kind"][] = (Object.keys(VOCABULAR
 export const WORKLET_VOICE_CAP = 8;
 
 /** Kinds that make sound on their own, rather than processing an input. */
-export const SOURCE_KINDS: readonly NodeSpec["kind"][] = ["osc", "analogOsc", "env", "noise", "constant", "buffer"];
+export const SOURCE_KINDS: readonly NodeSpec["kind"][] = [
+  "osc",
+  "analogOsc",
+  "wavetableOsc",
+  "env",
+  "noise",
+  "constant",
+  "buffer",
+];
 
 /** Kinds that follow a played note, so only make sense in an instrument voice. */
 export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env", "buffer"];

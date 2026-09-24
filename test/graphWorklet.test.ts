@@ -43,10 +43,9 @@ function fakeContext() {
 let workletsLoaded = true;
 class FakeAudioWorkletNode {
   parameters = new Map(
-    ["frequency", "resonance", "detune", "bits", "downsample", "pulseWidth", "shape"].map((name) => [
-      name,
-      fakeParam(),
-    ]),
+    ["frequency", "resonance", "detune", "bits", "downsample", "pulseWidth", "shape", "position", "bank"].map(
+      (name) => [name, fakeParam()],
+    ),
   );
   constructor(_context: unknown, processor: string) {
     if (!workletsLoaded) throw new DOMException(`${processor} is not registered`, "InvalidStateError");
@@ -80,8 +79,8 @@ const ladderSynth: GraphInstrumentDef = {
 };
 
 describe("custom-DSP kinds as data", () => {
-  it("are analogOsc, ladder and bitcrush, and a def can bind and modulate their fields", () => {
-    expect([...WORKLET_KINDS].sort()).toEqual(["analogOsc", "bitcrush", "ladder"]);
+  it("are analogOsc, wavetableOsc, ladder and bitcrush, and a def can bind and modulate their fields", () => {
+    expect([...WORKLET_KINDS].sort()).toEqual(["analogOsc", "bitcrush", "ladder", "wavetableOsc"]);
     expect(parseInstrumentDef(ladderSynth)).toMatchObject({ ok: true });
   });
 
@@ -224,5 +223,51 @@ describe("the analogOsc block", () => {
     expect(frequencies).toContain(220); // A4 at noteRatio 0.5
     expect(warn.mock.calls.some(([message]) => String(message).includes("plain oscillator"))).toBe(true);
     warn.mockRestore();
+  });
+});
+
+describe("the wavetableOsc block", () => {
+  const morph: GraphInstrumentDef = {
+    type: "ci-morph",
+    schema: [{ id: "bank", label: "Bank", kind: "enum", options: ["classic", "harmonics", "pulse"], default: "pulse" }],
+    voice: {
+      nodes: [
+        { id: "osc", kind: "wavetableOsc", bank: { param: "bank" }, position: 0.2 },
+        { id: "sweep", kind: "env", attack: 1, decay: 400, sustain: 0.2 },
+      ],
+      connections: [
+        ["osc", "amp"],
+        ["sweep", "osc.position"],
+      ],
+    },
+  };
+
+  it("takes a bank (literal or a param) and a modulatable position, and refuses an unknown bank", () => {
+    expect(parseInstrumentDef(morph)).toMatchObject({ ok: true });
+    const unknown = structuredClone(morph);
+    unknown.voice.nodes[0] = { id: "osc", kind: "wavetableOsc", bank: "vocal" as never };
+    expect(parseInstrumentDef(unknown).ok).toBe(false);
+  });
+
+  it("sets its bank on the processor as an index, and follows a bound bank param live", () => {
+    const banks: number[] = [];
+    class RecordingNode extends FakeAudioWorkletNode {
+      constructor(context: unknown, processor: string) {
+        super(context, processor);
+        this.parameters.set("bank", {
+          ...fakeParam(),
+          set value(index: number) {
+            banks.push(index);
+          },
+        } as never);
+      }
+    }
+    (globalThis as { AudioWorkletNode?: unknown }).AudioWorkletNode = RecordingNode;
+    const { context } = fakeContext();
+    const store = new ParamStore(morph.schema);
+    const synth = new GraphInstrument(context as never, store, morph);
+    synth.noteOn(60, 1, 0);
+    store.set("bank", "harmonics");
+    expect(banks).toEqual([2, 1]); // pulse, then harmonics, on the held note
   });
 });

@@ -20,6 +20,7 @@ import type {
   EnumField,
   OscNodeSpec,
   AnalogOscNodeSpec,
+  WavetableOscNodeSpec,
   ShaperNodeSpec,
   EnvNodeSpec,
   ConvolverNodeSpec,
@@ -167,6 +168,12 @@ function applyFields(
       numberField(spec.detune, osc.detune);
       break;
     }
+    case "wavetableOsc":
+      enumField(spec.bank, "bank", "classic");
+      bindOscFrequency(spec, impl.audioParam(node, "frequency")!, ctx, startTime, context, addTarget);
+      numberField(spec.detune, impl.audioParam(node, "detune"));
+      numberField(spec.position, impl.audioParam(node, "position"));
+      break;
     case "analogOsc":
       enumField(spec.waveform, "waveform", "saw");
       bindOscFrequency(spec, impl.audioParam(node, "frequency")!, ctx, startTime, context, addTarget);
@@ -274,7 +281,7 @@ function bindProperty(
 
 /** Oscillator frequency: an absolute Hz, or the note frequency times an optional ratio. */
 function bindOscFrequency(
-  spec: OscNodeSpec | AnalogOscNodeSpec,
+  spec: OscNodeSpec | AnalogOscNodeSpec | WavetableOscNodeSpec,
   frequency: AudioParam,
   ctx: BaseAudioContext,
   startTime: number,

@@ -203,3 +203,34 @@ test("an LFO into an analogOsc's pulseWidth modulates it", async ({ page }) => {
   const seconds = measures.map((measure) => measure.harmonics[1] / measure.harmonics[0]);
   expect(Math.max(...seconds)).toBeGreaterThan(0.2);
 });
+
+test("a wavetableOsc morphs through its bank: a sine at 0, a saw at 1 on classic", async ({ page }) => {
+  const wavetable = (bank: string, position: number): VoiceNode[] => [
+    { id: "osc", kind: "wavetableOsc", bank, position },
+  ];
+  const window: [number, number][] = [[0.3, 0.7]];
+  const [sine] = await renderVoice(page, wavetable("classic", 0), [["osc", "amp"]], A3, window, 220);
+  const [saw] = await renderVoice(page, wavetable("classic", 1), [["osc", "amp"]], A3, window, 220);
+  const [organ] = await renderVoice(page, wavetable("harmonics", 1), [["osc", "amp"]], A3, window, 220);
+  expect(sine.harmonics[0]).toBeGreaterThan(0.01);
+  expect(sine.harmonics[1]).toBeLessThan(sine.harmonics[0] / 100);
+  expect(saw.harmonics[1] / saw.harmonics[0]).toBeCloseTo(0.5, 1); // a saw's 2nd is half its 1st
+  expect(organ.harmonics[3] / organ.harmonics[0]).toBeCloseTo(1, 1); // 16 equal harmonics
+});
+
+test("an envelope into a wavetableOsc's position moves its timbre as the note goes on", async ({ page }) => {
+  const nodes: VoiceNode[] = [
+    { id: "osc", kind: "wavetableOsc", bank: "classic", position: 0 },
+    { id: "sweep", kind: "env", attack: 1, decay: 250, sustain: 0 },
+  ];
+  const connections: [string, string][] = [
+    ["osc", "amp"],
+    ["sweep", "osc.position"],
+  ];
+  const [early, late] = await renderVoice(page, nodes, connections, A3, [
+    [0.21, 0.24],
+    [0.6, 0.7],
+  ]);
+  // Starts at a saw (the envelope's peak), settles to a sine.
+  expect(late.brightness).toBeLessThan(early.brightness * 0.5);
+});
