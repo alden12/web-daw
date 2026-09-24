@@ -66,7 +66,9 @@ export function InstrumentEditor({
   const active = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
 
   return (
-    <div className="flex-1 min-w-0 min-h-0 p-3 flex flex-col gap-2">
+    // Compact, it sits in the sheet's Roll section, whose header and the Pads header below already
+    // space it: padding above and below only took rows off the roll.
+    <div className={`flex-1 min-w-0 min-h-0 flex flex-col gap-2 ${compact ? "px-2" : "p-3"}`}>
       {/* No clip name here: the clip rail beside this already names the active clip and is
           where you rename it, so a second copy only cost a row of vertical space. */}
       {isDrumkit && (

@@ -15,6 +15,16 @@
  * column's own chord fit wherever it does, so they fill a column that has run out of shapes -
  * and they are what stops a progression leaping around, which is the voicing question DAW-12.1
  * leaves open.
+ *
+ * **Two families step outside the key on purpose**, the two ways a pop or jazz progression
+ * most often does, and both still hang off a degree of the scale so they have a column:
+ * - **flip**, the column's triad with its third flipped: minor to major gives the secondary
+ *   dominants (D, E and A in C major, each pulling to the chord a fifth below), and major to minor
+ *   gives the chords borrowed from the parallel minor (Fm, the bittersweet iv).
+ * - **V7 of**, a dominant seventh on the degree wherever it resolves to a chord of the key: C7, D7,
+ *   E7, A7 and B7 in C major. Not F7, whose B♭ target is not in the key, and not G7, which is
+ *   already the plain 7th.
+ * Chords whose root is outside the scale (B♭, A♭ and E♭ in C major) have no column and are left out.
  */
 import { PITCH_CLASSES, SCALES, pitchAt, type ScaleName } from "./scales";
 
@@ -59,6 +69,8 @@ interface Family {
   qualities?: readonly QualityName[];
   /** An inversion of the base chord: how many of its lowest notes move up an octave. */
   inversion?: number;
+  /** A chord that steps outside the key on purpose (see the top of the file), built its own way. */
+  outside?: "flip" | "dominantOf";
 }
 
 /**
@@ -79,16 +91,45 @@ const FAMILY_TABLE = {
   secondInversion: { label: "2nd inv", inversion: 2 },
   ninth: { label: "9th", qualities: ["major9", "dominant9", "minor9"] },
   power: { label: "power", qualities: ["power"] },
+  flip: { label: "flip", outside: "flip" },
+  dominantOf: { label: "V7 of", outside: "dominantOf" },
 } as const satisfies Record<string, Family>;
 
 export type ChordFamily = keyof typeof FAMILY_TABLE;
 export const CHORD_FAMILIES: Record<ChordFamily, Family> = FAMILY_TABLE;
 
-/** The default ranking, most useful first: the colours people reach for, then the voicings. */
+/** The default ranking, most useful first: the colours people reach for, then the voicings, then
+ *  the chords from outside the key. */
 export const DEFAULT_CHORD_ORDER = Object.keys(FAMILY_TABLE) as ChordFamily[];
+
+/**
+ * One column's own arrangement, or the global one. The arrangement types live here because the
+ * layout reads them; chordPrefs.ts edits them, and says why they are shaped this way.
+ */
+export interface ChordArrangement {
+  order: ChordFamily[];
+  hidden: ChordFamily[];
+}
+
+export interface ChordPrefs extends ChordArrangement {
+  /** By scale degree (0 = the tonic): the columns rearranged on their own. */
+  columns: Record<number, ChordArrangement>;
+  /** `degree:family` - `triad` included, which a star can tint but never move. */
+  favourites: string[];
+}
+
+export const favouriteKey = (degree: number, family: ChordFamily | "triad") => `${degree}:${family}`;
+
+/** A column's arrangement as it stands: its own, or the global one it follows. */
+export const arrangementFor = (prefs: ChordPrefs, degree: number): ChordArrangement =>
+  prefs.columns[degree] ?? { order: prefs.order, hidden: prefs.hidden };
 
 /** The base row's qualities, tried in order: exactly one fits each degree of a major-scale mode. */
 const TRIADS: readonly QualityName[] = ["major", "minor", "diminished", "augmented"];
+
+/** A triad with its third flipped. Diminished has a flat fifth as well, so it flips to plain minor;
+ *  augmented has no third to flip that keeps it a chord worth offering. */
+const FLIPPED: Partial<Record<QualityName, QualityName>> = { major: "minor", minor: "major", diminished: "minor" };
 
 export interface ChordPad {
   /** MIDI pitches, low to high. */
@@ -97,6 +138,14 @@ export interface ChordPad {
   name: string;
   /** The line under it: the degree as a roman numeral on the base row, the family above it. */
   caption: string;
+  /** Its scale degree (0 = the tonic, the closing column included) and family: what an edit names. */
+  degree: number;
+  family: ChordFamily | "triad";
+  favourite: boolean;
+  /** Hidden by the arrangement: only laid out while editing, so it can be shown again. */
+  hidden: boolean;
+  /** Has a note outside the key (the flip and V7-of families). */
+  outside: boolean;
 }
 
 export interface ChordLayoutOptions {
@@ -105,56 +154,107 @@ export interface ChordLayoutOptions {
   scale: ScaleName;
   /** Octave of the first column's root, in the roll's numbering (C4 = 60). */
   lowOctave: number;
-  /** Rows on show, the base row included. */
-  rows: number;
-  /** The families, most wanted first. */
-  order: readonly ChordFamily[];
+  /** How the columns are arranged: order, hidden and favourites (chordPrefs.ts). */
+  prefs: ChordPrefs;
+  /** Lay out hidden chords too (flagged), so the editor can show them again. */
+  editing?: boolean;
+  /** Exactly this many rows, the base row included; by default as many as the fullest column. */
+  rows?: number;
 }
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 
 /**
  * The chord pads for a key, **low row first**: row 0 is each degree's triad, and each row
- * above takes the next family in `order` that fits the degree. A column that has run out of
- * families has a gap (null) rather than a chord out of the key.
+ * above takes the next family in its column's order that fits the degree. A column that has run
+ * out of families has a gap (null) rather than a chord out of the key.
  *
  * One column per degree plus the tonic an octave up, closing the row as the note pads' does.
  */
-export function chordRows({ tonic, scale, lowOctave, rows, order }: ChordLayoutOptions): (ChordPad | null)[][] {
+export function chordRows({
+  tonic,
+  scale,
+  lowOctave,
+  prefs,
+  editing = false,
+  rows,
+}: ChordLayoutOptions): (ChordPad | null)[][] {
   const intervals: readonly number[] = SCALES[scale];
   const inScale = new Set(intervals.map((interval) => (tonic + interval) % 12));
   const fits = (root: number, quality: QualityName) =>
     QUALITIES[quality].intervals.every((interval) => inScale.has((root + interval) % 12));
   const low = pitchAt(tonic, lowOctave);
+  const favourites = new Set(prefs.favourites);
+  /** The triad on a pitch, when the key has one there: what a secondary dominant resolves to. */
+  const triadOn = (root: number) => TRIADS.find((quality) => fits(root, quality));
+  const numeral = (degree: number, quality: QualityName) =>
+    QUALITIES[quality].minor
+      ? ROMAN[degree].toLowerCase() + (quality === "diminished" ? "°" : "")
+      : ROMAN[degree] + (quality === "augmented" ? "+" : "");
+  /** "V/vi": the chord a fifth below `root`, as the key names it; null when the key has none there. */
+  const resolvesTo = (root: number) => {
+    const target = (root + 5) % 12;
+    const degree = intervals.findIndex((interval) => (tonic + interval) % 12 === target);
+    const quality = degree < 0 ? undefined : triadOn(target);
+    return quality && quality !== "diminished" ? numeral(degree, quality) : null;
+  };
 
   const degrees = [...intervals.map((interval, degree) => ({ interval, degree })), { interval: 12, degree: 0 }];
-  const columns = degrees.map(({ interval, degree }) => {
+  const columns = degrees.map(({ interval, degree }): ChordPad[] => {
     const root = low + interval;
+    const { order, hidden } = arrangementFor(prefs, degree);
     // A pentatonic's degrees do not all take a triad; the first family that fits stands in.
     const base =
       TRIADS.find((quality) => fits(root, quality)) ??
       order.flatMap((family) => familyQualities(family)).find((quality) => fits(root, quality));
     if (!base) return [];
     const baseChord = chordOf(root, base);
-    const variations = order.flatMap((family): ChordPad[] => {
-      const { label, inversion } = CHORD_FAMILIES[family];
-      if (inversion) return [{ ...invert(baseChord, inversion, root), caption: label }];
-      const quality = familyQualities(family).find((candidate) => candidate !== base && fits(root, candidate));
-      return quality ? [{ ...chordOf(root, quality), caption: label }] : [];
+    const pad = (chord: Chord, caption: string, family: ChordFamily | "triad"): ChordPad => ({
+      ...chord,
+      caption,
+      degree,
+      family,
+      favourite: favourites.has(favouriteKey(degree, family)),
+      hidden: family !== "triad" && hidden.includes(family),
+      outside: chord.pitches.some((pitch) => !inScale.has(pitch % 12)),
     });
-    const numeral = ROMAN[degree] + (QUALITIES[base].suffix === "°" ? "°" : "");
-    return [{ ...baseChord, caption: QUALITIES[base].minor ? numeral.toLowerCase() : numeral }, ...variations];
+    const outsideChord = (kind: "flip" | "dominantOf"): ChordPad[] => {
+      if (kind === "dominantOf") {
+        const target = resolvesTo(root);
+        // Already in the key, it is the plain 7th (G7 in C major) rather than a borrowed one.
+        return target && !fits(root, "dominant7") ? [pad(chordOf(root, "dominant7"), `V7/${target}`, kind)] : [];
+      }
+      const flipped = FLIPPED[base];
+      if (!flipped) return [];
+      const target = flipped === "major" ? resolvesTo(root) : null;
+      return [pad(chordOf(root, flipped), target ? `V/${target}` : numeral(degree, flipped), kind)];
+    };
+    const variations = order.flatMap((family): ChordPad[] => {
+      const { label, inversion, outside } = CHORD_FAMILIES[family];
+      if (outside) return outsideChord(outside);
+      if (inversion) return [pad(invert(baseChord, inversion, root), label, family)];
+      const quality = familyQualities(family).find((candidate) => candidate !== base && fits(root, candidate));
+      return quality ? [pad(chordOf(root, quality), label, family)] : [];
+    });
+    return [
+      pad(baseChord, TRIADS.includes(base) ? numeral(degree, base) : ROMAN[degree], "triad"),
+      ...variations.filter((variation) => editing || !variation.hidden),
+    ];
   });
 
-  return Array.from({ length: rows }, (_unused, row) => columns.map((column) => column[row] ?? null));
+  const depth = rows ?? Math.max(1, ...columns.map((column) => column.length));
+  return Array.from({ length: depth }, (_unused, row) => columns.map((column) => column[row] ?? null));
 }
 
 /** The most rows a key can fill: the base row, and one per family. */
-export const chordRowLimit = (order: readonly ChordFamily[]) => 1 + order.length;
+export const CHORD_ROW_LIMIT = 1 + DEFAULT_CHORD_ORDER.length;
 
 const familyQualities = (family: ChordFamily): readonly QualityName[] => CHORD_FAMILIES[family].qualities ?? [];
 
-function chordOf(root: number, quality: QualityName): Omit<ChordPad, "caption"> {
+/** A chord's notes and name, before it is placed in a column. */
+type Chord = Pick<ChordPad, "pitches" | "name">;
+
+function chordOf(root: number, quality: QualityName): Chord {
   return {
     pitches: QUALITIES[quality].intervals.map((interval) => root + interval),
     name: PITCH_CLASSES[root % 12] + QUALITIES[quality].suffix,
@@ -162,7 +262,7 @@ function chordOf(root: number, quality: QualityName): Omit<ChordPad, "caption"> 
 }
 
 /** The chord with its lowest `count` notes moved up an octave, written over its new bass note. */
-function invert(chord: Omit<ChordPad, "caption">, count: number, root: number): Omit<ChordPad, "caption"> {
+function invert(chord: Chord, count: number, root: number): Chord {
   const pitches = [...chord.pitches.slice(count), ...chord.pitches.slice(0, count).map((pitch) => pitch + 12)];
   const bass = pitches[0] % 12;
   return { pitches, name: bass === root % 12 ? chord.name : `${chord.name}/${PITCH_CLASSES[bass]}` };

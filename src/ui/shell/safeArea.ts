@@ -50,3 +50,17 @@ export const SAFE_RIGHT = inset("right");
 
 /** The inset, or the padding the layout already wanted - whichever is bigger. */
 export const atLeast = (base: string, insetValue: string) => `max(${base}, ${insetValue})`;
+
+/**
+ * An inset in pixels, for layout maths that cannot use the CSS value directly - the pads fitting
+ * themselves to the sheet, which pads its bottom by `SAFE_BOTTOM` (the home indicator). Read off a
+ * throwaway element, since `env()` has no JavaScript API of its own.
+ */
+export function insetPixels(edge: SafeAreaEdge): number {
+  const probe = document.createElement("div");
+  probe.style.cssText = `position:absolute;visibility:hidden;padding-top:${inset(edge)}`;
+  document.body.appendChild(probe);
+  const pixels = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+  probe.remove();
+  return pixels;
+}

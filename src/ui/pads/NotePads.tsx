@@ -24,7 +24,7 @@ import { EditorSection } from "../shell/EditorSection";
 import { usePersistentBoolean } from "../usePersistent";
 import { KitPads } from "./KitPads";
 import { ScalePadControls, ScalePads } from "./ScalePads";
-import { fitPads } from "./geometry";
+import { PAD_HEIGHT, fitPads, stretchedPadHeight } from "./geometry";
 import { CHORDS_KEY, usePadSettings } from "./padSettings";
 import { usePadTouch, type PadNoteTarget } from "./usePadTouch";
 
@@ -34,6 +34,8 @@ export function NotePads({
   notes,
   octavesPerRow,
   room,
+  filling,
+  onClosed,
 }: {
   track: InstrumentTrack;
   samples: SampleAsset[];
@@ -42,16 +44,29 @@ export function NotePads({
   octavesPerRow: number;
   /** The editor's height at the committed detent: what the roll and the pads share. */
   room: number;
+  /**
+   * The pads have the sheet to themselves, the section above folded away: more rows of chords
+   * when you are only playing. The shell owns it, since it is the shell that folds the surface.
+   */
+  filling: boolean;
+  /** The pads were folded away: the shell unfolds the surface rather than leave the sheet empty. */
+  onClosed: () => void;
 }) {
   const [open, setOpen] = usePersistentBoolean("corrente:pads-open", true);
   // Read before the settings, because how many rows fit depends on whether the accidentals
   // are taking a band above each one.
   const [accidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
   const [chords] = usePersistentBoolean(CHORDS_KEY, false);
-  const fit = fitPads(room, accidentals && !chords);
+  const fit = fitPads(room, accidentals && !chords, filling && open);
   const settings = usePadSettings(octavesPerRow, fit.rows);
   const touch = usePadTouch(notes);
   const isKit = track.instrumentType === "drumkit";
+  // Folding the pads away while they fill the sheet gives the sheet back to the editor, rather
+  // than leaving it empty.
+  const toggle = () => {
+    setOpen(!open);
+    if (open && filling) onClosed();
+  };
 
   /**
    * Silence whatever is sounding when the pads go away or the track changes under them. A
@@ -65,7 +80,7 @@ export function NotePads({
   // clipped half-row would read as a rendering bug rather than as a sheet that is too low.
   if (!isKit && fit.rows < 1)
     return (
-      <EditorSection title="Pads" open={open} onToggle={() => setOpen(!open)}>
+      <EditorSection title="Pads" open={open} onToggle={toggle}>
         <p className="px-3 pb-2 text-[11px] text-faint">Raise the sheet to play.</p>
       </EditorSection>
     );
@@ -75,17 +90,26 @@ export function NotePads({
   );
 
   return (
-    <EditorSection
-      title="Pads"
-      open={open}
-      onToggle={() => setOpen(!open)}
-      controls={fit.inlineControls ? controls : undefined}
-    >
+    <EditorSection title="Pads" open={open} onToggle={toggle} controls={fit.inlineControls ? controls : undefined}>
       {!fit.inlineControls && controls}
       {isKit ? (
         <KitPads params={track.params} samples={samples} touch={touch} />
       ) : (
-        <ScalePads settings={settings} touch={touch} octavesPerRow={octavesPerRow} />
+        <ScalePads
+          settings={settings}
+          touch={touch}
+          octavesPerRow={octavesPerRow}
+          // Filling the sheet, the rows stretch into what would otherwise be a gap under the
+          // folded roll. Sharing it, the roll is the flexible box and takes the slack instead.
+          padHeight={
+            filling
+              ? stretchedPadHeight(
+                  fit,
+                  settings.chords ? settings.chordRows : Math.ceil(settings.octaves / octavesPerRow),
+                )
+              : PAD_HEIGHT
+          }
+        />
       )}
     </EditorSection>
   );

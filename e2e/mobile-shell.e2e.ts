@@ -1248,9 +1248,8 @@ test.describe("phone", () => {
       .locator('[data-chord-row="0"] [data-pitches]')
       .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
     expect(base).toEqual(["C", "Dm", "Em", "F", "G", "Am", "B°", "C"]);
-    // Rows of variations come with room: raise the sheet and ask for one.
+    // Rows of variations come with room: raised, the sheet shows the default three.
     await setDetent(page, "full");
-    await pads(page).getByRole("button", { name: "More chord rows" }).tap();
     await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "G7" })).toBeVisible();
 
     // One press plays the whole chord, and it records as its notes.
@@ -1268,6 +1267,85 @@ test.describe("phone", () => {
     await pads(page).getByRole("button", { name: "Higher octave" }).tap();
     await expect(pads(page).getByText("C4", { exact: true })).toBeVisible();
     await expect(pad(page, "C").first()).toHaveAttribute("data-pitches", "60,64,67");
+  });
+
+  test("arranging the chords: move one in its column, star it, hide it, and scroll to the rest", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+    await setDetent(page, "full");
+
+    // Every variation is reachable by scrolling, however few rows are on show: D7 is the top row.
+    const scroller = pads(page).locator("[data-chord-scroll]");
+    await expect(pad(page, "D7")).not.toBeInViewport();
+    await scroller.evaluate((element) => element.scrollTo({ top: -element.scrollHeight }));
+    await expect(pad(page, "D7")).toBeInViewport();
+    await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
+    await page.screenshot({ path: "test-results/chord-pads.png" });
+
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Edit chords…" }).click();
+    // Editing, a tap selects rather than plays.
+    await pad(page, "Dsus4").tap();
+    await expect(pad(page, "Dsus4")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("ghost-note")).toHaveCount(0);
+
+    // Down, in its own column: it swaps with the 7th below it there, and only there.
+    await pads(page).getByRole("button", { name: "Move down" }).tap();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Dsus4" })).toBeVisible();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
+
+    await pads(page).getByRole("button", { name: "Star as a favourite" }).tap();
+    await expect(pad(page, "Dsus4")).toContainText("★");
+    await page.screenshot({ path: "test-results/chord-edit.png" });
+
+    // Hidden, it is gone once editing is done.
+    await pads(page).getByRole("button", { name: "Hide" }).tap();
+    await pads(page).getByRole("button", { name: "Done" }).tap();
+    await expect(pad(page, "Dsus4")).toHaveCount(0);
+    // And the arrangement is kept across a reload.
+    await page.reload();
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await expect(pad(page, "Dsus4")).toHaveCount(0);
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
+  });
+
+  test("the roll folds away like the pads do, giving the pads the sheet for more rows of chords", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+    const rows = () => pads(page).locator("[data-chord-row]").count();
+    const more = pads(page).getByRole("button", { name: "More chord rows" });
+    while (await more.isEnabled()) await more.tap();
+    const shared = await pads(page).evaluate((section) => section.getBoundingClientRect().height);
+
+    // Two sections, one style: the roll's header folds it exactly as the pads' header folds them.
+    const roll = page.locator('[data-section="roll"]');
+    await roll.getByRole("button", { expanded: true }).tap();
+    await expect(page.getByTestId("roll-scroll")).toHaveCount(0);
+    while (await more.isEnabled()) await more.tap();
+    expect(await pads(page).evaluate((section) => section.getBoundingClientRect().height)).toBeGreaterThan(shared);
+    expect(await rows()).toBeGreaterThan(1);
+    // Every row that fits, stretched into the rest: no gap under the folded roll worth a row, and
+    // nothing pushed past the foot of the sheet.
+    const layout = await page.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      return {
+        gap: box('[data-section="pads"]').top - box('[data-section="roll"]').bottom,
+        overflow: box('[data-chord-row="0"]').bottom - innerHeight,
+      };
+    });
+    expect(layout.gap).toBeLessThan(16);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+
+    // Asking for a surface unfolds it.
+    await page.getByRole("radio", { name: "Clips" }).click();
+    await expect(page.locator('[data-section="clips"]')).toHaveAttribute("data-open", "true");
+    await page.getByRole("radio", { name: "Edit" }).click();
+    await expect(page.getByTestId("roll-scroll")).toBeVisible();
   });
 
   test("a long chord name shrinks to fit its pad rather than overflowing it", async ({ page }) => {

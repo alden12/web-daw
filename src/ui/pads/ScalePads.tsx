@@ -19,13 +19,14 @@
 import { Menu, type MenuItem } from "../Menu";
 import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
-import { chordRows } from "../../audio/theory/chords";
-import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT, rowGap } from "./geometry";
+import { ACCIDENTAL_HEIGHT, PAD_GAP, rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
 import { IconButton } from "../controls/IconButton";
 import { CONTROL_BASE } from "../controls/tone";
 import type { PadTouch } from "./usePadTouch";
+import { ChordPads } from "./ChordPads";
+import { ChordEditBar } from "./ChordEditBar";
 
 /**
  * The key and the octave range. A row of its own where there is height for one, and folded
@@ -42,6 +43,7 @@ export function ScalePadControls({
   inline: boolean;
 }) {
   const { scale, tonic, accidentals, chords } = settings;
+  if (settings.editingChords) return <ChordEditBar settings={settings} inline={inline} />;
   const pairs = octavesPerRow > 1 && !chords;
   const sizeWhat = chords ? "chord rows" : "octaves";
 
@@ -64,6 +66,8 @@ export function ScalePadControls({
     },
     { separator: true },
     { label: "Chords", checked: chords, onClick: () => settings.setChords(!chords) },
+    // Only with chords on: it arranges them, and there is nothing to arrange otherwise.
+    ...(chords ? [{ label: "Edit chords…", onClick: () => settings.setEditingChords(true) }] : []),
     // Chords are all in the key, so there is nothing for the band above them to hold.
     {
       label: "Accidentals",
@@ -132,6 +136,7 @@ export function ScalePads({
   settings,
   touch,
   octavesPerRow,
+  padHeight,
 }: {
   settings: PadSettings;
   touch: PadTouch;
@@ -141,8 +146,10 @@ export function ScalePads({
    * is the thing that knows what it is running on.
    */
   octavesPerRow: number;
+  /** `PAD_HEIGHT`, or a little more when the pads fill the sheet (`stretchedPadHeight`). */
+  padHeight: number;
 }) {
-  if (settings.chords) return <ChordPads settings={settings} touch={touch} />;
+  if (settings.chords) return <ChordPads settings={settings} touch={touch} padHeight={padHeight} />;
   const { tonic, scale, lowOctave, octaves, accidentals } = settings;
   const rows = padRows({ tonic, scale, lowOctave, octaves, octavesPerRow, accidentals });
 
@@ -177,7 +184,7 @@ export function ScalePads({
               ))}
             </div>
           )}
-          <div className="shrink-0 flex gap-1" style={{ height: PAD_HEIGHT }}>
+          <div className="shrink-0 flex gap-1" style={{ height: padHeight }}>
             {row.pitches.map((pad) => (
               <PadButton
                 key={pad.pitch}
@@ -191,43 +198,6 @@ export function ScalePads({
               />
             ))}
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * The chord pads: a column per degree, its triad at the bottom and its variations stacked
- * above in the order they are ranked. A degree with fewer variations than there are rows leaves
- * a gap rather than borrowing a chord from outside the key.
- */
-function ChordPads({ settings, touch }: { settings: PadSettings; touch: PadTouch }) {
-  const { tonic, scale, lowOctave, chordRows: rows, chordOrder: order } = settings;
-  const layout = chordRows({ tonic, scale, lowOctave, rows, order });
-  return (
-    // High row on top, like the note pads, and the wide gap the note pads use with the
-    // accidentals off: two rows of chords abut the same way, and a touch on the seam would
-    // play both.
-    <div className="shrink-0 flex flex-col-reverse px-2 pb-2" style={{ gap: rowGap(false) }}>
-      {layout.map((row, rowIndex) => (
-        <div key={rowIndex} data-chord-row={rowIndex} className="shrink-0 flex gap-1" style={{ height: PAD_HEIGHT }}>
-          {row.map((chord, column) =>
-            chord ? (
-              <PadButton
-                key={column}
-                pitches={chord.pitches}
-                name={chord.name}
-                label={chord.name}
-                sublabel={chord.caption}
-                tone={rowIndex === 0 && column % (row.length - 1) === 0 ? "tonic" : "in-scale"}
-                touch={touch}
-                className="flex-1 min-w-0"
-              />
-            ) : (
-              <div key={column} className="flex-1 min-w-0" />
-            ),
-          )}
         </div>
       ))}
     </div>
