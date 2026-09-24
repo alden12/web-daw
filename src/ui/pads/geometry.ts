@@ -115,15 +115,16 @@ export const padRowHeight = (accidentals: boolean) =>
 /**
  * What fits in `room` pixels of editor - the sheet's content box at the committed detent.
  *
- * `EDITOR_CHROME` comes off the top because it belongs to neither surface; what is left is
- * what the pads and the roll divide, and every arrangement divides the same number.
+ * `EDITOR_CHROME` and the surface's own section header come off the top because they belong to
+ * neither; what is left is what the pads and the roll divide, and every arrangement divides the
+ * same number.
  *
- * `filling` is the pads with the surface above folded away (the button in their header): then
- * there is nothing to share with and no editor chrome to leave, so they take the whole room.
+ * `filling` is the pads with the surface's section folded away: then there is nothing to share
+ * with and only that section's header to leave, so they take the rest of the room.
  */
 export function fitPads(room: number, accidentals: boolean, filling = false): PadFit {
   const rowHeight = padRowHeight(accidentals);
-  const editor = Math.max(0, filling ? room : room - EDITOR_CHROME);
+  const editor = Math.max(0, room - SECTION_HEADER - (filling ? 0 : EDITOR_CHROME));
   const arrangements = filling ? ARRANGEMENTS.map((arrangement) => ({ ...arrangement, padsShare: 1 })) : ARRANGEMENTS;
   const fits = arrangements.map(({ inlineControls, padsShare, limit }) => {
     const chrome = SECTION_HEADER + PADS_PADDING + (inlineControls ? 0 : CONTROLS_HEIGHT);

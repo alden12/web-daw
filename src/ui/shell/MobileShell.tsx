@@ -61,6 +61,7 @@ import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
 import { TrackRecordButton } from "../workbench/TrackRecordButton";
 import { NotePads } from "../pads/NotePads";
+import { EditorSection } from "./EditorSection";
 import { useProject } from "../../audio/project/useProject";
 import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
@@ -91,12 +92,14 @@ type EditorSurface = "edit" | "clips" | "devices";
 interface SurfaceItem {
   surface: EditorSurface;
   label: string;
+  /** Its collapsible section's title, above the pads: what it is, where the switch says what to do. */
+  section: string;
 }
 
 const SURFACE_ITEMS: SurfaceItem[] = [
-  { surface: "edit", label: "Edit" },
-  { surface: "clips", label: "Clips" },
-  { surface: "devices", label: "Rack" },
+  { surface: "edit", label: "Edit", section: "Roll" },
+  { surface: "clips", label: "Clips", section: "Clips" },
+  { surface: "devices", label: "Rack", section: "Rack" },
 ];
 
 /**
@@ -358,9 +361,10 @@ export function MobileShell({
    * not ask for. Keep the reasoning attached to the constraint, not to the number.
    */
   const [detent, setDetent] = useState<Detent>("half");
-  // The pads with the sheet to themselves: the surface above them folded away, for more rows of
-  // chords when you are only playing. Kept across reloads like the pads' own open state.
-  const [padsFilling, setPadsFilling] = usePersistentBoolean("corrente:pads-fill", false);
+  // The surface above the pads is a collapsible section like the pads themselves, so folding it
+  // away gives the pads the sheet - more rows of chords when you are only playing. Kept across
+  // reloads like the pads' own open state.
+  const [surfaceOpen, setSurfaceOpen] = usePersistentBoolean("corrente:surface-open", true);
   const [surface, setSurface] = useState<EditorSurface>("edit");
   /**
    * A tablet opens with the library already docked: there is width for it beside the
@@ -748,8 +752,8 @@ export function MobileShell({
                   value={surface}
                   onChange={(next) => {
                     setSurface(next);
-                    // So is asking for one while the pads fill the sheet.
-                    setPadsFilling(false);
+                    // So is asking for one while it is folded away.
+                    setSurfaceOpen(true);
                     // Asking for a surface while parked means you want to see it.
                     if (detent === "peek") setDetent("half");
                   }}
@@ -757,11 +761,21 @@ export function MobileShell({
                 />
               }
             >
-              {/* Folded away while the pads fill the sheet - only where there are pads to fill it.
-                  An empty box keeps its place, so the pads stay at the foot of the sheet where
-                  the thumbs are rather than jumping up under its header. */}
-              {padsFilling && selectedTrack.kind === "instrument" ? (
-                <div className="flex-1 min-h-0" />
+              {/* A section of its own only where there are pads to give the room to. Folded, an
+                  empty box keeps its place, so the pads stay at the foot of the sheet where the
+                  thumbs are rather than jumping up under its header. */}
+              {selectedTrack.kind === "instrument" ? (
+                <>
+                  <EditorSection
+                    title={SURFACE_ITEMS.find((item) => item.surface === surface)!.section}
+                    open={surfaceOpen}
+                    onToggle={() => setSurfaceOpen(!surfaceOpen)}
+                    grow
+                  >
+                    {surfacesFor(selectedTrack)[surface]}
+                  </EditorSection>
+                  {!surfaceOpen && <div className="flex-1 min-h-0" />}
+                </>
               ) : (
                 surfacesFor(selectedTrack)[surface]
               )}
@@ -779,8 +793,8 @@ export function MobileShell({
                   // below ~44px per pad the layout is wrong rather than merely tight.
                   octavesPerRow={shape.tier === "tablet" ? 2 : 1}
                   room={editorRoom}
-                  filling={padsFilling}
-                  onFillingChange={setPadsFilling}
+                  filling={!surfaceOpen}
+                  onClosed={() => setSurfaceOpen(true)}
                 />
               )}
             </EditorSheet>

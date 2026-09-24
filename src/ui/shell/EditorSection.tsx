@@ -1,7 +1,6 @@
 /**
- * A collapsible section beneath the roll in the editor sheet (MOBILE-6). The pads are the
- * first; the clip rail is the other, and the device rack will likely want one too, which is
- * why this is a component rather than a shape the pads happen to have.
+ * A collapsible section in the editor sheet (MOBILE-6): the pads, and the surface above them
+ * (roll, clips or rack), which folds away to give the pads the sheet (`grow`).
  *
  * **A section's height is a function of its content, never a drag.** Adding a pad row grows
  * it by exactly one row and the roll gives up exactly that much, which is the whole reason
@@ -23,7 +22,7 @@ export function EditorSection({
   open,
   onToggle,
   controls,
-  trailing,
+  grow = false,
   children,
 }: {
   title: string;
@@ -34,12 +33,19 @@ export function EditorSection({
    * whose controls fit in a row of their own should keep them near what they act on.
    */
   controls?: ReactNode;
-  /** At the far end of the header, open or not: a control over the section itself. */
-  trailing?: ReactNode;
+  /**
+   * Open, take the room the others leave rather than sizing to its content: the surface above
+   * the pads, which is the flexible box (see the pads' `fitPads`). Folded, it is a header like any.
+   */
+  grow?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="shrink-0 border-t border-line" data-section={title.toLowerCase()} data-open={open}>
+    <section
+      className={`border-t border-line ${grow && open ? "flex-1 min-h-0 flex flex-col" : "shrink-0"}`}
+      data-section={title.toLowerCase()}
+      data-open={open}
+    >
       <div className="flex items-center gap-1 h-9 px-1.5">
         <button
           type="button"
@@ -58,7 +64,6 @@ export function EditorSection({
           <span className="font-mono text-[10.5px] uppercase tracking-wider text-muted">{title}</span>
         </button>
         {open && controls}
-        {trailing && <div className="ml-auto shrink-0 flex items-center">{trailing}</div>}
       </div>
       {open && children}
     </section>

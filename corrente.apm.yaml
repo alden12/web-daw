@@ -6861,23 +6861,28 @@ projects:
           - Accidentals is greyed out in chords mode, since there's nothing out of key to show.
           - The touch hook (`usePadTouch`) now keys a pad by **its set of notes**, not one pitch. Chords that share notes (C and Am share two) don't cut each other: a note is only started if nothing holds it, and only stopped once nothing does. Slide and latch work unchanged.
 
-          ## Arranging, favourites, scrolling and filling the sheet (second PR, #178)
+          ## Arranging, favourites, scrolling and folding the roll (second PR, #178)
 
           Asked for after trying the first: an order **per column**, **favourite** chords, a way to reach an odd chord without rearranging, and more room for the pads while only playing.
 
-          - **The arrangement** (`audio/theory/chordPrefs.ts`, pure) is a global order and hidden set, plus per-column overrides **keyed by degree, not note**, so "on ii, sus2 first" follows you into any key. Favourites are `degree:family`. It's saved per browser as JSON, read through zod, and anything unreadable falls back to the defaults. A family added later gets appended to a saved order, so it's offered rather than lost.
+          - **The arrangement** (`audio/theory/chordPrefs.ts`, pure) is a global order and hidden set, plus per-column overrides **keyed by degree, not note**, so "on ii, sus2 first" follows you into any key.
+            - It's **shared across scales**: the ii column in major and in minor use one arrangement, even though the chords differ. Where a family doesn't fit that degree, the column just skips it. Per-scale arrangements were offered as a small follow-up (one more level of nesting by scale name).
+            - Favourites are `degree:family`.
+            - It's saved per browser as JSON, read through zod, and anything unreadable falls back to the defaults. A family added later gets appended to a saved order, so it's offered rather than lost.
           - **Edit mode** ("Edit chords…" in the key menu) replaces the key/octave row with an edit bar. A tap then selects a pad instead of playing it. The pads get a dashed edge, and hidden chords are laid out dimmed so they can be shown again.
           - **The bar:** ▼ ▲ swap the chord with its neighbour in the column, ★ stars it, Hide/Show, a **Column/All** switch for where a move or hide lands, ↺ resets the column, Reset all, and Done.
             - An "All" change reaches every column, rearranged ones included.
             - Starring moves the chord to the front of its column and tints the pad. Unstarring leaves it in place.
           - **Why a mode, not long-press:** a press plays the chord, so a long-press would sound it while you try to edit it.
           - **Scrolling:** the base row stays put and the rows above scroll, snapping to whole rows, so every chord is reachable. The pads can't be the scroll handle (drag down is the sustain latch), so each row leaves a 20px strip on its right edge that scrolls natively, with a rail drawn over it. A wheel or trackpad scrolls from anywhere. In edit mode the pads scroll too (`touch-action: pan-y`), since they don't latch there.
-          - **Filling the sheet:** a ⤒ button in the Pads header folds away the surface above (roll, clips or rack) and lets the pads take the whole room (`fitPads(..., filling)`). At Half on a phone that's 4 chord rows instead of 2. The pads stay at the foot of the sheet where the thumbs are. Picking a surface, or collapsing the pads, gives the sheet back. It works for note and kit pads too, and is saved per browser.
+          - **Folding the roll:** on an instrument track, the surface above the pads (titled Roll, Clips or Rack) is an `EditorSection` like the pads, so the sheet reads as **two collapsible sections**. Folded, the pads get the whole room less that header (`fitPads(..., filling)`), and they stay at the foot of the sheet where the thumbs are. Picking a surface, or folding the pads, unfolds it. It's saved per browser.
+            - A header button was tried first and replaced the same day, for consistency with the section that was already there.
+            - The price is the section header's 36px, which the roll gives up when open.
 
           **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T20:22:46.796Z
+        updated_at: 2026-09-24T20:33:33.815Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing
