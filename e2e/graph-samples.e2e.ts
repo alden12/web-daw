@@ -13,12 +13,14 @@ type Options = {
   stopAt?: number;
   /** The built-in Sampler's Start, in milliseconds into the sample. */
   start?: number;
+  /** The built-in Sampler's Trim end, in milliseconds off the end of the sample. */
+  trimEnd?: number;
   windows: [number, number][];
 };
 
 /** The built-in kick through a sampler, played with an explicit note-on/note-off; RMS per window. */
 async function render(page: Page, options: Options): Promise<number[]> {
-  return page.evaluate(async ({ oneShot, releaseAt, stopAt, start, windows }) => {
+  return page.evaluate(async ({ oneShot, releaseAt, stopAt, start, trimEnd, windows }) => {
     const { createInstrument, instrumentSchema } = await import(
       /* @vite-ignore */ "/src/audio/instruments/registry.ts"
     );
@@ -28,6 +30,7 @@ async function render(page: Page, options: Options): Promise<number[]> {
     const context = new OfflineAudioContext(1, sampleRate, sampleRate);
     const store = new ParamStore(instrumentSchema("sampler"));
     if (start !== undefined) store.set("sampler.start", start);
+    if (trimEnd !== undefined) store.set("sampler.trimEnd", trimEnd);
     const instrument =
       oneShot === undefined
         ? createInstrument("sampler", context, store)
@@ -84,6 +87,26 @@ test("Start skips into the sample, past the attack of a hit", async ({ page }) =
   // A kick is loudest at its thump, so starting 150ms in plays only what is left of its tail.
   expect(whole).toBeGreaterThan(0.01);
   expect(trimmed).toBeLessThan(whole / 3);
+});
+
+test("Trim end cuts the tail off the sample, keeping its head", async ({ page }) => {
+  const windows: [number, number][] = [
+    [0.01, 0.04],
+    [0.12, 0.18],
+  ];
+  const [wholeHead, wholeTail] = await render(page, { releaseAt: 0.5, windows });
+  // The kick is under half a second: this leaves its first ~80ms and cuts the rest.
+  const kickLength = await page.evaluate(async () => {
+    const { BUILTIN_URLS } = await import(/* @vite-ignore */ "/src/audio/samples/builtinUrls.ts");
+    const response = await fetch(BUILTIN_URLS.kick);
+    const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(await response.arrayBuffer());
+    return decoded.duration;
+  });
+  const trimEnd = Math.round((kickLength - 0.08) * 1000);
+  const [head, tail] = await render(page, { releaseAt: 0.5, trimEnd, windows });
+  expect(wholeTail).toBeGreaterThan(0.005);
+  expect(head).toBeGreaterThan(wholeHead * 0.8);
+  expect(tail).toBeLessThan(wholeTail / 10);
 });
 
 /** One hit on the Drum Kit, now a graph; returns the rendered samples' RMS over the first 100ms. */

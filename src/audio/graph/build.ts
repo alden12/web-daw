@@ -29,6 +29,7 @@ import type {
 } from "./types";
 import { IMPULSES, NODE_IMPLS, SHAPER_CURVES } from "./nodes";
 import { playbackRateFor } from "./samplePitch";
+import { trimmedSample } from "./sampleTrim";
 import { pruneGraph } from "./prune";
 import { resolveNumber } from "./table";
 import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
@@ -355,25 +356,25 @@ function startSample(
   context: GraphContext,
 ): number | null {
   const ref = typeof spec.sample === "string" ? spec.sample : String(context.readParam(spec.sample.param));
-  const buffer = context.sampleBuffer?.(ref) ?? null;
+  const whole = context.sampleBuffer?.(ref) ?? null;
+  // Start and Trim end, read when the note starts: a trimmed copy, faded where it was cut.
+  const buffer =
+    whole &&
+    trimmedSample(
+      ctx,
+      whole,
+      readNumber(spec.start, 0, context.readParam) / 1000,
+      readNumber(spec.trimEnd, 0, context.readParam) / 1000,
+    );
   node.buffer = buffer ?? silenceFor(ctx);
   const root = readNumber(spec.root, DEFAULT_ROOT, context.readParam);
   const keytrack = readBool(spec.keytrack, true, context.readParam);
   const rate = context.noteFreq ? playbackRateFor(context.noteFreq, root, keytrack) : 1;
   node.playbackRate.setValueAtTime(rate, startTime);
-  // Where in the sample to start. The base starts every voice's sources the same way, with only a
-  // time, so the offset rides on this node's own `start` rather than being threaded through it.
-  const offset = buffer
-    ? Math.min(Math.max(0, readNumber(spec.start, 0, context.readParam) / 1000), buffer.duration)
-    : 0;
-  if (offset > 0) {
-    const start = node.start.bind(node);
-    node.start = (when?: number) => start(when, offset);
-  }
   if (!buffer || !readBool(spec.oneShot, true, context.readParam)) return null;
   // The tune when the note starts, bound or not: a pad tuned down plays longer, and must be held for it.
   const detune = readNumber(spec.detune, 0, context.readParam);
-  return startTime + (buffer.duration - offset) / (rate * 2 ** (detune / 1200));
+  return startTime + buffer.duration / (rate * 2 ** (detune / 1200));
 }
 
 /** Convolver impulse: regenerated from its family whenever its length changes. */

@@ -60,7 +60,7 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
         e.stopPropagation();
         onClick();
       }}
-      className="shrink-0 w-6 text-center text-[16px] leading-none text-faint hover:text-strong cursor-pointer opacity-0 group-hover:opacity-100"
+      className="shrink-0 w-6 text-center text-[16px] leading-none text-faint hover:text-strong cursor-pointer reveal-on-hover"
     >
       +
     </button>
@@ -123,7 +123,7 @@ function PatchLeaf({
       {onDelete && (
         <Menu
           label={`Patch actions: ${patch.name}`}
-          triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+          triggerClassName="shrink-0 w-7 h-7 text-[17px] leading-none text-faint hover:text-ink reveal-on-hover cursor-pointer"
           items={[{ label: "Delete patch", danger: true, onClick: onDelete }]}
         />
       )}
@@ -146,7 +146,7 @@ function SampleLeaf({ name, onAdd, onRemove }: { name: string; onAdd: () => void
       </button>
       <Menu
         label={`Sample actions: ${name}`}
-        triggerClassName="shrink-0 px-1 text-[13px] leading-none text-faint hover:text-ink opacity-0 group-hover:opacity-100 cursor-pointer"
+        triggerClassName="shrink-0 w-7 h-7 text-[17px] leading-none text-faint hover:text-ink reveal-on-hover cursor-pointer"
         items={[{ label: "Remove from library", danger: true, onClick: onRemove }]}
       />
     </div>

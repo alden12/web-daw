@@ -6287,6 +6287,27 @@ projects:
         created_at: 2026-09-24T19:24:04.353Z
         updated_at: 2026-09-24T21:06:35.187Z
         closed_at: 2026-09-24T21:06:35.187Z
+      - ref: INST-23
+        area: INST
+        title: Sampler Trim end, an audio clip as a sample, and row controls you can reach on touch
+        status: review
+        sort_path: "000023"
+        body: |-
+          Asked for 2026-09-24 while testing INST-22's Start: cut an unwanted tail, delete an imported sample on a phone, and record a sample in the app.
+
+          - **Trim end** (`sampler.trimEnd`, 0 to 5000 ms, and a `trimEnd` field on the `buffer` node) cuts that much off the end of the sample.
+            - Start and Trim end are now a **trimmed copy** of the buffer (`graph/sampleTrim.ts`), faded over 3ms wherever it was cut, so a cut through a sound doesn't click. The one-shot's length is just the copy's.
+            - This replaces INST-22's wrapped `start(when, offset)`. Copies are cached per buffer (the last 4 settings), so turning a knob doesn't copy per note.
+          - **An audio clip as a sample:** "Use as sample" in the audio clip panel.
+            - Clips and samples share one content-addressed store, so `sampleFromAudio` adds a library entry pointing at the same bytes (source `clip`), reusing an existing entry for them.
+            - It then makes a Sampler track on it, with the clip's region carried over as Start and Trim end.
+            - Recording in the app already makes audio clips, so **record → Use as sample** is recording a sample in the app. A dedicated record-a-sample flow is left until that proves too many steps.
+          - **Deleting a sample on touch:** the remove was already in the library row's ⋮ menu, but that menu, like every row's secondary controls, was `opacity-0 group-hover:opacity-100`. Touch has no hover, so it was never there.
+            - A shared `reveal-on-hover` class (index.css) hides until hover only under `@media (hover: hover)`. It also stays visible while focused or while its menu is open.
+            - Applied to the library, clip rail, share panel and agent panel. The library kebabs were also sized up to 28px.
+        id: 01a0d562-2777-734c-9163-b0a4d939e142
+        created_at: 2026-09-24T21:46:14.775Z
+        updated_at: 2026-09-24T21:46:14.775Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device

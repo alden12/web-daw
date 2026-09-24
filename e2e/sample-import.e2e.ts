@@ -51,3 +51,24 @@ test("import a sample, it lists, and persists across reload", async ({ page }) =
   await dismissStart(page);
   await expect(sampleRow(page)).toBeVisible();
 });
+
+test("an audio clip becomes a sample: a library entry for the same audio, and a Sampler playing it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await dismissStart(page);
+  await page
+    .getByTestId("audio-import-input")
+    .setInputFiles({ name: "take.wav", mimeType: "audio/wav", buffer: tinyWav() });
+  await page.getByRole("button", { name: "Use as sample" }).click();
+
+  // A Sampler track, set to the new library entry.
+  await expect(page.getByText("sampler", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Samples" }).click();
+  await expect(page.getByTitle('Add a Sampler track playing "take"')).toBeVisible();
+
+  // The same audio again is the same library entry, not a second copy.
+  await page.getByTitle("take (double-click to rename)").click();
+  await page.getByRole("button", { name: "Use as sample" }).click();
+  await expect(page.getByTitle('Add a Sampler track playing "take"')).toHaveCount(1);
+});

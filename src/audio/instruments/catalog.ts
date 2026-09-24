@@ -426,6 +426,18 @@ export const samplerSchema: ParamSchema = [
     taper: "linear",
     step: 1,
   },
+  // Cuts that much off the end, for a tail you did not want: room noise, the next hit, a click.
+  {
+    id: "sampler.trimEnd",
+    label: "Trim end",
+    kind: "number",
+    min: 0,
+    max: 5000,
+    default: 0,
+    unit: "ms",
+    taper: "linear",
+    step: 1,
+  },
   { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.85, taper: "linear", smoothMs: 10 },
   {
     id: "env.attack",

@@ -55,6 +55,7 @@ export function TrackEditor({
       timeSignature={project.timeSignature}
       loopStart={project.loopStart}
       loopLength={project.lengthBeats - project.loopStart}
+      samples={project.samples}
       dispatch={dispatch}
     />
   );
