@@ -17,7 +17,7 @@ import { mellotronFlute } from "./graph/mellotronFlute";
 import { SupersawInstrument } from "./Supersaw";
 import { OrganInstrument } from "./Organ";
 import { WorkletInstrument } from "./WorkletInstrument";
-import { SamplerInstrument } from "./Sampler";
+import { sampler } from "./graph/sampler";
 import { DrumkitInstrument } from "./Drumkit";
 import { SilentInstrument } from "./Silent";
 import { DEFAULT_INSTRUMENT, EMPTY_INSTRUMENT } from "./catalog";
@@ -46,7 +46,7 @@ registerInstrumentFactory("supersaw", (ctx, store) => new SupersawInstrument(ctx
 registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, store));
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));
 registerInstrumentFactory("nimbus", (ctx, store) => new WorkletInstrument(ctx, store, "nimbus-processor"));
-registerInstrumentFactory("sampler", (ctx, store) => new SamplerInstrument(ctx, store));
+registerInstrumentFactory(sampler.type, (ctx, store) => new GraphInstrument(ctx, store, sampler));
 registerInstrumentFactory("drumkit", (ctx, store) => new DrumkitInstrument(ctx, store));
 registerInstrumentFactory(EMPTY_INSTRUMENT, (ctx) => new SilentInstrument(ctx));
 

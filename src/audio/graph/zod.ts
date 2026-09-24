@@ -22,6 +22,7 @@ export const DEVICE_FORMAT_VERSION = 1;
 const paramRef = z.object({ param: z.string(), scale: z.number().optional(), offset: z.number().optional() }).strict();
 const numberField = z.union([z.number(), paramRef]);
 const enumField = z.union([z.string(), paramRef]);
+const boolField = z.union([z.boolean(), paramRef]);
 
 const nodeSpec = z.discriminatedUnion("kind", [
   z
@@ -69,6 +70,17 @@ const nodeSpec = z.discriminatedUnion("kind", [
       decay: numberField.optional(),
       sustain: numberField.optional(),
       release: numberField.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("buffer"),
+      sample: enumField,
+      root: numberField.optional(),
+      keytrack: boolField.optional(),
+      detune: numberField.optional(),
+      oneShot: boolField.optional(),
     })
     .strict(),
   z.object({ id: z.string(), kind: z.literal("noise"), color: z.enum(NOISE_COLORS).optional() }).strict(),

@@ -76,6 +76,12 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     properties: [],
     summary: "Compressor: threshold and knee in dB, ratio, attack and release in seconds.",
   },
+  buffer: {
+    audioParams: ["playbackRate", "detune"],
+    properties: [],
+    summary:
+      "Sample player, instruments only: `sample` a ref from list_samples or a `sample` param; plays at its pitch on `root` (MIDI, default 60) and follows the note unless `keytrack: false`. `oneShot` (default true) plays to the end for drums; false stops with the note.",
+  },
   convolver: {
     audioParams: [],
     properties: [],
@@ -85,7 +91,7 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
 };
 
 /** Kinds that follow a played note, so only make sense in an instrument voice. */
-export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env"];
+export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env", "buffer"];
 
 export const NODE_KINDS = Object.keys(VOCABULARY) as NodeSpec["kind"][];
 

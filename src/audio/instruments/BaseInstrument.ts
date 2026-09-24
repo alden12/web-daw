@@ -75,15 +75,28 @@ export abstract class BaseInstrument implements Instrument {
     g.linearRampToValueAtTime(level, when + attack);
     for (const source of voice.sources) source.start(when);
     this.active.add(voice);
-    voice.sources[0].onended = () => {
+    // Tear down once every source has ended, not the first: a short one-shot sample can end long
+    // before the oscillator beside it, and taking the voice down with it would cut the note.
+    let sounding = voice.sources.length;
+    const ended = () => {
+      sounding -= 1;
+      if (sounding > 0) return;
       this.active.delete(voice);
       for (const source of voice.sources) source.disconnect();
       voice.amp.disconnect();
     };
+    for (const source of voice.sources) source.onended = ended;
   }
 
-  private releaseVoice(voice: VoiceHandle, when: number): void {
-    if (this.releasing.has(voice)) return;
+  /**
+   * Let a voice go at `when`. `stopping` is Stop, not a note ending: it cuts a one-shot short, and it
+   * reaches a voice already let go whose one-shot is still playing out, where a note-off would not.
+   */
+  private releaseVoice(voice: VoiceHandle, when: number, stopping = false): void {
+    if (this.releasing.has(voice)) {
+      if (stopping) this.cutHeldVoice(voice);
+      return;
+    }
     this.releasing.add(voice);
     const at = Math.max(when, this.ctx.currentTime);
     // A voice with its own envelopes lets them go too. If they shape the amplitude, the fade out
@@ -91,7 +104,9 @@ export abstract class BaseInstrument implements Instrument {
     // ends the voice regardless.
     const envelopeTail = voice.envelope?.release(at) ?? 0;
     const ownsAmplitude = voice.envelope?.ownsAmplitude ?? false;
-    const fadeFrom = ownsAmplitude ? at + envelopeTail : at;
+    // A one-shot sample plays out however early the note is let go, so the fade waits for it too.
+    const playsUntil = stopping ? 0 : (voice.envelope?.playsUntil ?? 0);
+    const fadeFrom = Math.max(ownsAmplitude ? at + envelopeTail : at, playsUntil);
     const release = ownsAmplitude ? DECLICK_SECONDS : this.env.releaseMs / 1000;
     const g = voice.amp.gain;
     // Anchor the gain at its true value at `at` (mid-attack or full sustain), then ramp to 0.
@@ -105,9 +120,26 @@ export abstract class BaseInstrument implements Instrument {
       at <= attackStart ? 0 : at >= attackEnd ? level : level * ((at - attackStart) / (attackEnd - attackStart));
     g.cancelScheduledValues(at);
     g.setValueAtTime(heldLevel, at);
-    if (fadeFrom > at) g.setValueAtTime(heldLevel, fadeFrom);
+    if (fadeFrom > at) {
+      g.setValueAtTime(heldLevel, fadeFrom);
+      voice.heldAfterRelease = { level: heldLevel, until: fadeFrom };
+    }
     g.linearRampToValueAtTime(0, fadeFrom + release);
     for (const source of voice.sources) source.stop(fadeFrom + release + 0.02);
+  }
+
+  /** Stop, for a voice already let go but held for its one-shot: fade it now rather than when the
+   *  sample ends. One already fading is left to finish, which takes no longer than its release. */
+  private cutHeldVoice(voice: VoiceHandle): void {
+    const now = this.ctx.currentTime;
+    const held = voice.heldAfterRelease;
+    if (!held || now >= held.until) return;
+    const g = voice.amp.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(held.level, now);
+    g.linearRampToValueAtTime(0, now + DECLICK_SECONDS);
+    for (const source of voice.sources) source.stop(now + DECLICK_SECONDS + 0.02);
+    voice.heldAfterRelease = undefined;
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {
@@ -135,7 +167,7 @@ export abstract class BaseInstrument implements Instrument {
 
   allNotesOff(): void {
     const now = this.ctx.currentTime;
-    for (const voice of [...this.active]) this.releaseVoice(voice, now);
+    for (const voice of [...this.active]) this.releaseVoice(voice, now, true);
     this.held.clear();
   }
 
