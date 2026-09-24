@@ -58,6 +58,17 @@ describe("projectDataSchema", () => {
     expect(validateBundleFile("project.json", snapshot)).toEqual({ ok: true });
   });
 
+  it("accepts a custom device this build cannot read, rather than refusing the whole project", () => {
+    // A block kind a newer build added: the project must still open here, costing only that device.
+    const snapshot = {
+      ...new ProjectStore().snapshot(),
+      customInstruments: [
+        { type: "ci-newer", schema: [], voice: { nodes: [{ id: "x", kind: "reverbtron" }], connections: [] } },
+      ],
+    };
+    expect(projectDataSchema.safeParse(snapshot).success).toBe(true);
+  });
+
   it("accepts a deeply-populated project tree", () => {
     expect(validateBundleFile("project.json", DEEP_PROJECT).ok).toBe(true);
   });

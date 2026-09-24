@@ -46,9 +46,21 @@ describe("parseCustomDevices (untrusted-input gate)", () => {
     expect(parseCustomDevices({ customInstruments: [bad] }).instruments).toHaveLength(0);
   });
 
-  it("ignores all custom devices on an unknown format version", () => {
+  it("ignores all custom devices on an unknown format version, handing them back as unreadable", () => {
     const result = parseCustomDevices({ customInstruments: [validInstrument], deviceFormatVersion: 999 });
     expect(result.instruments).toHaveLength(0);
+    expect(result.unreadable.instruments).toEqual([validInstrument]);
+  });
+
+  it("hands back what it drops exactly as it was, so a newer build can still read it", () => {
+    const newer = {
+      ...validInstrument,
+      type: "ci-newer",
+      voice: { nodes: [{ id: "x", kind: "reverbtron" }], connections: [] },
+    };
+    const result = parseCustomDevices({ customInstruments: [validInstrument, newer] });
+    expect(result.instruments.map((def) => def.type)).toEqual(["ci-test"]);
+    expect(result.unreadable.instruments).toEqual([newer]);
   });
 });
 
@@ -72,6 +84,21 @@ describe("custom devices through ProjectStore", () => {
 
     reloaded.removeCustomInstrument("ci-test");
     expect(hasInstrument("ci-test")).toBe(false);
+  });
+
+  it("keeps a def it cannot read through a load and a save, for the build that can", () => {
+    const newer = {
+      ...validInstrument,
+      type: "ci-newer",
+      voice: { nodes: [{ id: "x", kind: "reverbtron" }], connections: [] },
+    };
+    const store = new ProjectStore();
+    store.load({ ...new ProjectStore().snapshot(), customInstruments: [validInstrument, newer as GraphInstrumentDef] });
+    // Not playable here: only the readable one is registered.
+    expect(store.customInstruments.map((def) => def.type)).toEqual(["ci-test"]);
+    expect(hasInstrument("ci-newer")).toBe(false);
+    // But saving does not delete it.
+    expect(store.snapshot().customInstruments).toEqual([validInstrument, newer]);
   });
 
   it("drops an invalid embedded def on load rather than throwing", () => {

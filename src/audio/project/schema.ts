@@ -18,7 +18,6 @@
  * validation is a gate, never a filter - evolving/extra fields never break a save.
  */
 import { z } from "zod";
-import { instrumentDefSchema, effectDefSchema } from "../graph/zod";
 import type { GraphInstrumentDef, GraphEffectDef } from "../graph/types";
 import { KEYFRAME_INDEX_PATH } from "../history/keyframes";
 
@@ -156,11 +155,13 @@ export const groupDataSchema = z.object({
   effects: z.array(effectDataSchema),
 });
 
-// Embedded user-authored devices reuse graph/zod's strict def schemas (validated at load via
-// parseCustomDevices too). Cast so the inferred type stays the graph def type (the def schemas
-// infer a looser string-typed shape; the strict semantic check lives in graph/validate).
-const customInstrumentSchema = instrumentDefSchema as unknown as z.ZodType<GraphInstrumentDef>;
-const customEffectSchema = effectDefSchema as unknown as z.ZodType<GraphEffectDef>;
+// Embedded user-authored devices are NOT checked here: `parseCustomDevices` does that at load, one
+// def at a time, dropping any it cannot read. Checking them here instead made one def this build
+// cannot read - a block kind added by a newer build, say - fail the whole project as "not a
+// project" (the recovery dialog), rather than costing just that device. Typed as the def so the
+// rest of the code reads them as what they will be once parsed.
+const customInstrumentSchema = z.unknown() as unknown as z.ZodType<GraphInstrumentDef>;
+const customEffectSchema = z.unknown() as unknown as z.ZodType<GraphEffectDef>;
 
 /**
  * A project's time signature: `numerator` beats to the bar, each a `1/denominator` note. A "beat"
