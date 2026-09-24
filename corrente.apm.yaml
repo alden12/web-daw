@@ -6126,7 +6126,7 @@ projects:
       - ref: INST-17
         area: INST
         title: Convert Organ and Supersaw to graph defs (each needs a small format decision)
-        status: review
+        status: done
         sort_path: "000017"
         deps:
           - INST-4
@@ -6151,7 +6151,8 @@ projects:
           - **Supersaw:** always 9 saws. Saw k's level is a table over `super.voices` (1/n when n >= k, else 0). Its detune is `spread * factor_k(n)`, a product of two params, which bindings cannot say directly; done natively as `constant(offset = table over voices) -> gain(gain = super.detune) -> saw.detune`. Silent saws still run (pruning cannot drop them, the count is live), but 9 is what it built at full count anyway. A side benefit: count and spread now change held notes, not just the next ones.
         id: 01a0d43c-2c75-779d-8ead-f542fac23f21
         created_at: 2026-09-24T16:25:08.469Z
-        updated_at: 2026-09-24T17:16:12.790Z
+        updated_at: 2026-09-24T18:08:55.486Z
+        closed_at: 2026-09-24T18:08:55.486Z
       - ref: INST-18
         area: INST
         title: Channel split and merge in the graph format
@@ -6214,7 +6215,7 @@ projects:
       - ref: INST-21
         area: INST
         title: Edit custom devices over MCP (read back, update in place, see what uses them)
-        status: review
+        status: done
         sort_path: "000021"
         deps:
           - INST-4
@@ -6234,7 +6235,8 @@ projects:
           **Not done.** Removing a device still in use leaves those tracks pointing at a missing type (unchanged behaviour); `uses` makes it visible rather than refusing.
         id: 01a0d473-8aaf-7399-bf22-2fe2107a1f6d
         created_at: 2026-09-24T17:25:37.071Z
-        updated_at: 2026-09-24T17:25:37.071Z
+        updated_at: 2026-09-24T18:08:57.169Z
+        closed_at: 2026-09-24T18:08:57.169Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
