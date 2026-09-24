@@ -11,11 +11,11 @@
  * that means a particular one (the agent panel's link to its own settings) names it instead.
  *
  * **On a narrow screen it is a list, then a page.** There is no room for both columns, so the
- * categories come first and a tap opens one, with a back arrow to the list - unless you have been
- * in one before, when it reopens there with the arrow already showing the way back.
+ * categories come first and a tap opens one, with a back arrow to the list. Which of the two was
+ * showing is remembered too, so it reopens on the list or the page, whichever you closed it on.
  */
 import { useState } from "react";
-import { usePersistentString } from "./usePersistent";
+import { usePersistentBoolean, usePersistentString } from "./usePersistent";
 import { AccountSettings } from "./AccountSettings";
 import { BrandMark } from "./BrandMark";
 import { AgentSettingsSection } from "./AgentSettings";
@@ -39,8 +39,10 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "appearance", label: "Appearance" },
 ];
 
-/** The remembered tab, or "" before there is one: a first opening on a phone starts at the list. */
+/** The remembered tab, or "" before there is one. */
 const useRememberedTab = () => usePersistentString<SettingsTab | "">("corrente:settings-tab", "", ["", ...TAB_IDS]);
+/** Narrow screens: whether the list was showing when it last closed. A first opening starts there. */
+const useRememberedListing = () => usePersistentBoolean("corrente:settings-listing", true);
 
 export function SettingsPanel({
   agentConfig,
@@ -63,9 +65,14 @@ export function SettingsPanel({
   onClose: () => void;
 }) {
   const [remembered, setRemembered] = useRememberedTab();
+  const [rememberedListing, setRememberedListing] = useRememberedListing();
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? (remembered || "account"));
   // Narrow screens only: whether the category list is showing rather than a tab's page.
-  const [listing, setListing] = useState(!initialTab && !remembered);
+  const [listing, setListingState] = useState(!initialTab && rememberedListing);
+  const setListing = (showing: boolean) => {
+    setListingState(showing);
+    setRememberedListing(showing);
+  };
   const label = TABS.find((candidate) => candidate.id === tab)?.label ?? "";
 
   const choose = (id: SettingsTab) => {

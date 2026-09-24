@@ -292,7 +292,7 @@ function LibraryContent({
         {agent}
       </div>
       {/* The logo is the way into account and settings, as it is at the foot of the desktop rail. */}
-      <div className="shrink-0 flex items-center px-2 py-1.5 border-t border-line">
+      <div className="shrink-0 flex items-center justify-end px-2 py-1.5 border-t border-line">
         <button
           type="button"
           onClick={onOpenSettings}

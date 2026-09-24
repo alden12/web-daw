@@ -49,4 +49,23 @@ test.describe("phone", () => {
     await page.getByRole("button", { name: "All settings" }).tap();
     await expect(page.getByRole("tab", { name: "MIDI" })).toBeVisible();
   });
+
+  test("reopens on the list if that is where you closed it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Library" }).tap();
+    await page.getByRole("button", { name: "Account and settings" }).tap();
+    await page.getByRole("tab", { name: "Appearance" }).tap();
+    await page.getByRole("button", { name: "Close settings" }).tap();
+
+    // Closed on a page: it comes back there.
+    await page.getByRole("button", { name: "Account and settings" }).tap();
+    await expect(page.getByRole("heading", { name: "Appearance" })).toBeVisible();
+    await page.getByRole("button", { name: "All settings" }).tap();
+    await page.getByRole("button", { name: "Close settings" }).tap();
+
+    // Closed on the list: it comes back there, not to the last page.
+    await page.getByRole("button", { name: "Account and settings" }).tap();
+    await expect(page.getByRole("tab", { name: "MIDI" })).toBeVisible();
+  });
 });
