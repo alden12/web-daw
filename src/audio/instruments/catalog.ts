@@ -414,6 +414,18 @@ export const samplerSchema: ParamSchema = [
   { id: "sampler.sample", label: "Sample", kind: "sample", default: "builtin:kick" },
   { id: "sampler.root", label: "Root", kind: "number", min: 0, max: 127, default: 60, taper: "linear" },
   { id: "sampler.keytrack", label: "Keytrack", kind: "boolean", default: true },
+  // Skips into the sample, for a recording that caught silence or a false start before the sound.
+  {
+    id: "sampler.start",
+    label: "Start",
+    kind: "number",
+    min: 0,
+    max: 2000,
+    default: 0,
+    unit: "ms",
+    taper: "linear",
+    step: 1,
+  },
   { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.85, taper: "linear", smoothMs: 10 },
   {
     id: "env.attack",

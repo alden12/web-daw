@@ -11,12 +11,14 @@ type Options = {
   /** When the note is let go, and (optionally) when Stop is pressed, in seconds. */
   releaseAt: number;
   stopAt?: number;
+  /** The built-in Sampler's Start, in milliseconds into the sample. */
+  start?: number;
   windows: [number, number][];
 };
 
 /** The built-in kick through a sampler, played with an explicit note-on/note-off; RMS per window. */
 async function render(page: Page, options: Options): Promise<number[]> {
-  return page.evaluate(async ({ oneShot, releaseAt, stopAt, windows }) => {
+  return page.evaluate(async ({ oneShot, releaseAt, stopAt, start, windows }) => {
     const { createInstrument, instrumentSchema } = await import(
       /* @vite-ignore */ "/src/audio/instruments/registry.ts"
     );
@@ -24,9 +26,11 @@ async function render(page: Page, options: Options): Promise<number[]> {
     const { ParamStore } = await import(/* @vite-ignore */ "/src/audio/params/store.ts");
     const sampleRate = 44100;
     const context = new OfflineAudioContext(1, sampleRate, sampleRate);
+    const store = new ParamStore(instrumentSchema("sampler"));
+    if (start !== undefined) store.set("sampler.start", start);
     const instrument =
       oneShot === undefined
-        ? createInstrument("sampler", context, new ParamStore(instrumentSchema("sampler")))
+        ? createInstrument("sampler", context, store)
         : new GraphInstrument(context, new ParamStore([]), {
             type: "ci-sample",
             schema: [],
@@ -71,6 +75,15 @@ test("Stop cuts a one-shot that is still playing out", async ({ page }) => {
   const [stopped] = await render(page, { releaseAt: 0.03, stopAt: 0.1, windows: [[0.12, 0.18]] });
   expect(playing).toBeGreaterThan(0.005);
   expect(stopped).toBeLessThan(0.0005);
+});
+
+test("Start skips into the sample, past the attack of a hit", async ({ page }) => {
+  const attack: [number, number][] = [[0.01, 0.04]];
+  const [whole] = await render(page, { releaseAt: 0.5, windows: attack });
+  const [trimmed] = await render(page, { releaseAt: 0.5, start: 150, windows: attack });
+  // A kick is loudest at its thump, so starting 150ms in plays only what is left of its tail.
+  expect(whole).toBeGreaterThan(0.01);
+  expect(trimmed).toBeLessThan(whole / 3);
 });
 
 /** One hit on the Drum Kit, now a graph; returns the rendered samples' RMS over the first 100ms. */

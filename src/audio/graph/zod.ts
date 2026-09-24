@@ -91,6 +91,7 @@ const nodeSpec = z.discriminatedUnion("kind", [
       keytrack: boolField.optional(),
       detune: numberField.optional(),
       oneShot: boolField.optional(),
+      start: numberField.optional(),
     })
     .strict(),
   z.object({ id: z.string(), kind: z.literal("noise"), color: z.enum(NOISE_COLORS).optional() }).strict(),
