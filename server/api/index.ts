@@ -8,6 +8,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Server } from "node:http";
 import { createApp } from "./app";
 import { attachWsServer } from "./wsServer";
+import { RoomRegistry } from "./rooms";
 import { resolveAuthConfig } from "./principal";
 import { getDb } from "../db/client";
 import { applyMigrations } from "../db/migrate";
@@ -40,7 +41,10 @@ const auth = resolveAuthConfig(process.env);
 if (auth) console.log(`[corrente] auth: verifying JWTs against ${auth.issuer}`);
 // Verbose console logging (HTTP requests + WS traffic) in dev, quiet in production.
 const verbose = process.env.NODE_ENV !== "production";
-const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose });
+// One set of rooms for the sockets and the hosted MCP server, so an agent's edit lands in the room
+// an open tab is subscribed to.
+const registry = new RoomRegistry(getDb());
+const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose, mcp: { registry } });
 
 // Single-origin deploy: this same server serves the built client (dist/) alongside the API and /ws, so
 // there is one URL, no CORS, and same-origin wss. Registered AFTER the API routes, so `/projects/*` (and
@@ -54,5 +58,5 @@ app.get("*", serveStatic({ path: "./dist/index.html" }));
 
 // The realtime multiplayer socket shares the HTTP server/port (path /ws), so it is one origin.
 const server = serve({ fetch: app.fetch, port }) as Server;
-attachWsServer(server, { db: getDb(), auth, log: verbose });
+attachWsServer(server, { db: getDb(), auth, log: verbose, registry });
 console.log(`[corrente] sync API listening on http://localhost:${port} (+ ws on /ws)`);

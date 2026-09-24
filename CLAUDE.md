@@ -108,7 +108,9 @@ Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.
   - **`yarn dev`** - Vite client only. Enough on its own if `VITE_DAW_API_URL` is unset
     (projects then live in the browser's OPFS).
   - **`yarn api`** - the sync API + WebSocket + Postgres, with reload. The one you pair
-    with `yarn dev`.
+    with `yarn dev`. It also serves the **hosted** MCP server on `/mcp` (AGENT-28), editing
+    stored projects; `claude mcp add --transport http corrente-hosted http://localhost:5170/mcp`
+    reaches it locally, where the dev stub stands in for sign-in.
   - **`yarn start`** - the *same server as `yarn api`* with no watch. Production entry
     (Fly runs this). Not for local work.
   - **`yarn server`** - the **MCP** server, spawned by Claude Code over stdio per

@@ -10,9 +10,8 @@ import type { Scheduler } from "../sequencer/scheduler";
 import type { EditLog } from "../commands/editLog";
 import type { EditCommand } from "../commands/types";
 import type { VersionStore } from "../commands/history";
-import { newEffectId, newMidiDeviceId, newTrackId } from "../commands/ids";
 import { savePatch, newPatchId } from "../patches/library";
-import { allPatches, findPatch } from "../patches/factory";
+import { listPatchSummaries, patchDetails, patchTrackCommand } from "../patches/patchTools";
 import { DEFAULT_WS_PORT } from "./protocol";
 import type { BrowserToServer, HistoryMethod, PatchMethod, ServerToBrowser } from "./protocol";
 
@@ -110,38 +109,10 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
   // dispatches a createTrackFromPatch edit authored as the agent (violet, undoable by the user
   // driving it, replayable - effect ids minted here and carried in the command).
   const patchMethods: { [K in PatchMethod]: (params: Record<string, unknown>) => unknown } = {
-    list: () =>
-      allPatches().map((pt) => ({
-        id: pt.id,
-        name: pt.name,
-        author: pt.author,
-        instrument: pt.instrumentType,
-        builtin: pt.builtin ?? false,
-        category: pt.category,
-        effects: pt.effects.map((fx) => fx.type),
-      })),
+    list: () => listPatchSummaries(),
     // Full specifics of one patch (param values + per-effect params), for inspecting or
     // promoting a user patch into the factory bank. Searches factory + user by id/name.
-    get: (params) => {
-      const query = String(params.patch ?? "").trim();
-      const patch = findPatch(query);
-      if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
-      return {
-        id: patch.id,
-        name: patch.name,
-        author: patch.author,
-        instrument: patch.instrumentType,
-        builtin: patch.builtin ?? false,
-        category: patch.category,
-        params: patch.params,
-        midiDevices: (patch.midiDevices ?? []).map((device) => ({
-          type: device.type,
-          bypassed: device.bypassed ?? false,
-          params: device.params,
-        })),
-        effects: patch.effects.map((fx) => ({ type: fx.type, bypassed: fx.bypassed ?? false, params: fx.params })),
-      };
-    },
+    get: (params) => patchDetails(String(params.patch ?? "")),
     save: (params) => {
       const trackId = (params.trackId as string | undefined) ?? projectStore.selectedId ?? undefined;
       const track = trackId ? projectStore.getTrack(trackId) : undefined;
@@ -166,28 +137,7 @@ export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions 
       return { id: patch.id, name: patch.name };
     },
     apply: (params) => {
-      const query = String(params.patch ?? "").trim();
-      const patch = findPatch(query);
-      if (!patch) throw new Error(`No patch matching "${query}". Use list_patches.`);
-      const command: EditCommand = {
-        type: "createTrackFromPatch",
-        id: newTrackId(),
-        name: (params.name as string | undefined)?.trim() || patch.name,
-        instrumentType: patch.instrumentType,
-        params: patch.params,
-        midiDevices: (patch.midiDevices ?? []).map((device) => ({
-          id: newMidiDeviceId(),
-          type: device.type,
-          bypassed: device.bypassed,
-          params: device.params,
-        })),
-        effects: patch.effects.map((fx) => ({
-          id: newEffectId(),
-          type: fx.type,
-          bypassed: fx.bypassed,
-          params: fx.params,
-        })),
-      };
+      const command = patchTrackCommand(String(params.patch ?? ""), params.name as string | undefined);
       editLog.dispatchAsAgent(command);
       return { trackId: command.id, name: command.name };
     },
