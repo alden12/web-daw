@@ -164,11 +164,15 @@ export interface ConvolverNodeSpec {
  * `oneShot` (the default) plays it to the end however short the note - drums. Off, it stops with
  * the note and its release - a sustained sound. Samples are decoded when the instrument loads, and a
  * note played before its sample is ready is silent rather than an error.
+ *
+ * `note` makes it sound only for that MIDI note, which is how a drum kit is built: one buffer per
+ * pad, each on its own note. Nodes for the other pads are left out of the voice (prune.ts).
  */
 export interface BufferNodeSpec {
   id: string;
   kind: "buffer";
   sample: EnumField<string>;
+  note?: NumberField;
   root?: NumberField;
   keytrack?: BoolField;
   detune?: NumberField;

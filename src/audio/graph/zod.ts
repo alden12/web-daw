@@ -77,6 +77,7 @@ const nodeSpec = z.discriminatedUnion("kind", [
       id: z.string(),
       kind: z.literal("buffer"),
       sample: enumField,
+      note: numberField.optional(),
       root: numberField.optional(),
       keytrack: boolField.optional(),
       detune: numberField.optional(),

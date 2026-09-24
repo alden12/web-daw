@@ -18,7 +18,7 @@ import { SupersawInstrument } from "./Supersaw";
 import { OrganInstrument } from "./Organ";
 import { WorkletInstrument } from "./WorkletInstrument";
 import { sampler } from "./graph/sampler";
-import { DrumkitInstrument } from "./Drumkit";
+import { drumkit } from "./graph/drumkit";
 import { SilentInstrument } from "./Silent";
 import { DEFAULT_INSTRUMENT, EMPTY_INSTRUMENT } from "./catalog";
 
@@ -37,8 +37,9 @@ export function createInstrument(type: string, ctx: BaseAudioContext, store: Par
 }
 
 // --- built-in factories (self-registered) ---------------------------------
-// Subtractive and FM are declarative graph instruments (data, not code); the rest are
-// still class-based. See src/audio/graph and INST-4.
+// Subtractive, FM, Mellotron Flute, the Sampler and the Drum Kit are declarative graphs (data,
+// not code). Supersaw and Organ wait on small format decisions (INST-17); Wavetable and Nimbus on
+// worklet-backed leaves (INST-15). See src/audio/graph and INST-4.
 registerInstrumentFactory(subtractive.type, (ctx, store) => new GraphInstrument(ctx, store, subtractive));
 registerInstrumentFactory(fm.type, (ctx, store) => new GraphInstrument(ctx, store, fm));
 registerInstrumentFactory(mellotronFlute.type, (ctx, store) => new GraphInstrument(ctx, store, mellotronFlute));
@@ -47,7 +48,7 @@ registerInstrumentFactory("organ", (ctx, store) => new OrganInstrument(ctx, stor
 registerInstrumentFactory("wavetable", (ctx, store) => new WorkletInstrument(ctx, store, "wavetable-processor"));
 registerInstrumentFactory("nimbus", (ctx, store) => new WorkletInstrument(ctx, store, "nimbus-processor"));
 registerInstrumentFactory(sampler.type, (ctx, store) => new GraphInstrument(ctx, store, sampler));
-registerInstrumentFactory("drumkit", (ctx, store) => new DrumkitInstrument(ctx, store));
+registerInstrumentFactory(drumkit.type, (ctx, store) => new GraphInstrument(ctx, store, drumkit));
 registerInstrumentFactory(EMPTY_INSTRUMENT, (ctx) => new SilentInstrument(ctx));
 
 export { instrumentInfos, instrumentSchema, catalogEntry, hasInstrument, DEFAULT_INSTRUMENT } from "./catalog";

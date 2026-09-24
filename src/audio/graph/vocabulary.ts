@@ -80,7 +80,7 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     audioParams: ["playbackRate", "detune"],
     properties: [],
     summary:
-      "Sample player, instruments only: `sample` a ref from list_samples or a `sample` param; plays at its pitch on `root` (MIDI, default 60) and follows the note unless `keytrack: false`. `oneShot` (default true) plays to the end for drums; false stops with the note.",
+      "Sample player, instruments only: `sample` a ref from list_samples or a `sample` param; plays at its pitch on `root` (MIDI, default 60) and follows the note unless `keytrack: false`. `oneShot` (default true) plays to the end for drums; false stops with the note. `note` makes it sound only for that MIDI note - a drum kit is one buffer per pad.",
   },
   convolver: {
     audioParams: [],
@@ -89,6 +89,9 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
       'Reverb: `impulse: { shape: "decay", seconds }`, a generated tail of that length. Mix it with the dry signal in an effect.',
   }, // `impulse` is a composite field, like a shaper's curve
 };
+
+/** Kinds that make sound on their own, rather than processing an input. */
+export const SOURCE_KINDS: readonly NodeSpec["kind"][] = ["osc", "env", "noise", "constant", "buffer"];
 
 /** Kinds that follow a played note, so only make sense in an instrument voice. */
 export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env", "buffer"];

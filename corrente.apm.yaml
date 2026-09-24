@@ -5951,7 +5951,7 @@ projects:
       - ref: INST-13
         area: INST
         title: Grow the native-node vocabulary
-        status: in-progress
+        status: review
         sort_path: "000013"
         deps:
           - INST-4
@@ -5979,7 +5979,7 @@ projects:
           **Payoff.** Percussion and sampled instruments become authorable; `sampler` and `drumkit` become convertible from classes to defs; stereo placement stops being class-only. Directly unblocks the synthesized half of INST-9, where an 808 kick is `osc` plus a pitch envelope and a snare is `noise` into `biquad` - which is this ticket plus INST-12 and nothing else.
         id: 019ff33c-4236-732b-9ef7-705c9a002373
         created_at: 2026-08-11T23:50:40.438Z
-        updated_at: 2026-09-24T16:09:28.097Z
+        updated_at: 2026-09-24T16:38:37.024Z
         comments:
           - body: "**Part 1 in #165 (2026-09-24):** noise (white/pink), constant, pan, compressor, convolver (generated `decay` impulse, the old Reverb's formula, so no IR licensing), and tanh/hardClip/fold curves. Each vocabulary entry now has a required `summary` that describe_device_format lists. Reverb and Chorus converted exactly; Filter's LFO now sweeps in octaves via biquad detune (its old depth × cutoff multiplied two params). **Part 2 left:** `buffer` (sample playback, needs a way to name and await a sample; unlocks Sampler/Drum Kit) and `split`/`merge` (needs channel indices in the connection grammar - defer until something needs it)."
             audience: user
@@ -5990,6 +5990,11 @@ projects:
             audience: user
             id: 01a0d43c-37c7-700e-9ff0-00b82def0fbf
             at: 2026-09-24T16:25:11.367Z
+            actor: claude
+          - body: "**Done bar split/merge (2026-09-24).** `buffer` node + Sampler as a graph in #167; the `note` field + Drum Kit as a graph stacked on it. A kit is one buffer per pad generated from `DRUMKIT_PADS`; the interpreter prunes a voice to the hit pad (and anything only it fed) per note, so a 32-pad kit builds 2 nodes per hit, not 64. Two pads on one note now layer. split/merge moved to INST-18 (needs a connection-grammar change; deferred until something needs it)."
+            audience: user
+            id: 01a0d448-89a4-75e2-97a3-4d13410ed0bd
+            at: 2026-09-24T16:38:38.756Z
             actor: claude
       - ref: INST-14
         area: INST
@@ -6083,6 +6088,25 @@ projects:
         id: 01a0d43c-2c75-779d-8ead-f542fac23f21
         created_at: 2026-09-24T16:25:08.469Z
         updated_at: 2026-09-24T16:25:08.469Z
+      - ref: INST-18
+        area: INST
+        title: Channel split and merge in the graph format
+        status: planning
+        sort_path: "000018"
+        deps:
+          - INST-13
+        body: |-
+          Split out of INST-13 on 2026-09-24, deliberately deferred until a device needs it.
+
+          `split` / `merge` are `ChannelSplitterNode` / `ChannelMergerNode`: work on the left and right channels separately (ping-pong delays, mid/side processing, stereo wideners). They are the only INST-13 item that needs a **format change**: a `Connection` is `[from, to]` with `to` either a node or `nodeId.param`, and neither end can name a channel. Options when it is wanted:
+
+          - Extend the endpoint grammar alongside `.param`, e.g. `split:0` / `merge:1`, and have `validateGraph` check the index against the node's channel count.
+          - Or keep connections as they are and give `split` / `merge` fixed, named outputs (`split.left`, `split.right`), which reads better and covers stereo, the only case likely to matter.
+
+          Until then, `pan` covers placing a mono voice in the stereo field, which was the pressing need.
+        id: 01a0d448-7c89-76fc-b293-9cd3681e3edd
+        created_at: 2026-09-24T16:38:35.401Z
+        updated_at: 2026-09-24T16:38:35.401Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
