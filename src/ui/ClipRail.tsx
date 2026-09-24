@@ -10,11 +10,11 @@
 import { type ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
-import type { ClipContent } from "../audio/project/types";
 import { useProject } from "../audio/project/useProject";
 import type { Dispatch } from "../audio/commands/types";
 import { newClipId } from "../audio/commands/ids";
 import { InlineRename } from "./InlineRename";
+import { clipContentOf as clipContentOfTrack } from "./clipContent";
 import { CLIP_DND_TYPE, clipDndKindType, clearDraggedClip, setDraggedClip } from "./clipDnd";
 import { getClipClipboard, setClipClipboard } from "./clipClipboard";
 import { authorDotStyle, authorLabel } from "./authorStyle";
@@ -71,23 +71,7 @@ export function ClipRail({
     if (!launched) scheduler.play();
   };
 
-  // A clip's portable content (for copy/paste). Notes come from the live store.
-  const clipContentOf = (clipId: string): ClipContent | null => {
-    if (track.kind === "instrument") {
-      const store = projectStore.getClipStore(trackId, clipId);
-      const meta = clips.find((clip) => clip.id === clipId);
-      if (!store || !meta) return null;
-      const data = store.getClip();
-      return {
-        kind: "instrument",
-        name: meta.name,
-        notes: data.notes.map((note) => ({ ...note })),
-        lengthBeats: data.lengthBeats,
-      };
-    }
-    const c = track.clips.find((clip) => clip.id === clipId);
-    return c ? { kind: "audio", name: c.name, fileId: c.fileId, gain: c.gain, durationSec: c.durationSec } : null;
-  };
+  const clipContentOf = (clipId: string) => clipContentOfTrack(projectStore, trackId, clipId);
 
   // Copy / cut / paste clips, like the timeline does for placements. Cut/copy take
   // the active clip; paste adds the clipboard clip to THIS track (refusing a
