@@ -44,7 +44,9 @@ describe("chordRows", () => {
   });
 
   it("writes names without brackets, short enough for a phone's pad", () => {
-    const names = layout({ rows: 10 }).flat().flatMap((pad) => (pad ? [pad.name] : []));
+    const names = layout({ rows: 10 })
+      .flat()
+      .flatMap((pad) => (pad ? [pad.name] : []));
     expect(names).toContain("Dmadd9");
     names.forEach((name) => expect(name).not.toMatch(/[()]/));
   });
