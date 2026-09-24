@@ -11,6 +11,7 @@
  * React here - the UI bridges this store to `currentUser` and renders the gate.
  */
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
+import { isTrustedRedirect } from "./trustedRedirect";
 
 const url = import.meta.env?.VITE_SUPABASE_URL;
 const anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
@@ -146,7 +147,15 @@ function resumeConsent(): void {
 export type ConsentRequest =
   | { kind: "ask"; clientName: string; redirectOrigin: string; email: string }
   | { kind: "redirect"; url: string }
+  /** It would send access somewhere that is not Claude (see trustedRedirect.ts). */
+  | { kind: "refused"; redirectOrigin: string }
   | { kind: "error"; message: string };
+
+const originOf = (uri: string): string => (URL.canParse(uri) ? new URL(uri).origin : uri);
+
+/** Follow a redirect only to Claude; anywhere else is refused, whatever Supabase says. */
+const redirectTo = (url: string): ConsentRequest =>
+  isTrustedRedirect(url) ? { kind: "redirect", url } : { kind: "refused", redirectOrigin: originOf(url) };
 
 /**
  * Read an authorization request. Already approved (the same app connecting again) comes back as just
@@ -156,14 +165,11 @@ export async function readConsentRequest(authorizationId: string): Promise<Conse
   if (!supabase) return { kind: "error", message: "Sign-in is not configured on this server." };
   const { data, error } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
   if (error || !data) return { kind: "error", message: error?.message ?? "That request could not be found." };
-  if ("redirect_url" in data) return { kind: "redirect", url: data.redirect_url };
-  return {
-    kind: "ask",
-    clientName: data.client.name,
-    // What a person should check: an app can call itself anything, but not send the code elsewhere.
-    redirectOrigin: new URL(data.redirect_uri).origin,
-    email: data.user.email,
-  };
+  if ("redirect_url" in data) return redirectTo(data.redirect_url);
+  // An app can call itself anything, but not receive its code anywhere but where it says.
+  const redirectOrigin = originOf(data.redirect_uri);
+  if (!isTrustedRedirect(data.redirect_uri)) return { kind: "refused", redirectOrigin };
+  return { kind: "ask", clientName: data.client.name, redirectOrigin, email: data.user.email };
 }
 
 /** Approve or deny, returning where the app wants the browser next. */
@@ -174,5 +180,5 @@ export async function decideConsent(authorizationId: string, approve: boolean): 
     ? await supabase.auth.oauth.approveAuthorization(authorizationId, options)
     : await supabase.auth.oauth.denyAuthorization(authorizationId, options);
   if (error || !data) return { kind: "error", message: error?.message ?? "That request could not be completed." };
-  return { kind: "redirect", url: data.redirect_url };
+  return redirectTo(data.redirect_url);
 }

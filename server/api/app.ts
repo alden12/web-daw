@@ -120,7 +120,17 @@ export function createApp(db: Db, options: AppOptions = {}) {
     // Request logging first (dev), so it times the whole request incl. later middleware.
     .use("*", async (c, next) => (options.logRequests ? logger()(c, next) : next()))
     // CORS next, so even a 401 carries the headers the browser needs to read the response.
-    .use("*", cors({ origin: corsOrigin, allowMethods: ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"] }))
+    // POST and the exposed challenge are for `/mcp`: a browser-based MCP client posts its calls, and
+    // reads `WWW-Authenticate` off a 401 to find where to sign in. Claude calls from its servers, where
+    // CORS does not apply, so this only matters to clients like the MCP Inspector.
+    .use(
+      "*",
+      cors({
+        origin: corsOrigin,
+        allowMethods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+        exposeHeaders: ["WWW-Authenticate"],
+      }),
+    )
     .use("*", async (c, next) => {
       // Only the API is gated. When this app also serves the built client (single-origin deploy, see
       // server/api/index.ts), the static asset + SPA-fallback routes are appended after this middleware,
@@ -240,7 +250,7 @@ export function createApp(db: Db, options: AppOptions = {}) {
       return c.body(null, 204);
     });
   // Outside the `/projects` gate on purpose: it authenticates itself, and answers MCP's own way.
-  if (options.mcp) mountHostedMcp(app, db, options, resolvePrincipal);
+  if (options.mcp) mountHostedMcp(app, db, options, resolvePrincipal, jsonBodyLimit);
   return app;
 }
 
@@ -249,11 +259,19 @@ export function createApp(db: Db, options: AppOptions = {}) {
  * rather than the app's `authenticated` audience, and refuses to mount without one: an MCP server
  * that accepted any token from the project would be exactly the check it is meant to make.
  */
-function mountHostedMcp(app: Hono<Env>, db: Db, options: AppOptions, appResolver: ResolvePrincipal): void {
+function mountHostedMcp(
+  app: Hono<Env>,
+  db: Db,
+  options: AppOptions,
+  appResolver: ResolvePrincipal,
+  /** The same cap as a project document: no tool call needs more than a whole project's worth. */
+  limitBody: MiddlewareHandler<Env>,
+): void {
   const mcp = options.mcp!;
   if (!options.auth) {
     app.all(
       MCP_PATH,
+      limitBody,
       hostedMcpHandler({ db, registry: mcp.registry, resolvePrincipal: mcp.resolvePrincipal ?? appResolver }),
     );
     return;
@@ -273,6 +291,6 @@ function mountHostedMcp(app: Hono<Env>, db: Db, options: AppOptions, appResolver
       console.warn(`[corrente] /mcp token refused: ${reason}`),
     );
   const discovery = { resource, authorizationServer: issuer };
-  app.all(MCP_PATH, hostedMcpHandler({ db, registry: mcp.registry, resolvePrincipal, discovery }));
+  app.all(MCP_PATH, limitBody, hostedMcpHandler({ db, registry: mcp.registry, resolvePrincipal, discovery }));
   for (const path of METADATA_PATHS) app.get(path, protectedResourceHandler(resource, issuer));
 }
