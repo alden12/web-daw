@@ -6312,7 +6312,7 @@ projects:
       - ref: INST-24
         area: INST
         title: "Bug: the claude.ai client never surfaced the device authoring tools"
-        status: review
+        status: done
         sort_path: "000024"
         body: |-
           Found 2026-09-24: an agent in the Claude app could load `describe_device_format`, `get_custom_device`, `list_custom_devices` and `remove_custom_device`, but no tool search ever surfaced **`create_instrument`, `create_effect` or the two `update_` tools**.
@@ -6326,7 +6326,8 @@ projects:
           Needs a deploy before the Claude app sees it, since the hosted `/mcp` serves the tool list. (INST-23 is taken by the Trim end PR, #180, which was open when this was filed.)
         id: 01a0d569-5e08-73cb-99e8-76a0f66424bd
         created_at: 2026-09-24T21:54:07.496Z
-        updated_at: 2026-09-24T21:54:07.496Z
+        updated_at: 2026-09-24T22:26:49.871Z
+        closed_at: 2026-09-24T22:26:49.871Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
@@ -6881,7 +6882,7 @@ projects:
       - ref: MOBILE-12
         area: MOBILE
         title: "Chords mode on the pads: a triad per degree, variations stacked above"
-        status: review
+        status: done
         sort_path: "000012"
         deps:
           - DAW-12.1
@@ -6959,7 +6960,8 @@ projects:
           **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T21:18:42.223Z
+        updated_at: 2026-09-24T22:26:54.794Z
+        closed_at: 2026-09-24T22:26:54.794Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing
