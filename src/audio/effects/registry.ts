@@ -13,9 +13,9 @@ import { GraphEffect } from "../graph/GraphEffect";
 import { delay } from "./graph/delay";
 import { distortion } from "./graph/distortion";
 import { tremolo } from "./graph/tremolo";
-import { ReverbEffect } from "./Reverb";
-import { FilterEffect } from "./Filter";
-import { ChorusEffect } from "./Chorus";
+import { reverb } from "./graph/reverb";
+import { filter } from "./graph/filter";
+import { chorus } from "./graph/chorus";
 import { BitcrusherEffect } from "./Bitcrusher";
 import { DEFAULT_EFFECT } from "./catalog";
 
@@ -34,13 +34,13 @@ export function createEffect(type: string, ctx: BaseAudioContext, store: ParamSt
 }
 
 // --- built-in factories (self-registered) ---------------------------------
-// Delay, Distortion, and Tremolo are declarative graph effects (data, not code); the
-// rest are still class-based. See src/audio/graph and INST-4.
+// Every effect but the Bitcrusher is a declarative graph (data, not code); it waits on
+// worklet-backed leaves (INST-15). See src/audio/graph and INST-4.
 registerEffectFactory(delay.type, (ctx, store) => new GraphEffect(ctx, store, delay));
 registerEffectFactory(distortion.type, (ctx, store) => new GraphEffect(ctx, store, distortion));
-registerEffectFactory("reverb", (ctx, store) => new ReverbEffect(ctx, store));
-registerEffectFactory("filter", (ctx, store) => new FilterEffect(ctx, store));
-registerEffectFactory("chorus", (ctx, store) => new ChorusEffect(ctx, store));
+registerEffectFactory(reverb.type, (ctx, store) => new GraphEffect(ctx, store, reverb));
+registerEffectFactory(filter.type, (ctx, store) => new GraphEffect(ctx, store, filter));
+registerEffectFactory(chorus.type, (ctx, store) => new GraphEffect(ctx, store, chorus));
 registerEffectFactory(tremolo.type, (ctx, store) => new GraphEffect(ctx, store, tremolo));
 registerEffectFactory("bitcrusher", (ctx, store) => new BitcrusherEffect(ctx, store));
 

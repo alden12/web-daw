@@ -8,6 +8,9 @@ import { mellotronFlute } from "../src/audio/instruments/graph/mellotronFlute";
 import { delay } from "../src/audio/effects/graph/delay";
 import { distortion } from "../src/audio/effects/graph/distortion";
 import { tremolo } from "../src/audio/effects/graph/tremolo";
+import { reverb } from "../src/audio/effects/graph/reverb";
+import { chorus } from "../src/audio/effects/graph/chorus";
+import { filter } from "../src/audio/effects/graph/filter";
 
 describe("validateGraph", () => {
   it("passes for every shipped instrument definition", () => {
@@ -17,7 +20,7 @@ describe("validateGraph", () => {
   });
 
   it("passes for every shipped effect definition", () => {
-    for (const def of [delay, distortion, tremolo]) {
+    for (const def of [delay, distortion, tremolo, reverb, chorus, filter]) {
       expect(validateGraph(def.schema, def.graph, EFFECT_RESERVED)).toEqual([]);
     }
   });

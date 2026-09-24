@@ -12,8 +12,17 @@
  */
 import type { ParamValue } from "../params/types";
 import { rampParam } from "../params/binding";
-import type { Graph, NodeSpec, NumberField, EnumField, OscNodeSpec, ShaperNodeSpec, EnvNodeSpec } from "./types";
-import { NODE_IMPLS, SHAPER_CURVES } from "./nodes";
+import type {
+  Graph,
+  NodeSpec,
+  NumberField,
+  EnumField,
+  OscNodeSpec,
+  ShaperNodeSpec,
+  EnvNodeSpec,
+  ConvolverNodeSpec,
+} from "./types";
+import { IMPULSES, NODE_IMPLS, SHAPER_CURVES } from "./nodes";
 import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
 
 export interface GraphContext {
@@ -147,6 +156,26 @@ function applyFields(
     case "env":
       addRelease(startEnvelope(spec, (node as ConstantSourceNode).offset, startTime, context.readParam));
       break;
+    case "noise":
+      break; // its colour is chosen when it is built
+    case "constant":
+      numberField(spec.offset, (node as ConstantSourceNode).offset);
+      break;
+    case "pan":
+      numberField(spec.pan, (node as StereoPannerNode).pan);
+      break;
+    case "compressor": {
+      const compressor = node as DynamicsCompressorNode;
+      numberField(spec.threshold, compressor.threshold);
+      numberField(spec.knee, compressor.knee);
+      numberField(spec.ratio, compressor.ratio);
+      numberField(spec.attack, compressor.attack);
+      numberField(spec.release, compressor.release);
+      break;
+    }
+    case "convolver":
+      bindImpulse(spec, node as ConvolverNode, ctx, context.readParam, addTarget);
+      break;
   }
 }
 
@@ -233,6 +262,24 @@ function bindShaperCurve(
   }
   setCurve(resolveLinear(readParam(amount.param) as number, amount));
   addTarget(amount.param, (value) => setCurve(resolveLinear(value as number, amount)));
+}
+
+/** Convolver impulse: regenerated from its family whenever its length changes. */
+function bindImpulse(
+  spec: ConvolverNodeSpec,
+  node: ConvolverNode,
+  ctx: BaseAudioContext,
+  readParam: (id: string) => ParamValue,
+  addTarget: AddTarget,
+): void {
+  const { shape, seconds } = spec.impulse;
+  const setImpulse = (value: number): void => void (node.buffer = IMPULSES[shape](ctx, value));
+  if (typeof seconds === "number") {
+    setImpulse(seconds);
+    return;
+  }
+  setImpulse(resolveLinear(readParam(seconds.param) as number, seconds));
+  addTarget(seconds.param, (value) => setImpulse(resolveLinear(value as number, seconds)));
 }
 
 /** Envelope defaults, in the units the fields are authored in: milliseconds, and 0..1 sustain. */
