@@ -6290,7 +6290,7 @@ projects:
       - ref: INST-23
         area: INST
         title: Sampler Trim end, an audio clip as a sample, and row controls you can reach on touch
-        status: review
+        status: done
         sort_path: "000023"
         body: |-
           Asked for 2026-09-24 while testing INST-22's Start: cut an unwanted tail, delete an imported sample on a phone, and record a sample in the app.
@@ -6307,7 +6307,8 @@ projects:
             - Applied to the library, clip rail, share panel and agent panel. The library kebabs were also sized up to 28px.
         id: 01a0d562-2777-734c-9163-b0a4d939e142
         created_at: 2026-09-24T21:46:14.775Z
-        updated_at: 2026-09-24T21:46:14.775Z
+        updated_at: 2026-09-24T22:03:33.358Z
+        closed_at: 2026-09-24T22:03:33.358Z
       - ref: INST-24
         area: INST
         title: "Bug: the claude.ai client never surfaced the device authoring tools"
