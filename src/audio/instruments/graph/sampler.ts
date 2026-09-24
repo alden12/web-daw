@@ -23,6 +23,7 @@ export const sampler: GraphInstrumentDef = {
         root: { param: "sampler.root" },
         keytrack: { param: "sampler.keytrack" },
         start: { param: "sampler.start" },
+        trimEnd: { param: "sampler.trimEnd" },
         oneShot: true,
       },
     ],

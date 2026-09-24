@@ -40,3 +40,22 @@ export async function importSampleFile(
     return null;
   }
 }
+
+/**
+ * Put audio the project already holds - a recorded or imported audio clip - into the sample library.
+ * Clips and samples share one content-addressed store, so this adds a library entry pointing at the
+ * same bytes rather than copying them, and reuses the entry if those bytes are already a sample.
+ * Returns its "asset:<id>" ref.
+ */
+export function sampleFromAudio(
+  contentHash: string,
+  name: string,
+  existing: SampleAsset[],
+  dispatch: Dispatch,
+): string {
+  const match = existing.find((asset) => asset.contentHash === contentHash);
+  if (match) return assetRef(match.id);
+  const id = newSampleId();
+  dispatch({ type: "addSample", id, name, contentHash, source: "clip" });
+  return assetRef(id);
+}

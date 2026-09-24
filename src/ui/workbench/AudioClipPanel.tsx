@@ -20,6 +20,10 @@ import { beatToX } from "../timeline/timeGrid";
 import { Ruler } from "../timeline/Ruler";
 import { Waveform } from "../Waveform";
 import { Fader } from "../MixerControls";
+import { Button } from "../controls/Button";
+import { newTrackId } from "../../audio/commands/ids";
+import { sampleFromAudio } from "../../audio/samples/importSample";
+import type { SampleAsset } from "../../audio/samples/catalog";
 
 export function AudioClipPanel({
   track,
@@ -28,6 +32,7 @@ export function AudioClipPanel({
   timeSignature,
   loopStart,
   loopLength,
+  samples,
   dispatch,
 }: {
   track: AudioTrack;
@@ -38,6 +43,8 @@ export function AudioClipPanel({
   /** Arrangement loop region (beats), for the launch-mode playhead window. */
   loopStart: number;
   loopLength: number;
+  /** The project's sample library, so "Use as sample" reuses an entry for the same audio. */
+  samples: SampleAsset[];
   dispatch: Dispatch;
 }) {
   const clip = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
@@ -113,6 +120,21 @@ export function AudioClipPanel({
       patch,
     });
 
+  /**
+   * A Sampler track playing this clip: how a sound recorded in the app becomes a playable sample.
+   * The clip's region carries over as the Sampler's Start and Trim end, so the part you marked out
+   * is the part that plays.
+   */
+  const sampleThisClip = () => {
+    const ref = sampleFromAudio(clip.fileId, clip.name, samples, dispatch);
+    const id = newTrackId();
+    dispatch({ type: "createTrack", instrumentType: "sampler", id });
+    dispatch({ type: "setParam", trackId: id, id: "sampler.sample", value: ref });
+    dispatch({ type: "setParam", trackId: id, id: "sampler.start", value: Math.round(loopStartSec * 1000) });
+    if (dur > 0)
+      dispatch({ type: "setParam", trackId: id, id: "sampler.trimEnd", value: Math.round((dur - loopEndSec) * 1000) });
+  };
+
   // Drag the waveform body horizontally to slide the audio under the fixed grid. Uses
   // the shared window-listener drag (like the lanes and roll), so the gesture is not
   // sensitive to pointer-capture / button-state quirks.
@@ -133,6 +155,9 @@ export function AudioClipPanel({
           <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Audio clip</span>
           <span className="font-mono text-[12.5px] text-strong truncate">{clip.name}</span>
           {dur > 0 && <span className="ml-auto font-mono text-[10.5px] text-faint">{dur.toFixed(2)}s</span>}
+          <Button size="sm" className={dur > 0 ? "" : "ml-auto"} onClick={sampleThisClip}>
+            Use as sample
+          </Button>
         </div>
         <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
           {/* Beat-grid ruler (drag the two handles to set the loop region) over the

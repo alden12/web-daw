@@ -31,5 +31,6 @@ describe("sampler schema", () => {
     expect(byId["sampler.root"].kind).toBe("number");
     expect(byId["sampler.keytrack"].kind).toBe("boolean");
     expect(byId["sampler.start"]).toMatchObject({ kind: "number", min: 0, default: 0, unit: "ms" });
+    expect(byId["sampler.trimEnd"]).toMatchObject({ kind: "number", min: 0, default: 0, unit: "ms" });
   });
 });

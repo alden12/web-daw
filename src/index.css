@@ -468,3 +468,20 @@
 .md .hljs-class .hljs-title {
   color: var(--color-good);
 }
+
+/* A row's secondary controls (a kebab, a delete, an add): out of the way until the row is hovered -
+   but only where there is hover. On touch there is none, and a control that waits for it is simply
+   not there, which is how a sample could not be deleted on a phone. Kept visible while focused or
+   while its menu is open, so it does not vanish under the thing it opened. */
+@layer components {
+  @media (hover: hover) {
+    .reveal-on-hover {
+      opacity: 0;
+    }
+    .group:hover .reveal-on-hover,
+    .reveal-on-hover:focus-visible,
+    .reveal-on-hover[aria-expanded="true"] {
+      opacity: 1;
+    }
+  }
+}
