@@ -111,6 +111,64 @@ describe("MCP server (tracks)", () => {
     await call("remove_custom_device", { deviceType: created }); // cleanup (global catalog)
   });
 
+  it("update_instrument edits a device in place: tracks keep it, and the values of params it still has", async () => {
+    const messages = await connectTab();
+    const level = { id: "amp.level", label: "Level", kind: "number", min: 0, max: 1, default: 0.8 };
+    const created = await call("create_instrument", {
+      label: "Edit Me",
+      schema: [level],
+      voice: { nodes: [{ id: "osc", kind: "osc", waveform: "sawtooth" }], connections: [["osc", "amp"]] },
+    });
+    const type = /type (ci-\w+)/.exec(created.content[0].text)![1];
+    await makeTrack(type);
+    await call("set_parameter", { id: "amp.level", value: 0.3 });
+
+    // Read it back, add a Tone knob, and send the whole thing back.
+    const current = parse(await call("get_custom_device", { deviceType: type }));
+    expect(current).toMatchObject({ kind: "instrument", type, label: "Edit Me" });
+    const tone = { id: "tone", label: "Tone", kind: "number", min: 20, max: 20000, default: 1200 };
+    const res = await call("update_instrument", {
+      deviceType: type,
+      schema: [...current.schema, tone],
+      voice: {
+        nodes: [...current.voice.nodes, { id: "filter", kind: "biquad", frequency: { param: "tone" } }],
+        connections: [
+          ["osc", "filter"],
+          ["filter", "amp"],
+        ],
+      },
+    });
+    expect(res.isError).toBeFalsy();
+    await waitFor(() => typesOf(messages).includes("updateCustomInstrument"));
+
+    const list = parse(await call("list_custom_devices"));
+    expect(list.instruments).toEqual([{ type, label: "Edit Me", params: 2, uses: 1 }]);
+    const values = parse(await call("list_parameters")).parameters.map((param: { id: string; value: number }) => [
+      param.id,
+      param.value,
+    ]);
+    expect(values).toEqual([
+      ["amp.level", 0.3],
+      ["tone", 1200],
+    ]);
+
+    await call("remove_custom_device", { deviceType: type }); // cleanup (global catalog)
+  });
+
+  it("update_instrument refuses an unknown device and an invalid graph, changing nothing", async () => {
+    await connectTab();
+    const voice = { nodes: [{ id: "osc", kind: "osc" }], connections: [["osc", "amp"]] };
+    expect((await call("update_instrument", { deviceType: "ci-nope", schema: [], voice })).isError).toBe(true);
+    const created = await call("create_instrument", { label: "Keep Me", schema: [], voice });
+    const type = /type (ci-\w+)/.exec(created.content[0].text)![1];
+    const broken = { nodes: [{ id: "osc", kind: "osc" }], connections: [["osc", "ghost"]] };
+    expect((await call("update_instrument", { deviceType: type, schema: [], voice: broken })).isError).toBe(true);
+    expect(parse(await call("get_custom_device", { deviceType: type })).voice).toEqual(voice);
+    // An instrument is not an effect.
+    expect((await call("update_effect", { deviceType: type, schema: [], graph: voice })).isError).toBe(true);
+    await call("remove_custom_device", { deviceType: type });
+  });
+
   it("list_tracks reports the instrument palette and starts with no tracks", async () => {
     const data = parse(await call("list_tracks"));
     expect(data.connected).toBe(false);

@@ -58,10 +58,66 @@ export function registerCustomDevicesTools({ server, target, trackArg, resolveTr
   );
 
   server.registerTool(
+    "update_instrument",
+    {
+      title: "Edit custom instrument",
+      description:
+        "Replace a custom instrument's definition, keeping its type id, so every track playing it picks up the change (params it still has keep their values). Pass the whole new definition: read the current one with get_custom_device, change it, send it back. Omit label to keep the current one.",
+      inputSchema: { deviceType: z.string(), ...instrumentDefInputSchema.shape },
+    },
+    async ({ deviceType, label, schema, voice }) => {
+      const current = target.project.customInstruments.find((def) => def.type === deviceType);
+      if (!current) return fail(`No custom instrument with type "${deviceType}". Use list_custom_devices.`);
+      const result = parseInstrumentDef({ type: deviceType, label: label ?? current.label, schema, voice });
+      if (!result.ok) return fail(`Invalid instrument: ${result.errors.join("; ")}`);
+      if (!target.send({ type: "updateCustomInstrument", def: result.def })) return fail("No DAW tab connected.");
+      target.project.addCustomInstrument(result.def);
+      return ok(`Updated instrument "${result.def.label ?? deviceType}" (type ${deviceType}).`);
+    },
+  );
+
+  server.registerTool(
+    "update_effect",
+    {
+      title: "Edit custom effect",
+      description:
+        "Replace a custom effect's definition, keeping its type id, so every slot holding it picks up the change (params it still has keep their values). Pass the whole new definition: read the current one with get_custom_device, change it, send it back. Omit label to keep the current one.",
+      inputSchema: { deviceType: z.string(), ...effectDefInputSchema.shape },
+    },
+    async ({ deviceType, label, schema, graph }) => {
+      const current = target.project.customEffects.find((def) => def.type === deviceType);
+      if (!current) return fail(`No custom effect with type "${deviceType}". Use list_custom_devices.`);
+      const result = parseEffectDef({ type: deviceType, label: label ?? current.label, schema, graph });
+      if (!result.ok) return fail(`Invalid effect: ${result.errors.join("; ")}`);
+      if (!target.send({ type: "updateCustomEffect", def: result.def })) return fail("No DAW tab connected.");
+      target.project.addCustomEffect(result.def);
+      return ok(`Updated effect "${result.def.label ?? deviceType}" (type ${deviceType}).`);
+    },
+  );
+
+  server.registerTool(
+    "get_custom_device",
+    {
+      title: "Get custom device",
+      description:
+        "A custom instrument's or effect's full definition (label, schema, and voice or graph), to read before update_instrument / update_effect.",
+      inputSchema: { deviceType: z.string() },
+    },
+    async ({ deviceType }) => {
+      const instrument = target.project.customInstruments.find((def) => def.type === deviceType);
+      if (instrument) return ok(JSON.stringify({ kind: "instrument", ...instrument }, null, 2));
+      const effect = target.project.customEffects.find((def) => def.type === deviceType);
+      if (effect) return ok(JSON.stringify({ kind: "effect", ...effect }, null, 2));
+      return fail(`No custom device with type "${deviceType}". Use list_custom_devices.`);
+    },
+  );
+
+  server.registerTool(
     "list_custom_devices",
     {
       title: "List custom devices",
-      description: "The project's user/AI-authored instruments and effects (declarative devices).",
+      description:
+        "The project's user/AI-authored instruments and effects (declarative devices). `uses` counts the tracks playing an instrument or the slots holding an effect; one at 0 is safe to remove.",
       inputSchema: {},
     },
     async () => {
@@ -69,6 +125,7 @@ export function registerCustomDevicesTools({ server, target, trackArg, resolveTr
         type: def.type,
         label: def.label ?? def.type,
         params: def.schema.length,
+        uses: target.project.customDeviceUses(def.type),
       });
       return ok(
         JSON.stringify(

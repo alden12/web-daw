@@ -81,6 +81,26 @@ export class ParamStore {
     return Object.fromEntries(this.values);
   }
 
+  /**
+   * Adopt a new schema in place, for a custom device whose definition was edited: a value carries
+   * over where its id survives (coerced to the new spec), a new param starts at its default, and a
+   * dropped one goes. In place because the engine's bindings and the UI hold this store. A schema
+   * the same as the current one changes nothing.
+   */
+  reschema(schema: ParamSchema): void {
+    if (JSON.stringify(this.allSpecs()) === JSON.stringify(schema)) return;
+    const previous = new Map(this.values);
+    this.specs.clear();
+    this.values.clear();
+    for (const spec of schema) {
+      this.specs.set(spec.id, spec);
+      this.values.set(spec.id, previous.has(spec.id) ? coerce(spec, previous.get(spec.id)!) : spec.default);
+    }
+    for (const [id, value] of this.values) {
+      if (previous.get(id) !== value) for (const listener of this.listeners) listener(id, value);
+    }
+  }
+
   /** Apply a patch, validating each value. Ignores unknown ids. */
   load(patch: PatchValues): void {
     for (const [id, value] of Object.entries(patch)) {

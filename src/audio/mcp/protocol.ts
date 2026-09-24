@@ -61,6 +61,10 @@ export type ServerToBrowser =
   | { type: "removeCustomInstrument"; deviceType: string }
   | { type: "addCustomEffect"; def: GraphEffectDef }
   | { type: "removeCustomEffect"; deviceType: string }
+  // Replace a custom device's def under its existing type: tracks and slots using it keep the
+  // values of params it still has, and are rebuilt with the new graph.
+  | { type: "updateCustomInstrument"; def: GraphInstrumentDef }
+  | { type: "updateCustomEffect"; def: GraphEffectDef }
   // Group structure (bus tree; id assigned by the creator so both ends agree)
   | { type: "createGroup"; id: string; name?: string; parentId?: string | null }
   | { type: "removeGroup"; groupId: string }

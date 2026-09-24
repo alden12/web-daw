@@ -85,8 +85,9 @@ export class AudioEngine {
   private readonly audioBuffers = new Map<string, AudioBuffer>();
   private readonly decoding = new Set<string>();
   private project: ProjectStore | null = null;
-  /** Custom-device types whose audio factory is already registered (idempotent sync in reconcile). */
-  private readonly registeredCustomTypes = new Set<string>();
+  /** Each custom-device type's registered definition, as JSON: registering is idempotent, and an
+   *  edited one (a different definition under the same type) is re-registered and rebuilt. */
+  private readonly registeredCustomDefs = new Map<string, string>();
   private unsubscribe: (() => void) | null = null;
   /** The transport clock MIDI devices read (set by AppShell once the scheduler exists). */
   private transport: TransportClock | null = null;
@@ -198,18 +199,31 @@ export class AudioEngine {
     await ctx.resume();
   }
 
-  /** Register a GraphInstrument/GraphEffect factory for each of the project's custom defs (once). */
-  private registerCustomFactories(project: ProjectStore): void {
+  /**
+   * Register a GraphInstrument/GraphEffect factory for each of the project's custom defs, and
+   * return the types whose definition changed since they were last registered (edited), whose
+   * live instruments and effects must be rebuilt. Compared by content, not identity: a load
+   * (undo, redo) re-parses every def, and an unchanged one should not cut its notes.
+   */
+  private registerCustomFactories(project: ProjectStore): Set<string> {
+    const edited = new Set<string>();
+    const register = (type: string, def: unknown, registerFactory: () => void): void => {
+      const json = JSON.stringify(def);
+      const previous = this.registeredCustomDefs.get(type);
+      if (previous === json) return;
+      if (previous !== undefined) edited.add(type);
+      registerFactory();
+      this.registeredCustomDefs.set(type, json);
+    };
     for (const def of project.customInstruments) {
-      if (this.registeredCustomTypes.has(def.type)) continue;
-      registerInstrumentFactory(def.type, (ctx, store) => new GraphInstrument(ctx, store, def));
-      this.registeredCustomTypes.add(def.type);
+      register(def.type, def, () =>
+        registerInstrumentFactory(def.type, (ctx, store) => new GraphInstrument(ctx, store, def)),
+      );
     }
     for (const def of project.customEffects) {
-      if (this.registeredCustomTypes.has(def.type)) continue;
-      registerEffectFactory(def.type, (ctx, store) => new GraphEffect(ctx, store, def));
-      this.registeredCustomTypes.add(def.type);
+      register(def.type, def, () => registerEffectFactory(def.type, (ctx, store) => new GraphEffect(ctx, store, def)));
     }
+    return edited;
   }
 
   private reconcile(): void {
@@ -220,7 +234,7 @@ export class AudioEngine {
     // Register audio factories for the project's custom (declarative) devices before building
     // nodes, so createInstrument/createEffect can realize a custom type. The store already
     // registered their schemas; this is the Web Audio half, kept here (the store stays DOM-free).
-    this.registerCustomFactories(project);
+    const edited = this.registerCustomFactories(project);
 
     const groups = project.getGroups();
     const tracks = project.getTracks();
@@ -275,7 +289,7 @@ export class AudioEngine {
     // Group effect chains and routing.
     for (const group of groups) {
       const node = this.groupNodes.get(group.id)!;
-      this.reconcileEffects(node.effects, group.effects);
+      this.reconcileEffects(node.effects, group.effects, edited);
       this.rewireChain(node.input, node.effects, group.effects, node.output);
       node.output.disconnect();
       node.output.connect(this.parentInput(group.parentId));
@@ -298,14 +312,15 @@ export class AudioEngine {
             noteHead: instrument,
           };
           this.nodes.set(track.id, node);
-        } else if (node.instrumentType !== track.instrumentType) {
+        } else if (node.instrumentType !== track.instrumentType || edited.has(track.instrumentType)) {
           // The track's instrument was swapped (setInstrument, e.g. assigning one to an
-          // empty track): dispose the old node and build the new one over the same gain.
+          // empty track), or its custom definition was edited: dispose the old node and
+          // build the new one over the same gain.
           node.instrument.dispose();
           node.instrument = createInstrument(track.instrumentType, ctx, track.params);
           node.instrumentType = track.instrumentType;
         }
-        this.reconcileEffects(node.effects, track.effects);
+        this.reconcileEffects(node.effects, track.effects, edited);
         this.rewireChain(node.instrument.output, node.effects, track.effects, node.gain);
         // MIDI devices decorate the note path (no audio), terminating in the instrument.
         this.reconcileMidiDevices(node, track);
@@ -318,7 +333,7 @@ export class AudioEngine {
           node = { input: ctx.createGain(), gain: ctx.createGain(), effects: new Map(), sources: new Set() };
           this.audioNodes.set(track.id, node);
         }
-        this.reconcileEffects(node.effects, track.effects);
+        this.reconcileEffects(node.effects, track.effects, edited);
         this.rewireChain(node.input, node.effects, track.effects, node.gain);
         node.gain.disconnect();
         node.gain.connect(this.parentInput(track.parentId));
@@ -351,10 +366,11 @@ export class AudioEngine {
     node.sources.clear();
   }
 
-  /** Create effects for new instances, dispose effects no longer in the chain. */
-  private reconcileEffects(live: Map<string, Effect>, chain: EffectInstance[]): void {
+  /** Create effects for new instances, dispose effects no longer in the chain, and rebuild any
+   *  whose custom definition was `edited`. */
+  private reconcileEffects(live: Map<string, Effect>, chain: EffectInstance[], edited: Set<string>): void {
     const ctx = this.ctx!;
-    const want = new Set(chain.map((fx) => fx.id));
+    const want = new Set(chain.filter((fx) => !edited.has(fx.type)).map((fx) => fx.id));
     for (const [id, fx] of live) {
       if (!want.has(id)) {
         fx.dispose();
