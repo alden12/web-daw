@@ -2,7 +2,13 @@
  * What every group of MCP tools shares: id minters, the device-format document, and the text
  * result shapes. Pure data and helpers, with no project or transport in sight.
  */
-import { VOCABULARY, NODE_KINDS, WORKLET_KINDS, WORKLET_VOICE_CAP } from "../../src/audio/graph/vocabulary";
+import {
+  VOCABULARY,
+  NODE_KINDS,
+  WORKLET_KINDS,
+  WORKLET_BUDGET,
+  MIN_WORKLET_VOICES,
+} from "../../src/audio/graph/vocabulary";
 import { INSTRUMENT_RESERVED, EFFECT_RESERVED } from "../../src/audio/graph/validate";
 
 export const randomId = () => crypto.randomUUID();
@@ -47,7 +53,8 @@ export const deviceFormatDoc = () => ({
     "intervals, `osc.detune` for a pitch drop, an FM depth gain's `.gain` for a brightness envelope. Use as many as you like.",
   cost:
     `Native kinds are nearly free per note. Custom-DSP kinds (${WORKLET_KINDS.join(", ")}) run their own code, and each note ` +
-    `in an instrument voice runs its own copy, so an instrument using one plays at most ${WORKLET_VOICE_CAP} notes at once ` +
+    `in an instrument voice runs its own copy, so notes at once are shared out of ${WORKLET_BUDGET} copies: one block in the ` +
+    `voice plays up to ${WORKLET_BUDGET} notes, two up to ${WORKLET_BUDGET / 2}, never fewer than ${MIN_WORKLET_VOICES} ` +
     "(the oldest gives way). Put a block in the voice only when it must follow the note (a ladder swept by the note's own " +
     "envelope); anything that treats every note alike (bitcrush, a fixed filter, reverb, delay) belongs in an effect after " +
     "the instrument, where one copy serves every note.",

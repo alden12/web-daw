@@ -195,7 +195,7 @@ export interface BufferNodeSpec {
  * Custom-DSP blocks (INST-15): each runs our own code on the audio thread (an AudioWorklet)
  * rather than a browser node, and is otherwise an ordinary node - its fields bind and modulate
  * like any other's. In an instrument voice each note gets its own copy, which costs more than a
- * native node, so a voice using one plays fewer notes at once (WORKLET_VOICE_CAP).
+ * native node, so a voice using some plays fewer notes at once (voiceCapFor).
  */
 
 /** A Moog-style four-pole resonant low-pass: `frequency` in Hz, `resonance` 0..1 (self-oscillates
@@ -236,7 +236,27 @@ export interface AnalogOscNodeSpec {
   pulseWidth?: NumberField;
 }
 
+/** The banks a `wavetableOsc` morphs through (their waveforms are in dsp/wavetable.ts). */
+export const WAVETABLE_BANKS = ["classic", "harmonics", "pulse"] as const;
+export type WavetableBank = (typeof WAVETABLE_BANKS)[number];
+
+/**
+ * A wavetable oscillator: `position` (0..1) morphs through a bank of single-cycle waveforms, dark to
+ * bright - sweep it with an envelope or LFO for a timbre that moves. `bank` picks which. Its
+ * frequency follows the note like an `osc`'s.
+ */
+export interface WavetableOscNodeSpec {
+  id: string;
+  kind: "wavetableOsc";
+  bank?: EnumField<WavetableBank>;
+  position?: NumberField;
+  frequency?: NumberField;
+  noteRatio?: NumberField;
+  detune?: NumberField;
+}
+
 export type NodeSpec =
+  | WavetableOscNodeSpec
   | AnalogOscNodeSpec
   | LadderNodeSpec
   | BitcrushNodeSpec

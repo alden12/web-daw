@@ -6,7 +6,7 @@
  * the exact math here is the same module the unit tests exercise.
  */
 import { crushSample, makeHoldState, type HoldState } from "../dsp/bitcrush";
-import { keepAlive } from "./lifetime";
+import { isTransient, lifetime } from "./lifetime";
 
 class BitcrusherProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors(): AudioParamDescriptor[] {
@@ -17,7 +17,12 @@ class BitcrusherProcessor extends AudioWorkletProcessor {
   }
 
   private holds: HoldState[] = [];
-  private readonly alive = keepAlive();
+  private readonly alive: ReturnType<typeof lifetime>;
+
+  constructor(options?: AudioWorkletNodeOptions) {
+    super();
+    this.alive = lifetime(isTransient(options));
+  }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const input = inputs[0];
@@ -40,7 +45,8 @@ class BitcrusherProcessor extends AudioWorkletProcessor {
         outCh[i] = crushSample(inCh[i], bits, downsample, hold);
       }
     }
-    // As a graph node in an instrument voice (INST-15) it must be collectable once the voice ends.
+    // In an instrument voice (INST-15) it must be collectable once the note ends; in an effect it
+    // runs for as long as the effect does.
     return this.alive(input);
   }
 }

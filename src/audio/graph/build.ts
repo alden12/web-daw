@@ -20,6 +20,7 @@ import type {
   EnumField,
   OscNodeSpec,
   AnalogOscNodeSpec,
+  WavetableOscNodeSpec,
   ShaperNodeSpec,
   EnvNodeSpec,
   ConvolverNodeSpec,
@@ -90,9 +91,11 @@ export function buildGraph(whole: Graph, context: GraphContext): BuiltGraph {
   const releases: Release[] = [];
   let playsUntil = 0;
 
+  // An instrument voice is one note's copy, built with the note; an effect is built once.
+  const inVoice = context.note !== undefined;
   // 1. Create nodes.
   for (const spec of graph.nodes) {
-    const { node, source } = NODE_IMPLS[spec.kind].create(ctx, spec);
+    const { node, source } = NODE_IMPLS[spec.kind].create(ctx, spec, inVoice);
     nodes.set(spec.id, { node, kind: spec.kind });
     if (source) sources.push(source);
   }
@@ -167,6 +170,12 @@ function applyFields(
       numberField(spec.detune, osc.detune);
       break;
     }
+    case "wavetableOsc":
+      enumField(spec.bank, "bank", "classic");
+      bindOscFrequency(spec, impl.audioParam(node, "frequency")!, ctx, startTime, context, addTarget);
+      numberField(spec.detune, impl.audioParam(node, "detune"));
+      numberField(spec.position, impl.audioParam(node, "position"));
+      break;
     case "analogOsc":
       enumField(spec.waveform, "waveform", "saw");
       bindOscFrequency(spec, impl.audioParam(node, "frequency")!, ctx, startTime, context, addTarget);
@@ -274,7 +283,7 @@ function bindProperty(
 
 /** Oscillator frequency: an absolute Hz, or the note frequency times an optional ratio. */
 function bindOscFrequency(
-  spec: OscNodeSpec | AnalogOscNodeSpec,
+  spec: OscNodeSpec | AnalogOscNodeSpec | WavetableOscNodeSpec,
   frequency: AudioParam,
   ctx: BaseAudioContext,
   startTime: number,

@@ -9,12 +9,20 @@
  * Curve families for the waveshaper live here too; `classic` is the exact curve
  * lifted from the original Distortion effect so the graph version sounds identical.
  */
+import { ANALOG_WAVEFORMS, WAVETABLE_BANKS } from "./types";
 import type { ImpulseShape, NodeSpec, NoiseColor, ShaperShape } from "./types";
 import { VOCABULARY } from "./vocabulary";
+import type { GraphNodeOptions } from "../worklets/lifetime";
 
 export interface NodeImpl {
   /** Build the bare node (construction-only args like delay length are read from the spec). */
-  create(ctx: BaseAudioContext, spec: NodeSpec): { node: AudioNode; source?: AudioScheduledSourceNode };
+  /** Build the bare node. `inVoice`: it is part of one note's copy of an instrument voice, so lives
+   *  no longer than the note (matters only to custom-DSP blocks, see worklets/lifetime.ts). */
+  create(
+    ctx: BaseAudioContext,
+    spec: NodeSpec,
+    inVoice: boolean,
+  ): { node: AudioNode; source?: AudioScheduledSourceNode };
   /** The AudioParam for a field, if it is one (else undefined - it's a property). */
   audioParam(node: AudioNode, field: string): AudioParam | undefined;
   /** Set an enum/string property (waveform, filter type). */
@@ -36,10 +44,12 @@ function tryWorklet(
   ctx: BaseAudioContext,
   processor: string,
   instead: string,
+  inVoice: boolean,
   options?: AudioWorkletNodeOptions,
 ): AudioWorkletNode | null {
   try {
-    return new AudioWorkletNode(ctx, processor, options);
+    const processorOptions: GraphNodeOptions = { transient: inVoice };
+    return new AudioWorkletNode(ctx, processor, { ...options, processorOptions });
   } catch (error) {
     if (!missingProcessors.has(processor)) {
       missingProcessors.add(processor);
@@ -58,31 +68,39 @@ const workletParam = (node: AudioNode, field: string): AudioParam | undefined =>
  * rather than the voice failing to build.
  */
 const workletLeaf = (processor: string): NodeImpl => ({
-  create: (ctx) => ({
-    node: tryWorklet(ctx, processor, "passing audio through unprocessed") ?? ctx.createGain(),
+  create: (ctx, _spec, inVoice) => ({
+    node: tryWorklet(ctx, processor, "passing audio through unprocessed", inVoice) ?? ctx.createGain(),
   }),
   audioParam: workletParam,
   setProperty: () => {},
 });
 
-/** An `analogOsc` waveform as the processor's `shape` parameter. */
-const ANALOG_SHAPES: Record<string, number> = { saw: 0, pulse: 1 };
-/** The nearest native waveform, for an `analogOsc` whose processor is missing. */
-const NATIVE_WAVEFORMS: Record<string, OscillatorType> = { saw: "sawtooth", pulse: "square" };
-/** Native oscillators standing in for an `analogOsc` whose processor is missing. */
+/** Native oscillators standing in for a custom-DSP oscillator whose processor is missing. */
 const standIns = new WeakSet<AudioNode>();
+
+/**
+ * An oscillator's one enum field (an `analogOsc`'s waveform, a `wavetableOsc`'s bank): the index of
+ * its value in `values` goes to the processor's k-rate `param`, and `native` is the nearest native
+ * waveform for a stand-in.
+ */
+interface OscillatorChoice {
+  field: string;
+  param: string;
+  values: readonly string[];
+  native: (value: string) => OscillatorType;
+}
 
 /**
  * A custom-DSP oscillator. A worklet cannot be started and stopped like a native source, so it is
  * paired with a gate - a constant source into it, which the voice starts and stops with the note
- * and whose end tears the voice down - and plays only while the gate does. Its waveform is a
- * parameter the processor reads (`shape`), set straight away rather than sent as a message, which
- * would arrive after the first notes had already rendered. If the processor is missing, a native
- * oscillator stands in: the nearest waveform, no pulse width.
+ * and whose end tears the voice down - and plays only while the gate does. Its enum field is a
+ * parameter the processor reads, set straight away rather than sent as a message, which would
+ * arrive after the first notes had already rendered. If the processor is missing, a native
+ * oscillator stands in: the nearest waveform, and only frequency and detune.
  */
-const workletOscillator = (processor: string): NodeImpl => ({
-  create: (ctx) => {
-    const node = tryWorklet(ctx, processor, "playing a plain oscillator instead", {
+const workletOscillator = (processor: string, choice: OscillatorChoice): NodeImpl => ({
+  create: (ctx, _spec, inVoice) => {
+    const node = tryWorklet(ctx, processor, "playing a plain oscillator instead", inVoice, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [1],
@@ -101,14 +119,25 @@ const workletOscillator = (processor: string): NodeImpl => ({
       ? paramsOf<OscillatorNode>((osc) => ({ frequency: osc.frequency, detune: osc.detune }))(node, field)
       : workletParam(node, field),
   setProperty: (node, field, value) => {
-    if (field !== "waveform") return;
-    if (standIns.has(node)) (node as OscillatorNode).type = NATIVE_WAVEFORMS[value] ?? "sawtooth";
-    else workletParam(node, "shape")!.value = ANALOG_SHAPES[value] ?? 0;
+    if (field !== choice.field) return;
+    if (standIns.has(node)) (node as OscillatorNode).type = choice.native(value);
+    else workletParam(node, choice.param)!.value = Math.max(0, choice.values.indexOf(value));
   },
 });
 
 export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
-  analogOsc: workletOscillator(VOCABULARY.analogOsc.processor!),
+  analogOsc: workletOscillator(VOCABULARY.analogOsc.processor!, {
+    field: "waveform",
+    param: "shape",
+    values: ANALOG_WAVEFORMS,
+    native: (waveform) => (waveform === "pulse" ? "square" : "sawtooth"),
+  }),
+  wavetableOsc: workletOscillator(VOCABULARY.wavetableOsc.processor!, {
+    field: "bank",
+    param: "bank",
+    values: WAVETABLE_BANKS,
+    native: (bank) => (bank === "pulse" ? "square" : "sawtooth"),
+  }),
   ladder: workletLeaf(VOCABULARY.ladder.processor!),
   bitcrush: workletLeaf(VOCABULARY.bitcrush.processor!),
   osc: {

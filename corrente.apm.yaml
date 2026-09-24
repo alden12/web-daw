@@ -6079,6 +6079,11 @@ projects:
             id: 01a0d49a-c831-75be-9e35-509b9b6411b5
             at: 2026-09-24T18:08:28.721Z
             actor: claude
+          - body: "Construction-time options, as answered by 15.3: a finite choice (wavetableOsc's `bank`, analogOsc's `waveform`) is an index on a k-rate processor param, set synchronously, so it can also be param-bound and change live. Nothing needed true construction-time data. That only arrives with user-supplied tables or samples for a worklet, which would go as `processorOptions` (or a transferred buffer) and is deferred until something needs it. The banks are built once per worklet module, not per voice."
+            audience: user
+            id: 01a0d4b4-2e90-7782-901c-8fe49ace86ec
+            at: 2026-09-24T18:36:13.328Z
+            actor: claude
       - ref: INST-15.1
         area: INST
         title: Worklet leaf seam, ladder filter and bitcrusher (Bitcrusher effect becomes a graph)
@@ -6112,7 +6117,7 @@ projects:
       - ref: INST-15.3
         area: INST
         title: Wavetable oscillator leaf (table + position)
-        status: to-do
+        status: review
         sort_path: "000015.000003"
         parent: INST-15
         deps:
@@ -6120,7 +6125,7 @@ projects:
         body: "A source leaf over `dsp/wavetable`: a construction-time table choice (enum field, like `buffer.sample`) and a modulatable position. Lets the agent author wavetable voices; it does not convert the hand-written Wavetable instrument (see INST-15's 2026-09-24 decision)."
         id: 01a0d465-4f2f-762a-b009-fd7e00b59394
         created_at: 2026-09-24T17:10:04.335Z
-        updated_at: 2026-09-24T17:10:04.335Z
+        updated_at: 2026-09-24T18:36:10.528Z
       - ref: INST-16
         area: INST
         title: Drum kits as swappable, saveable presets, with a changeable default kit

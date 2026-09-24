@@ -5,12 +5,11 @@
  * coefficients are recomputed per sample only while one of them is moving, else once per block.
  * Filter state is kept per channel across render quanta.
  *
- * Its lifetime follows its input (`keepAlive`): kept running until something first plays into it,
- * which in a voice is only when the note starts, then only while something still does, so it can
- * be collected once the voice's sources stop and disconnect.
+ * In an instrument voice it lives as long as the note (see `lifetime`), so a finished voice's copy
+ * can be collected; in an effect, as long as the effect.
  */
 import { ladderCoeffs, ladderStep, makeLadderState, type LadderState } from "../dsp/ladder";
-import { keepAlive } from "./lifetime";
+import { isTransient, lifetime } from "./lifetime";
 
 /** Keep the cutoff where the ladder approximation stays stable and in tune. */
 const MIN_CUTOFF = 20;
@@ -26,7 +25,12 @@ class LadderProcessor extends AudioWorkletProcessor {
   }
 
   private states: LadderState[] = [];
-  private readonly alive = keepAlive();
+  private readonly alive: ReturnType<typeof lifetime>;
+
+  constructor(options?: AudioWorkletNodeOptions) {
+    super();
+    this.alive = lifetime(isTransient(options));
+  }
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const input = inputs[0];
