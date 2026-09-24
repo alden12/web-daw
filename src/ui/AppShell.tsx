@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { ProjectStore } from "../audio/project/projectStore";
 import { AudioEngine } from "../audio/engine/AudioEngine";
 import { Scheduler } from "../audio/sequencer/scheduler";
-import { connectMcpBridge, type McpStatus } from "../audio/mcp/bridge";
+import { connectMcpBridge, localBridgeReachable, type McpStatus } from "../audio/mcp/bridge";
 import { Recorder } from "../audio/recording/recorder";
 import { LiveNotes } from "../audio/live/liveNotes";
 import { MidiInput } from "../audio/midi/midiInput";
@@ -127,7 +127,7 @@ export function AppShell() {
         onSustain: (down) => liveNotes.setSustain(down),
       }),
   );
-  const [mcpStatus, setMcpStatus] = useState<McpStatus>("connecting");
+  const [mcpStatus, setMcpStatus] = useState<McpStatus>(() => (localBridgeReachable() ? "connecting" : "disconnected"));
   // Sync-connection state (remote mode only; null in local/no-sync mode). `projectLoaded` gates the
   // load overlay; `sawPeerEdit` marks the project as collaborative so the offline banner warns.
   const [syncStatus, setSyncStatus] = useState<WsStatus | null>(null);
@@ -359,6 +359,8 @@ export function AppShell() {
   );
 
   useEffect(() => {
+    // Only where the local MCP server could be listening; elsewhere it is refusals and retries.
+    if (!localBridgeReachable()) return;
     const handle = connectMcpBridge(
       { projectStore, engine, scheduler, editLog, versionStore },
       { onStatus: setMcpStatus },
