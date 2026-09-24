@@ -22,6 +22,21 @@ describe("MIDI devices in the project store", () => {
     expect(devices[0].params.get("level")).toBeCloseTo(0.4);
   });
 
+  it("keeps a device's params when the same store reloads in place (undo, a sync, a remote edit)", () => {
+    // An in-place load reuses the device and its store. It once rebuilt that store from the effect
+    // schema, which has no arpeggiator, so every param went and the scheduler threw on `rate`.
+    const store = new ProjectStore();
+    const track = store.addTrack("subtractive", { name: "Lead" });
+    const device = store.addMidiDevice(track.id, "arpeggiator")!;
+    device.params.set("rate", "1/16");
+
+    store.load(store.snapshot());
+    const loaded = store.getTrack(track.id);
+    const reloaded = loaded?.kind === "instrument" ? loaded.midiDevices[0] : undefined;
+    expect(reloaded).toBe(device); // the same instance, reused
+    expect(reloaded!.params.get("rate")).toBe("1/16");
+  });
+
   it("removeMidiDevice drops it", () => {
     const store = new ProjectStore();
     const track = store.addTrack("subtractive");

@@ -1052,9 +1052,11 @@ export class ProjectStore {
     const byId = new Map(track.midiDevices.map((device) => [device.id, device] as const));
     track.midiDevices = want.map((wanted) => {
       const existing = byId.get(wanted.id);
+      // No reschema here, unlike effects: MIDI devices are all built in, so a device's schema
+      // cannot have changed under it. (One here once used the *effect* schema, which has no entry
+      // for a MIDI device, and stripped an arpeggiator of every param on any in-place load.)
       if (existing && existing.type === wanted.type) {
         existing.bypassed = wanted.bypassed;
-        existing.params.reschema(effectSchema(wanted.type)); // a custom effect edited since
         existing.params.load(wanted.params);
         return existing;
       }

@@ -6327,6 +6327,22 @@ projects:
         id: 01a0d569-5e08-73cb-99e8-76a0f66424bd
         created_at: 2026-09-24T21:54:07.496Z
         updated_at: 2026-09-24T21:54:07.496Z
+      - ref: INST-25
+        area: INST
+        title: "Bug: an in-place load stripped every MIDI device of its params"
+        status: review
+        sort_path: "000025"
+        body: |-
+          Found 2026-09-24 on the live site: selecting a track with an arpeggiator threw `Unknown parameter: rate` from the arp's scheduler, over and over, and in the device panel.
+
+          **Cause:** a copy-paste slip in #170 (custom-device editing). `loadMidiDevicesInPlace` reschemas reused stores the way `loadEffectsInPlace` does, but it called **`effectSchema`**, which has no entry for a MIDI device. So on any in-place load (undo, a server sync, a remote edit), every reused MIDI device's store was emptied of params.
+
+          **Fix:** the reschema is gone from MIDI devices. They're all built in, so a device's schema can't change under it. The regression test in `test/midiDevices.test.ts` reloads a store in place and checks the arp keeps `rate`; it fails without the fix.
+
+          **Aftermath:** a device whose params were stripped and then saved will load with its defaults, so an arpeggiator's rate or pattern may have reset.
+        id: 01a0d58c-c5f6-760a-8965-926431bbc22b
+        created_at: 2026-09-24T22:32:47.862Z
+        updated_at: 2026-09-24T22:32:47.862Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
