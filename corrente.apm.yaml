@@ -3641,7 +3641,7 @@ projects:
       - ref: AGENT-28
         area: AGENT
         title: Hosted MCP over the stored project, and defer the in-app agent panel
-        status: review
+        status: done
         sort_path: "000028"
         body: >
           **Decided 2026-09-06.** Make the DAW something Claude can drive
@@ -3887,6 +3887,48 @@ projects:
             id: 01a0d3be-4e66-75f5-8014-7e3d7d87a73b
             at: 2026-09-24T14:07:39.622Z
             actor: claude
+      - ref: AGENT-29
+        area: AGENT
+        title: Let MCP clients other than Claude connect to the hosted server
+        status: to-do
+        sort_path: "000029"
+        deps:
+          - AGENT-28
+        body: >-
+          **Deliberately Claude-only for now** (2026-09-24, during initial
+          testing and development). Dynamic client registration is open,
+          because Claude registers itself as it connects, so anyone can
+          register an OAuth app and call it "Claude". The consent page
+          therefore refuses any app whose redirect is not `https://claude.ai`,
+          `https://claude.com` or a loopback address (Claude Code) -
+          `src/auth/trustedRedirect.ts`. That closes the phishing route
+          completely, and it is also why nothing else can connect: ChatGPT,
+          Cursor, the MCP Inspector's hosted UI and so on all receive their
+          codes elsewhere.
+
+
+          **Opening it up, when it is wanted.** Three shapes, cheapest first:
+
+
+          - **Grow the list.** Add each client's callback host as it is asked
+          for. Right while the clients are a handful of known products; wrong
+          once anyone can bring their own.
+
+          - **Approve apps, not redirects.** Keep a table of registered clients
+          someone has vetted, and have the consent page allow only those. Needs
+          an admin surface, or at least a script.
+
+          - **Trust the person.** Show the redirect origin prominently with a
+          warning, as the page did before, and let them decide. Fine for a
+          small invited audience who read it; weak once the audience is wide.
+
+
+          Whichever it is, the hosted server's own checks do not change: the
+          token's audience, the email allowlist and project membership are
+          what gate access, and none of them care which client asked.
+        id: 01a0d3f7-99be-7c99-be1f-9e060d20b7cb
+        created_at: 2026-09-24T15:10:14.462Z
+        updated_at: 2026-09-24T15:10:14.462Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management

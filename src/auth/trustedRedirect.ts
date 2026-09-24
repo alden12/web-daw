@@ -9,6 +9,10 @@
  *
  * Only the signed-in person's browser can approve, so refusing here closes the door fully - there is
  * no other way to say yes.
+ *
+ * **Claude-only on purpose, for initial testing and development.** Other MCP clients (ChatGPT, Cursor,
+ * a hosted Inspector) receive their codes elsewhere, so they are refused too. Opening it up is
+ * AGENT-29, which weighs growing this list against vetting apps or trusting the person.
  */
 
 /** Claude's own hosts, exactly (no subdomains), over HTTPS. */

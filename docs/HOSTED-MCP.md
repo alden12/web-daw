@@ -52,7 +52,8 @@ the connection.
 "Claude", so the consent page ignores the name and checks where the app receives its code, which it
 cannot fake: claude.ai or claude.com over HTTPS, or a loopback address (Claude Code). Anything else
 is refused before an Allow button is shown (`src/auth/trustedRedirect.ts`). If Claude ever moves its
-callback to a new host, add it there.
+callback to a new host, add it there. This is deliberately Claude-only while the server is in initial
+testing and development, so other MCP clients cannot connect yet; opening it up is AGENT-29.
 
 ## If it fails after you approve
 
