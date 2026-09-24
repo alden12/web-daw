@@ -44,7 +44,9 @@ export function EditorSection({
     <section
       // No rule above it: the header is the divider, and a line on top of it only added a seam
       // right where the roll now runs up to the section below without padding.
-      className={grow && open ? "flex-1 min-h-0 flex flex-col" : "shrink-0"}
+      // Growing, it is also the box that gives way when the sheet is lowered past it - so it
+      // clips, or its header would draw over the section below at the lowest detent.
+      className={grow && open ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "shrink-0"}
       data-section={title.toLowerCase()}
       data-open={open}
     >
