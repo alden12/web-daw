@@ -50,6 +50,13 @@ describe("padRowHeight", () => {
 });
 
 describe("fitPads", () => {
+  it("takes the whole room when the pads fill the sheet, for more rows than their share gives", () => {
+    const shared = fitPads(ROOM.phoneHalf, false);
+    const filling = fitPads(ROOM.phoneHalf, false, true);
+    expect(filling.rows).toBeGreaterThan(shared.rows);
+    expect(filling.inlineControls).toBe(false);
+  });
+
   it("gives a phone at Half a row, with the controls in a row of their own", () => {
     const fit = fitPads(ROOM.phoneHalf, true);
     expect(fit.rows).toBeGreaterThanOrEqual(1);

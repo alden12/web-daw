@@ -6841,6 +6841,18 @@ projects:
           - A pentatonic degree with no triad takes its first fitting family instead (Dsus4 in C major pentatonic). A degree nothing fits (E in C major pentatonic) is left as a gap rather than given a chord from outside the key.
           - Names have no brackets (madd9, mM7), and a pad's label shrinks to fit its width (CSS container units), for sharp roots on a phone.
 
+          ### Two families step outside the key, on purpose
+
+          Asked for 2026-09-24: "sometimes the right chord has notes outside the scale". The ways progressions most often do it are a known, small set, and the two below still hang off a degree of the scale, so they have a column:
+
+          - **flip**: the column's triad with its third flipped.
+            - Minor to major gives the **secondary dominants**: D, E and A in C major, captioned V/V, V/vi and V/ii, each pulling to the chord a fifth below.
+            - Major to minor gives chords **borrowed from the parallel minor**: Fm (iv), Cm and Gm.
+            - B° flips to Bm.
+          - **V7 of**: a dominant seventh on each degree that resolves to a chord of the key (C7 D7 E7 A7 B7 in C major). There's no F7, since its B♭ target is outside the key, and no G7, which is already the plain 7th.
+
+          They come last by default and wear the accidentals' muted label, so you see you're leaving the key before you hear it. The rest of the borrowed chords (B♭, A♭ and E♭ in C major) have roots outside the scale, so no column to live in. They're left out for now; they could have a row of their own later.
+
           ## The pads (first PR, #175)
 
           - **Base row** = the triads. **Rows above** = each column's variations in its arranged order.
@@ -6849,9 +6861,9 @@ projects:
           - Accidentals is greyed out in chords mode, since there's nothing out of key to show.
           - The touch hook (`usePadTouch`) now keys a pad by **its set of notes**, not one pitch. Chords that share notes (C and Am share two) don't cut each other: a note is only started if nothing holds it, and only stopped once nothing does. Slide and latch work unchanged.
 
-          ## Arranging, favourites and scrolling (second PR)
+          ## Arranging, favourites, scrolling and filling the sheet (second PR, #178)
 
-          Asked for after trying the first: an order **per column**, **favourite** chords, and a way to reach an odd chord without rearranging.
+          Asked for after trying the first: an order **per column**, **favourite** chords, a way to reach an odd chord without rearranging, and more room for the pads while only playing.
 
           - **The arrangement** (`audio/theory/chordPrefs.ts`, pure) is a global order and hidden set, plus per-column overrides **keyed by degree, not note**, so "on ii, sus2 first" follows you into any key. Favourites are `degree:family`. It's saved per browser as JSON, read through zod, and anything unreadable falls back to the defaults. A family added later gets appended to a saved order, so it's offered rather than lost.
           - **Edit mode** ("Edit chords…" in the key menu) replaces the key/octave row with an edit bar. A tap then selects a pad instead of playing it. The pads get a dashed edge, and hidden chords are laid out dimmed so they can be shown again.
@@ -6860,11 +6872,12 @@ projects:
             - Starring moves the chord to the front of its column and tints the pad. Unstarring leaves it in place.
           - **Why a mode, not long-press:** a press plays the chord, so a long-press would sound it while you try to edit it.
           - **Scrolling:** the base row stays put and the rows above scroll, snapping to whole rows, so every chord is reachable. The pads can't be the scroll handle (drag down is the sustain latch), so each row leaves a 20px strip on its right edge that scrolls natively, with a rail drawn over it. A wheel or trackpad scrolls from anywhere. In edit mode the pads scroll too (`touch-action: pan-y`), since they don't latch there.
+          - **Filling the sheet:** a ⤒ button in the Pads header folds away the surface above (roll, clips or rack) and lets the pads take the whole room (`fitPads(..., filling)`). At Half on a phone that's 4 chord rows instead of 2. The pads stay at the foot of the sheet where the thumbs are. Picking a surface, or collapsing the pads, gives the sheet back. It works for note and kit pads too, and is saved per browser.
 
           **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T20:10:36.812Z
+        updated_at: 2026-09-24T20:22:46.796Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing

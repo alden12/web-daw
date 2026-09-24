@@ -1313,6 +1313,29 @@ test.describe("phone", () => {
     await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
   });
 
+  test("the pads can fill the sheet, folding the roll away for more rows of chords", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+    const rows = () => pads(page).locator("[data-chord-row]").count();
+    const more = pads(page).getByRole("button", { name: "More chord rows" });
+    while (await more.isEnabled()) await more.tap();
+    const shared = await pads(page).evaluate((section) => section.getBoundingClientRect().height);
+
+    await pads(page).getByRole("button", { name: "Fill the sheet with the pads" }).tap();
+    await expect(page.getByTestId("roll-scroll")).toHaveCount(0);
+    while (await more.isEnabled()) await more.tap();
+    expect(await pads(page).evaluate((section) => section.getBoundingClientRect().height)).toBeGreaterThan(shared);
+    expect(await rows()).toBeGreaterThan(1);
+    await page.screenshot({ path: "test-results/pads-filling.png" });
+
+    // Asking for a surface gives the sheet back to it.
+    await page.getByRole("radio", { name: "Edit" }).click();
+    await expect(page.getByTestId("roll-scroll")).toBeVisible();
+    await expect(pads(page).getByRole("button", { name: "Fill the sheet with the pads" })).toBeVisible();
+  });
+
   test("a long chord name shrinks to fit its pad rather than overflowing it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

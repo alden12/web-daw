@@ -358,6 +358,9 @@ export function MobileShell({
    * not ask for. Keep the reasoning attached to the constraint, not to the number.
    */
   const [detent, setDetent] = useState<Detent>("half");
+  // The pads with the sheet to themselves: the surface above them folded away, for more rows of
+  // chords when you are only playing. Kept across reloads like the pads' own open state.
+  const [padsFilling, setPadsFilling] = usePersistentBoolean("corrente:pads-fill", false);
   const [surface, setSurface] = useState<EditorSurface>("edit");
   /**
    * A tablet opens with the library already docked: there is width for it beside the
@@ -745,6 +748,8 @@ export function MobileShell({
                   value={surface}
                   onChange={(next) => {
                     setSurface(next);
+                    // So is asking for one while the pads fill the sheet.
+                    setPadsFilling(false);
                     // Asking for a surface while parked means you want to see it.
                     if (detent === "peek") setDetent("half");
                   }}
@@ -752,7 +757,14 @@ export function MobileShell({
                 />
               }
             >
-              {surfacesFor(selectedTrack)[surface]}
+              {/* Folded away while the pads fill the sheet - only where there are pads to fill it.
+                  An empty box keeps its place, so the pads stay at the foot of the sheet where
+                  the thumbs are rather than jumping up under its header. */}
+              {padsFilling && selectedTrack.kind === "instrument" ? (
+                <div className="flex-1 min-h-0" />
+              ) : (
+                surfacesFor(selectedTrack)[surface]
+              )}
               {/* The pads sit under whichever surface is showing, not inside one and not in
                   the switch beside them: they are how you play, and you want to play while
                   you tweak a device as much as while you edit notes. The surface above is
@@ -767,6 +779,8 @@ export function MobileShell({
                   // below ~44px per pad the layout is wrong rather than merely tight.
                   octavesPerRow={shape.tier === "tablet" ? 2 : 1}
                   room={editorRoom}
+                  filling={padsFilling}
+                  onFillingChange={setPadsFilling}
                 />
               )}
             </EditorSheet>

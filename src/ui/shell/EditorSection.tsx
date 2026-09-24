@@ -23,6 +23,7 @@ export function EditorSection({
   open,
   onToggle,
   controls,
+  trailing,
   children,
 }: {
   title: string;
@@ -33,6 +34,8 @@ export function EditorSection({
    * whose controls fit in a row of their own should keep them near what they act on.
    */
   controls?: ReactNode;
+  /** At the far end of the header, open or not: a control over the section itself. */
+  trailing?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -55,6 +58,7 @@ export function EditorSection({
           <span className="font-mono text-[10.5px] uppercase tracking-wider text-muted">{title}</span>
         </button>
         {open && controls}
+        {trailing && <div className="ml-auto shrink-0 flex items-center">{trailing}</div>}
       </div>
       {open && children}
     </section>

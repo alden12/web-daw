@@ -117,11 +117,15 @@ export const padRowHeight = (accidentals: boolean) =>
  *
  * `EDITOR_CHROME` comes off the top because it belongs to neither surface; what is left is
  * what the pads and the roll divide, and every arrangement divides the same number.
+ *
+ * `filling` is the pads with the surface above folded away (the button in their header): then
+ * there is nothing to share with and no editor chrome to leave, so they take the whole room.
  */
-export function fitPads(room: number, accidentals: boolean): PadFit {
+export function fitPads(room: number, accidentals: boolean, filling = false): PadFit {
   const rowHeight = padRowHeight(accidentals);
-  const editor = Math.max(0, room - EDITOR_CHROME);
-  const fits = ARRANGEMENTS.map(({ inlineControls, padsShare, limit }) => {
+  const editor = Math.max(0, filling ? room : room - EDITOR_CHROME);
+  const arrangements = filling ? ARRANGEMENTS.map((arrangement) => ({ ...arrangement, padsShare: 1 })) : ARRANGEMENTS;
+  const fits = arrangements.map(({ inlineControls, padsShare, limit }) => {
     const chrome = SECTION_HEADER + PADS_PADDING + (inlineControls ? 0 : CONTROLS_HEIGHT);
     return {
       rows: Math.max(0, Math.min(limit, Math.floor((editor * padsShare - chrome) / rowHeight))),
