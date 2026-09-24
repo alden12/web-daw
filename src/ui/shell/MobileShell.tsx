@@ -92,15 +92,17 @@ type EditorSurface = "edit" | "clips" | "devices";
 interface SurfaceItem {
   surface: EditorSurface;
   label: string;
-  /** Its collapsible section's title, above the pads: what it is, where the switch says what to do. */
-  section: string;
 }
 
 const SURFACE_ITEMS: SurfaceItem[] = [
-  { surface: "edit", label: "Edit", section: "Roll" },
-  { surface: "clips", label: "Clips", section: "Clips" },
-  { surface: "devices", label: "Rack", section: "Rack" },
+  { surface: "edit", label: "Edit" },
+  { surface: "clips", label: "Clips" },
+  { surface: "devices", label: "Rack" },
 ];
+
+/** Each surface's collapsible section title, above the pads: what it is, where the switch says what
+ *  to do. A map, so a surface without one is a type error rather than a runtime `find` miss. */
+const SURFACE_SECTIONS: Record<EditorSurface, string> = { edit: "Roll", clips: "Clips", devices: "Rack" };
 
 /**
  * A top-bar icon button, sized for a finger rather than a cursor.
@@ -773,7 +775,7 @@ export function MobileShell({
               {selectedTrack.kind === "instrument" ? (
                 <>
                   <EditorSection
-                    title={SURFACE_ITEMS.find((item) => item.surface === surface)!.section}
+                    title={SURFACE_SECTIONS[surface]}
                     open={surfaceOpen}
                     onToggle={() => setSurfaceOpen(!surfaceOpen)}
                     grow
