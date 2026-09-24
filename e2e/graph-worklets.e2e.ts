@@ -8,8 +8,11 @@ import { test, expect, type Page } from "@playwright/test";
 
 type VoiceNode = Record<string, unknown> & { id: string; kind: string };
 type Played = { notes: number[]; at: number; seconds: number };
-/** Loudness and brightness (loudness of the sample-to-sample change, over loudness) per window. */
-type Measure = { rms: number; brightness: number };
+/**
+ * Loudness and brightness (loudness of the sample-to-sample change, over loudness) per window, and
+ * the strength of the first four harmonics of `fundamental` Hz when one is given.
+ */
+type Measure = { rms: number; brightness: number; harmonics: number[] };
 
 /** Render an instrument voice made of `nodes`, playing `played`, and measure each window. */
 async function renderVoice(
@@ -18,9 +21,10 @@ async function renderVoice(
   connections: [string, string][],
   played: Played,
   windows: [number, number][],
+  fundamental = 0,
 ): Promise<Measure[]> {
   return page.evaluate(
-    async ({ nodes, connections, played, windows }) => {
+    async ({ nodes, connections, played, windows, fundamental }) => {
       const { GraphInstrument } = await import(/* @vite-ignore */ "/src/audio/graph/GraphInstrument.ts");
       const { ParamStore } = await import(/* @vite-ignore */ "/src/audio/params/store.ts");
       const { loadWorklets } = await import(/* @vite-ignore */ "/src/audio/worklets/index.ts");
@@ -41,10 +45,22 @@ async function renderVoice(
         const window = samples.subarray(Math.floor(from * sampleRate), Math.floor(to * sampleRate));
         const change = window.slice(1).map((sample, index) => sample - window[index]);
         const loudness = rms(window);
-        return { rms: loudness, brightness: loudness > 0 ? rms(change) / loudness : 0 };
+        // A single-frequency DFT at each harmonic.
+        const strength = (hz: number) => {
+          const [real, imaginary] = window.reduce(
+            ([re, im], sample, index) => {
+              const phase = (2 * Math.PI * hz * index) / sampleRate;
+              return [re + sample * Math.cos(phase), im - sample * Math.sin(phase)];
+            },
+            [0, 0],
+          );
+          return Math.hypot(real, imaginary) / window.length;
+        };
+        const harmonics = fundamental ? [1, 2, 3, 4].map((harmonic) => strength(fundamental * harmonic)) : [];
+        return { rms: loudness, brightness: loudness > 0 ? rms(change) / loudness : 0, harmonics };
       });
     },
-    { nodes, connections, played, windows },
+    { nodes, connections, played, windows, fundamental },
   );
 }
 
@@ -130,4 +146,60 @@ test("the Bitcrusher, now a graph, crushes a tone to a few levels", async ({ pag
   // 2 bits is 4 levels; the dry path is fully off at mix 1.
   expect(levels).toBeGreaterThan(1);
   expect(levels).toBeLessThanOrEqual(4);
+});
+
+const A3: Played = { notes: [57], at: 0.2, seconds: 0.6 }; // 220Hz, starting well after it is built
+
+test("an analogOsc plays the note, and its pulse width shapes the harmonics", async ({ page }) => {
+  const pulse = (pulseWidth: number): VoiceNode[] => [{ id: "osc", kind: "analogOsc", waveform: "pulse", pulseWidth }];
+  const window: [number, number][] = [[0.3, 0.7]];
+  const [square] = await renderVoice(page, pulse(0.5), [["osc", "amp"]], A3, window, 220);
+  const [narrow] = await renderVoice(page, pulse(0.25), [["osc", "amp"]], A3, window, 220);
+  const [fundamental, second, third] = square.harmonics;
+  // A square is the fundamental plus odd harmonics only; a 25% pulse has a strong 2nd.
+  expect(fundamental).toBeGreaterThan(0.01);
+  expect(second).toBeLessThan(fundamental / 50);
+  expect(third).toBeGreaterThan(fundamental / 5);
+  expect(narrow.harmonics[1]).toBeGreaterThan(narrow.harmonics[0] / 3);
+});
+
+test("an analogOsc saw is silent before and after its note", async ({ page }) => {
+  const [before, during, after] = await renderVoice(
+    page,
+    [{ id: "osc", kind: "analogOsc", waveform: "saw" }],
+    [["osc", "amp"]],
+    { ...A3, seconds: 0.4 },
+    [
+      [0.05, 0.19],
+      [0.3, 0.55],
+      [0.9, 1.0], // after the note (0.2 to 0.6s) and its 200ms release
+    ],
+    220,
+  );
+  expect(during.harmonics[0]).toBeGreaterThan(0.01);
+  expect(during.harmonics[1]).toBeGreaterThan(during.harmonics[0] / 3); // a saw has every harmonic
+  expect(before.rms).toBe(0);
+  expect(after.rms).toBeLessThan(during.rms / 100);
+});
+
+test("an LFO into an analogOsc's pulseWidth modulates it", async ({ page }) => {
+  const nodes: VoiceNode[] = [
+    { id: "osc", kind: "analogOsc", waveform: "pulse", pulseWidth: 0.5 },
+    { id: "lfo", kind: "osc", frequency: 2 },
+    { id: "depth", kind: "gain", gain: 0.3 },
+  ];
+  const connections: [string, string][] = [
+    ["osc", "amp"],
+    ["lfo", "depth"],
+    ["depth", "osc.pulseWidth"],
+  ];
+  // Width swings 0.2..0.8 at 2Hz: the 2nd harmonic comes and goes, where a fixed square has none.
+  const windows: [number, number][] = [
+    [0.3, 0.4],
+    [0.45, 0.55],
+    [0.55, 0.65],
+  ];
+  const measures = await renderVoice(page, nodes, connections, A3, windows, 220);
+  const seconds = measures.map((measure) => measure.harmonics[1] / measure.harmonics[0]);
+  expect(Math.max(...seconds)).toBeGreaterThan(0.2);
 });

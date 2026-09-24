@@ -30,28 +30,85 @@ const paramsOf =
 /** Processors already reported missing, so a def played many times warns once. */
 const missingProcessors = new Set<string>();
 
+/** A worklet node running `processor`, or null (with one warning) if it is not registered on the
+ *  context - its module failed to load. */
+function tryWorklet(
+  ctx: BaseAudioContext,
+  processor: string,
+  instead: string,
+  options?: AudioWorkletNodeOptions,
+): AudioWorkletNode | null {
+  try {
+    return new AudioWorkletNode(ctx, processor, options);
+  } catch (error) {
+    if (!missingProcessors.has(processor)) {
+      missingProcessors.add(processor);
+      console.warn(`Custom DSP "${processor}" is unavailable; ${instead}.`, error);
+    }
+    return null;
+  }
+}
+
+const workletParam = (node: AudioNode, field: string): AudioParam | undefined =>
+  node instanceof AudioWorkletNode ? node.parameters.get(field) : undefined;
+
 /**
  * A custom-DSP block: an AudioWorkletNode running `processor`, whose parameters are its fields.
- * If the processor is not registered on the context (its module failed to load), it becomes a
- * pass-through, so the device still sounds, unprocessed, rather than the voice failing to build.
+ * If the processor is missing it becomes a pass-through, so the device still sounds, unprocessed,
+ * rather than the voice failing to build.
  */
 const workletLeaf = (processor: string): NodeImpl => ({
-  create: (ctx) => {
-    try {
-      return { node: new AudioWorkletNode(ctx, processor) };
-    } catch (error) {
-      if (!missingProcessors.has(processor)) {
-        missingProcessors.add(processor);
-        console.warn(`Custom DSP "${processor}" is unavailable; passing audio through unprocessed.`, error);
-      }
-      return { node: ctx.createGain() };
-    }
-  },
-  audioParam: (node, field) => (node instanceof AudioWorkletNode ? node.parameters.get(field) : undefined),
+  create: (ctx) => ({
+    node: tryWorklet(ctx, processor, "passing audio through unprocessed") ?? ctx.createGain(),
+  }),
+  audioParam: workletParam,
   setProperty: () => {},
 });
 
+/** An `analogOsc` waveform as the processor's `shape` parameter. */
+const ANALOG_SHAPES: Record<string, number> = { saw: 0, pulse: 1 };
+/** The nearest native waveform, for an `analogOsc` whose processor is missing. */
+const NATIVE_WAVEFORMS: Record<string, OscillatorType> = { saw: "sawtooth", pulse: "square" };
+/** Native oscillators standing in for an `analogOsc` whose processor is missing. */
+const standIns = new WeakSet<AudioNode>();
+
+/**
+ * A custom-DSP oscillator. A worklet cannot be started and stopped like a native source, so it is
+ * paired with a gate - a constant source into it, which the voice starts and stops with the note
+ * and whose end tears the voice down - and plays only while the gate does. Its waveform is a
+ * parameter the processor reads (`shape`), set straight away rather than sent as a message, which
+ * would arrive after the first notes had already rendered. If the processor is missing, a native
+ * oscillator stands in: the nearest waveform, no pulse width.
+ */
+const workletOscillator = (processor: string): NodeImpl => ({
+  create: (ctx) => {
+    const node = tryWorklet(ctx, processor, "playing a plain oscillator instead", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    if (!node) {
+      const osc = ctx.createOscillator();
+      standIns.add(osc);
+      return { node: osc, source: osc };
+    }
+    const gate = ctx.createConstantSource();
+    gate.connect(node);
+    return { node, source: gate };
+  },
+  audioParam: (node, field) =>
+    standIns.has(node)
+      ? paramsOf<OscillatorNode>((osc) => ({ frequency: osc.frequency, detune: osc.detune }))(node, field)
+      : workletParam(node, field),
+  setProperty: (node, field, value) => {
+    if (field !== "waveform") return;
+    if (standIns.has(node)) (node as OscillatorNode).type = NATIVE_WAVEFORMS[value] ?? "sawtooth";
+    else workletParam(node, "shape")!.value = ANALOG_SHAPES[value] ?? 0;
+  },
+});
+
 export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
+  analogOsc: workletOscillator(VOCABULARY.analogOsc.processor!),
   ladder: workletLeaf(VOCABULARY.ladder.processor!),
   bitcrush: workletLeaf(VOCABULARY.bitcrush.processor!),
   osc: {
