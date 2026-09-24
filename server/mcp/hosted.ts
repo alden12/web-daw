@@ -78,6 +78,10 @@ export function createHostedMcp({ db, registry, principal, log = console.error }
     if (!opened) return `You do not have access to "${chosen.name}".`;
     room = opened;
     selectionKey = `${principal.userId}:${chosen.id}`;
+    // A fresh copy every call rather than one cached per room: the server keeps nothing between
+    // requests anyway, a project is plain data (samples are referenced, not copied) so this costs a
+    // few milliseconds against a network round trip and a model turn, and it can never read stale.
+    // If a big project ever shows it in a profile, cache per room and rebuild when `headSeq` moves.
     scratch = new ProjectStore(false);
     scratch.load(opened.snapshot());
     const selection = selections.get(selectionKey);
