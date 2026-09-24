@@ -6,6 +6,7 @@
  * the exact math here is the same module the unit tests exercise.
  */
 import { crushSample, makeHoldState, type HoldState } from "../dsp/bitcrush";
+import { keepAlive } from "./lifetime";
 
 class BitcrusherProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors(): AudioParamDescriptor[] {
@@ -16,11 +17,12 @@ class BitcrusherProcessor extends AudioWorkletProcessor {
   }
 
   private holds: HoldState[] = [];
+  private readonly alive = keepAlive();
 
   process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean {
     const input = inputs[0];
     const output = outputs[0];
-    if (!input || !output) return true;
+    if (!input || !output) return this.alive(input);
     // k-rate params arrive as a length-1 array (constant across the quantum).
     const bits = parameters.bits[0];
     const downsample = parameters.downsample[0];
@@ -38,7 +40,8 @@ class BitcrusherProcessor extends AudioWorkletProcessor {
         outCh[i] = crushSample(inCh[i], bits, downsample, hold);
       }
     }
-    return true;
+    // As a graph node in an instrument voice (INST-15) it must be collectable once the voice ends.
+    return this.alive(input);
   }
 }
 

@@ -21,6 +21,7 @@ import { midiToFreq } from "../instruments/binding";
 import { buildGraph, collectParamIds, type BuiltGraph } from "./build";
 import type { GraphInstrumentDef } from "./types";
 import { wiresToOut } from "./validate";
+import { WORKLET_KINDS, WORKLET_VOICE_CAP } from "./vocabulary";
 import { loadSampleBuffer } from "../samples/builtinUrls";
 
 export class GraphInstrument extends BaseInstrument {
@@ -40,6 +41,8 @@ export class GraphInstrument extends BaseInstrument {
     this.def = def;
     this.paramIds = collectParamIds(def.voice);
     this.ownsAmplitude = wiresToOut(def.voice);
+    // Every note runs its own copy of each custom-DSP block, so a voice with one plays fewer at once.
+    if (def.voice.nodes.some((node) => WORKLET_KINDS.includes(node.kind))) this.maxVoices = WORKLET_VOICE_CAP;
     for (const node of def.voice.nodes) {
       if (node.kind === "buffer" && typeof node.sample === "string") this.loadSample(node.sample);
     }

@@ -18,6 +18,11 @@ export interface KindVocabulary {
    * lists these, so a new kind reaches the agent by being added here.
    */
   summary: string;
+  /**
+   * For a custom-DSP block (INST-15): the AudioWorklet processor that runs it, registered by its
+   * `*.worklet.ts` module. Its `audioParams` are that processor's parameters, by the same names.
+   */
+  processor?: string;
 }
 
 export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
@@ -88,7 +93,35 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     summary:
       'Reverb: `impulse: { shape: "decay", seconds }`, a generated tail of that length. Mix it with the dry signal in an effect.',
   }, // `impulse` is a composite field, like a shaper's curve
+  // Custom-DSP blocks (INST-15), each an AudioWorklet over a pure `dsp/` module.
+  ladder: {
+    audioParams: ["frequency", "resonance", "detune"],
+    properties: [],
+    processor: "ladder-processor",
+    summary:
+      "Moog-style ladder low-pass, warmer than a biquad: `frequency` Hz, `resonance` 0..1 (self-oscillates near 1), `detune` cents on top (an env through a gain into `.detune` sweeps it). Custom DSP: costs more per note than a native node (see `cost`).",
+  },
+  bitcrush: {
+    audioParams: ["bits", "downsample"],
+    properties: [],
+    processor: "bitcrusher-processor",
+    summary:
+      "Lo-fi grit: `bits` of depth 1..16 and `downsample` 1..50 (hold each sample that many frames). Custom DSP; it treats every note alike, so prefer it in an effect after the voices (see `cost`).",
+  },
 };
+
+/** Kinds that run custom DSP on the audio thread (an AudioWorklet) rather than a browser node. */
+export const WORKLET_KINDS: readonly NodeSpec["kind"][] = (Object.keys(VOCABULARY) as NodeSpec["kind"][]).filter(
+  (kind) => VOCABULARY[kind].processor !== undefined,
+);
+
+/**
+ * How many notes an instrument whose voice uses a custom-DSP block plays at once: each note runs its
+ * own copy of every block, and each copy costs a fixed amount every audio block however little it
+ * does. The oldest note gives way to a new one past this. Native-only voices are not capped.
+ * Running every voice inside one worklet (INST-19) is what would lift it.
+ */
+export const WORKLET_VOICE_CAP = 8;
 
 /** Kinds that make sound on their own, rather than processing an input. */
 export const SOURCE_KINDS: readonly NodeSpec["kind"][] = ["osc", "env", "noise", "constant", "buffer"];

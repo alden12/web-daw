@@ -23,6 +23,8 @@ export abstract class BaseInstrument implements Instrument {
   private readonly held = new Map<number, VoiceHandle>();
   private readonly releasing = new WeakSet<VoiceHandle>();
   protected readonly env = { attackMs: 5, releaseMs: 200 };
+  /** How many voices may sound at once; past it the oldest gives way (see `makeRoom`). */
+  protected maxVoices = Infinity;
 
   private unsubscribe: (() => void) | null = null;
 
@@ -109,43 +111,69 @@ export abstract class BaseInstrument implements Instrument {
     const fadeFrom = Math.max(ownsAmplitude ? at + envelopeTail : at, playsUntil);
     const release = ownsAmplitude ? DECLICK_SECONDS : this.env.releaseMs / 1000;
     const g = voice.amp.gain;
-    // Anchor the gain at its true value at `at` (mid-attack or full sustain), then ramp to 0.
-    // We compute the held value ourselves rather than calling cancelAndHoldAtTime, whose Chrome
-    // bug makes the following linearRamp start from the wrong value - an instant step to ~0 that
-    // clicks the moment a note is released. Explicit setValueAtTime + ramp is jump-free.
-    const level = voice.level ?? g.value;
-    const attackStart = voice.attackStart ?? at;
-    const attackEnd = voice.attackEnd ?? at;
-    const heldLevel =
-      at <= attackStart ? 0 : at >= attackEnd ? level : level * ((at - attackStart) / (attackEnd - attackStart));
+    const heldLevel = this.levelAt(voice, at);
     g.cancelScheduledValues(at);
     g.setValueAtTime(heldLevel, at);
-    if (fadeFrom > at) {
-      g.setValueAtTime(heldLevel, fadeFrom);
-      voice.heldAfterRelease = { level: heldLevel, until: fadeFrom };
-    }
+    if (fadeFrom > at) g.setValueAtTime(heldLevel, fadeFrom);
     g.linearRampToValueAtTime(0, fadeFrom + release);
+    voice.fade = { from: fadeFrom, level: heldLevel, until: fadeFrom + release };
     for (const source of voice.sources) source.stop(fadeFrom + release + 0.02);
+  }
+
+  /**
+   * The voice's gain at `at`, from what the base scheduled on it: rising through its attack, held,
+   * or on its way out. Worked out here rather than read back with cancelAndHoldAtTime, whose Chrome
+   * bug starts the following ramp from the wrong value - an instant step to ~0 that clicks.
+   */
+  private levelAt(voice: VoiceHandle, at: number): number {
+    const fade = voice.fade;
+    if (fade) {
+      if (at <= fade.from) return fade.level;
+      return at >= fade.until ? 0 : fade.level * ((fade.until - at) / (fade.until - fade.from));
+    }
+    const level = voice.level ?? voice.amp.gain.value;
+    const attackStart = voice.attackStart ?? at;
+    const attackEnd = voice.attackEnd ?? at;
+    if (at <= attackStart) return 0;
+    return at >= attackEnd ? level : level * ((at - attackStart) / (attackEnd - attackStart));
   }
 
   /** Stop, for a voice already let go but held for its one-shot: fade it now rather than when the
    *  sample ends. One already fading is left to finish, which takes no longer than its release. */
   private cutHeldVoice(voice: VoiceHandle): void {
     const now = this.ctx.currentTime;
-    const held = voice.heldAfterRelease;
-    if (!held || now >= held.until) return;
+    if (voice.fade && now < voice.fade.from) this.cutVoice(voice, now);
+  }
+
+  /** Fade a voice out from wherever it is, in a few milliseconds, and forget it. */
+  private cutVoice(voice: VoiceHandle, when: number): void {
+    const at = Math.max(when, this.ctx.currentTime);
+    const level = this.levelAt(voice, at);
     const g = voice.amp.gain;
-    g.cancelScheduledValues(now);
-    g.setValueAtTime(held.level, now);
-    g.linearRampToValueAtTime(0, now + DECLICK_SECONDS);
-    for (const source of voice.sources) source.stop(now + DECLICK_SECONDS + 0.02);
-    voice.heldAfterRelease = undefined;
+    g.cancelScheduledValues(at);
+    g.setValueAtTime(level, at);
+    g.linearRampToValueAtTime(0, at + DECLICK_SECONDS);
+    voice.fade = { from: at, level, until: at + DECLICK_SECONDS };
+    for (const source of voice.sources) source.stop(at + DECLICK_SECONDS + 0.02);
+    this.releasing.add(voice);
+    this.active.delete(voice);
+    for (const [midi, held] of this.held) if (held === voice) this.held.delete(midi);
+  }
+
+  /** Past the voice cap, make way for a new note at `at`: the oldest voice already let go gives
+   *  way first, else the oldest held one. */
+  private makeRoom(at: number): void {
+    while (this.active.size >= this.maxVoices) {
+      const voices = [...this.active];
+      this.cutVoice(voices.find((voice) => this.releasing.has(voice)) ?? voices[0], at);
+    }
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {
     const at = when ?? this.ctx.currentTime;
     const existing = this.held.get(midi);
     if (existing) this.releaseVoice(existing, at);
+    this.makeRoom(at);
     const voice = this.createVoice(midi, at);
     this.startVoice(voice, velocity, at);
     this.held.set(midi, voice);
@@ -160,6 +188,7 @@ export abstract class BaseInstrument implements Instrument {
 
   playNote(midi: number, durationSec: number, velocity = 1, when?: number): void {
     const at = when ?? this.ctx.currentTime;
+    this.makeRoom(at);
     const voice = this.createVoice(midi, at);
     this.startVoice(voice, velocity, at);
     this.releaseVoice(voice, at + durationSec);

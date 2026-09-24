@@ -191,7 +191,35 @@ export interface BufferNodeSpec {
   oneShot?: BoolField;
 }
 
+/**
+ * Custom-DSP blocks (INST-15): each runs our own code on the audio thread (an AudioWorklet)
+ * rather than a browser node, and is otherwise an ordinary node - its fields bind and modulate
+ * like any other's. In an instrument voice each note gets its own copy, which costs more than a
+ * native node, so a voice using one plays fewer notes at once (WORKLET_VOICE_CAP).
+ */
+
+/** A Moog-style four-pole resonant low-pass: `frequency` in Hz, `resonance` 0..1 (self-oscillates
+ *  near 1), and `detune` in cents on top of the frequency, for sweeps in musical intervals. */
+export interface LadderNodeSpec {
+  id: string;
+  kind: "ladder";
+  frequency?: NumberField;
+  resonance?: NumberField;
+  detune?: NumberField;
+}
+
+/** Lo-fi degradation: `bits` of depth (1..16) and `downsample`, holding each sample for that many
+ *  frames (1..50). */
+export interface BitcrushNodeSpec {
+  id: string;
+  kind: "bitcrush";
+  bits?: NumberField;
+  downsample?: NumberField;
+}
+
 export type NodeSpec =
+  | LadderNodeSpec
+  | BitcrushNodeSpec
   | BufferNodeSpec
   | OscNodeSpec
   | GainNodeSpec

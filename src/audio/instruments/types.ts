@@ -43,9 +43,12 @@ export interface VoiceHandle {
   level?: number;
   attackStart?: number;
   attackEnd?: number;
-  /** Set when letting go of the note left the voice held at `level` until `until` (a one-shot
-   *  playing out), so Stop can fade it from there instead of waiting. */
-  heldAfterRelease?: { level: number; until: number };
+  /**
+   * Set once the voice is let go: its gain holds at `level` until `from` (a one-shot playing out,
+   * or its own envelopes' release), then ramps to 0 by `until`. What lets Stop, or a new note past
+   * the voice cap, cut it from its true level at any moment without a click.
+   */
+  fade?: { from: number; level: number; until: number };
   /** The voice's own envelopes, when it has any (a graph voice with `env` nodes, INST-12). */
   envelope?: VoiceEnvelope;
 }

@@ -114,6 +114,23 @@ const nodeSpec = z.discriminatedUnion("kind", [
       impulse: z.object({ shape: z.enum(IMPULSE_SHAPES), seconds: numberField }).strict(),
     })
     .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("ladder"),
+      frequency: numberField.optional(),
+      resonance: numberField.optional(),
+      detune: numberField.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("bitcrush"),
+      bits: numberField.optional(),
+      downsample: numberField.optional(),
+    })
+    .strict(),
 ]);
 
 const graph = z.object({ nodes: z.array(nodeSpec), connections: z.array(z.tuple([z.string(), z.string()])) }).strict();
