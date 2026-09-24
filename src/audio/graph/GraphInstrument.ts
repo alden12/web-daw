@@ -101,6 +101,7 @@ export class GraphInstrument extends BaseInstrument {
       // Both endpoints are the same gain; which one the graph names decides who envelopes it.
       reserved: { amp, out: amp },
       noteFreq: midiToFreq(midi),
+      note: midi,
       startTime: when, // stamp initial values at the note's scheduled time (lookahead-safe)
       readParam: (id) => this.store.get(id),
       sampleBuffer: (ref) => this.samples.get(ref) ?? null,

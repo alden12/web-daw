@@ -26,6 +26,7 @@ import type {
 } from "./types";
 import { IMPULSES, NODE_IMPLS, SHAPER_CURVES } from "./nodes";
 import { playbackRateFor } from "./samplePitch";
+import { pruneGraph } from "./prune";
 import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
 
 export interface GraphContext {
@@ -34,6 +35,8 @@ export interface GraphContext {
   reserved: Record<string, AudioNode>;
   /** The voice's fundamental frequency (instruments); absent for effects. */
   noteFreq?: number;
+  /** The voice's MIDI note (instruments): a `buffer` with a `note` sounds only for its own. */
+  note?: number;
   /** AudioContext time to stamp initial values at (a voice's scheduled note time); defaults to now. */
   startTime?: number;
   /** Read a parameter's current value. */
@@ -69,8 +72,13 @@ export function resolveLinear(raw: number, ref: { scale?: number; offset?: numbe
 // collectParamIds lives in validate.ts (pure, DOM-free); re-exported here for the runtimes.
 export { collectParamIds } from "./validate";
 
-export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
+export function buildGraph(whole: Graph, context: GraphContext): BuiltGraph {
   const { ctx, reserved } = context;
+  // Only what this note plays: a kit's other pads, and whatever only they fed, are left out.
+  const graph =
+    context.note === undefined
+      ? whole
+      : pruneGraph(whole, (spec) => soundsFor(spec, context.note!, context.readParam), Object.keys(reserved));
   const nodes = new Map<string, { node: AudioNode; kind: NodeSpec["kind"] }>();
   const sources: AudioScheduledSourceNode[] = [];
   // paramId -> applicators that push a new value into the live graph.
@@ -300,6 +308,10 @@ const silenceFor = (ctx: BaseAudioContext): AudioBuffer =>
 const readBool = (field: BoolField | undefined, fallback: boolean, readParam: (id: string) => ParamValue) =>
   field === undefined ? fallback : typeof field === "boolean" ? field : Boolean(readParam(field.param));
 
+/** Whether a node sounds for a MIDI note: everything does, except a `buffer` with another `note`. */
+const soundsFor = (spec: NodeSpec, note: number, readParam: (id: string) => ParamValue): boolean =>
+  spec.kind !== "buffer" || spec.note === undefined || Math.round(readNumber(spec.note, note, readParam)) === note;
+
 /** The note a sample plays at its own pitch, when a def does not say. Middle C, as the Sampler has it. */
 const DEFAULT_ROOT = 60;
 
@@ -323,7 +335,8 @@ function startSample(
   const rate = context.noteFreq ? playbackRateFor(context.noteFreq, root, keytrack) : 1;
   node.playbackRate.setValueAtTime(rate, startTime);
   if (!buffer || !readBool(spec.oneShot, true, context.readParam)) return null;
-  const detune = typeof spec.detune === "number" ? spec.detune : 0;
+  // The tune when the note starts, bound or not: a pad tuned down plays longer, and must be held for it.
+  const detune = readNumber(spec.detune, 0, context.readParam);
   return startTime + buffer.duration / (rate * 2 ** (detune / 1200));
 }
 

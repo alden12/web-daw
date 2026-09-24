@@ -45,7 +45,7 @@ function fakeCtx() {
     createConstantSource: () => fakeNode({ offset: fakeParam(), start() {}, stop() {}, onended: null }),
     // The sampler builds an AudioBufferSourceNode per voice and a silent buffer up front.
     createBufferSource: () =>
-      fakeNode({ buffer: null, playbackRate: fakeParam(), start() {}, stop() {}, onended: null }),
+      fakeNode({ buffer: null, playbackRate: fakeParam(), detune: fakeParam(), start() {}, stop() {}, onended: null }),
     createBuffer: (_channels: number, length: number, sampleRate: number) => fakeBuffer(length, sampleRate),
   };
 }

@@ -72,3 +72,37 @@ test("Stop cuts a one-shot that is still playing out", async ({ page }) => {
   expect(playing).toBeGreaterThan(0.005);
   expect(stopped).toBeLessThan(0.0005);
 });
+
+/** One hit on the Drum Kit, now a graph; returns the rendered samples' RMS over the first 100ms. */
+async function kitHit(page: Page, note: number): Promise<{ level: number; fingerprint: number[] }> {
+  return page.evaluate(async (note) => {
+    const { createInstrument, instrumentSchema } = await import(
+      /* @vite-ignore */ "/src/audio/instruments/registry.ts"
+    );
+    const { ParamStore } = await import(/* @vite-ignore */ "/src/audio/params/store.ts");
+    const sampleRate = 44100;
+    const context = new OfflineAudioContext(1, sampleRate / 2, sampleRate);
+    const kit = createInstrument("drumkit", context, new ParamStore(instrumentSchema("drumkit")));
+    await kit.ready?.();
+    kit.output.connect(context.destination);
+    kit.playNote(note, 0.05, 1, 0.01);
+    const samples = (await context.startRendering()).getChannelData(0).subarray(0, sampleRate / 10);
+    const level = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+    // A coarse shape to tell two sounds apart: RMS per 10ms.
+    const fingerprint = Array.from({ length: 10 }, (_unused, slot) => {
+      const slice = samples.subarray((slot * sampleRate) / 100, ((slot + 1) * sampleRate) / 100);
+      return Math.sqrt(slice.reduce((sum, sample) => sum + sample * sample, 0) / slice.length);
+    });
+    return { level, fingerprint };
+  }, note);
+}
+
+test("the Drum Kit, now a graph, plays the pad on a note and nothing on an unmapped one", async ({ page }) => {
+  const kick = await kitHit(page, 36); // GM kick
+  const snare = await kitHit(page, 38); // GM snare
+  const nothing = await kitHit(page, 120); // no pad
+  expect(kick.level).toBeGreaterThan(0.005);
+  expect(snare.level).toBeGreaterThan(0.005);
+  expect(nothing.level).toBe(0);
+  expect(kick.fingerprint).not.toEqual(snare.fingerprint);
+});
