@@ -10,6 +10,7 @@
  */
 import type { AudioEngine } from "../engine/AudioEngine";
 import type { ProjectStore } from "../project/projectStore";
+import type { Placement } from "../project/types";
 import type { TransportClock } from "../midi/device/clock";
 import { GRID, type NoteEvent } from "./types";
 import { grooveById } from "../grooves/catalog";
@@ -125,6 +126,31 @@ export function tileClipNotes(notes: NoteEvent[], clipLen: number, offset: numbe
 }
 
 /**
+ * Pure: where in a clip an arrangement position falls, or null when no placement of that clip covers
+ * it (DAW-8.9). The inverse of `tileClipNotes`: a note at clip beat `b` sounds at
+ * `startBeat + ((b - offset) mod clipLen)`, so arrangement beat `position` is clip beat
+ * `(position - startBeat + offset) mod clipLen`. Half-open like the scheduler, so a placement's end is
+ * the next one's start rather than both.
+ */
+export function clipBeatAt(
+  position: number,
+  placements: readonly Pick<Placement, "clipId" | "startBeat" | "offset" | "length">[],
+  clipId: string,
+  clipLen: number,
+): number | null {
+  if (clipLen <= 0) return null;
+  const covering = placements.find(
+    (placement) =>
+      placement.clipId === clipId &&
+      position >= placement.startBeat &&
+      position < placement.startBeat + placement.length,
+  );
+  if (!covering) return null;
+  const phase = (position - covering.startBeat + covering.offset) % clipLen;
+  return phase < 0 ? phase + clipLen : phase;
+}
+
+/**
  * Pure: metronome clicks (one per shown beat) whose continuous onset lands in [fromBeat, toBeat).
  * Continuous beat 0 = playback start = the loop's start, so a continuous beat `b` maps to the musical
  * beat `loopStart + (b mod loopLen)`; the click is accented on each bar downbeat. `beatUnit` is the
@@ -232,6 +258,25 @@ export class Scheduler implements TransportClock {
     const loopLen = this.project.length - loopStart;
     const cont = this.anchorBeat + (this.engine.currentTime - this.anchorTime) * this.lastBps;
     return loopLen > 0 ? loopStart + (cont % loopLen) : 0;
+  }
+
+  /**
+   * Where in one clip the transport is, for that clip's editor playhead; null when stopped or when
+   * nothing is playing this clip right now (DAW-8.9). The editors used to take the arrangement
+   * position modulo the clip length, which drew a moving cursor in a clip the arrangement had not
+   * reached. Resolved the way `tick` resolves what to play, launched clip included, so the cursor is
+   * where the sound is.
+   */
+  clipPositionBeats(trackId: string, clipId: string): number | null {
+    if (this.timer === null) return null;
+    const track = this.project.getTrack(trackId);
+    const clip = track?.clips.find((candidate) => candidate.id === clipId);
+    if (!track || !clip || !("store" in clip)) return null;
+    const loopStart = this.project.loopStart;
+    const placements = track.launchedClipId
+      ? [{ clipId: track.launchedClipId, startBeat: loopStart, offset: 0, length: this.project.length - loopStart }]
+      : track.placements;
+    return clipBeatAt(this.getPositionBeats(), placements, clipId, clip.store.getClip().lengthBeats);
   }
 
   /**

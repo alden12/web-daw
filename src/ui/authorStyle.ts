@@ -10,7 +10,7 @@
  * current user) so a surface recolours live when a swatch or identity changes.
  */
 import type { CSSProperties } from "react";
-import { colorForAuthor } from "./authorColors";
+import { colorForAuthor, isViewer } from "./authorColors";
 import { agentDriver, isAgentAuthor } from "../audio/commands/authors";
 import { withLightness } from "./oklch";
 import type { AuthorPresence } from "./authorColorsContext";
@@ -97,14 +97,11 @@ export const authorMiniStyle = (author: string, presence: AuthorPresence): CSSPr
  * was the viewer's own, where "Agent" is what they mean by it. That is the one place the driver is
  * visible: every agent shares the one violet, so the label is what tells two of them apart.
  *
- * "You" is whoever `self` says it is, and that has to be asked rather than assumed. This used to
- * answer "You" for the literal id `"you"` outright, which is right in local/dev - where that string
- * IS your identity - and wrong the moment anyone signs in, because the edits a project carries from
- * before then belong to a different author who merely has that name. Signed in, those show their id
- * like any other stranger's.
+ * "You" is whoever `self` says it is, plus the unattributed `"you"` stamp, which reads as the viewer
+ * for the same reason it takes their colour (see `isViewer` in authorColors).
  */
 export const authorLabel = (author: string, self = DEFAULT_USER): string => {
-  if (author === self) return "You";
+  if (isViewer(author, self)) return "You";
   const driver = agentDriver(author);
   if (driver !== null) return driver === self ? "Agent" : `Agent (${driver})`;
   if (isAgentAuthor(author)) return "Agent";

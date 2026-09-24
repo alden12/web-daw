@@ -11,9 +11,10 @@ describe("colorForAuthor (perspective-relative)", () => {
     expect(colorForAuthor("bob", {}, "bob")).toBe(DEFAULT_VOICE_COLORS.you);
   });
 
-  it("does NOT give a peer the teal hue just because their id is the default 'you'", () => {
-    // Viewer is "bob"; a peer whose id is "you" is just another collaborator, not teal.
-    expect(colorForAuthor("you", {}, "bob")).not.toBe(DEFAULT_VOICE_COLORS.you);
+  it("reads the unattributed 'you' stamp as the viewer, whoever they are (DAW-8.10)", () => {
+    // "you" stamps defaults (a new track's clip, an untouched knob, the seeded project), not a person.
+    // Hashing it like a stranger's id painted all of those a random swatch once anyone signed in.
+    expect(colorForAuthor("you", {}, "bob")).toBe(DEFAULT_VOICE_COLORS.you);
   });
 
   it("keeps the agent voice absolute (same colour for everyone)", () => {

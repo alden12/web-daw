@@ -414,12 +414,15 @@ export function PianoRoll({
   // Drive the playhead off the audio clock (already wrapped to the loop region).
   // While a MIDI take records into this track, also grow the held-note ghosts from
   // their onset out to the playhead, so notes draw in as they are played.
+  // The playhead is where the transport is IN THIS CLIP, and hidden when the arrangement is not
+  // playing it (DAW-8.9); the ghosts keep the arrangement position they were recorded against.
   useAnimationFrame(() => {
     const head = beatToX(scheduler.getPositionBeats(), pxPerBeat);
+    const inClip = scheduler.clipPositionBeats(trackId, clipId);
     const el = playheadRef.current;
     if (el) {
-      el.style.transform = `translateX(${head}px)`;
-      el.style.opacity = scheduler.isPlaying ? "1" : "0";
+      if (inClip !== null) el.style.transform = `translateX(${beatToX(inClip, pxPerBeat)}px)`;
+      el.style.opacity = inClip === null ? "0" : "1";
     }
     const layer = heldRef.current;
     if (layer) {
@@ -428,7 +431,7 @@ export function PianoRoll({
         child.style.width = `${Math.max(2, head - left)}px`;
       }
     }
-  }, [scheduler, pxPerBeat]);
+  }, [scheduler, pxPerBeat, trackId, clipId]);
 
   // Click outside the roll deselects.
   useEffect(() => {

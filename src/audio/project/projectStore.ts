@@ -24,6 +24,7 @@ import {
   audioClipPool,
 } from "./projectSerialization";
 import { buildStructure } from "./projectStructure";
+import { seedClipId } from "./seedClip";
 import {
   hasInstrument,
   catalogEntry,
@@ -477,7 +478,7 @@ export class ProjectStore {
     // and the MCP mirror seed the SAME ids - addTrack runs independently on each
     // side, and divergent ids would make clip/placement tools address something
     // the other end doesn't have. Forks/new placements get communicated random ids.
-    const clipId = `c-${trackId}`;
+    const clipId = seedClipId(trackId);
     const clip = new ClipStore({ lengthBeats: opts.lengthBeats ?? this.lengthBeats });
     const track: InstrumentTrack = {
       kind: "instrument",
@@ -660,7 +661,7 @@ export class ProjectStore {
     const parentId = opts.groupId && this.getGroup(opts.groupId) ? opts.groupId : this.ensureMainGroup().id;
     const trackId = opts.id ?? this.nextId();
     const name = opts.name ?? clip.name ?? this.defaultAudioTrackName();
-    const clipId = `c-${trackId}`;
+    const clipId = seedClipId(trackId);
     const durationSec = clip.durationSec ?? 0;
     const track: AudioTrack = {
       kind: "audio",
