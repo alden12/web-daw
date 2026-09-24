@@ -100,3 +100,36 @@ describe("authoring with the new nodes", () => {
     expect(validateGraph([], graph("room.buffer"), EFFECT_RESERVED)).toHaveLength(1);
   });
 });
+
+describe("the buffer node", () => {
+  const voice = (node: Record<string, unknown>) => ({
+    type: "ci-1",
+    schema: [
+      { id: "kit.sample", label: "Sample", kind: "sample", default: "builtin:kick" },
+      { id: "kit.keytrack", label: "Keytrack", kind: "boolean", default: true },
+    ],
+    voice: { nodes: [{ id: "hit", kind: "buffer", ...node }], connections: [["hit", "amp"]] },
+  });
+
+  it("takes a sample ref, or a sample param, and switches bound to params", () => {
+    expect(parseInstrumentDef(voice({ sample: "builtin:snare" })).ok).toBe(true);
+    expect(
+      parseInstrumentDef(
+        voice({ sample: { param: "kit.sample" }, keytrack: { param: "kit.keytrack" }, oneShot: false }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("refuses a switch that is not a switch, and a buffer without a sample", () => {
+    expect(parseInstrumentDef(voice({ sample: "builtin:kick", oneShot: "yes" })).ok).toBe(false);
+    expect(parseInstrumentDef(voice({})).ok).toBe(false);
+  });
+
+  it("is instruments only, since it plays per note", () => {
+    const graph: Graph = {
+      nodes: [{ id: "hit", kind: "buffer", sample: "builtin:kick" }],
+      connections: [["in", "wet"]],
+    };
+    expect(validateGraph([], graph, EFFECT_RESERVED)).toEqual(['node "hit": buffer only works in an instrument voice']);
+  });
+});

@@ -88,6 +88,15 @@ export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
     audioParam: () => undefined,
     setProperty: () => {},
   },
+  // Its sample is set per voice in build.ts, from the instrument's decoded samples.
+  buffer: {
+    create: (ctx) => {
+      const node = ctx.createBufferSource();
+      return { node, source: node };
+    },
+    audioParam: paramsOf<AudioBufferSourceNode>((node) => ({ playbackRate: node.playbackRate, detune: node.detune })),
+    setProperty: () => {},
+  },
   // A looped buffer of noise, shared by every voice on the context rather than regenerated per note.
   noise: {
     create: (ctx, spec) => {

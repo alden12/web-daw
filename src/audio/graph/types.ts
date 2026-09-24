@@ -38,6 +38,8 @@ export interface ParamRef {
 export type NumberField = number | ParamRef;
 /** An enum/string field (e.g. a waveform): a fixed value, or bound to a parameter. */
 export type EnumField<T extends string> = T | ParamRef;
+/** A switch: fixed, or bound to a boolean parameter. */
+export type BoolField = boolean | ParamRef;
 
 /** An oscillator. In an instrument voice graph its frequency tracks the note by
  *  default; `noteRatio` multiplies the note (FM ratio, sub-octave); `frequency`
@@ -153,7 +155,28 @@ export interface ConvolverNodeSpec {
   impulse: { shape: ImpulseShape; seconds: NumberField };
 }
 
+/**
+ * Sample playback (INST-13), instruments only. `sample` is a sample ref (`builtin:kick`, as
+ * `list_samples` gives them) or bound to a `sample` parameter so it can be swapped from a picker.
+ * It plays at its own pitch on the `root` note (MIDI, default 60) and follows the played note from
+ * there, unless `keytrack` is off.
+ *
+ * `oneShot` (the default) plays it to the end however short the note - drums. Off, it stops with
+ * the note and its release - a sustained sound. Samples are decoded when the instrument loads, and a
+ * note played before its sample is ready is silent rather than an error.
+ */
+export interface BufferNodeSpec {
+  id: string;
+  kind: "buffer";
+  sample: EnumField<string>;
+  root?: NumberField;
+  keytrack?: BoolField;
+  detune?: NumberField;
+  oneShot?: BoolField;
+}
+
 export type NodeSpec =
+  | BufferNodeSpec
   | OscNodeSpec
   | GainNodeSpec
   | BiquadNodeSpec

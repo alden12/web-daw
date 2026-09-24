@@ -21,8 +21,11 @@ import type {
   ShaperNodeSpec,
   EnvNodeSpec,
   ConvolverNodeSpec,
+  BufferNodeSpec,
+  BoolField,
 } from "./types";
 import { IMPULSES, NODE_IMPLS, SHAPER_CURVES } from "./nodes";
+import { playbackRateFor } from "./samplePitch";
 import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
 
 export interface GraphContext {
@@ -35,6 +38,8 @@ export interface GraphContext {
   startTime?: number;
   /** Read a parameter's current value. */
   readParam: (id: string) => ParamValue;
+  /** A decoded sample by ref, or null while it is still loading (instruments with `buffer` nodes). */
+  sampleBuffer?: (ref: string) => AudioBuffer | null;
 }
 
 export interface BuiltGraph {
@@ -47,6 +52,11 @@ export interface BuiltGraph {
    * longest takes, which is how long the voice must keep sounding. 0 for a graph with none.
    */
   release(at: number): number;
+  /**
+   * When the last one-shot sample in it finishes (context time), which the voice must outlast
+   * whenever the note is let go. 0 for a graph with none.
+   */
+  playsUntil: number;
   /** Disconnect every node (effect teardown; instrument voices are torn down by the base). */
   disconnect(): void;
 }
@@ -69,6 +79,7 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
     (targets.get(paramId) ?? targets.set(paramId, []).get(paramId)!).push(apply);
   };
   const releases: Release[] = [];
+  let playsUntil = 0;
 
   // 1. Create nodes.
   for (const spec of graph.nodes) {
@@ -81,7 +92,15 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
   // 2. Apply each node's fields (initial value now; a bound field also registers a
   //    live target so parameter changes reach it).
   for (const spec of graph.nodes) {
-    applyFields(spec, nodes.get(spec.id)!.node, ctx, context, addTarget, (release) => releases.push(release));
+    applyFields(
+      spec,
+      nodes.get(spec.id)!.node,
+      ctx,
+      context,
+      addTarget,
+      (release) => releases.push(release),
+      (until) => void (playsUntil = Math.max(playsUntil, until)),
+    );
   }
 
   // 3. Wire connections: `to` is a node input, or `nodeId.param` to modulate a param.
@@ -102,6 +121,7 @@ export function buildGraph(graph: Graph, context: GraphContext): BuiltGraph {
       for (const applyTarget of targets.get(paramId) ?? []) applyTarget(value, smoothMs);
     },
     release: (at) => releases.reduce((longest, release) => Math.max(longest, release(at)), 0),
+    playsUntil,
     disconnect: () => {
       for (const { node } of nodes.values()) node.disconnect();
     },
@@ -120,6 +140,7 @@ function applyFields(
   context: GraphContext,
   addTarget: AddTarget,
   addRelease: (release: Release) => void,
+  addPlaysUntil: (until: number) => void,
 ): void {
   const impl = NODE_IMPLS[spec.kind];
   const startTime = context.startTime ?? ctx.currentTime;
@@ -156,6 +177,12 @@ function applyFields(
     case "env":
       addRelease(startEnvelope(spec, (node as ConstantSourceNode).offset, startTime, context.readParam));
       break;
+    case "buffer": {
+      const until = startSample(spec, node as AudioBufferSourceNode, ctx, startTime, context);
+      if (until !== null) addPlaysUntil(until);
+      numberField(spec.detune, (node as AudioBufferSourceNode).detune);
+      break;
+    }
     case "noise":
       break; // its colour is chosen when it is built
     case "constant":
@@ -262,6 +289,42 @@ function bindShaperCurve(
   }
   setCurve(resolveLinear(readParam(amount.param) as number, amount));
   addTarget(amount.param, (value) => setCurve(resolveLinear(value as number, amount)));
+}
+
+/** A context's one-frame silent buffer: what a voice plays while its sample is still decoding. */
+const silences = new WeakMap<BaseAudioContext, AudioBuffer>();
+const silenceFor = (ctx: BaseAudioContext): AudioBuffer =>
+  silences.get(ctx) ?? silences.set(ctx, ctx.createBuffer(1, 1, ctx.sampleRate)).get(ctx)!;
+
+/** A switch's value right now: literal, bound param, or the default when it is left out. */
+const readBool = (field: BoolField | undefined, fallback: boolean, readParam: (id: string) => ParamValue) =>
+  field === undefined ? fallback : typeof field === "boolean" ? field : Boolean(readParam(field.param));
+
+/** The note a sample plays at its own pitch, when a def does not say. Middle C, as the Sampler has it. */
+const DEFAULT_ROOT = 60;
+
+/**
+ * Give a voice's sample its buffer and pitch. Returns when a one-shot finishes (context time), or
+ * null for a gated sample, which ends with the note. Pitch is fixed per note: the note against
+ * `root`, times any literal detune; modulation into `playbackRate`/`detune` rides on top.
+ */
+function startSample(
+  spec: BufferNodeSpec,
+  node: AudioBufferSourceNode,
+  ctx: BaseAudioContext,
+  startTime: number,
+  context: GraphContext,
+): number | null {
+  const ref = typeof spec.sample === "string" ? spec.sample : String(context.readParam(spec.sample.param));
+  const buffer = context.sampleBuffer?.(ref) ?? null;
+  node.buffer = buffer ?? silenceFor(ctx);
+  const root = readNumber(spec.root, DEFAULT_ROOT, context.readParam);
+  const keytrack = readBool(spec.keytrack, true, context.readParam);
+  const rate = context.noteFreq ? playbackRateFor(context.noteFreq, root, keytrack) : 1;
+  node.playbackRate.setValueAtTime(rate, startTime);
+  if (!buffer || !readBool(spec.oneShot, true, context.readParam)) return null;
+  const detune = typeof spec.detune === "number" ? spec.detune : 0;
+  return startTime + buffer.duration / (rate * 2 ** (detune / 1200));
 }
 
 /** Convolver impulse: regenerated from its family whenever its length changes. */

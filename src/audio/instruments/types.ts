@@ -43,6 +43,9 @@ export interface VoiceHandle {
   level?: number;
   attackStart?: number;
   attackEnd?: number;
+  /** Set when letting go of the note left the voice held at `level` until `until` (a one-shot
+   *  playing out), so Stop can fade it from there instead of waiting. */
+  heldAfterRelease?: { level: number; until: number };
   /** The voice's own envelopes, when it has any (a graph voice with `env` nodes, INST-12). */
   envelope?: VoiceEnvelope;
 }
@@ -55,4 +58,7 @@ export interface VoiceEnvelope {
   ownsAmplitude: boolean;
   /** Let go of the note at `at`; returns how many seconds the voice must keep sounding. */
   release(at: number): number;
+  /** When its one-shot samples finish (context time, 0 for none): letting go of the note never
+   *  cuts them short, so the voice fades no earlier than this. */
+  playsUntil: number;
 }

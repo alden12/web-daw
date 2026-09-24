@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { playbackRateFor } from "../src/audio/instruments/Sampler";
+import { playbackRateFor as rateForFreq } from "../src/audio/graph/samplePitch";
+import { midiToFreq } from "../src/audio/instruments/binding";
+
+/** The rate for a MIDI note, as the Sampler plays it. */
+const playbackRateFor = (midi: number, root: number, keytrack: boolean) =>
+  rateForFreq(midiToFreq(midi), root, keytrack);
 import { samplerSchema } from "../src/audio/instruments/catalog";
 
 describe("sampler playback rate (keytracking)", () => {

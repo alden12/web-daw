@@ -5923,7 +5923,7 @@ projects:
       - ref: INST-12
         area: INST
         title: Envelopes and per-note gates in the declarative format
-        status: review
+        status: done
         sort_path: "000012"
         deps:
           - INST-4
@@ -5940,7 +5940,8 @@ projects:
           **Why it goes first.** It is the largest increase in what an agent can produce per unit of work: filter envelopes, pitch envelopes (the kick-drum drop in INST-9), and index envelopes for FM all become one node and one wire. It is also the only item in the next tier with a real open question, so it is worth settling before the mechanical additions of INST-13 are layered on top of it.
         id: 019ff33c-1864-7429-b406-ac6dcb4704de
         created_at: 2026-08-11T23:50:29.732Z
-        updated_at: 2026-09-24T16:09:23.996Z
+        updated_at: 2026-09-24T16:24:55.026Z
+        closed_at: 2026-09-24T16:24:55.026Z
         comments:
           - body: "**Built 2026-09-24 (#162).** Gate: an `env` kind the interpreter special-cases; A/D/S read at note-on, release at note-off. Linear segments so release can anchor at the true level (Chrome's cancelAndHold bug). Output: a ConstantSource 0..1 wired like an LFO; biquad `detune` became modulatable so filter sweeps are in cents. Amp: a voice wired to the new `out` shapes its own amplitude (base drops to a 3ms declick and waits for the envelopes' release); `amp` voices keep the base envelope, so nothing existing changed. Worth more than expected: the base envelope was attack/release only, so nothing could decay before. `env` refused in effects; `amp`+`out` together refused. Subtractive got full ADSR + filter env, defaults = old sound."
             audience: user
@@ -5984,6 +5985,11 @@ projects:
             audience: user
             id: 01a0d42d-d943-777a-9eed-606d027bf23b
             at: 2026-09-24T16:09:29.667Z
+            actor: claude
+          - body: "**Part 2 decisions (Alden, 2026-09-24).** `buffer` node: `sample` is a sample ref or bound to a `sample` param; pitch follows the note against a `root`, `playbackRate`/`detune` modulatable; the instrument decodes up front and reports `ready()` for offline renders. **Both modes needed:** `oneShot` (default true - plays to the end whatever the note length, as the Sampler does) or gated (stops with the note's release). **Kits:** an optional `note` field - the node only sounds for that MIDI note - so a kit is one buffer per pad; the Drum Kit's def is generated from its pad count, and more pads is raising it. Kits as swappable presets are INST-16. Order: buffer + oneShot + Sampler, then note + Drum Kit."
+            audience: user
+            id: 01a0d43c-37c7-700e-9ff0-00b82def0fbf
+            at: 2026-09-24T16:25:11.367Z
             actor: claude
       - ref: INST-14
         area: INST
@@ -6029,6 +6035,54 @@ projects:
         id: 019ff33c-8335-7093-bc59-fb75c9788b8d
         created_at: 2026-08-11T23:50:57.077Z
         updated_at: 2026-08-11T23:50:57.077Z
+      - ref: INST-16
+        area: INST
+        title: Drum kits as swappable, saveable presets, with a changeable default kit
+        status: to-do
+        sort_path: "000016"
+        deps:
+          - INST-13
+        body: |-
+          **Agreed 2026-09-24**, while designing the graph `buffer` node (INST-13 part 2). Alden: in the longer run we want separate kits to swap in and out with different sample packs, the ability to save custom kits, and a default *kit* (itself changeable) - not a default sample per drum.
+
+          ## The model: the graph is the drum machine, a kit is data
+
+          Once the Drum Kit is a graph, it contains no samples. Each pad is a `buffer` node bound to that pad's `pad<N>.sample` / `.note` / `.level` / `.tune` params: "pad 3 plays whatever sample pad 3's param names, on pad 3's note". So nothing about the conversion fixes which sounds a kit has.
+
+          - **A kit is a patch.** A patch is a value for every param, which for the Drum Kit is every pad's sample, note, level and tune. Swapping a kit is applying a patch; saving a custom kit is *Save as patch* on a drum track. Both already exist - what is missing is presenting them as *kits* (a kit picker on the drum track, kit names, previews).
+          - **A sample pack is samples plus a factory patch** whose pads name them. Packs install samples into the library (INST-3) and ship one or more kit patches.
+          - **The default kit** is today the schema defaults (the built-in kit on the GM drum map). Making it changeable is a preference naming the patch a new drum track starts from, independent of the graph conversion.
+          - **More pads** is raising the pad count the def is generated from (as the pad params already are). A smaller kit leaves pads empty; existing projects get empty new pads.
+
+          ## Open questions
+
+          - Where kits live for a user across projects: patches are per-browser today (the hosted MCP server cannot save them, AGENT-28). Kits that follow a person between devices probably want the sync service.
+          - Whether a kit can also carry per-pad synthesized voices (INST-9) rather than only samples - natural once pads are graph nodes, since a pad could be a small voice graph instead of a `buffer`.
+        id: 01a0d43c-12a7-700e-bb9b-476d7aabe630
+        created_at: 2026-09-24T16:25:01.863Z
+        updated_at: 2026-09-24T16:25:01.863Z
+      - ref: INST-17
+        area: INST
+        title: Convert Organ and Supersaw to graph defs (each needs a small format decision)
+        status: to-do
+        sort_path: "000017"
+        deps:
+          - INST-4
+        body: |-
+          Noted 2026-09-24 while surveying what is left of the migration to the declarative format. After INST-12/13 every effect but Bitcrusher is a graph, and of the instruments Subtractive, FM and Mellotron Flute are. Organ and Supersaw use only native nodes, so they *look* convertible now, but each does something the format cannot say yet.
+
+          **Organ.** `organ.brightness` sets each partial's gain as `brightness^(harmonic-1)`, normalised by their sum - a non-linear function of a param, and param bindings are linear (`value*scale + offset`). Options:
+          - Give it real drawbar params (one level per partial), which is more organ-like anyway and needs no format change. Changes the instrument's params, so it needs a migration for saved projects (or keep `organ.brightness` and derive the drawbar defaults from it once).
+          - Add a small curve to `ParamRef` (e.g. `pow`), which other devices may want too.
+
+          **Supersaw.** `super.voices` (1-9) changes how many oscillators a voice builds; a graph has a fixed node list. Options:
+          - Always build 9 saws and gate the unused ones to silence, with the 1/n mix computed per voice count - needs either a per-node "active when param >= k" or the non-linear binding above.
+          - Make voice count a construction-time field and rebuild the voice graph when it changes.
+
+          Either way the lean is the smallest format addition that more than one device would use, rather than a one-off. Not urgent: both work as classes, and conversion buys consistency plus agent-authorable variants rather than new sound.
+        id: 01a0d43c-2c75-779d-8ead-f542fac23f21
+        created_at: 2026-09-24T16:25:08.469Z
+        updated_at: 2026-09-24T16:25:08.469Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
