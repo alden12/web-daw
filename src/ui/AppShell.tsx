@@ -48,6 +48,7 @@ import { getAccessToken, takeAuthReturnPath } from "../auth/session";
 import { VersionStore } from "../audio/commands/history";
 import { useProject } from "../audio/project/useProject";
 import { projectIdFromLocation, projectIdFromPath, syncProjectUrl } from "./projectUrl";
+import { useRememberedSelection } from "./rememberedSelection";
 import { EditLog } from "../audio/commands/editLog";
 import { setDragGestureScope } from "./dragGesture";
 import { type LibraryView } from "./ActivityRail";
@@ -224,6 +225,7 @@ export function AppShell() {
   const linkedProjectId = useRef(projectIdFromLocation() ?? projectIdFromPath(takeAuthReturnPath() ?? ""));
   const openProjectId = useSyncExternalStore(subscribeCurrentProject, currentProjectId);
   const storeHolds = useSyncExternalStore(subscribeCurrentProject, loadedProjectId);
+  useRememberedSelection(storeHolds, projectStore, project.selectedTrackId);
   useEffect(() => {
     // Not before the library has opened something: until then the id is a placeholder, and
     // pointing the address bar at it would clobber the link we were asked to open.

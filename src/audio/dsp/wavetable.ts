@@ -37,6 +37,22 @@ export function buildTables(): Float32Array[] {
   ];
 }
 
+/**
+ * The named banks a graph's `wavetableOsc` morphs through (INST-15.3), each dark to bright, in the
+ * order of WAVETABLE_BANKS (graph/types.ts):
+ * - classic: sine, triangle, square, sawtooth - the Wavetable instrument's bank;
+ * - harmonics: the fundamental, then 2, 4, 8 and 16 equal harmonics - an organ's drawbars pulled out;
+ * - pulse: a square narrowing to a thin pulse (widths 0.5, 0.3, 0.15, 0.05), the nasal end of PWM.
+ */
+export function buildBanks(): Float32Array[][] {
+  const pulse = (width: number) => (k: number) => Math.sin(Math.PI * k * width) / k;
+  return [
+    buildTables(),
+    [1, 2, 4, 8, 16].map((count) => additive((k) => (k <= count ? 1 : 0))),
+    [0.5, 0.3, 0.15, 0.05].map((width) => additive(pulse(width))),
+  ];
+}
+
 /** Read one table at a fractional phase (0..1), linearly interpolated and wrapping. */
 export function sampleOne(table: Float32Array, phase: number): number {
   const n = table.length;

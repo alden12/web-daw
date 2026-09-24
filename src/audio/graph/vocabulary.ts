@@ -101,6 +101,13 @@ export const VOCABULARY: Record<NodeSpec["kind"], KindVocabulary> = {
     summary:
       "Analog-style oscillator: waveform saw|pulse, alias-free, and `pulseWidth` 0..1 (0.5 a square) you can modulate - an LFO into `.pulseWidth` is PWM. Follows the note like `osc` (`noteRatio`, or `frequency` Hz). Custom DSP (see `cost`); use `osc` unless you want PWM or a brighter top end.",
   },
+  wavetableOsc: {
+    audioParams: ["frequency", "detune", "position"],
+    properties: ["bank"],
+    processor: "wavetable-osc-processor",
+    summary:
+      "Wavetable oscillator: `position` 0..1 morphs through a `bank` of waveforms, dark to bright - classic (sine, triangle, square, saw), harmonics (1 to 16 equal harmonics, organ-like) or pulse (square to thin pulse). An env or LFO into `.position` makes the timbre move. Follows the note like `osc`. Custom DSP (see `cost`).",
+  },
   ladder: {
     audioParams: ["frequency", "resonance", "detune"],
     properties: [],
@@ -123,15 +130,35 @@ export const WORKLET_KINDS: readonly NodeSpec["kind"][] = (Object.keys(VOCABULAR
 );
 
 /**
- * How many notes an instrument whose voice uses a custom-DSP block plays at once: each note runs its
- * own copy of every block, and each copy costs a fixed amount every audio block however little it
- * does. The oldest note gives way to a new one past this. Native-only voices are not capped.
- * Running every voice inside one worklet (INST-19) is what would lift it.
+ * How many copies of custom-DSP blocks an instrument may run at once, across its notes. Each note
+ * runs its own copy of every block in the voice, and each copy costs a fixed amount every audio
+ * block however little it does, so the cost is copies, not notes. 24 is comfortable on a laptop;
+ * lower it if phones crackle. Running every voice inside one worklet (INST-19) is the real fix.
  */
-export const WORKLET_VOICE_CAP = 8;
+export const WORKLET_BUDGET = 24;
+/** The fewest notes an instrument with custom-DSP blocks plays at once, however heavy its voice. */
+export const MIN_WORKLET_VOICES = 8;
+
+/**
+ * How many notes an instrument with this voice plays at once: its share of the budget (24 for one
+ * block, 12 for two - a four-note chord across three octaves - 8 for three or more), or no limit for
+ * a voice of native nodes only. Past it, the oldest note gives way to a new one.
+ */
+export function voiceCapFor(voice: { nodes: readonly { kind: NodeSpec["kind"] }[] }): number {
+  const blocks = voice.nodes.filter((node) => WORKLET_KINDS.includes(node.kind)).length;
+  return blocks === 0 ? Infinity : Math.max(MIN_WORKLET_VOICES, Math.floor(WORKLET_BUDGET / blocks));
+}
 
 /** Kinds that make sound on their own, rather than processing an input. */
-export const SOURCE_KINDS: readonly NodeSpec["kind"][] = ["osc", "analogOsc", "env", "noise", "constant", "buffer"];
+export const SOURCE_KINDS: readonly NodeSpec["kind"][] = [
+  "osc",
+  "analogOsc",
+  "wavetableOsc",
+  "env",
+  "noise",
+  "constant",
+  "buffer",
+];
 
 /** Kinds that follow a played note, so only make sense in an instrument voice. */
 export const GATED_KINDS: readonly NodeSpec["kind"][] = ["env", "buffer"];
