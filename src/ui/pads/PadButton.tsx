@@ -22,6 +22,19 @@ const TONE_CLASS = {
   accidental: "bg-control text-muted",
 } as const;
 
+/** Roughly how wide a monospace character is, as a share of the font size. */
+const MONO_CHAR_WIDTH = 0.62;
+
+/**
+ * The label's font size: 12px, shrunk to fit the pad when a long name would overflow it - a chord
+ * like `F#madd9` on a phone. Pure CSS, from the pad's own width (`cqi`, the pad being a size
+ * container) and the label's length, so it follows a rotation or a resize with no measuring.
+ */
+const labelSize = (label: ReactNode) =>
+  typeof label === "string"
+    ? `min(12px, calc((100cqi - 6px) / ${Math.max(1, label.length) * MONO_CHAR_WIDTH}))`
+    : undefined;
+
 export function PadButton({
   name,
   label,
@@ -58,14 +71,18 @@ export function PadButton({
       // Tailwind classes for the same property are settled by stylesheet order rather than
       // by which one the caller passed - so the base class would win at random.
       //
+      // A size container, so the label can shrink to the pad's width (`labelSize`).
+      //
       // The radius *is* here, because every pad everywhere has the same one; only size and
       // position are the caller's business.
-      className={`flex flex-col items-center justify-center rounded-md leading-none touch-none select-none cursor-pointer transition-colors ${
+      className={`[container-type:inline-size] flex flex-col items-center justify-center rounded-md leading-none touch-none select-none cursor-pointer transition-colors ${
         sounding ? "bg-you/30 text-you" : TONE_CLASS[tone]
       } ${latched ? "ring-1 ring-inset ring-you" : ""} ${className}`}
       style={style}
     >
-      <span className="font-mono text-[12px] font-semibold">{label}</span>
+      <span className="font-mono text-[12px] font-semibold whitespace-nowrap" style={{ fontSize: labelSize(label) }}>
+        {label}
+      </span>
       {sublabel && <span className="mt-0.5 font-mono text-[9px] text-faint">{sublabel}</span>}
     </button>
   );

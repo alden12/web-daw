@@ -1270,6 +1270,33 @@ test.describe("phone", () => {
     await expect(pad(page, "C").first()).toHaveAttribute("data-pitches", "60,64,67");
   });
 
+  test("a long chord name shrinks to fit its pad rather than overflowing it", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+    // F# minor: sharp roots, and a half-diminished seventh on the second degree (G#m7♭5).
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Key" }).click();
+    await page.getByRole("menuitemradio", { name: "F#" }).click();
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Scale" }).click();
+    await page.getByRole("menuitemradio", { name: "minor", exact: true }).click();
+    await setDetent(page, "full");
+    const more = pads(page).getByRole("button", { name: "More chord rows" });
+    while (await more.isEnabled()) await more.tap();
+
+    await expect(pad(page, "G#m7♭5")).toBeVisible();
+    const overflowing = await pads(page)
+      .locator("[data-pitches] > span:first-child")
+      .evaluateAll((labels) =>
+        labels
+          .filter((label) => label.getBoundingClientRect().width > label.parentElement!.clientWidth)
+          .map((label) => label.textContent),
+      );
+    expect(overflowing).toEqual([]);
+  });
+
   test("sliding sideways runs the notes under your finger, without latching them", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
