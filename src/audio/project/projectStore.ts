@@ -1644,8 +1644,10 @@ export class ProjectStore {
     this.grooveAmount = clamp(data.grooveAmount ?? 1, 0, 1);
     this.samples = (data.samples ?? []).map((sample) => ({ ...sample }));
     this.authorship = { ...(data.authorship ?? {}) };
-    this.selectedTrackId =
-      data.selectedTrackId && this.getTrack(data.selectedTrackId) ? data.selectedTrackId : (this.tracks[0]?.id ?? null);
+    // Keep the selection across a reload of the same project (undo, redo, a peer's edit rebuilding
+    // it): it is navigation, not part of the document, so the copy being loaded is only a fallback.
+    const keep = [this.selectedTrackId, data.selectedTrackId].find((id) => id && this.getTrack(id));
+    this.selectedTrackId = keep ?? this.tracks[0]?.id ?? null;
     this.emit();
   }
 }

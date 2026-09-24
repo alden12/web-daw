@@ -4904,6 +4904,24 @@ projects:
         id: 01a0d019-39b6-77ab-a1ee-9f4fb9e54edd
         created_at: 2026-09-23T16:20:15.000Z
         updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-44
+        area: DAW
+        title: Keep your selected track across a refresh and a reload
+        status: review
+        sort_path: "000044"
+        body: |-
+          Reported 2026-09-24: refreshing the page changed the selected track. Long-standing since hosted sync, not a regression.
+
+          **Why.** `selectTrack` is a NonEditType (navigation), so a click never reaches the server; `ProjectStore.load` then took `selectedTrackId` from whatever copy was loaded, i.e. the server's, whose selection is whatever the last *edit* left (usually the most recently created track - including one the agent or a collaborator made). Undo/redo and peer rebuilds go through `load` too, so they could move it as well.
+
+          **Fix.**
+          - `load` keeps the current selection when that track still exists; the loaded copy's is only the fallback, then the first track.
+          - `ui/rememberedSelection.ts` remembers the selection per project on this device (`corrente:selected-track:<projectId>`) and restores it when the project finishes loading (`loadedProjectId`).
+
+          Selection stays per-viewer by design: one person's selection should never move another's.
+        id: 01a0d4ca-3380-75ff-9323-1f757da7f613
+        created_at: 2026-09-24T19:00:16.384Z
+        updated_at: 2026-09-24T19:00:16.384Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
