@@ -24,7 +24,7 @@ import { EditorSection } from "../shell/EditorSection";
 import { usePersistentBoolean } from "../usePersistent";
 import { KitPads } from "./KitPads";
 import { ScalePadControls, ScalePads } from "./ScalePads";
-import { fitPads } from "./geometry";
+import { PAD_HEIGHT, fitPads, stretchedPadHeight } from "./geometry";
 import { CHORDS_KEY, usePadSettings } from "./padSettings";
 import { usePadTouch, type PadNoteTarget } from "./usePadTouch";
 
@@ -95,7 +95,21 @@ export function NotePads({
       {isKit ? (
         <KitPads params={track.params} samples={samples} touch={touch} />
       ) : (
-        <ScalePads settings={settings} touch={touch} octavesPerRow={octavesPerRow} />
+        <ScalePads
+          settings={settings}
+          touch={touch}
+          octavesPerRow={octavesPerRow}
+          // Filling the sheet, the rows stretch into what would otherwise be a gap under the
+          // folded roll. Sharing it, the roll is the flexible box and takes the slack instead.
+          padHeight={
+            filling
+              ? stretchedPadHeight(
+                  fit,
+                  settings.chords ? settings.chordRows : Math.ceil(settings.octaves / octavesPerRow),
+                )
+              : PAD_HEIGHT
+          }
+        />
       )}
     </EditorSection>
   );

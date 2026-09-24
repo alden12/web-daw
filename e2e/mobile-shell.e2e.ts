@@ -1329,7 +1329,17 @@ test.describe("phone", () => {
     while (await more.isEnabled()) await more.tap();
     expect(await pads(page).evaluate((section) => section.getBoundingClientRect().height)).toBeGreaterThan(shared);
     expect(await rows()).toBeGreaterThan(1);
-    await page.screenshot({ path: "test-results/pads-filling.png" });
+    // Every row that fits, stretched into the rest: no gap under the folded roll worth a row, and
+    // nothing pushed past the foot of the sheet.
+    const layout = await page.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      return {
+        gap: box('[data-section="pads"]').top - box('[data-section="roll"]').bottom,
+        overflow: box('[data-chord-row="0"]').bottom - innerHeight,
+      };
+    });
+    expect(layout.gap).toBeLessThan(16);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
 
     // Asking for a surface unfolds it.
     await page.getByRole("radio", { name: "Clips" }).click();

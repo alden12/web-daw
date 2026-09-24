@@ -14,7 +14,7 @@
  */
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { chordRows, type ChordPad } from "../../audio/theory/chords";
-import { PAD_HEIGHT, rowGap } from "./geometry";
+import { rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
 import type { PadTouch } from "./usePadTouch";
@@ -24,7 +24,16 @@ export const SCROLL_STRIP = 20;
 /** Chord rows abut the way note rows do with the accidentals off, so they take the same wide gap. */
 const GAP = rowGap(false);
 
-export function ChordPads({ settings, touch }: { settings: PadSettings; touch: PadTouch }) {
+export function ChordPads({
+  settings,
+  touch,
+  padHeight,
+}: {
+  settings: PadSettings;
+  touch: PadTouch;
+  /** `PAD_HEIGHT`, or a little more when the pads fill the sheet (`stretchedPadHeight`). */
+  padHeight: number;
+}) {
   const { tonic, scale, lowOctave, chordRows: shown, chordPrefs: prefs, editingChords: editing } = settings;
   const [base, ...above] = chordRows({ tonic, scale, lowOctave, prefs, editing });
   const scrolling = Math.min(shown - 1, above.length);
@@ -34,7 +43,7 @@ export function ChordPads({ settings, touch }: { settings: PadSettings; touch: P
       key={rowIndex}
       data-chord-row={rowIndex}
       className="shrink-0 flex gap-1 snap-end"
-      style={{ height: PAD_HEIGHT, marginRight: SCROLL_STRIP }}
+      style={{ height: padHeight, marginRight: SCROLL_STRIP }}
     >
       {pads.map((chord, column) =>
         chord ? (
@@ -79,7 +88,7 @@ export function ChordPads({ settings, touch }: { settings: PadSettings; touch: P
   return (
     <div className="shrink-0 flex flex-col px-2 pb-2" style={{ gap: GAP }}>
       {scrolling > 0 && (
-        <ScrollingRows height={scrolling * PAD_HEIGHT + (scrolling - 1) * GAP}>
+        <ScrollingRows height={scrolling * padHeight + (scrolling - 1) * GAP}>
           {above.map((pads, index) => row(pads, index + 1))}
         </ScrollingRows>
       )}

@@ -45,7 +45,7 @@
  * the second section (it is still the Clips segment above), and the select-then-handles
  * editing model (MOBILE-7).
  */
-import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LibraryPanel } from "../LibraryPanel";
 import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
@@ -77,7 +77,7 @@ import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
-import { atLeast, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
+import { atLeast, insetPixels, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
 import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
 import type { DeviceShape } from "./useDeviceShape";
@@ -451,7 +451,13 @@ export function MobileShell({
    */
   const workspaceRef = useRef<HTMLDivElement>(null);
   const workspaceHeight = useElementHeight(workspaceRef);
-  const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT);
+  // Less the home indicator's inset, which the sheet pads its foot by: left out, the pads fitted
+  // themselves to room a notched phone does not have and clipped the last row.
+  // Re-read when the workspace resizes, which is when a rotation can change it - a dependency
+  // the lint rule cannot see, since the inset is read from the DOM rather than from it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const safeBottom = useMemo(() => insetPixels("bottom"), [workspaceHeight]);
+  const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT - safeBottom);
 
   // Surface -> the panel it hosts, as an object map so adding one is an entry here plus
   // one in SURFACE_ITEMS, and a missing case is a type error.

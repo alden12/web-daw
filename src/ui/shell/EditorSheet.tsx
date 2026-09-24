@@ -26,7 +26,7 @@ import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
  * told how tall a sheet mid-throw is: it is held at full height and translated, so measuring
  * would grow a pad row during the gesture and take it back on settle.
  */
-export const SHEET_HEADER_HEIGHT = 65;
+export const SHEET_HEADER_HEIGHT = 58;
 
 export function EditorSheet({
   detent,

@@ -68,7 +68,7 @@ describe("fitPads", () => {
 
   it("gives a landscape phone at Half nothing at all, rather than a clipped row", () => {
     // ~133px of editor is not one row plus the controls to drive it, however it is shuffled.
-    expect(fitPads(ROOM.landscapeHalf, true)).toEqual({ rows: 0, inlineControls: true });
+    expect(fitPads(ROOM.landscapeHalf, true)).toMatchObject({ rows: 0, inlineControls: true });
   });
 
   it("buys landscape a row at Full by folding the controls into the header", () => {

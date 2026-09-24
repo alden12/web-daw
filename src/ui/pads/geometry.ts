@@ -91,6 +91,12 @@ export interface PadFit {
    * phone, and landscape is short *and* wide, so the header has the width to take them.
    */
   inlineControls: boolean;
+  /**
+   * The room left under those rows, short of another one: up to a row's worth, since rows only
+   * come whole. With the roll folded it would sit as a gap, so the rows stretch into it
+   * (`stretchedPadHeight`).
+   */
+  spare: number;
 }
 
 /**
@@ -139,13 +145,28 @@ export function fitPads(room: number, accidentals: boolean, filling = false): Pa
   const arrangements = filling ? ARRANGEMENTS.map((arrangement) => ({ ...arrangement, padsShare: 1 })) : ARRANGEMENTS;
   const fits = arrangements.map(({ inlineControls, padsShare, limit }) => {
     const chrome = SECTION_HEADER + PADS_PADDING + (inlineControls ? 0 : CONTROLS_HEIGHT);
-    return {
-      // The last row has no gap after it, so the room gets that gap back before dividing.
-      rows: Math.max(0, Math.min(limit, Math.floor((editor * padsShare - chrome + rowGap(accidentals)) / rowHeight))),
-      inlineControls,
-    };
+    const space = editor * padsShare - chrome;
+    // The last row has no gap after it, so the room gets that gap back before dividing.
+    const rows = Math.max(0, Math.min(limit, Math.floor((space + rowGap(accidentals)) / rowHeight)));
+    return { rows, inlineControls, spare: Math.max(0, Math.floor(space - padRowsHeight(rows, accidentals))) };
   });
   // Nothing fits anywhere: the last arrangement is the one that gave up the most, so its
   // zero is the honest answer and its `inlineControls` the one the empty section renders.
   return fits.find((fit) => fit.rows >= 1) ?? fits[fits.length - 1];
 }
+
+/** The most a stretched pad grows: past this a spare sliver reads as oversized pads, not a fit. */
+const MAX_STRETCH = 16;
+/** Kept back from the stretch: the room is derived rather than measured (`fitPads`), and a few
+ *  pixels short is a hairline of slack where a few over clips the last row's padding. */
+const STRETCH_MARGIN = 6;
+
+/**
+ * How tall a pad is drawn when the pads fill the sheet: `PAD_HEIGHT`, plus the spare room shared
+ * between the rows on show - only when they are all the rows that fit, since fewer is a choice
+ * (the `-` button) and the room above them is then the point.
+ */
+export const stretchedPadHeight = (fit: PadFit, shownRows: number): number =>
+  shownRows === fit.rows && shownRows > 0
+    ? PAD_HEIGHT + Math.min(MAX_STRETCH, Math.floor(Math.max(0, fit.spare - STRETCH_MARGIN) / shownRows))
+    : PAD_HEIGHT;

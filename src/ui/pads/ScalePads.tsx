@@ -19,7 +19,7 @@
 import { Menu, type MenuItem } from "../Menu";
 import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
-import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT, rowGap } from "./geometry";
+import { ACCIDENTAL_HEIGHT, PAD_GAP, rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
 import { IconButton } from "../controls/IconButton";
@@ -136,6 +136,7 @@ export function ScalePads({
   settings,
   touch,
   octavesPerRow,
+  padHeight,
 }: {
   settings: PadSettings;
   touch: PadTouch;
@@ -145,8 +146,10 @@ export function ScalePads({
    * is the thing that knows what it is running on.
    */
   octavesPerRow: number;
+  /** `PAD_HEIGHT`, or a little more when the pads fill the sheet (`stretchedPadHeight`). */
+  padHeight: number;
 }) {
-  if (settings.chords) return <ChordPads settings={settings} touch={touch} />;
+  if (settings.chords) return <ChordPads settings={settings} touch={touch} padHeight={padHeight} />;
   const { tonic, scale, lowOctave, octaves, accidentals } = settings;
   const rows = padRows({ tonic, scale, lowOctave, octaves, octavesPerRow, accidentals });
 
@@ -181,7 +184,7 @@ export function ScalePads({
               ))}
             </div>
           )}
-          <div className="shrink-0 flex gap-1" style={{ height: PAD_HEIGHT }}>
+          <div className="shrink-0 flex gap-1" style={{ height: padHeight }}>
             {row.pitches.map((pad) => (
               <PadButton
                 key={pad.pitch}
