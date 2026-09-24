@@ -4923,6 +4923,26 @@ projects:
         created_at: 2026-09-24T19:00:16.384Z
         updated_at: 2026-09-24T21:06:30.095Z
         closed_at: 2026-09-24T21:06:30.095Z
+      - ref: DAW-45
+        area: DAW
+        title: Hosted load asks for history/refs.json, a local-only file, and logs a 404
+        status: to-do
+        sort_path: "000045"
+        body: |-
+          Seen 2026-09-24 in the console on every load of the hosted app: `GET /projects/<id>/files/history/refs.json 404`.
+
+          **Harmless, but a wasted request and console noise.** The startup restore (`restoreProject` then `versionStore.reload()`, shared by boot and project switch in `projects/operations.ts`) runs `VersionStore.load()` before `AppShell` has called `versionStore.setRemote(session)`. So on a hosted project, the first load takes the **local file-DAG path** and reads `history/refs.json`. Hosted projects never write that file: server-authoritative history (HOST-6) derives versions from the log.
+
+          The 404 is read as "no history yet", and `setRemote` then reseeds the remote state, so nothing breaks. But the browser logs every failed fetch, and it's one extra round trip on a cold start.
+
+          **Fix options, cheapest first:**
+          - Tell the version store it's remote before the first load: pass it from whatever decides the repository is hosted, so `load()` takes the remote branch from the start.
+          - Or have the hosted bundle store skip history-DAG paths entirely in remote mode.
+
+          The first is the honest one; the second just hides the symptom.
+        id: 01a0d5a4-3c6b-73be-ad98-98bb2cb29dd0
+        created_at: 2026-09-24T22:58:25.516Z
+        updated_at: 2026-09-24T22:58:25.516Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -6331,7 +6351,7 @@ projects:
       - ref: INST-25
         area: INST
         title: "Bug: an in-place load stripped every MIDI device of its params"
-        status: review
+        status: done
         sort_path: "000025"
         body: |-
           Found 2026-09-24 on the live site: selecting a track with an arpeggiator threw `Unknown parameter: rate` from the arp's scheduler, over and over, and in the device panel.
@@ -6343,7 +6363,8 @@ projects:
           **Aftermath:** a device whose params were stripped and then saved will load with its defaults, so an arpeggiator's rate or pattern may have reset.
         id: 01a0d58c-c5f6-760a-8965-926431bbc22b
         created_at: 2026-09-24T22:32:47.862Z
-        updated_at: 2026-09-24T22:32:47.862Z
+        updated_at: 2026-09-24T22:53:49.188Z
+        closed_at: 2026-09-24T22:53:49.188Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
