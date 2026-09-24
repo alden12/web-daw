@@ -1,8 +1,8 @@
 /**
  * The primitive vocabulary: the curated set of node kinds a declarative graph can
  * use, each mapped to a Web Audio node. This is the single extension point for the
- * format - adding a primitive is adding one entry here (and, for a custom-DSP
- * primitive later, a WASM/worklet-backed node). Each kind exposes how to build the
+ * format - adding a primitive is adding one entry here (a custom-DSP primitive is a
+ * `workletLeaf` over its processor, INST-15). Each kind exposes how to build the
  * node, which of its fields are modulatable AudioParams (for `.param` connection
  * targets and ramped bindings), and how to set its enum/string properties.
  *
@@ -10,6 +10,7 @@
  * lifted from the original Distortion effect so the graph version sounds identical.
  */
 import type { ImpulseShape, NodeSpec, NoiseColor, ShaperShape } from "./types";
+import { VOCABULARY } from "./vocabulary";
 
 export interface NodeImpl {
   /** Build the bare node (construction-only args like delay length are read from the spec). */
@@ -26,7 +27,33 @@ const paramsOf =
   (node: AudioNode, field: string): AudioParam | undefined =>
     pick(node as T)[field];
 
+/** Processors already reported missing, so a def played many times warns once. */
+const missingProcessors = new Set<string>();
+
+/**
+ * A custom-DSP block: an AudioWorkletNode running `processor`, whose parameters are its fields.
+ * If the processor is not registered on the context (its module failed to load), it becomes a
+ * pass-through, so the device still sounds, unprocessed, rather than the voice failing to build.
+ */
+const workletLeaf = (processor: string): NodeImpl => ({
+  create: (ctx) => {
+    try {
+      return { node: new AudioWorkletNode(ctx, processor) };
+    } catch (error) {
+      if (!missingProcessors.has(processor)) {
+        missingProcessors.add(processor);
+        console.warn(`Custom DSP "${processor}" is unavailable; passing audio through unprocessed.`, error);
+      }
+      return { node: ctx.createGain() };
+    }
+  },
+  audioParam: (node, field) => (node instanceof AudioWorkletNode ? node.parameters.get(field) : undefined),
+  setProperty: () => {},
+});
+
 export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
+  ladder: workletLeaf(VOCABULARY.ladder.processor!),
+  bitcrush: workletLeaf(VOCABULARY.bitcrush.processor!),
   osc: {
     create: (ctx) => {
       const node = ctx.createOscillator();

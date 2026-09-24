@@ -6055,10 +6055,16 @@ projects:
         id: 019ff33c-8335-7093-bc59-fb75c9788b8d
         created_at: 2026-08-11T23:50:57.077Z
         updated_at: 2026-09-24T17:09:50.600Z
+        comments:
+          - body: "Contract answers from INST-15.1: a block is a vocabulary entry with `processor` set; its `audioParams` are the processor's parameter names, so the DOM-free VOCABULARY carries it and `workletLeaf` in nodes.ts is generic. First-party modules load with the fixed list at start (no on-demand loading needed yet). Missing processor = pass-through + one warning. Gotcha: a processor returning false before its input starts is stopped for good, so `worklets/lifetime.ts` keeps it alive until input first arrives. No construction-time options yet; 15.3's table choice will be the first."
+            audience: user
+            id: 01a0d49a-c831-75be-9e35-509b9b6411b5
+            at: 2026-09-24T18:08:28.721Z
+            actor: claude
       - ref: INST-15.1
         area: INST
         title: Worklet leaf seam, ladder filter and bitcrusher (Bitcrusher effect becomes a graph)
-        status: to-do
+        status: review
         sort_path: "000015.000001"
         parent: INST-15
         deps:
@@ -6066,7 +6072,7 @@ projects:
         body: First of the three INST-15 PRs; answers the seam's contract questions (modulatable params into the DOM-free `VOCABULARY`, construction-time options, on-demand `addModule`, behaviour when a leaf is unavailable) against `dsp/ladder` and `dsp/bitcrush`. Includes the lower voice cap for graphs containing a worklet leaf. Bitcrusher, the last effect still a class, becomes a graph def.
         id: 01a0d465-3f65-7753-9656-d616f7ad738a
         created_at: 2026-09-24T17:10:00.293Z
-        updated_at: 2026-09-24T17:10:00.293Z
+        updated_at: 2026-09-24T18:08:26.430Z
       - ref: INST-15.2
         area: INST
         title: Band-limited oscillator leaf (PolyBLEP saw/square/pulse, pulse width)

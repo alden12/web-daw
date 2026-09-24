@@ -2,7 +2,7 @@
  * What every group of MCP tools shares: id minters, the device-format document, and the text
  * result shapes. Pure data and helpers, with no project or transport in sight.
  */
-import { VOCABULARY, NODE_KINDS } from "../../src/audio/graph/vocabulary";
+import { VOCABULARY, NODE_KINDS, WORKLET_KINDS, WORKLET_VOICE_CAP } from "../../src/audio/graph/vocabulary";
 import { INSTRUMENT_RESERVED, EFFECT_RESERVED } from "../../src/audio/graph/validate";
 
 export const randomId = () => crypto.randomUUID();
@@ -45,6 +45,12 @@ export const deviceFormatDoc = () => ({
     "literal or a param. It has no input; wire it like an LFO: into `vca.gain` (a gain with gain: 0) to shape amplitude, " +
     "or through a gain that sets its depth into any `.param` - `filter.detune` (cents) for a filter sweep in musical " +
     "intervals, `osc.detune` for a pitch drop, an FM depth gain's `.gain` for a brightness envelope. Use as many as you like.",
+  cost:
+    `Native kinds are nearly free per note. Custom-DSP kinds (${WORKLET_KINDS.join(", ")}) run their own code, and each note ` +
+    `in an instrument voice runs its own copy, so an instrument using one plays at most ${WORKLET_VOICE_CAP} notes at once ` +
+    "(the oldest gives way). Put a block in the voice only when it must follow the note (a ladder swept by the note's own " +
+    "envelope); anything that treats every note alike (bitcrush, a fixed filter, reverb, delay) belongs in an effect after " +
+    "the instrument, where one copy serves every note.",
   oscFrequency:
     "An osc tracks the played note by default; `noteRatio` multiplies the note (FM/sub-oscillator); `frequency` sets an absolute Hz (an LFO).",
   example: {

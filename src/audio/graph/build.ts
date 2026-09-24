@@ -152,8 +152,9 @@ function applyFields(
 ): void {
   const impl = NODE_IMPLS[spec.kind];
   const startTime = context.startTime ?? ctx.currentTime;
-  const numberField = (field: NumberField | undefined, param: AudioParam): void =>
-    bindNumber(field, param, ctx, startTime, context.readParam, addTarget);
+  // No param is a custom-DSP block that failed to load (a pass-through): nothing to bind.
+  const numberField = (field: NumberField | undefined, param: AudioParam | undefined): void =>
+    void (param && bindNumber(field, param, ctx, startTime, context.readParam, addTarget));
   const enumField = (field: EnumField<string> | undefined, name: string, fallback?: string): void =>
     bindProperty(field, (value) => impl.setProperty(node, name, value), context.readParam, addTarget, fallback);
 
@@ -210,6 +211,16 @@ function applyFields(
     }
     case "convolver":
       bindImpulse(spec, node as ConvolverNode, ctx, context.readParam, addTarget);
+      break;
+    // A custom-DSP block's fields are all its processor's parameters.
+    case "ladder":
+      numberField(spec.frequency, impl.audioParam(node, "frequency"));
+      numberField(spec.resonance, impl.audioParam(node, "resonance"));
+      numberField(spec.detune, impl.audioParam(node, "detune"));
+      break;
+    case "bitcrush":
+      numberField(spec.bits, impl.audioParam(node, "bits"));
+      numberField(spec.downsample, impl.audioParam(node, "downsample"));
       break;
   }
 }
