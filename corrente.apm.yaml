@@ -3861,6 +3861,32 @@ projects:
             id: 01a07811-c8e2-7297-a90a-d7b96aedfa1d
             at: 2026-09-06T18:53:46.594Z
             actor: claude
+          - body: >-
+              **A fresh copy of the project on every tool call, on purpose**
+              (2026-09-24, from review of #158). Each call snapshots the room's
+              project into a scratch `ProjectStore` for the tools to read and
+              scribble on; the real edit reaches the room through `send`.
+
+
+              - **Why a copy at all:** the tools were written for a tab's
+              mirror and apply each edit to it right after sending. Given the
+              room's own store, every edit would apply twice, the second time
+              outside the log.
+
+              - **Why per call rather than cached:** the server is stateless
+              (one per HTTP request, usually one tool call), so there is
+              nothing to reuse without adding a cache; a project is plain data
+              (samples are referenced by path, not copied), so the copy costs a
+              few milliseconds at worst against a network round trip and a
+              model turn; and it can never read stale.
+
+              - **If it ever shows in a profile:** cache the scratch copy per
+              room and rebuild only when `room.headSeq` has moved. About ten
+              lines; not worth it until a large project proves it.
+            audience: user
+            id: 01a0d3be-4e66-75f5-8014-7e3d7d87a73b
+            at: 2026-09-24T14:07:39.622Z
+            actor: claude
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
