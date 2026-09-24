@@ -20,7 +20,20 @@ const TONE_CLASS = {
   "in-scale": "bg-control text-ink",
   /** Out of the scale, so it sits back the way a black key does. */
   accidental: "bg-control text-muted",
+  /** A starred chord: tinted, so your go-to chords stand out while you play. */
+  favourite: "bg-you/25 text-ink",
 } as const;
+
+/**
+ * A pad being arranged rather than played (the chord editor): a tap selects it, and it does not
+ * sound. Dashed, so the mode is plain from the pads themselves and nobody wonders why they are silent.
+ */
+export interface PadEditing {
+  onSelect: () => void;
+  selected: boolean;
+  /** Hidden from play, shown here so it can be brought back. */
+  hidden: boolean;
+}
 
 /** Roughly how wide a monospace character is, as a share of the font size. */
 const MONO_CHAR_WIDTH = 0.62;
@@ -44,6 +57,7 @@ export function PadButton({
   pitches,
   className = "",
   style,
+  editing,
 }: {
   /** What it is, for the accessibility tree and for tests: a note name, or a kit pad's sample. */
   name: string;
@@ -57,16 +71,20 @@ export function PadButton({
   pitches: PadNotes;
   className?: string;
   style?: CSSProperties;
+  editing?: PadEditing;
 }) {
-  const sounding = touch.isSounding(pitches);
-  const latched = touch.isLatched(pitches);
+  const sounding = !editing && touch.isSounding(pitches);
+  const latched = !editing && touch.isLatched(pitches);
+  const editClass = editing
+    ? `outline-1 outline-dashed -outline-offset-1 ${editing.selected ? "outline-you outline-2" : "outline-line"} ${editing.hidden ? "opacity-40" : ""}`
+    : "";
   return (
     <button
       type="button"
       aria-label={name}
-      aria-pressed={sounding}
+      aria-pressed={editing ? editing.selected : sounding}
       data-pitches={padKey(pitches)}
-      {...touch.padProps(pitches)}
+      {...(editing ? { onClick: editing.onSelect } : touch.padProps(pitches))}
       // No position utility here: the accidentals position themselves absolutely, and two
       // Tailwind classes for the same property are settled by stylesheet order rather than
       // by which one the caller passed - so the base class would win at random.
@@ -75,9 +93,9 @@ export function PadButton({
       //
       // The radius *is* here, because every pad everywhere has the same one; only size and
       // position are the caller's business.
-      className={`[container-type:inline-size] flex flex-col items-center justify-center rounded-md leading-none touch-none select-none cursor-pointer transition-colors ${
+      className={`[container-type:inline-size] flex flex-col items-center justify-center rounded-md leading-none select-none ${editing ? "touch-pan-y" : "touch-none"} cursor-pointer transition-colors ${
         sounding ? "bg-you/30 text-you" : TONE_CLASS[tone]
-      } ${latched ? "ring-1 ring-inset ring-you" : ""} ${className}`}
+      } ${latched ? "ring-1 ring-inset ring-you" : ""} ${editClass} ${className}`}
       style={style}
     >
       <span className="font-mono text-[12px] font-semibold whitespace-nowrap" style={{ fontSize: labelSize(label) }}>

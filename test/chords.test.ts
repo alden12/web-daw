@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHORD_ORDER, chordRowLimit, chordRows, type ChordFamily } from "../src/audio/theory/chords";
+import { CHORD_ROW_LIMIT, chordRows, type ChordFamily, type ChordPrefs } from "../src/audio/theory/chords";
+import { DEFAULT_CHORD_PREFS } from "../src/audio/theory/chordPrefs";
 import { SCALES, SCALE_NAMES, type ScaleName } from "../src/audio/theory/scales";
 
-const layout = (overrides: Partial<Parameters<typeof chordRows>[0]> = {}) =>
-  chordRows({ tonic: 0, scale: "major", lowOctave: 3, rows: 1, order: DEFAULT_CHORD_ORDER, ...overrides });
+type LayoutOverrides = Partial<Parameters<typeof chordRows>[0]> & { order?: ChordFamily[]; with?: Partial<ChordPrefs> };
+
+/** C major from C3, one row unless asked; `order` is shorthand for the global order. */
+const layout = ({ order, with: prefs, ...overrides }: LayoutOverrides = {}) =>
+  chordRows({
+    tonic: 0,
+    scale: "major",
+    lowOctave: 3,
+    rows: 1,
+    prefs: { ...DEFAULT_CHORD_PREFS, ...(order ? { order } : {}), ...prefs },
+    ...overrides,
+  });
 
 const names = (row: ReturnType<typeof layout>[number]) => row.map((pad) => pad?.name ?? null);
 
@@ -59,7 +70,7 @@ describe("chordRows", () => {
     SCALE_NAMES.forEach((scale: ScaleName) =>
       [0, 5, 10].forEach((tonic) => {
         const inScale = new Set(SCALES[scale].map((interval) => (tonic + interval) % 12));
-        layout({ scale, tonic, rows: chordRowLimit(DEFAULT_CHORD_ORDER) })
+        layout({ scale, tonic, rows: CHORD_ROW_LIMIT })
           .flat()
           .forEach((pad) => pad?.pitches.forEach((pitch) => expect(inScale.has(pitch % 12)).toBe(true)));
       }),

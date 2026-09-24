@@ -1270,6 +1270,49 @@ test.describe("phone", () => {
     await expect(pad(page, "C").first()).toHaveAttribute("data-pitches", "60,64,67");
   });
 
+  test("arranging the chords: move one in its column, star it, hide it, and scroll to the rest", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitemradio", { name: "Chords" }).click();
+    await setDetent(page, "full");
+
+    // Every variation is reachable by scrolling, however few rows are on show.
+    const scroller = pads(page).locator("[data-chord-scroll]");
+    await expect(pad(page, "D5")).not.toBeInViewport();
+    await scroller.evaluate((element) => element.scrollTo({ top: -element.scrollHeight }));
+    await expect(pad(page, "D5")).toBeInViewport();
+    await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
+    await page.screenshot({ path: "test-results/chord-pads.png" });
+
+    await page.getByRole("button", { name: "Key and scale" }).tap();
+    await page.getByRole("menuitem", { name: "Edit chords…" }).click();
+    // Editing, a tap selects rather than plays.
+    await pad(page, "Dsus4").tap();
+    await expect(pad(page, "Dsus4")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("ghost-note")).toHaveCount(0);
+
+    // Down, in its own column: it swaps with the 7th below it there, and only there.
+    await pads(page).getByRole("button", { name: "Move down" }).tap();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Dsus4" })).toBeVisible();
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
+
+    await pads(page).getByRole("button", { name: "Star as a favourite" }).tap();
+    await expect(pad(page, "Dsus4")).toContainText("★");
+    await page.screenshot({ path: "test-results/chord-edit.png" });
+
+    // Hidden, it is gone once editing is done.
+    await pads(page).getByRole("button", { name: "Hide" }).tap();
+    await pads(page).getByRole("button", { name: "Done" }).tap();
+    await expect(pad(page, "Dsus4")).toHaveCount(0);
+    // And the arrangement is kept across a reload.
+    await page.reload();
+    await dismissStart(page);
+    await setDetent(page, "full");
+    await expect(pad(page, "Dsus4")).toHaveCount(0);
+    await expect(pads(page).locator('[data-chord-row="1"]').getByRole("button", { name: "Em7" })).toBeVisible();
+  });
+
   test("a long chord name shrinks to fit its pad rather than overflowing it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);

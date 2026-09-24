@@ -6820,13 +6820,13 @@ projects:
       - ref: MOBILE-12
         area: MOBILE
         title: "Chords mode on the pads: a triad per degree, variations stacked above"
-        status: in-progress
+        status: review
         sort_path: "000012"
         deps:
           - DAW-12.1
           - MOBILE-6
         body: |-
-          **Redesigned 2026-09-24**, from a mockup, before building. The earlier idea used the accidental band above each row to hold the variations, as a single band. What's built instead is a **stack of rows**: sizing the pads now sizes the variations, and the user ranks which variations come first.
+          **Redesigned 2026-09-24**, from a mockup, before building. The earlier idea used the accidental band above each row to hold the variations, as a single band. What's built instead is a **stack of rows**: sizing the pads now sizes the variations, and the user arranges which variations come first.
 
           A **Chords** switch in the key menu, next to Accidentals, turns each in-scale pad into its **diatonic chord**. In C major that's C Dm Em F G Am B° and the closing C, captioned by degree (I ii iii IV V vi vii° I). So a phone can lay down a progression with eight pads instead of three fingers on 52px targets.
 
@@ -6839,23 +6839,32 @@ projects:
           - A family that doesn't fit a degree is skipped for that column (F sus4 needs a B♭), so the next one moves up.
           - **Inversions** are of the column's own triad, so they always fit. They fill columns that run out of shapes, and they're the first answer to DAW-12.1's voicing question: Em/G next to C leaps less than Em.
           - A pentatonic degree with no triad takes its first fitting family instead (Dsus4 in C major pentatonic). A degree nothing fits (E in C major pentatonic) is left as a gap rather than given a chord from outside the key.
+          - Names have no brackets (madd9, mM7), and a pad's label shrinks to fit its width (CSS container units), for sharp roots on a phone.
 
-          ## The pads
+          ## The pads (first PR, #175)
 
-          - **Base row** = the triads. **Rows above** = each column's variations in rank order.
-          - `+`/`-` add and remove rows within the same room-based ceiling (`fitPads`, laid out as accidentals-off, with the wide row gap, since two chord rows touching are as easy to straddle as two note rows).
+          - **Base row** = the triads. **Rows above** = each column's variations in its arranged order.
+          - `+`/`-` set how many rows are on show, within the same room-based ceiling (`fitPads`, laid out as accidentals-off, with the wide row gap, since two chord rows touching are as easy to straddle as two note rows).
           - The arrows move the chords an octave, and the range label shows the one octave (`C3`).
           - Accidentals is greyed out in chords mode, since there's nothing out of key to show.
           - The touch hook (`usePadTouch`) now keys a pad by **its set of notes**, not one pitch. Chords that share notes (C and Am share two) don't cut each other: a note is only started if nothing holds it, and only stopped once nothing does. Slide and latch work unchanged.
 
-          ## Still to do (second PR)
+          ## Arranging, favourites and scrolling (second PR)
 
-          **Ranking the families.** `chordOrder` is already a setting that reads `DEFAULT_CHORD_ORDER`. The plan is a persisted order plus an editor: a "Chord order…" item in the key menu, opening a list with move up/down and a switch per family to drop it entirely. Menus can't reorder in place, which is why it's a list and not a submenu.
+          Asked for after trying the first: an order **per column**, **favourite** chords, and a way to reach an odd chord without rearranging.
 
-          **Momentary or sticky** is now moot for this layout: a variation is its own pad, not a modifier.
+          - **The arrangement** (`audio/theory/chordPrefs.ts`, pure) is a global order and hidden set, plus per-column overrides **keyed by degree, not note**, so "on ii, sus2 first" follows you into any key. Favourites are `degree:family`. It's saved per browser as JSON, read through zod, and anything unreadable falls back to the defaults. A family added later gets appended to a saved order, so it's offered rather than lost.
+          - **Edit mode** ("Edit chords…" in the key menu) replaces the key/octave row with an edit bar. A tap then selects a pad instead of playing it. The pads get a dashed edge, and hidden chords are laid out dimmed so they can be shown again.
+          - **The bar:** ▼ ▲ swap the chord with its neighbour in the column, ★ stars it, Hide/Show, a **Column/All** switch for where a move or hide lands, ↺ resets the column, Reset all, and Done.
+            - An "All" change reaches every column, rearranged ones included.
+            - Starring moves the chord to the front of its column and tints the pad. Unstarring leaves it in place.
+          - **Why a mode, not long-press:** a press plays the chord, so a long-press would sound it while you try to edit it.
+          - **Scrolling:** the base row stays put and the rows above scroll, snapping to whole rows, so every chord is reachable. The pads can't be the scroll handle (drag down is the sustain latch), so each row leaves a 20px strip on its right edge that scrolls natively, with a rail drawn over it. A wheel or trackpad scrolls from anywhere. In edit mode the pads scroll too (`touch-action: pan-y`), since they don't latch there.
+
+          **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T19:24:02.102Z
+        updated_at: 2026-09-24T20:10:36.812Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing

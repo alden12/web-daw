@@ -17,10 +17,12 @@
  * arrows move the chords an octave, exactly as they move the notes, and `+`/`-` add and remove
  * rows of variations above the base row of triads, within the same room-based ceiling.
  */
+import { useState } from "react";
 import { usePersistentBoolean, usePersistentNumber, usePersistentString } from "../usePersistent";
 import { PITCH_CLASSES, SCALE_NAMES, pitchAt, type ScaleName } from "../../audio/theory/scales";
 import { pitchName } from "../noteNames";
-import { DEFAULT_CHORD_ORDER, chordRowLimit, type ChordFamily } from "../../audio/theory/chords";
+import { CHORD_ROW_LIMIT, type ChordFamily, type ChordPrefs } from "../../audio/theory/chords";
+import { parseChordPrefs } from "../../audio/theory/chordPrefs";
 
 /**
  * The lowest and highest octave the range may sit in, in the roll's numbering (C4 = 60).
@@ -34,6 +36,11 @@ export const OCTAVE_RANGE = { min: 0, max: 8 };
 /** Read by `NotePads` before the settings too, since chord rows are laid out without accidentals. */
 export const CHORDS_KEY = "corrente:pads-chords";
 
+export interface ChordSelection {
+  degree: number;
+  family: ChordFamily | "triad";
+}
+
 export interface PadSettings {
   tonic: number;
   scale: ScaleName;
@@ -43,10 +50,17 @@ export interface PadSettings {
   accidentals: boolean;
   /** Each pad a chord rather than a note (MOBILE-12). */
   chords: boolean;
-  /** Chord rows on show, the base row of triads included. */
+  /** Chord rows on show, the base row of triads included. The rest are a scroll away. */
   chordRows: number;
-  /** The chord families, most wanted first: the order the rows above the triads fill in. */
-  chordOrder: readonly ChordFamily[];
+  /** How the chord columns are arranged: order, hidden and favourites. Saved per browser. */
+  chordPrefs: ChordPrefs;
+  setChordPrefs: (prefs: ChordPrefs) => void;
+  /** Arranging the chords rather than playing them: a tap on a pad selects it for editing. */
+  editingChords: boolean;
+  setEditingChords: (on: boolean) => void;
+  /** The chord being arranged, by degree and family (so it stays selected as it moves). */
+  chordSelection: ChordSelection | null;
+  setChordSelection: (selection: ChordSelection | null) => void;
   setTonic: (tonic: number) => void;
   setScale: (scale: ScaleName) => void;
   setAccidentals: (on: boolean) => void;
@@ -77,16 +91,22 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
   // shape. Switching them off gives a row you cannot play a wrong note in, which may yet
   // prove the better default on a phone - that is a question for real use, not for now.
   const [accidentals, setAccidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
-  const [chords, setChords] = usePersistentBoolean(CHORDS_KEY, false);
-  const chordOrder = DEFAULT_CHORD_ORDER;
-  const [storedChordRows, setChordRows] = usePersistentNumber(
-    "corrente:pads-chord-rows",
-    3,
-    1,
-    chordRowLimit(chordOrder),
-  );
+  const [chords, setChordsStored] = usePersistentBoolean(CHORDS_KEY, false);
+  const [storedChordRows, setChordRows] = usePersistentNumber("corrente:pads-chord-rows", 3, 1, CHORD_ROW_LIMIT);
   // Kept as asked for, like the octaves, so raising the sheet gives back rows that did not fit.
-  const chordRows = Math.max(1, Math.min(storedChordRows, maxRows, chordRowLimit(chordOrder)));
+  const chordRows = Math.max(1, Math.min(storedChordRows, maxRows, CHORD_ROW_LIMIT));
+  // Stored as JSON and read through a parser, since this browser's storage may hold any
+  // version's shape (or someone's hand edit): anything unreadable is simply the defaults.
+  const [rawChordPrefs, setRawChordPrefs] = usePersistentString<string>("corrente:pads-chord-prefs", "");
+  const chordPrefs = parseChordPrefs(rawChordPrefs || null);
+  // Not persisted: coming back to the pads to find them silently not playing would read as broken.
+  const [editing, setEditing] = useState(false);
+  const editingChords = chords && editing;
+  const [chordSelection, setChordSelection] = useState<ChordSelection | null>(null);
+  const setEditingChords = (on: boolean) => {
+    setEditing(on);
+    setChordSelection(null);
+  };
 
   // Both ceilings, in one place: what the room allows (`geometry.ts`) and what the pitch
   // range holds. The stored value is kept as asked for, so throwing the sheet up gives back
@@ -109,7 +129,7 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     chords
       ? direction < 0
         ? chordRows > 1
-        : chordRows < Math.min(maxRows, chordRowLimit(chordOrder))
+        : chordRows < Math.min(maxRows, CHORD_ROW_LIMIT)
       : direction < 0
         ? octaves > octavesPerRow
         : octaves + octavesPerRow <= maxOctaves;
@@ -122,11 +142,19 @@ export function usePadSettings(octavesPerRow: number, maxRows: number): PadSetti
     accidentals,
     chords,
     chordRows,
-    chordOrder,
+    chordPrefs,
+    setChordPrefs: (prefs) => setRawChordPrefs(JSON.stringify(prefs)),
+    editingChords,
+    setEditingChords,
+    chordSelection: editingChords ? chordSelection : null,
+    setChordSelection,
     setTonic,
     setScale,
     setAccidentals,
-    setChords,
+    setChords: (on) => {
+      setChordsStored(on);
+      if (!on) setEditingChords(false);
+    },
     moveRange: (direction) => {
       if (canMove(direction)) setLowOctave(lowOctave + direction);
     },
