@@ -5,7 +5,8 @@
  * (a literal, or the current value of a bound parameter), wires the connections, and
  * returns an `apply(paramId, value)` hook so parameter changes reach the live graph.
  *
- * Field values are literal or `{ param, scale?, offset? }` (value*scale + offset).
+ * Field values are literal or `{ param, table?, scale?, offset? }` (value, read off the table
+ * if there is one, then *scale + offset).
  * Two fields are computed rather than plain: an oscillator's frequency (tracks the
  * note, optionally times a ratio) and a waveshaper's curve (rebuilt from its family).
  * An envelope's fields are times, read when the note starts and ends (envelope.ts).
@@ -27,6 +28,7 @@ import type {
 import { IMPULSES, NODE_IMPLS, SHAPER_CURVES } from "./nodes";
 import { playbackRateFor } from "./samplePitch";
 import { pruneGraph } from "./prune";
+import { resolveNumber } from "./table";
 import { normalizeRelease, normalizeShape, scheduleAttack, scheduleRelease } from "./envelope";
 
 export interface GraphContext {
@@ -64,10 +66,8 @@ export interface BuiltGraph {
   disconnect(): void;
 }
 
-/** Apply a parameter reference's linear transform: raw*scale + offset (defaults 1, 0). */
-export function resolveLinear(raw: number, ref: { scale?: number; offset?: number }): number {
-  return raw * (ref.scale ?? 1) + (ref.offset ?? 0);
-}
+// resolveNumber lives in table.ts (pure, DOM-free, shared with the note path); re-exported here.
+export { resolveNumber } from "./table";
 
 // collectParamIds lives in validate.ts (pure, DOM-free); re-exported here for the runtimes.
 export { collectParamIds } from "./validate";
@@ -228,7 +228,7 @@ function bindNumber(
     param.setValueAtTime(field, startTime);
     return;
   }
-  const compute = (raw: ParamValue): number => resolveLinear(raw as number, field);
+  const compute = (raw: ParamValue): number => resolveNumber(raw as number, field);
   param.setValueAtTime(compute(readParam(field.param)), startTime);
   addTarget(field.param, (value, smoothMs) => rampParam(ctx, param, compute(value), smoothMs));
 }
@@ -277,7 +277,7 @@ function bindOscFrequency(
     osc.frequency.setValueAtTime(base * ratio, startTime);
     return;
   }
-  const compute = (raw: ParamValue): number => base * resolveLinear(raw as number, ratio);
+  const compute = (raw: ParamValue): number => base * resolveNumber(raw as number, ratio);
   osc.frequency.setValueAtTime(compute(context.readParam(ratio.param)), startTime);
   addTarget(ratio.param, (value, smoothMs) => rampParam(ctx, osc.frequency, compute(value), smoothMs));
 }
@@ -295,8 +295,8 @@ function bindShaperCurve(
     setCurve(amount);
     return;
   }
-  setCurve(resolveLinear(readParam(amount.param) as number, amount));
-  addTarget(amount.param, (value) => setCurve(resolveLinear(value as number, amount)));
+  setCurve(resolveNumber(readParam(amount.param) as number, amount));
+  addTarget(amount.param, (value) => setCurve(resolveNumber(value as number, amount)));
 }
 
 /** A context's one-frame silent buffer: what a voice plays while its sample is still decoding. */
@@ -354,8 +354,8 @@ function bindImpulse(
     setImpulse(seconds);
     return;
   }
-  setImpulse(resolveLinear(readParam(seconds.param) as number, seconds));
-  addTarget(seconds.param, (value) => setImpulse(resolveLinear(value as number, seconds)));
+  setImpulse(resolveNumber(readParam(seconds.param) as number, seconds));
+  addTarget(seconds.param, (value) => setImpulse(resolveNumber(value as number, seconds)));
 }
 
 /** Envelope defaults, in the units the fields are authored in: milliseconds, and 0..1 sustain. */
@@ -367,7 +367,7 @@ const readNumber = (field: NumberField | undefined, fallback: number, readParam:
     ? fallback
     : typeof field === "number"
       ? field
-      : resolveLinear(readParam(field.param) as number, field);
+      : resolveNumber(readParam(field.param) as number, field);
 
 /** Schedule an envelope's attack, decay and sustain from the note's start; return its release. */
 function startEnvelope(

@@ -5920,6 +5920,11 @@ projects:
             id: 019fb3c7-cd84-7393-8e2c-c0e0aaa7d43f
             at: 2026-07-30T16:07:23.780Z
             actor: claude
+          - body: 'Parked 2026-09-24: Alden is happy with the MIDI devices we have for now. The proposed answer when it resumes is a curated palette of step primitives (the "what does this step play?" question in `stepStrategy.ts`), rather than an expression language. Instrument/effect authoring (INST-17, INST-15) comes first.'
+            audience: user
+            id: 01a0d465-8b72-7364-8fdb-4dbee46627fa
+            at: 2026-09-24T17:10:19.762Z
+            actor: claude
       - ref: INST-12
         area: INST
         title: Envelopes and per-note gates in the declarative format
@@ -6037,9 +6042,55 @@ projects:
           **Why it comes before Faust.** INST-6 already frames Faust as the primitive factory rather than the user-facing format, and every Faust-authored primitive arrives through this seam. Building the seam separately means Faust becomes "author more leaves cheaply" against something already load-bearing, instead of a compiler, a WASM loading path, a trusted shell and a param-metadata bridge all landing together with nothing yet exercising them. It is also the cheapest way to discover the leaf contract is wrong, while the only client is code we can freely change.
 
           **Trust boundary.** These leaves are first-party worklets, authored by us via PR. INST-4 tier 4 and INST-6 are both explicit that untrusted worklets never run on the hosted platform, so this opens no sharing path. It builds the socket that INST-6's sandboxed WASM guests later plug into.
+
+          ## Decided 2026-09-24: build every block, the expensive way first
+
+          Goal is that Alden can author and try custom instruments over MCP (dogfooding during his break), not efficiency. So:
+
+          - **Build all four leaves now**, in this order, one PR each (sub-items): INST-15.1 the seam + ladder filter + bitcrusher (the Bitcrusher effect becomes a graph), INST-15.2 band-limited oscillator (PolyBLEP saw/square/pulse with pulse width), INST-15.3 wavetable oscillator (table + position).
+          - **Per-voice instances are accepted.** In an instrument voice each worklet leaf is instantiated once per note, so a voice with two leaves at 16 notes runs 32 worklets. Each one costs fixed overhead per 128-sample render quantum regardless of how much it does. Fine on a laptop; heavy on a phone. The fix is the graph engine (INST-19), which runs the same defs cheaper without a format change, so nothing here should bake in the per-voice runtime.
+          - **Cheap guard: a lower voice cap for graphs that contain a worklet leaf** (around 8 notes, oldest stolen) so a big chord cannot choke mobile. A property of the def computed from its nodes, not a user setting.
+          - **What must be per-voice vs post-mix, as guidance for authors (and `describe_device_format`):** sources (oscillators) and anything that follows the note (a filter swept by its own envelope or key-tracked, envelopes) must be in the voice. Anything that treats every note the same (reverb, delay, chorus, a static filter, mostly the bitcrusher) belongs after the voices, as a chained effect - the agent should prefer that, since it costs one instance not one per note. Distortion is the grey area: driving a chord through it together sounds grittier than per note, a taste call rather than a blocker.
+          - **Nimbus and Wavetable stay hand-written devices.** Each is a whole polyphonic synth inside one worklet managing its own voice slots; as a per-voice graph they would be slower and gain the agent nothing. The leaves are for new instruments, not for converting these two. They become graph defs only once the graph engine exists.
         id: 019ff33c-8335-7093-bc59-fb75c9788b8d
         created_at: 2026-08-11T23:50:57.077Z
-        updated_at: 2026-08-11T23:50:57.077Z
+        updated_at: 2026-09-24T17:09:50.600Z
+      - ref: INST-15.1
+        area: INST
+        title: Worklet leaf seam, ladder filter and bitcrusher (Bitcrusher effect becomes a graph)
+        status: to-do
+        sort_path: "000015.000001"
+        parent: INST-15
+        deps:
+          - INST-17
+        body: First of the three INST-15 PRs; answers the seam's contract questions (modulatable params into the DOM-free `VOCABULARY`, construction-time options, on-demand `addModule`, behaviour when a leaf is unavailable) against `dsp/ladder` and `dsp/bitcrush`. Includes the lower voice cap for graphs containing a worklet leaf. Bitcrusher, the last effect still a class, becomes a graph def.
+        id: 01a0d465-3f65-7753-9656-d616f7ad738a
+        created_at: 2026-09-24T17:10:00.293Z
+        updated_at: 2026-09-24T17:10:00.293Z
+      - ref: INST-15.2
+        area: INST
+        title: Band-limited oscillator leaf (PolyBLEP saw/square/pulse, pulse width)
+        status: to-do
+        sort_path: "000015.000002"
+        parent: INST-15
+        deps:
+          - INST-15.1
+        body: "A source leaf over `dsp/oscillators`: alias-free saw/square/pulse with a modulatable pulse width, which the native `OscillatorNode` cannot do (PWM). The first worklet leaf that is a *source*, so it also settles how a worklet leaf joins `SOURCE_KINDS`, starts and stops with the voice, and tracks the note frequency like `osc`."
+        id: 01a0d465-4690-7240-b72f-4a3663b8f859
+        created_at: 2026-09-24T17:10:02.128Z
+        updated_at: 2026-09-24T17:10:02.128Z
+      - ref: INST-15.3
+        area: INST
+        title: Wavetable oscillator leaf (table + position)
+        status: to-do
+        sort_path: "000015.000003"
+        parent: INST-15
+        deps:
+          - INST-15.2
+        body: "A source leaf over `dsp/wavetable`: a construction-time table choice (enum field, like `buffer.sample`) and a modulatable position. Lets the agent author wavetable voices; it does not convert the hand-written Wavetable instrument (see INST-15's 2026-09-24 decision)."
+        id: 01a0d465-4f2f-762a-b009-fd7e00b59394
+        created_at: 2026-09-24T17:10:04.335Z
+        updated_at: 2026-09-24T17:10:04.335Z
       - ref: INST-16
         area: INST
         title: Drum kits as swappable, saveable presets, with a changeable default kit
@@ -6069,7 +6120,7 @@ projects:
       - ref: INST-17
         area: INST
         title: Convert Organ and Supersaw to graph defs (each needs a small format decision)
-        status: to-do
+        status: review
         sort_path: "000017"
         deps:
           - INST-4
@@ -6085,9 +6136,16 @@ projects:
           - Make voice count a construction-time field and rebuild the voice graph when it changes.
 
           Either way the lean is the smallest format addition that more than one device would use, rather than a one-off. Not urgent: both work as classes, and conversion buys consistency plus agent-authorable variants rather than new sound.
+
+          ## Decided 2026-09-24: a lookup table on `ParamRef`
+
+          One addition covers both: `ParamRef.table`, a list of `[input, output]` points sorted by input. The param's raw value is read off the table (piecewise-linear between points, clamped at the ends), then `scale`/`offset` apply as before. It gives the agent a general way to make any knob non-linear, and neither instrument's params change, so no project migration.
+
+          - **Organ:** each partial's gain is a table over brightness sampled from the old formula (points generated in the def, so the formula stays visible).
+          - **Supersaw:** always 9 saws. Saw k's level is a table over `super.voices` (1/n when n >= k, else 0). Its detune is `spread * factor_k(n)`, a product of two params, which bindings cannot say directly; done natively as `constant(offset = table over voices) -> gain(gain = super.detune) -> saw.detune`. Silent saws still run (pruning cannot drop them, the count is live), but 9 is what it built at full count anyway. A side benefit: count and spread now change held notes, not just the next ones.
         id: 01a0d43c-2c75-779d-8ead-f542fac23f21
         created_at: 2026-09-24T16:25:08.469Z
-        updated_at: 2026-09-24T16:25:08.469Z
+        updated_at: 2026-09-24T17:16:12.790Z
       - ref: INST-18
         area: INST
         title: Channel split and merge in the graph format
@@ -6107,6 +6165,46 @@ projects:
         id: 01a0d448-7c89-76fc-b293-9cd3681e3edd
         created_at: 2026-09-24T16:38:35.401Z
         updated_at: 2026-09-24T16:38:35.401Z
+      - ref: INST-19
+        area: INST
+        title: "Graph engine: run every voice of a graph def inside one worklet"
+        status: planning
+        sort_path: "000019"
+        deps:
+          - INST-15
+        body: |-
+          Parked 2026-09-24; revisit after Alden's break, once custom instruments have been dogfooded the expensive way.
+
+          **Problem.** The native runtime builds a graph def once per note. Native nodes make that nearly free, but a worklet leaf (INST-15) instantiated per note costs fixed overhead per render quantum, so a voice with two leaves at 16 notes runs 32 worklets. Hand-written Nimbus avoids this by keeping 16 voice slots inside one worklet; that is why it stays a class.
+
+          **Idea: one definition, two runtimes.** A second interpreter that runs a whole voice graph def (native kinds re-implemented as DSP, plus the leaves' `dsp/` modules called directly) for every voice inside a single worklet, with per-voice state slots. The def format does not change; which runtime plays a def is an implementation choice (e.g. the engine whenever a def contains a worklet leaf). Once it exists, Nimbus and Wavetable can become graph defs without getting slower.
+
+          **Hard parts.**
+          - Re-implementing every native kind in JS/DSP: biquad (match Web Audio's coefficient formulas), waveshaper with oversampling, convolver, compressor (Web Audio's is loosely specified), buffer playback, envelopes with the anchored release.
+          - Proving the two runtimes sound the same: parity tests rendering the same def through both (offline) and comparing within a tolerance, per kind and for the built-in defs.
+          - Param modulation at audio rate across the slot array, and voice allocation/stealing moving into the worklet.
+
+          **Not a blocker for anything**: every def already runs on the native runtime; this is purely cost.
+        id: 01a0d465-77af-7498-8fe9-7233b96083e0
+        created_at: 2026-09-24T17:10:14.703Z
+        updated_at: 2026-09-24T17:10:14.703Z
+      - ref: INST-20
+        area: INST
+        title: Per-voice drift and key-track sources in the graph vocabulary
+        status: to-do
+        sort_path: "000020"
+        deps:
+          - INST-4
+        body: |-
+          Noted 2026-09-24 while diagramming what Nimbus would need as a graph. Two small native source kinds, both cheap:
+
+          - **Key-track:** a constant-like source whose value comes from the voice's note, e.g. `(note - 60) * 100` cents (or the note frequency), so wiring it through a `gain` into `filter.detune` gives a filter that follows the keyboard by an amount. Today a def can only follow the note through `osc` frequency.
+          - **Drift:** a per-voice random offset chosen at note-on (optionally a slow random wander), for the subtle analog detune INST-1 describes for Nimbus. Seeded per voice so each note differs.
+
+          Neither needs a worklet. Useful on their own for agent-authored instruments, and prerequisites for Nimbus as a graph def (with INST-15 and the graph engine).
+        id: 01a0d465-84bf-71ad-9391-fde0ee2bf46c
+        created_at: 2026-09-24T17:10:18.047Z
+        updated_at: 2026-09-24T17:10:18.047Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device

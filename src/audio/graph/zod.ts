@@ -15,12 +15,21 @@ import type { ParamSchema } from "../params/types";
 import { IMPULSE_SHAPES, NOISE_COLORS, SHAPER_SHAPES } from "./types";
 import type { Graph, GraphInstrumentDef, GraphEffectDef } from "./types";
 import { validateGraph, INSTRUMENT_RESERVED, EFFECT_RESERVED } from "./validate";
+import { tableProblem } from "./table";
 
 /** Bump when the def shape changes incompatibly; older/newer versions are refused. */
 export const DEVICE_FORMAT_VERSION = 1;
 
 const paramRef = z.object({ param: z.string(), scale: z.number().optional(), offset: z.number().optional() }).strict();
-const numberField = z.union([z.number(), paramRef]);
+const table = z.array(z.tuple([z.number(), z.number()])).superRefine((points, issues) => {
+  const problem = tableProblem(points);
+  if (problem) issues.addIssue({ code: "custom", message: problem });
+});
+// Only a number can be read off a table; an enum or a switch binds its param as it is.
+const numberRef = z
+  .object({ param: z.string(), table: table.optional(), scale: z.number().optional(), offset: z.number().optional() })
+  .strict();
+const numberField = z.union([z.number(), numberRef]);
 const enumField = z.union([z.string(), paramRef]);
 const boolField = z.union([z.boolean(), paramRef]);
 

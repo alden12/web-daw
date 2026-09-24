@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { validateGraph, INSTRUMENT_RESERVED, EFFECT_RESERVED } from "../src/audio/graph/validate";
-import { collectParamIds, resolveLinear } from "../src/audio/graph/build";
+import { collectParamIds, resolveNumber } from "../src/audio/graph/build";
 import { SHAPER_CURVES } from "../src/audio/graph/nodes";
 import { subtractive } from "../src/audio/instruments/graph/subtractive";
 import { fm } from "../src/audio/instruments/graph/fm";
@@ -62,11 +62,11 @@ describe("collectParamIds", () => {
   });
 });
 
-describe("resolveLinear", () => {
+describe("resolveNumber", () => {
   it("applies scale and offset with sensible defaults", () => {
-    expect(resolveLinear(0.6, {})).toBe(0.6);
-    expect(resolveLinear(0.6, { scale: 0.5 })).toBe(0.3); // tremolo LFO depth = depth/2
-    expect(resolveLinear(0.6, { scale: -0.5, offset: 1 })).toBeCloseTo(0.7); // tremolo VCA base = 1 - depth/2
+    expect(resolveNumber(0.6, {})).toBe(0.6);
+    expect(resolveNumber(0.6, { scale: 0.5 })).toBe(0.3); // tremolo LFO depth = depth/2
+    expect(resolveNumber(0.6, { scale: -0.5, offset: 1 })).toBeCloseTo(0.7); // tremolo VCA base = 1 - depth/2
   });
 });
 

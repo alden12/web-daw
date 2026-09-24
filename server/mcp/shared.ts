@@ -29,7 +29,10 @@ export const deviceFormatDoc = () => ({
   })),
   reserved: { instrument: INSTRUMENT_RESERVED, effect: EFFECT_RESERVED },
   binding:
-    "A node field is a literal, or { param: <schema id>, scale?, offset? } to bind it (value = param*scale + offset). Enum fields (waveform, filterType) are a literal string or a param.",
+    "A node field is a literal, or { param: <schema id>, scale?, offset? } to bind it (value = param*scale + offset). Enum fields (waveform, filterType) are a literal string or a param. " +
+    "A number field's binding can also take `table`: [[paramValue, fieldValue], ...] with ascending paramValues, which the param is read off first " +
+    "(straight lines between points, the end values beyond them), then scale/offset apply. Use it for a non-linear knob: a curve " +
+    "(sample it at 10-20 points), or a step per value of a whole-number param, e.g. a level of 0 until a count reaches 3.",
   connection:
     "[from, to]; `to` is a node id (audio input) or `nodeId.param` to modulate that AudioParam. Reserved ids are the endpoints above.",
   voiceOutput:

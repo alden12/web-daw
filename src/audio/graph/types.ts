@@ -34,8 +34,20 @@ export interface ParamRef {
   offset?: number;
 }
 
+/** One point of a lookup table: this param value in, this field value out. */
+export type TablePoint = [input: number, output: number];
+
+/**
+ * A numeric parameter reference. With a `table`, the param's value is first read off it
+ * (straight lines between points, the end values beyond them), then scaled and offset: the way
+ * to make a field a non-linear function of a knob (INST-17).
+ */
+export interface NumberRef extends ParamRef {
+  table?: TablePoint[];
+}
+
 /** A numeric field: a fixed value, or bound to a parameter. */
-export type NumberField = number | ParamRef;
+export type NumberField = number | NumberRef;
 /** An enum/string field (e.g. a waveform): a fixed value, or bound to a parameter. */
 export type EnumField<T extends string> = T | ParamRef;
 /** A switch: fixed, or bound to a boolean parameter. */
