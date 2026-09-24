@@ -42,7 +42,7 @@ function GatedApp({ children }: { children: ReactNode }) {
 }
 
 /** The StartDialog-style centered card (matches src/ui/StartDialog.tsx), with the brand mark. */
-function GateCard({ children }: { children: ReactNode }) {
+export function GateCard({ children }: { children: ReactNode }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ground/85 backdrop-blur-sm"

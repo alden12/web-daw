@@ -145,7 +145,7 @@ export function AgentPanel({
   dispatch,
   scheduler,
   hasApiKey,
-  onOpenSettings,
+  onOpenAgentSettings,
 }: {
   onCollapse: () => void;
   projectStore: ProjectStore;
@@ -153,7 +153,7 @@ export function AgentPanel({
   scheduler: Scheduler;
   /** Whether a BYOK key is set; drives the empty-state prompt to open Settings. */
   hasApiKey: boolean;
-  onOpenSettings: () => void;
+  onOpenAgentSettings: () => void;
 }) {
   // The agent edits on behalf of whoever is driving it, so its edits carry that user (DAW-34): their
   // undo can take them back, and in a shared session nobody else's can.
@@ -271,7 +271,7 @@ export function AgentPanel({
             </p>
             <button
               type="button"
-              onClick={onOpenSettings}
+              onClick={onOpenAgentSettings}
               className="rounded-md border border-agent/55 bg-agent/15 px-3 py-1.5 text-[12px] text-strong hover:bg-agent/25 cursor-pointer"
             >
               Open settings

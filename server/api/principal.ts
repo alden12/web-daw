@@ -76,7 +76,14 @@ export function resolveAuthConfig(env: NodeJS.ProcessEnv): AuthConfig | undefine
  * Verify JWTs against a JWKS. `getKey` defaults to a remote JWKS fetched (and cached) from
  * `config.jwksUrl`; tests inject a local key set to verify without a network round-trip.
  */
-export function makeJwtResolver(db: Db, config: AuthConfig, getKey?: JWTVerifyGetKey): ResolvePrincipal {
+export function makeJwtResolver(
+  db: Db,
+  config: AuthConfig,
+  getKey?: JWTVerifyGetKey,
+  /** Told why a token was refused. Every refusal looks the same to the caller, which is right, and
+   *  useless to whoever is configuring the thing that minted it. */
+  onReject?: (reason: string) => void,
+): ResolvePrincipal {
   const keys = getKey ?? createRemoteJWKSet(new URL(config.jwksUrl));
   const audience = config.audience ?? "authenticated";
   return async (credential) => {
@@ -96,11 +103,20 @@ export function makeJwtResolver(db: Db, config: AuthConfig, getKey?: JWTVerifyGe
        * Checked **before** `ensureUser`, so a refusal leaves no row behind. Provisioning someone we
        * are about to turn away would quietly fill `users` with strangers.
        */
-      if (!email || !(await isEmailAllowed(db, email))) return null;
+      if (!email) {
+        onReject?.("the token carries no email claim");
+        return null;
+      }
+      if (!(await isEmailAllowed(db, email))) {
+        onReject?.(`${email} is not on the allowlist`);
+        return null;
+      }
       await ensureUser(db, payload.sub, email);
       return { userId: payload.sub, email };
-    } catch {
-      return null; // bad signature / expired / wrong iss|aud / malformed
+    } catch (error) {
+      // bad signature / expired / wrong iss|aud / malformed
+      onReject?.(error instanceof Error ? error.message : String(error));
+      return null;
     }
   };
 }
