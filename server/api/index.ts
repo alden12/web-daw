@@ -44,7 +44,12 @@ const verbose = process.env.NODE_ENV !== "production";
 // One set of rooms for the sockets and the hosted MCP server, so an agent's edit lands in the room
 // an open tab is subscribed to.
 const registry = new RoomRegistry(getDb());
-const app = createApp(getDb(), { auth, corsOrigin, logRequests: verbose, mcp: { registry } });
+const app = createApp(getDb(), {
+  auth,
+  corsOrigin,
+  logRequests: verbose,
+  mcp: { registry, resource: process.env.MCP_RESOURCE_URL },
+});
 
 // Single-origin deploy: this same server serves the built client (dist/) alongside the API and /ws, so
 // there is one URL, no CORS, and same-origin wss. Registered AFTER the API routes, so `/projects/*` (and

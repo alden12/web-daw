@@ -45,8 +45,8 @@ export function DesktopShell({
   onToggleLibCollapsed,
   agentCollapsed,
   onSetAgentCollapsed,
+  onOpenAgentSettings,
   onOpenSettings,
-  onOpenAccount,
   onOpenShare,
 }: ShellProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -95,7 +95,7 @@ export function DesktopShell({
         collapsed={libCollapsed}
         onSelect={onSelectView}
         onToggleCollapse={onToggleLibCollapsed}
-        onOpenAccount={onOpenAccount}
+        onOpenSettings={onOpenSettings}
       />
       {!libCollapsed && (
         <LibraryPanel
@@ -128,7 +128,7 @@ export function DesktopShell({
           dispatch={dispatch}
           scheduler={scheduler}
           hasApiKey={hasApiKey}
-          onOpenSettings={onOpenSettings}
+          onOpenAgentSettings={onOpenAgentSettings}
         />
       )}
       <ArrangementTimeline

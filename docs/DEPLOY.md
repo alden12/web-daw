@@ -217,3 +217,8 @@ docker run --rm -e DATABASE_URL='postgres://host.docker.internal:5432/webdaw' -p
   remote/hosted MCP (through the sync authority) is on the roadmap, not needed here.
 - **Anti-lock-in.** Nothing couples to Neon or Fly specifically. Moving Postgres elsewhere is `pg_dump` +
   a new `DATABASE_URL`; moving hosts reuses the same Dockerfile.
+
+## Hosted MCP server
+
+The API also serves an MCP server on `/mcp`, so Claude can edit stored projects from claude.ai or
+the Claude apps. Turning it on is Supabase configuration only; see [HOSTED-MCP.md](HOSTED-MCP.md).

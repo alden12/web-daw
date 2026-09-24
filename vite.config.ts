@@ -82,8 +82,13 @@ export default defineConfig({
          *
          * The trap is that it only happens for people who have the PWA installed, so it is
          * invisible in a private window and to anyone who has never opened the app.
+         *
+         * `/oauth/` is a client-side route, but it is listed anyway: the consent page is where
+         * someone connecting Claude lands, straight from another app, and the worker's copy of the
+         * shell can be a deploy or more behind (updates wait for every tab to close). A copy from
+         * before the page existed opened the DAW instead of asking - so it always comes fresh.
          */
-        navigateFallbackDenylist: [/^\/api\//, /^\/ws$/, /^\/mcp/],
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws$/, /^\/mcp/, /^\/oauth\//],
         cleanupOutdatedCaches: true,
         // Take over the page that installed us, rather than waiting for the next load. This is
         // not `skipWaiting` and does not affect updates: an updated worker still waits its

@@ -1828,9 +1828,9 @@ projects:
         `.app`/`.dev`/`.io`/`.studio`/`.org`/`.net` are all registered, leaving
         `.audio`, `.fm` and `.music`. Weighed against Notturno, which was the
         other finalist and which loses on every axis that matters - the handle,
-        two live businesses on its domains, the EBU's Euroclassic Notturno
-        radio strand using the word for classical music, and "nocturne" being a
-        genre name rather than an allusion.
+        two live businesses on its domains, the EBU's Euroclassic Notturno radio
+        strand using the word for classical music, and "nocturne" being a genre
+        name rather than an allusion.
 
 
         **The reactive-streams library (formerly RxFM) takes Affluente**, which
@@ -1851,10 +1851,10 @@ projects:
         outside PR (CLA-lite vs full CLA vs accept AGPL-lock). Preserve
         sole-copyright SPDX headers until then.
 
-        - **Trademark:** name settled (Corrente), register searched
-        2026-09-23, nothing blocking in classes 9 or 42. File UK 9 + 42 at
-        public launch (~£220). Open brand hygiene: the free domains and social
-        handles are not yet grabbed.
+        - **Trademark:** name settled (Corrente), register searched 2026-09-23,
+        nothing blocking in classes 9 or 42. File UK 9 + 42 at public launch
+        (~£220). Open brand hygiene: the free domains and social handles are not
+        yet grabbed.
       Slice history: >-
         The build order, kept because the sequencing rationale is itself the
         record of how the thesis was tested. Slice numbers appear throughout
@@ -3396,7 +3396,7 @@ projects:
       - ref: AGENT-26
         area: AGENT
         title: Point the agent at any OpenAI-compatible endpoint
-        status: to-do
+        status: in-progress
         sort_path: "000026"
         deps:
           - AGENT-25
@@ -3447,7 +3447,7 @@ projects:
           offered to anyone by the app.
         id: 019fed47-6f4a-719a-9e0a-18b0db4e1f86
         created_at: 2026-08-10T20:05:09.579Z
-        updated_at: 2026-08-10T20:05:09.579Z
+        updated_at: 2026-09-23T22:00:14.710Z
       - ref: AGENT-27
         area: AGENT
         title: "Audio tools in Claude as MCP widgets: parked, the host does not render
@@ -3641,7 +3641,7 @@ projects:
       - ref: AGENT-28
         area: AGENT
         title: Hosted MCP over the stored project, and defer the in-app agent panel
-        status: in-progress
+        status: done
         sort_path: "000028"
         body: >
           **Decided 2026-09-06.** Make the DAW something Claude can drive
@@ -3861,6 +3861,74 @@ projects:
             id: 01a07811-c8e2-7297-a90a-d7b96aedfa1d
             at: 2026-09-06T18:53:46.594Z
             actor: claude
+          - body: >-
+              **A fresh copy of the project on every tool call, on purpose**
+              (2026-09-24, from review of #158). Each call snapshots the room's
+              project into a scratch `ProjectStore` for the tools to read and
+              scribble on; the real edit reaches the room through `send`.
+
+
+              - **Why a copy at all:** the tools were written for a tab's
+              mirror and apply each edit to it right after sending. Given the
+              room's own store, every edit would apply twice, the second time
+              outside the log.
+
+              - **Why per call rather than cached:** the server is stateless
+              (one per HTTP request, usually one tool call), so there is
+              nothing to reuse without adding a cache; a project is plain data
+              (samples are referenced by path, not copied), so the copy costs a
+              few milliseconds at worst against a network round trip and a
+              model turn; and it can never read stale.
+
+              - **If it ever shows in a profile:** cache the scratch copy per
+              room and rebuild only when `room.headSeq` has moved. About ten
+              lines; not worth it until a large project proves it.
+            audience: user
+            id: 01a0d3be-4e66-75f5-8014-7e3d7d87a73b
+            at: 2026-09-24T14:07:39.622Z
+            actor: claude
+      - ref: AGENT-29
+        area: AGENT
+        title: Let MCP clients other than Claude connect to the hosted server
+        status: to-do
+        sort_path: "000029"
+        deps:
+          - AGENT-28
+        body: >-
+          **Deliberately Claude-only for now** (2026-09-24, during initial
+          testing and development). Dynamic client registration is open,
+          because Claude registers itself as it connects, so anyone can
+          register an OAuth app and call it "Claude". The consent page
+          therefore refuses any app whose redirect is not `https://claude.ai`,
+          `https://claude.com` or a loopback address (Claude Code) -
+          `src/auth/trustedRedirect.ts`. That closes the phishing route
+          completely, and it is also why nothing else can connect: ChatGPT,
+          Cursor, the MCP Inspector's hosted UI and so on all receive their
+          codes elsewhere.
+
+
+          **Opening it up, when it is wanted.** Three shapes, cheapest first:
+
+
+          - **Grow the list.** Add each client's callback host as it is asked
+          for. Right while the clients are a handful of known products; wrong
+          once anyone can bring their own.
+
+          - **Approve apps, not redirects.** Keep a table of registered clients
+          someone has vetted, and have the consent page allow only those. Needs
+          an admin surface, or at least a script.
+
+          - **Trust the person.** Show the redirect origin prominently with a
+          warning, as the page did before, and let them decide. Fine for a
+          small invited audience who read it; weak once the audience is wide.
+
+
+          Whichever it is, the hosted server's own checks do not change: the
+          token's audience, the email allowlist and project membership are
+          what gate access, and none of them care which client asked.
+        id: 01a0d3f7-99be-7c99-be1f-9e060d20b7cb
+        created_at: 2026-09-24T15:10:14.462Z
+        updated_at: 2026-09-24T15:10:14.462Z
       - ref: ARCH-1
         area: ARCH
         title: Split projectStore / state management
@@ -3995,8 +4063,8 @@ projects:
           **We were already paying for the misfiling.** `usePersistent*` was a
           plain `useState` seeded once on mount with **no cross-instance
           notification**, so two components reading one key diverged silently
-          the moment either wrote. Not hypothetical: `corrente:metronome` is read
-          by both `TransportBar.tsx:41` and `MobileShell.tsx:341`, mounted
+          the moment either wrote. Not hypothetical: `corrente:metronome` is
+          read by both `TransportBar.tsx:41` and `MobileShell.tsx:341`, mounted
           together on touch, and only stayed correct because of a hand-written
           guard (`if (compact) return`) standing one copy down. Ownership was
           being negotiated per feature, in prose.
@@ -4294,8 +4362,8 @@ projects:
           unaffected by any of this.
 
 
-          ## DIAGNOSED, 2026-09-17 (slice-122), on the first run after the
-          trace was turned on
+          ## DIAGNOSED, 2026-09-17 (slice-122), on the first run after the trace
+          was turned on
 
 
           **It is a race in the test helper, and neither theory below was
@@ -4413,8 +4481,8 @@ projects:
           ## Next steps
 
 
-          - ~~Capture the trace on retry~~ **done on slice-122, and the
-          setting was the problem.**
+          - ~~Capture the trace on retry~~ **done on slice-122, and the setting
+          was the problem.**
             `trace: "on-first-retry"` was already configured, but `retries` is 0 locally, so it never
             fired where the flake is actually hit: a local failure produced no artifact at all. Now
             `retain-on-failure`, which writes on any failure, changes no retry behaviour and hides
@@ -5632,12 +5700,12 @@ projects:
           `setEffectParam` through `Knob` and `controls/Fader`, `setTrack`
           through the mixer fader, and `editNotes` / `setClipLength` /
           `movePlacement` / `resizePlacement` / `setLength` / `setLoopStart` /
-          `setAudioClip` through `beginPointerDrag`. The rest
-          (`setTempo`, `setTimeSignature`, `setGroove`, renames) are discrete
-          controls - a menu item, a number field - and the 400ms window is the
-          right answer for them. The two remaining raw `setPointerCapture` call
-          sites, `useSheetDrag` and `usePadTouch`, edit nothing: one drags a
-          sheet, the other plays notes.
+          `setAudioClip` through `beginPointerDrag`. The rest (`setTempo`,
+          `setTimeSignature`, `setGroove`, renames) are discrete controls - a
+          menu item, a number field - and the 400ms window is the right answer
+          for them. The two remaining raw `setPointerCapture` call sites,
+          `useSheetDrag` and `usePadTouch`, edit nothing: one drags a sheet, the
+          other plays notes.
 
 
           **`pointercancel` now ends a drag too**, in `beginPointerDrag` and on
@@ -7889,8 +7957,8 @@ projects:
           Covered by `test/undoIdentity.test.ts`: the renumbering cases fail if
           steps are matched against seqs,
 
-          which is the old bug stated as a test. One live miss found on the way -
-          `readEdits` rebuilt its rows
+          which is the old bug stated as a test. One live miss found on the way
+          - `readEdits` rebuilt its rows
 
           field by field and dropped the new column.
 
@@ -8111,8 +8179,8 @@ projects:
           **An undo is now a shared fact.** It was local best-effort: your
           project dropped the edit, the
 
-          authority's kept it, and the next thing that made the client
-          re-derive its state from the server -
+          authority's kept it, and the next thing that made the client re-derive
+          its state from the server -
 
           any peer edit, since `rebuildLive` rebuilds from `base` + `pending` -
           put the edit straight back.
@@ -8121,11 +8189,11 @@ projects:
           **Both halves had to land together**, which is what the note in
           `Room.load` was there to say:
 
-          forwarding alone would have looked like it worked while the
-          `undoes` column was missing and the
+          forwarding alone would have looked like it worked while the `undoes`
+          column was missing and the
 
-          tombstone silently failed to round-trip. So: `edits.undoes`
-          (migration `0006`), `kind`/`undoes` on
+          tombstone silently failed to round-trip. So: `edits.undoes` (migration
+          `0006`), `kind`/`undoes` on
 
           both the `edit` and `editApplied` messages, and the forward itself
           from `noteReflog`.
@@ -8134,8 +8202,8 @@ projects:
           **The tombstone carries the undone edit's `command`**, which the
           authority never applies. It is
 
-          there so a feed can say "Undid: Added note" without looking the
-          entry up, and it keeps both wire
+          there so a feed can say "Undid: Added note" without looking the entry
+          up, and it keeps both wire
 
           messages one shape rather than two.
 
@@ -8143,8 +8211,8 @@ projects:
           **The authority rebuilds rather than applying.** Taking an edit back
           OUT is not something any
 
-          forward apply can do, so `recomputeHead` re-reads the log and
-          replays it from the keyframe with
+          forward apply can do, so `recomputeHead` re-reads the log and replays
+          it from the keyframe with
 
           tombstones honoured - the same `headFromLog` the client's load runs,
           which is now shared code
@@ -8158,8 +8226,8 @@ projects:
           **Ordering needed care.** The room assigns `seq`, applies and
           broadcasts with no `await` between
 
-          them, so concurrent edits are ordered by arrival and peers see seqs
-          in order. A rebuild is several
+          them, so concurrent edits are ordered by arrival and peers see seqs in
+          order. A rebuild is several
 
           awaits, and it must not interleave with the persist of an edit that
           arrived a moment later - the
@@ -8167,12 +8235,12 @@ projects:
           rebuild would read a log missing that edit and then overwrite the
           store with a state that never
 
-          heard of it. All post-broadcast work now runs through one serial
-          queue (`queueAfterWork`).
+          heard of it. All post-broadcast work now runs through one serial queue
+          (`queueAfterWork`).
 
 
-          **`SharedSession.base` stopped being a forward-only accumulator.**
-          For the same reason: it now
+          **`SharedSession.base` stopped being a forward-only accumulator.** For
+          the same reason: it now
 
           keeps the seed it started from plus the confirmed entries, so it can
           be REBUILT when a tombstone
@@ -8184,8 +8252,8 @@ projects:
           without.
 
 
-          **The subtlest bit, and the one with a test named after it:** a
-          peer's tombstone has to reach the
+          **The subtlest bit, and the one with a test named after it:** a peer's
+          tombstone has to reach the
 
           local `EditLog`'s excluded set, not just the feed. The session takes
           the edit out of the live
@@ -8218,8 +8286,8 @@ projects:
           rather than whoever edited most recently. It was true by accident
           rather than by design though -
 
-          undocumented, untested, and one careless line from breaking - so it
-          is pinned now by two tests
+          undocumented, untested, and one careless line from breaking - so it is
+          pinned now by two tests
 
           that would have caught it.
 
@@ -8257,17 +8325,17 @@ projects:
           two AI voices, because an agent edits on behalf of whoever is driving
           it. In a shared session
 
-          where two people each drive an agent, the log does not record which
-          of them drove it, so an agent
+          where two people each drive an agent, the log does not record which of
+          them drove it, so an agent
 
           edit lands in both users' DERIVED stacks and undoing it could take
           back the other person's agent
 
-          work. In-tab this cannot happen - the exact stack only ever holds
-          what this client dispatched.
+          work. In-tab this cannot happen - the exact stack only ever holds what
+          this client dispatched.
 
-          Fixing it properly means an agent edit carrying the user who drove
-          it, which is a change to the
+          Fixing it properly means an agent edit carrying the user who drove it,
+          which is a change to the
 
           author model rather than to undo.
 
@@ -8304,8 +8372,8 @@ projects:
           It survived the suite because the three transport harnesses wrote
           their own translation, so the
 
-          tests exercised a copy of the ws server rather than the ws server.
-          The fix is one translation
+          tests exercised a copy of the ws server rather than the ws server. The
+          fix is one translation
 
           (`incomingEdit`), shared by both, which spreads every wire field
           through rather than listing them -
@@ -8364,15 +8432,14 @@ projects:
           `persistKeyframe` waits for one that did.
 
           Skipping a keyframe costs a longer replay; writing a wrong one costs
-          the undo.
-          `test/rebuildFailure.test.ts` fails without the guard.
+          the undo. `test/rebuildFailure.test.ts` fails without the guard.
 
 
           Not covered: a commit marker's keyframe is snapshotted in the
           synchronous section, so it can still
 
-          be taken from a stale store. That one is a materialisation
-          convenience and re-derivable, unlike the
+          be taken from a stale store. That one is a materialisation convenience
+          and re-derivable, unlike the
 
           replay floor, so it did not justify breaking up the
           seq/apply/broadcast section.
@@ -8484,8 +8551,8 @@ projects:
           ### E6: the offline cases, which closes stage E
 
 
-          **The bug the other two items were hiding.** `rebuildLive` is `base`
-          + every pending op applied
+          **The bug the other two items were hiding.** `rebuildLive` is `base` +
+          every pending op applied
 
           FORWARD, and a tombstone's `command` is the command of the edit being
           taken back - so replaying
@@ -8508,14 +8575,14 @@ projects:
           rebuild - `base` is already tombstone-aware and the forward replay is
           correct. With one, the live
 
-          project is replayed from the seed over the confirmed log AND the
-          queue as one stream, and
+          project is replayed from the seed over the confirmed log AND the queue
+          as one stream, and
 
           `replayEntries` works the tombstones out over everything it is given,
           so an undo of either is
 
-          honoured. An edit folded into the seed still cannot be excluded,
-          which costs undo depth exactly as
+          honoured. An edit folded into the seed still cannot be excluded, which
+          costs undo depth exactly as
 
           folding already does for `base`.
 
@@ -8530,8 +8597,8 @@ projects:
           **The two original offline cases were already right, and now they are
           pinned.** Undoing an edit
 
-          the authority has not seen sends BOTH the edit and a tombstone for
-          it. Dropping the edit from the
+          the authority has not seen sends BOTH the edit and a tombstone for it.
+          Dropping the edit from the
 
           queue instead is tempting and wrong: `pending` holds unsent ops and
           sent-but-unacked ones alike, so
@@ -8610,15 +8677,15 @@ projects:
           `EditLog.dropUnreachable` makes on a client, and it has to exist
           separately because the two can
 
-          legitimately disagree - a client undoing offline still reaches an
-          edit the authority has moved past.
+          legitimately disagree - a client undoing offline still reaches an edit
+          the authority has moved past.
 
 
           **`editRejected` existed in the contract and on the client and had
           never been sent by anything.**
 
-          The client dropped the op and rolled it out of the live store
-          already; what was missing was the
+          The client dropped the op and rolled it out of the live store already;
+          what was missing was the
 
           authority ever refusing, and the sender being passed in so a refusal
           could reach whoever sent it.
@@ -8630,8 +8697,8 @@ projects:
           the op puts the edit back in the live project, but an entry still
           saying it was undone takes it out
 
-          again on the next rebuild, and the excluded set keeps disagreeing
-          with the authority. The entry is
+          again on the next rebuild, and the excluded set keeps disagreeing with
+          the authority. The entry is
 
           removed rather than compensated for with a redo: it only ever existed
           locally, so this is the same
@@ -8646,8 +8713,8 @@ projects:
           **A redo never needs the check.** It stops excluding an edit rather
           than starting to, so the worst
 
-          a too-old one can do is ask for an edit the base already has, which
-          is the outcome anyway.
+          a too-old one can do is ask for an edit the base already has, which is
+          the outcome anyway.
 
 
           **A failed reachability read accepts rather than refuses.** The two
@@ -8691,8 +8758,8 @@ projects:
           first keyframe, written 100 edits in - so nothing sat below edits
           0..99 and no rebuild could leave
 
-          one of them out. Ring after 120 edits: `[99, null, null, null,
-          null]`. A LOCAL project has always
+          one of them out. Ring after 120 edits: `[99, null, null, null, null]`.
+          A LOCAL project has always
 
           retained one at seq -1 on its first save (`[-1, null, null, null,
           null]`), so the two disagreed
@@ -8703,8 +8770,8 @@ projects:
           behaviour the authority did not have.
 
 
-          `seedStartKeyframe` writes it when a room loads. The base is the
-          empty project, because that IS
+          `seedStartKeyframe` writes it when a room loads. The base is the empty
+          project, because that IS
 
           what replay starts from - `recomputeHead` uses exactly this when a
           project has no keyframe yet. It
@@ -8737,8 +8804,8 @@ projects:
           the same rejection again on every press, because `revokeReflog` put
           the step back on the stack it
 
-          came off. The refusal is permanent (retained bases only move
-          forward, so an edit out of reach never
+          came off. The refusal is permanent (retained bases only move forward,
+          so an edit out of reach never
 
           comes back into it), so the step is DROPPED now and the button greys
           out. A button that fails
@@ -8761,8 +8828,8 @@ projects:
           **Storage does NOT favour it** (correcting a first estimate that put
           the ring at 25MB; the measured
 
-          figure in `keyframes.ts` is ~250KB for the whole ring normal, ~5MB
-          for the whole ring large, so ~1MB
+          figure in `keyframes.ts` is ~250KB for the whole ring normal, ~5MB for
+          the whole ring large, so ~1MB
 
           a keyframe). Back of the envelope on edits: one edit is one gesture
           after coalescing, a dense
@@ -8773,8 +8840,8 @@ projects:
           heavily-worked project is order **100k edits** and a pathological one
           maybe 500k. At 405 bytes a row
 
-          (measured, see DAW-38) that is **~40MB** and **~200MB** against a
-          ~5MB ring - 8x to 40x the
+          (measured, see DAW-38) that is **~40MB** and **~200MB** against a ~5MB
+          ring - 8x to 40x the
 
           storage, per project.
 
@@ -8782,8 +8849,8 @@ projects:
           **Speed does favour it.** The stage-B measurements say replaying the
           full 2000-edit window on a
 
-          large project is 23.7ms on a laptop, about 12us an edit. So 100k
-          edits is ~1.2s on a laptop and
+          large project is 23.7ms on a laptop, about 12us an edit. So 100k edits
+          is ~1.2s on a laptop and
 
           maybe 5s on a phone; 500k is ~6s and ~30s. A recovery rebuild is a
           progress spinner, not the
@@ -8830,9 +8897,8 @@ projects:
           real project recoverable - then
 
           switch the ring to exponential spacing. The two hot paths that read
-          the whole log
-          (`recomputeHead`, `canHonourUndo`) need bounding to "above the base"
-          either way. A cheaper variant
+          the whole log (`recomputeHead`, `canHonourUndo`) need bounding to
+          "above the base" either way. A cheaper variant
 
           if the storage is unwelcome: keep pruning the WORKING log but archive
           pruned edits to a cold bundle
@@ -8859,8 +8925,8 @@ projects:
           ### Stage E is done, and stage F now has its answer
 
 
-          **F. Measure on a phone. Done 2026-09-18, and the answer is a clear
-          no to `invert.ts`.** Alden ran
+          **F. Measure on a phone. Done 2026-09-18, and the answer is a clear no
+          to `invert.ts`.** Alden ran
 
           `?bench=rebuild` on an Android phone (Chrome 153):
 
@@ -8878,11 +8944,11 @@ projects:
           | 100,000 | **182ms** | 129ms |
 
 
-          A phone is **1.4x a laptop, not the 4x this ticket assumed** - and
-          the modern-phone figure beats the
+          A phone is **1.4x a laptop, not the 4x this ticket assumed** - and the
+          modern-phone figure beats the
 
-          laptop at the small sizes, which says the laptop number is a
-          cold-JIT artefact more than anything.
+          laptop at the small sizes, which says the laptop number is a cold-JIT
+          artefact more than anything.
 
           A hundred thousand edits replay in under a fifth of a second on the
           device we were worried about.
@@ -9513,1091 +9579,6 @@ projects:
         id: 01a097a9-47d6-715a-a107-a9a1f2d929fa
         created_at: 2026-09-12T22:07:28.726Z
         updated_at: 2026-09-17T13:55:52.265Z
-      - ref: DAW-43
-        area: DAW
-        title: The client keeps its history twice, and the gap between the two is where the bugs live
-        status: to-do
-        sort_path: "000043"
-        deps:
-          - DAW-38
-        body: >
-          Named 2026-09-18 during a stock-take of the undo system, having
-          patched the same seam four times
-
-          in one day. Alden asked for it to go on the list.
-
-
-          ## The two accounts
-
-
-          **`EditLog`**: `entries` (the loaded window), `base` (a retained
-          keyframe and the seq it reflects),
-
-          `undone`, and the undo/redo stacks. Rebuilds by replaying entries
-          over the base.
-
-
-          **`SharedSession`**: `seed` (the project as loaded), `confirmed`
-          (entries since this session began),
-
-          `pending` (unsent local edits), `base` (a store). Rebuilds by
-          replaying confirmed over the seed.
-
-
-          They describe the same history from different starting points, and
-          the session's is strictly
-
-          shallower - `confirmed` begins EMPTY when a tab opens, where the log
-          keeps what it loaded.
-
-
-          ## What the gap has cost so far
-
-
-          Every one of these is the same seam, found separately:
-
-
-          - **DAW-41**: a tombstone naming an edit folded into the session's
-          seed rebuilt to a project that
-            still contained it. Silently.
-          - **DAW-41 again**: a redo of an edit below the seed, lost the same
-          way from the other side.
-          - **DAW-38 step 5**: `foldFromLog` - the session asking the log,
-          because the log can reach what it
-            cannot. A patch over the asymmetry rather than a removal of it.
-          - **`EditLog.rebaseOnto`**: after the session adopts the authority's
-          answer, the log has to be told,
-            or the next ordinary undo rebuilds from a base written before the undo and puts the edit back.
-
-          ## The shape of the fix
-
-
-          One account. The session holds `pending` and the transport; the log
-          holds history and answers "what
-
-          is the authoritative project", which it can already do better than
-          the session can. `foldFromLog`,
-
-          `rebaseOnto`, `adoptSeed`, `canFold` and `trimConfirmed` are all
-          plumbing between the two, and most
-
-          of them should not survive it.
-
-
-          Not small, and not urgent - what exists is correct and tested. But
-          every future change to undo pays
-
-          this tax, and the four bugs above were each cheap to fix and
-          expensive to find.
-        id: 01a0d019-39b6-77ab-a1ee-9f4fb9e54edd
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
-      - ref: DAW-42
-        area: DAW
-        title: Catching up on a long gap reloads the project once per entry
-        status: review
-        sort_path: "000042"
-        deps:
-          - DAW-34
-        body: >
-          Noticed 2026-09-18 while writing DAW-41's tests, which is also how it
-          was measured: driving 2100
-
-          confirmed entries through a `SharedSession` took **14 seconds**, and
-          the same log as notes rather
-
-          than tracks took 4. The test was rewritten to keep the project small;
-          the cost it found was not.
-
-
-          `rebuildLive` runs on every confirmed entry and does
-          `projectStore.load(scratch.snapshot())` - a
-
-          full project load, building every instrument the project describes.
-          Live that is one load per
-
-          peer edit, at a few milliseconds, and nobody notices. **On a
-          catch-up it is one load per entry in
-
-          the gap**, which is precisely the flight case DAW-38 exists for:
-          reconnect after eight hours and
-
-          the session replays thousands of entries, reloading the whole project
-          each time.
-
-
-          The shape of the fix is the one DAW-39 used a level down: the work is
-          only needed when something
-
-          reads the result. A catch-up should fold its entries and load the
-          live store ONCE at the end,
-
-          rather than after each. `foldConfirmed` and `rebuildLive` are already
-          separate calls, so this is
-
-          about giving the snapshot path a batch entry point rather than
-          restructuring either.
-
-
-          Measure before and after with the same harness: deliver N
-          `editApplied` messages, time it.
-
-
-          **Resolved 2026-09-23: the measured path is not the catch-up path.**
-          A reconnect's catch-up arrives as ONE `snapshot` message, and
-          `onSnapshot` already folds every entry and calls `rebuildLive` once
-          at the end. The 14 seconds came from a test delivering 2100
-          `editApplied` messages one by one, which is live peer traffic, where
-          one load per edit is the right cost. Nothing to batch.
-
-
-          **What looking found instead:** the snapshot carries the newest 2000
-          entries (`SNAPSHOT_WINDOW`), not everything since the client's head.
-          A client away for more than 2000 edits folded a window that started
-          above it, onto a base missing everything in between, with nothing to
-          say so. `SharedSession.spansGap` now spots that, and
-          `catchUpAcrossGap` adopts the authority's `project.json` (rewritten
-          every 100 edits, so always inside the window) before folding, holding
-          later messages until it has. A head the window cannot take over from
-          reports "reload" rather than folding over the hole.
-          `test/snapshotGap.test.ts`; `unreachableUndo.test.ts` had been
-          passing over exactly this hole (its pruned log starts above the
-          client) and now goes through the recovery.
-        id: 01a0d019-39b6-77ab-a1ee-a0641665c5ec
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
-      - ref: DAW-41
-        area: DAW
-        title: A tombstone for an edit inside a session's seed is silently ignored
-        status: done
-        sort_path: "000041"
-        deps:
-          - DAW-34
-        body: >
-          Found 2026-09-18 while planning DAW-38, by testing a claim rather
-          than asserting it. **Reproduced,
-
-          and it is a silent split-brain: the client keeps an edit the
-          authority has removed, with no error
-
-          anywhere.**
-
-
-          ## The mechanism
-
-
-          `SharedSession` holds `seed` + `confirmed` + `pending`. A peer's
-          tombstone is folded by
-
-          `foldConfirmed`, which calls `rebuildBase()` - seed, replay
-          `confirmed`, honour its tombstones.
-
-          But `trimConfirmed` folds entries older than `CONFIRMED_WINDOW`
-          (2000) INTO the seed, and an edit
-
-          baked into the seed cannot be replayed without. So the tombstone
-          excludes nothing, `rebuildBase`
-
-          returns a project that still contains the undone edit, and the
-          client believes it.
-
-
-          This is the same trap `headFromLog` was written for on the authority
-          side ("a tombstone can take
-
-          back an edit already in the base, so pick an older base"). The live
-          session has no equivalent,
-
-          because it has nowhere older to go.
-
-
-          ## The repro, which passes as a failing test
-
-
-          A session, a snapshot at head -1, 2100 `editApplied` entries each
-          creating a track, then an
-
-          `editApplied` with `kind: "undo"` naming entry 0. Expected: track
-          `t-0` gone. Actual: 2100 tracks,
-
-          `t-0` among them.
-
-
-          ## Reachable today, and wide open after DAW-38
-
-
-          Today it needs a tab that has seen 2000+ confirmed entries in one
-          session and then an undo of an
-
-          edit about that far back - narrow, because the authority's own reach
-          is a 2000-entry keyframe
-
-          window, so it usually refuses first. **The geometric ring removes
-          exactly that accidental
-
-          protection**: the authority would accept undos 128k back while the
-          client's seed still folds at
-
-          2000. So this is a hard prerequisite for DAW-38's ladder, not a
-          follow-up.
-
-
-          ## The fix
-
-
-          The client cannot rebuild it, so it should not try. Detect the case -
-          a tombstone whose `undoes` is
-
-          not in `confirmed` - and re-seed from the authority's `project.json`
-          instead (which the authority
-
-          will have just written), replaying `pending` on top. That is the same
-          "submit, do not simulate"
-
-          move DAW-38 and DAW-40 settle on, applied to the receiving side.
-
-
-          ## Built 2026-09-18 (PR #148), and it turned up a second bug
-
-
-          Three parts, and the middle one was not planned:
-
-
-          1. **The authority writes `project.json` the moment it honours a
-          tombstone**, rather than on the
-             hundred-edit cadence. Step 3 of the plan, pulled forward because the client fix reads that
-             exact file and the cadence version could still be the pre-undo snapshot.
-          2. **`headFromLog` asks whether an edit is CONTESTED, not whether it
-          is tombstoned right now.**
-             Writing a keyframe straight after an undo exposed this: undo an edit, let a keyframe land
-             without it, then redo, and the edit never came back - it was no longer tombstoned, so
-             nothing asked for an older base, and forward replay cannot resurrect an edit below the base.
-             **Pre-existing**, reproduced on the branch tip without any of this change: the cadence just
-             made the keyframe land later, and the redo failed the same way.
-          3. **The session detects the unfoldable tombstone and re-seeds.**
-          `trimConfirmed` now runs BEFORE
-             the check rather than inside `rebuildBase`, because whether a tombstone can be honoured is
-             a question about what survives the trim; asking first gets the answer for a window that is
-             about to stop existing.
-
-          `ProjectRepository.readHeadKeyframe` is the read, split out of
-          `load`. `SharedSession` takes it as
-
-          `readAuthoritativeHead`; without it an unfoldable tombstone is
-          reported rather than applied, which
-
-          is the same call minus the recovery.
-
-
-          ## Revised the same day (PR #149), because the recovery was firing
-          far too often
-
-
-          Alden: "surely that's something we can most often derive on the
-          client side and all we'd need to
-
-          send is the tombstone notification?" Right, and measuring first
-          showed how badly it was needed: a
-
-          session's `confirmed` starts EMPTY when a tab opens, so an undo of
-          anything from before that -
-
-          after a reload, or a tab that joined late - was unfoldable and went
-          to the network. Verified with
-
-          a session loaded at head 5000: an undo of edit 4990 went straight to
-          the recovery read.
-
-
-          The session was asking the wrong object. `EditLog` holds the loaded
-          entries AND a base at the
-
-          oldest retained keyframe, so it reaches back much further and can
-          rebuild the thing locally. It
-
-          now answers first, via `rebuiltWithout(undoes, pending)` - the log
-          rebuilt with the tombstone
-
-          honoured and the caller's unconfirmed edits left out, or null when it
-          cannot reach either.
-
-
-          Which in turn made the authority's write conditional: only a **deep**
-          undo (one at or below the
-
-          last keyframe) writes a keyframe straight away, because only that one
-          might need re-reading.
-
-          Above it the edit is in the recent tail every client's log covers.
-          `undoReach` returns
-
-          `{ honour, deep }` where `canHonourUndo` returned a boolean, since
-          the reach check already knew.
-
-
-          ## The redo half, which Alden would not let go of
-
-
-          "Do we not still need to make sure we have the corresponding undo
-          locally, otherwise we need to
-
-          rebuild server side?" Yes. The first attempt to reproduce it built
-          the wrong setup and came back
-
-          clean; the second one - a session that joined at head 5, an undo of
-          an edit at seq 0 it never
-
-          saw, then a redo of the same - reproduced it in one go. The redo was
-          silently lost.
-
-
-          The shortcut was `canFold` returning true for any redo, on the
-          reasoning that putting an edit back
-
-          is the harmless direction. It is not, once a seed can be ADOPTED:
-          adopt one after a deep undo and
-
-          the edit is baked out of it, with nothing left in the window to put
-          back. The mirror of the
-
-          "contested" bug fixed on the authority in #148, arriving from the
-          other side.
-
-
-          Fixed in all three places, since the asymmetry ran through all of
-          them:
-
-
-          - `canFold` asks the same question of both kinds.
-          - `EditLog.rebuiltWithout` became `rebuiltFor({ undoes, kind })`,
-          which applies the reflog entry
-            in its own direction: an undo adds its target to the excluded set, a redo takes it out.
-          - `Room.canHonourUndo` became `reflogReach`, and a redo is now
-          refused on the same terms as an
-            undo when no base sits below its target - and marks the write deep the same way.
-        id: 01a0d019-39b6-77ab-a1ee-a5924c582faa
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
-      - ref: DAW-40
-        area: DAW
-        title: A client loads the log it needs, not the whole window
-        status: to-do
-        sort_path: "000040"
-        deps:
-          - DAW-38
-        body: >
-          Alden, 2026-09-18, on hearing the log cap would go to 100k: "we don't
-          want to transfer all 100k
-
-          edits to the client on startup. How difficult would it be to only
-          give them the latest 100 or so
-
-          (including at least 1 keyframe) and then request more as needed?"
-
-
-          **Loading a project already works this way, and DAW-38 does not
-          change that.** `project.json` IS a
-
-          keyframe at head, and `ProjectRepository.load` replays only the
-          entries above it
-
-          (`projectRepository.ts`). The 2000 (`MAX_PERSISTED_ENTRIES`) is a
-          ceiling on that tail, not the
-
-          normal cost, and `RETAINED_EDITS` is the authority's floor - the
-          client is never sent it.
-
-
-          What a client does pull a window for is two other things:
-
-
-          - **The activity feed**, which wants history for its own sake.
-          Already ticketed as DAW-8.17
-            (load older on demand), and it is the one that genuinely wants paging.
-          - **Undo depth**, which only needs entries back to the oldest usable
-          base - a few hundred.
-
-          ## The work, which is small
-
-
-          1. **`subscribe` carries the client's `baseSeq`** (`src/contract/ws.ts`,
-          one field), so the
-
-             catch-up feed the room sends is the gap plus a small feed window rather than a fixed 2000.
-          2. **`readEdits` grows a backwards direction.**
-          `server/api/app.ts` and `src/audio/remoteStore.ts`
-             both express "the newest N above `since`". Paging older needs "the N below `before`", which is
-             one more parameter and the same index.
-          3. The feed UI asks for the next page when it reaches the end of what
-          it has (DAW-8.17).
-
-          Worth doing when the cap actually goes up, not before: at 2000
-          retained the current behaviour is
-
-          already the behaviour this describes.
-
-
-          **Revised 2026-09-18, and it got smaller.** The offline case in
-          DAW-38 prices client-side paging at
-
-          ~12MB onto a phone to take back one edit, against an authority that
-          can rebuild the same thing in
-
-          ~200ms. So the deep-undo half of this is not paging at all: **stop
-          dropping a step whose entry the
-
-          client holds just because its own base is too new**, submit the
-          tombstone, and wait for the
-
-          authority's answer on the conflict-hold path the client already has.
-          Paging stays only for what
-
-          genuinely wants history on the client, which is the activity feed
-          (DAW-8.17) and the ~800KB-per-
-
-          connection catch-up window.
-
-
-          **2026-09-23:** step 1 is no longer needed for correctness. A client
-          whose head is below the snapshot window now bridges the gap itself
-          from `project.json` (see DAW-42), so `subscribe` carrying `baseSeq`
-          would only trim the wire, not fix anything. What is left here is
-          the feed's paging, which is DAW-8.17.
-        id: 01a0d019-39b6-77ab-a1ee-ab7cbb43c157
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
-      - ref: DAW-39
-        area: DAW
-        title: Rebuilding a project from its log is linear in the log
-        status: done
-        sort_path: "000039"
-        deps:
-          - DAW-34
-        body: >
-          Found 2026-09-18 by the bench DAW-34 stage F asked for, on its first
-          run. Replay was super-linear:
-
-          100k edits took **12.5s** where the arithmetic in DAW-38 said 1.2s,
-          and 50k took 2.7s. Every
-
-          replay figure in DAW-38 was taken from a 2000-edit measurement and
-          extrapolated, so every one of
-
-          them was wrong by a factor that grew with depth - which is precisely
-          the depth DAW-38 wants to add.
-
-
-          ## The cause, which was not where I first said it was
-
-
-          A CPU profile put 78% of a replay inside `ClipStore.view` (the sorted
-          note array). My first guess
-
-          was that `ClipStore.emit()` re-sorted the clip on every note added,
-          and making that cache lazy
-
-          changed the numbers by **nothing at all**, because something was
-          reading it between every write.
-
-
-          That something was `ProjectStore.emit()`, one level up: it rebuilt
-          the whole structural view on
-
-          every mutation, and `buildStructure` walks every track, group, effect
-          and clip - including
-
-          `clip.store.getClip().lengthBeats`, which materializes and re-sorts
-          the notes just to read a
-
-          number. So replaying n edits into a project of t tracks did n
-          structure builds, each re-sorting
-
-          the entire song. O(edits x project), presenting as a curve.
-
-
-          ## The fix
-
-
-          Both caches are lazy: a mutation clears the cached object, the next
-          read builds it. The contract
-
-          `useSyncExternalStore` needs (a stable reference between mutations)
-          is unchanged - the object is
-
-          just built a moment later. `trackMeta` asks `getLength()` for the
-          length, which is the number it
-
-          wanted. Nothing bulk (replay, `load`, the Node mirror) reads between
-          its own writes, so a replay
-
-          pays one structure build at the end instead of one per entry.
-
-
-          | 40 tracks, notes piled on | before | after |
-
-          |---|---|---|
-
-          | 10,000 edits | 158ms | 20ms |
-
-          | 50,000 edits | 2,714ms | 46ms |
-
-          | 100,000 edits | 12,483ms | **129ms** |
-
-          | 2,500 `createTrack` | 507ms | 30ms |
-
-
-          That last row was also the CI timeout on the DAW-38 branch
-          (`startKeyframe.test.ts` seeding 2500
-
-          edits), which was this same bug seen from the other end.
-
-
-          `test/lazyViews.test.ts` pins the shape rather than the timings,
-          which vary by machine: replaying
-
-          201 edits builds the structure 0 times (203 before the fix) and once
-          when the structure is read.
-
-
-          ## What it does to the live path
-
-
-          Less than it does to replay, and deliberately so. React's
-          `useSyncExternalStore` calls `getSnapshot`
-
-          from its own store-change handler, so a mounted UI still causes a
-          build per edit - which is the
-
-          cost it always paid, for a reason, at one edit per gesture. The win
-          is entirely on the paths with
-
-          no subscriber, which is every path that replays a log.
-
-
-          ## Two lessons worth keeping
-
-
-          - The bench earned its cost on its first run, having been written to
-          answer a different question
-            (is a phone fast enough). Both of my extrapolations from the 2000-edit measurement were wrong.
-          - The profile disagreed with my diagnosis, and the diagnosis was
-          wrong. The first fix measured as
-            exactly zero improvement, which is the only reason it got profiled rather than believed.
-        id: 01a0d019-39b6-77ab-a1ee-ac1b249a957b
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
-      - ref: DAW-38
-        area: DAW
-        title: A project can always be rebuilt from its log, and deep undo stays fast
-        status: review
-        sort_path: "000038"
-        deps:
-          - DAW-34
-          - DAW-39
-        body: >
-          Agreed with Alden 2026-09-18, out of DAW-34 stage E. Two changes that
-          are really one idea: **keep
-
-          enough log to rebuild anything, and enough bases that rebuilding is
-          quick at any depth.**
-
-
-          Replay from empty is already exact (DAW-36 made commands
-          self-contained) and already the mechanism
-
-          - `recomputeHead` starts from an empty store at seq -1 when a project
-          has no keyframe, and stage E
-
-          wrote that state into the ring as a real base. So a complete log can
-          reconstruct any state a corrupt
-
-          or unreachable keyframe leaves behind, which no snapshot can do
-          unless it happens to sit before the
-
-          damage. What stops it today is that the log is pruned to the last
-          2000 edits.
-
-
-          ## The numbers, done before committing to any of it
-
-
-          One edit is one gesture after coalescing. A dense arrangement is
-          10-20k note edits; weeks of
-
-          automation and mixing on top another 10-50k. So a heavily-worked
-          project is order **100k edits**,
-
-          and a pathological one (years, or agent-driven) maybe 500k. A row is
-          **405 bytes, measured** (command
-
-          JSON, a uuid id, author/time/kind/seq, plus indexes and toast - see
-          below).
-
-
-          | | today | proposed |
-
-          |---|---|---|
-
-          | log retained | 2000 edits | **100k edits** (~40MB worst case) |
-
-          | ring slots | 5, fixed 500 apart | **9, geometric** |
-
-          | ring storage | 5MB large / 250KB normal | 9MB large / 450KB normal |
-
-          | range the ring covers | 2000 edits | 128k edits |
-
-
-          **~2x the ring storage to cover 50x the range**, because the rungs go
-          500, 1000, 2000, 4000, 8000,
-
-          16000, 32000, 64000, 128000 rather than five fixed steps.
-
-
-          Replay costs come from the stage-B measurements (23.7ms for 2000
-          edits on a large project, ~12us an
-
-          edit), a phone taken as 4x a laptop:
-
-
-          - **deepest undo** replays at most the rung below it, 64k entries:
-          **0.8s laptop, ~3s phone**
-          - **full recovery** replays at most 100k entries: **1.2s laptop, ~5s
-          phone**
-
-
-          Both sit well inside the 30s Alden set as acceptable for an edge
-          failure case.
-
-
-          **Superseded 2026-09-18, and not in the direction I expected.** Those
-          two figures came from
-
-          extrapolating a 2000-edit measurement, and replay was not linear;
-          measured, 100k edits took 12.5s.
-
-          DAW-39 then made replay linear and cheap: **100k edits now replay in
-          129ms on a laptop, so ~0.5s
-
-          on a phone** - the full-recovery case, from an empty store, with no
-          keyframe at all.
-
-
-          That dissolves the case for a geometric ladder as a LATENCY measure:
-          reaching back the whole 100k
-
-          costs half a second, so no undo depth is slow enough to need a nearer
-          base.
-
-
-          **And then a second look said don't build it yet.** Alden asked
-          whether the ladder survives as "a
-
-          data transfer helper rather than a speed thing". The answer turned
-          out to be neither, because of a
-
-          constant neither of us had looked at: **`MAX_DEPTH = 500`**
-          (`editLog.ts`). The in-memory undo
-
-          stack holds 500 steps. Past that the oldest step is shifted off and
-          the edit is no longer undoable
-
-          by any means - so undo's reach is 500 of your OWN edits, whatever the
-          ring does.
-
-
-          Which means the current ring is already about the right size.
-          `KEYFRAME_RETAIN_WINDOW` is 2000
-
-          entries, and 500 of your own edits fits inside 2000 total entries
-          unless three other people are
-
-          editing as fast as you are. A 128k-edit ladder would sit underneath a
-          500-step stack, reachable by
-
-          nothing.
-
-
-          **So the ladder waits on `MAX_DEPTH` rising, and nothing is asking
-          for that.** 500 undo steps is
-
-          generous, and the comment on the constant already says the right
-          thing: deeper history is what the
-
-          version timeline is for, undo is the recent-gesture buffer. Recovery
-          from a corrupt keyframe - the
-
-          reason this ticket exists - needs the LOG, not the ring, since
-          `recomputeHead` replays from empty
-
-          at seq -1 when no keyframe is usable. That half is done.
-
-
-          **And then Alden named the case that makes it live anyway
-          (2026-09-18), which is the case the whole
-
-          ticket came from: being offline for a flight while someone else
-          keeps working.**
-
-
-          The reasoning above measured `MAX_DEPTH` against a solo timeline,
-          where 500 of your own steps and
-
-          2000 log entries are about the same distance. They are not the same
-          AXIS. `MAX_DEPTH` bounds how
-
-          many steps you hold; the ring bounds **how far below HEAD those
-          steps may sit** - and an 8-hour
-
-          flight stretches the second one without touching the first:
-
-
-          - Alice edits to seq 1000, goes offline.
-          - Bob works for eight hours; head reaches seq 30,000.
-          - Alice reconnects. Her offline edits append near head and stay
-          undoable. Her PRE-flight edits sit
-            29,000 entries below the oldest retained keyframe, so `dropUnreachable` silently drops every
-            one of those steps.
-
-          She has 500 perfectly good undo steps and no base to rebuild any of
-          them from. That is the scenario
-
-          the deep log was for, and without a deeper ring the log does not
-          help, since a rebuild needs a base
-
-          BELOW the edit. **So: build the ladder.** Reaching 128k covers a
-          flight, a weekend, a fortnight.
-
-
-          ## But do not page the log to the client to do it
-
-
-          The tempting follow-on is to page old entries down to the client so
-          IT can rebuild. Price it first:
-
-          Alice's rebuild needs every entry from a base below seq 1000 up to
-          head, which is 30,000 rows, and
-
-          at a measured 405 bytes that is **~12MB onto a phone to take back one
-          edit**.
-
-
-          The authority already holds all of it, and DAW-39 made the replay
-          itself cost ~200ms. So a deep undo
-
-          should be **submitted, not simulated**: the client sends the
-          tombstone (it already does), the
-
-          authority rebuilds and broadcasts the new head (it already does), and
-          the client waits instead of
-
-          rebuilding locally - the same conflict-hold path it already takes
-          when it cannot compute a local
-
-          answer. What the client needs to keep is the entry IDS of its own old
-          edits, which are small and
-
-          which it already persists.
-
-
-          That reframes the client-side work in DAW-40: **stop dropping a step
-          whose entry the client holds
-
-          just because its own base is too new.** Let the authority answer, and
-          page nothing.
-
-
-          The remaining ring work is small: change the eviction rule in
-          `planKeyframes` from "oldest" to "most
-
-          redundant" and take `KEYFRAME_RING_SIZE` to 9. `rebuildBase` and
-          `oldestBase` need no change - they
-
-          already ask for the newest base below a seq, which is exactly right
-          for an uneven ladder.
-
-
-          ## The ordered plan (2026-09-18)
-
-
-          **0. Merge the open stack first** (#144, #145, #146, #147). Every
-          step below sits on top of it.
-
-
-          **1. DAW-41, the seed-fold bug.** A tombstone naming an edit the
-          client has folded into its seed is
-
-          silently ignored, so the client keeps an edit the authority removed.
-          Reproduced. It is narrow today
-
-          only because the authority's 2000-entry reach usually refuses such an
-          undo first - and step 2 is
-
-          precisely the change that removes that accidental protection. **So
-          this comes before the ladder,
-
-          not after it.**
-
-
-          **2. The geometric ring** (authority-only, shippable alone).
-          `planKeyframes` evicts the most
-
-          REDUNDANT slot (the one nearest a neighbour in log distance) rather
-          than the oldest;
-
-          `KEYFRAME_RING_SIZE` 5 -> 9. The surviving set settles into a ladder
-          on its own and old rungs are
-
-          promoted as head advances. Test it by driving a long log and
-          asserting the spacing that results.
-
-
-          **3. Write `project.json` immediately after a tombstone rebuild.**
-          Today `persistKeyframe` runs on
-
-          the 100-edit cadence, so the save file a client re-reads could still
-          be the pre-undo one. A deep
-
-          undo is rare and a write is cheap.
-
-
-          **4. Bound the two whole-log reads.** `recomputeHead`
-          (`rooms.ts:509`) and `canHonourUndo`
-
-          (`rooms.ts:453`) both call `readEdits(-1)`. At 100k retained that is
-          a per-undo cost nobody should
-
-          pay; both want "above the base". Prerequisite for the raised cap,
-          independent of the ladder.
-
-
-          **5. The client stops giving up** (DAW-40's first half).
-          `EditLog.dropUnreachable` drops a step
-
-          whose entry is at or below the local base. Keep a step whose ENTRY
-          the client still holds, mark it
-
-          authority-only, and on press send the tombstone and wait rather than
-          rebuilding locally - the
-
-          conflict-hold path already models "the live store shows the
-          authority's answer".
-
-
-          **6. Adopt an authoritative project.** The receiving half of 5 and
-          the fix for 1: when a client
-
-          cannot fold a tombstone correctly, re-read `project.json`, re-seed,
-          replay `pending` on top. One
-
-          mechanism serves both.
-
-
-          **7. Feed paging** (DAW-8.17) and the `subscribe` `baseSeq` field -
-          the ~800KB catch-up window.
-
-          Genuinely separate, and the lowest priority of the seven.
-
-
-          ## Progress
-
-
-          - **Step 0** - the four-PR stack, merged 2026-09-18.
-          - **Step 1** - DAW-41, PR #148.
-          - **Step 2** - the geometric ring, PR #149. `planKeyframes` evicts
-          the rung whose removal opens
-            the smallest gap relative to its own age, which settles into a ladder without anything
-            having to plan one. Simulated over 200k edits: at head 100k the rungs sit 500, 1000, 2000,
-            4500, 10500, 22500 and 44000 behind, against 4500 for the whole of an evenly-spaced nine.
-            A rung below the retention floor is now recycled rather than held, so the ladder does not
-            keep a slot open for a base the log can no longer reach.
-          - **Step 3** - the immediate keyframe write, landed early in #148
-          because the client fix needs it.
-          - **Step 5** - the client stops giving up, PR #149.
-          `dropUnreachable` drew the wrong line: it
-            asked whether THIS log could rebuild a step, and dropped it when not. With a remote to ask,
-            a step now survives as long as its edit does, and pressing it forwards the tombstone and
-            waits rather than simulating an answer the base cannot produce. Local-only projects keep
-            the old behaviour, because there is nobody to ask.
-
-          - The piece that was not in the plan: `EditLog.rebaseOnto`. Adopting
-          the authority's answer in the
-            session left the log rebuilding from a base written before the undo, so the next ordinary
-            undo put the deep edit straight back. The session now re-bases the log onto what it
-            accepted, naming its pending edits so they stay above the new base.
-          - **Step 4** - bounding the two whole-log reads, PR #149.
-          `reflogReach` asks `readEditSeqs`
-            where one edit sits instead of pulling every row to find it. `recomputeHead` reads the tail
-            above the keyframe, then asks the same narrow question of the ids the tail's reflog entries
-            name, and widens only when one really is below the base - with the entries re-read to match
-            it, since a widened base replayed against a tail that starts above it is a gap, and the one
-            way this rebuild can be silently wrong.
-          - **Step 5's recovery action**, PR #152, and the last of this
-          ticket. The bug underneath it was not
-            the corruption but what the corruption MEANT: `load` answered "no keyframe" with null,
-            callers read null as "nothing saved here yet", and autosave answered that by writing the
-            empty live store over the top - taking the log that could have rebuilt the project with
-            it. So `UnreadableProjectError` now separates a damaged bundle from an empty one, nothing
-            is written while the question is open, and `rebuildFromLog` replays from the newest
-            retained keyframe below the log's first entry (or an empty project, when the log still
-            reaches the project's first edit) and heals `project.json` with the result. Raised from
-            boot AND from a project switch, which used to reject into nowhere. When there is no floor
-            at all it refuses rather than replaying a tail onto an empty project, and offers a new
-            project beside the damaged one, which stays in the library untouched.
-
-          **Also fixed in #149, found by a test that would not seed:**
-          `appendEdits` put every entry in ONE
-
-          insert statement, and past roughly 3500 rows that statement inserted
-          nothing and raised nothing -
-
-          the transaction committed an empty log and returned the max seq of a
-          project that had not been
-
-          written. Chunked at 500 rows, still inside the one transaction.
-          Production appends one edit at a
-
-          time so it was never hit there, but a bulk path silently discarding
-          its input is not a thing to
-
-          leave in a store.
-
-
-          ## The work
-
-
-          **1. Raise the server log cap** from `SNAPSHOT_WINDOW` (2000) to
-          ~100k. **Leave the client mirror at
-
-          `MAX_PERSISTED_ENTRIES` (2000)** - 40MB of edits in a browser cache
-          is not a trade worth making for
-
-          offline, and recovery is an online action. The deep log is the
-          authority's.
-
-
-          **2. Make the ring geometric.** Today `planKeyframes` evicts the
-          OLDEST slot, which gives fixed
-
-          spacing and a fixed reach. Evict the **most redundant** slot instead
-          - the one closest to a
-
-          neighbour in log-distance - and the surviving set settles into a
-          geometric ladder on its own, with
-
-          old keyframes promoted up the rungs as the head advances rather than
-          rewritten. `KEYFRAME_RING_SIZE`
-
-          becomes 9. `rebuildBase`/`oldestBase` need no change: they already
-          ask for the newest base below a
-
-          seq, which is exactly right for an uneven ladder.
-
-
-          **3. Bound the two paths that read the whole log.**
-          `Room.recomputeHead` and `Room.canHonourUndo`
-
-          both call `readEdits(-1)`. That is capped at 2000 rows today only by
-          the pruning; at 100k it is a
-
-          per-undo cost nobody should pay. Both want "above the base" instead.
-          This is a prerequisite, not a
-
-          nice-to-have.
-
-
-          **4. The recovery action.** "Rebuild project state?" with a progress
-          indicator rather than a
-
-          several-minutes warning - the numbers above say seconds. If the
-          rebuild itself cannot produce a
-
-          usable project, offer **fork to a new project** from the current
-          state. Alden's read, and it is
-
-          right: the user in that position has been offline for weeks or months
-          and then reconnected into a
-
-          project that moved on, so a fork is close to what they expected
-          anyway.
-
-
-          ## Measure first
-
-
-          **Count the edits in a real project.** Cheap to instrument, and it
-          turns every figure above from
-
-          arithmetic into a fact - in particular whether 100k is generous or
-          mean. (The per-row cost is
-
-          measured now; the COUNT for a real project is the half still open.)
-          Stage F's phone
-
-          measurement is the other half of the same question: if a rebuild is
-          much slower on a phone than 4x,
-
-          the cap comes down.
-
-
-          **The one real datapoint so far** (Alden, 2026-09-18): the deployed
-          Neon database holds **4160 edit
-
-          rows in total, across a few projects** - and no real track has been
-          written with the tool yet, so
-
-          that is incidental testing. It settles one thing: the current 2000
-          window is the same order as
-
-          CASUAL use, so it would be pruning real history rather than ancient
-          history the moment anyone
-
-          writes something. It says nothing yet about the shape of a real
-          project, since a test project is a
-
-          handful of gestures rather than months of arranging - but it makes
-          100k look like the right order
-
-          rather than a generous one.
-
-
-          **Bytes per row, measured** (Alden, same day): 4160 rows occupying
-          1,687,552 bytes including
-
-          indexes and toast = **405 bytes a row**, against the 400 this
-          ticket's arithmetic assumed. So the
-
-          40MB cap figure stands as written, and it is a measurement rather
-          than an estimate.
-
-
-          One shape could skew it upward on a real project: a plural command
-          (`addNotes`, `editNotes`) carries
-
-          an array and can run to several KB in one row - though it also
-          replaces the rows the individual
-
-          edits would have been, so it roughly cancels. Worth re-running the
-          query once a real track exists
-
-          rather than assuming it does.
-
-
-          ## Not this ticket
-
-
-          A **cold archive** - pruning the working log but writing pruned edits
-          to a bundle file nothing reads
-
-          on the hot path - is the variant to reach for if 40MB a project turns
-          out to be unwelcome. It buys
-
-          the same recovery without touching either hot path, at the cost of a
-          second storage shape. Recorded
-
-          rather than chosen, because the simple cap is worth trying first.
-        id: 01a0d019-39b6-77ab-a1ee-b3144b0361be
-        created_at: 2026-09-23T16:20:15.000Z
-        updated_at: 2026-09-23T16:20:15.000Z
       - ref: DAW-37
         area: DAW
         title: "Decide: undo by inverse, by tombstone rebuild, or both"
@@ -10844,6 +9825,1087 @@ projects:
             id: 01a097f2-a288-7061-90a1-546b7b33c51d
             at: 2026-09-12T23:27:36.072Z
             actor: claude
+      - ref: DAW-38
+        area: DAW
+        title: A project can always be rebuilt from its log, and deep undo stays fast
+        status: review
+        sort_path: "000038"
+        deps:
+          - DAW-34
+          - DAW-39
+        body: >
+          Agreed with Alden 2026-09-18, out of DAW-34 stage E. Two changes that
+          are really one idea: **keep
+
+          enough log to rebuild anything, and enough bases that rebuilding is
+          quick at any depth.**
+
+
+          Replay from empty is already exact (DAW-36 made commands
+          self-contained) and already the mechanism
+
+          - `recomputeHead` starts from an empty store at seq -1 when a project
+          has no keyframe, and stage E
+
+          wrote that state into the ring as a real base. So a complete log can
+          reconstruct any state a corrupt
+
+          or unreachable keyframe leaves behind, which no snapshot can do unless
+          it happens to sit before the
+
+          damage. What stops it today is that the log is pruned to the last 2000
+          edits.
+
+
+          ## The numbers, done before committing to any of it
+
+
+          One edit is one gesture after coalescing. A dense arrangement is
+          10-20k note edits; weeks of
+
+          automation and mixing on top another 10-50k. So a heavily-worked
+          project is order **100k edits**,
+
+          and a pathological one (years, or agent-driven) maybe 500k. A row is
+          **405 bytes, measured** (command
+
+          JSON, a uuid id, author/time/kind/seq, plus indexes and toast - see
+          below).
+
+
+          | | today | proposed |
+
+          |---|---|---|
+
+          | log retained | 2000 edits | **100k edits** (~40MB worst case) |
+
+          | ring slots | 5, fixed 500 apart | **9, geometric** |
+
+          | ring storage | 5MB large / 250KB normal | 9MB large / 450KB normal |
+
+          | range the ring covers | 2000 edits | 128k edits |
+
+
+          **~2x the ring storage to cover 50x the range**, because the rungs go
+          500, 1000, 2000, 4000, 8000,
+
+          16000, 32000, 64000, 128000 rather than five fixed steps.
+
+
+          Replay costs come from the stage-B measurements (23.7ms for 2000 edits
+          on a large project, ~12us an
+
+          edit), a phone taken as 4x a laptop:
+
+
+          - **deepest undo** replays at most the rung below it, 64k entries:
+          **0.8s laptop, ~3s phone** - **full recovery** replays at most 100k
+          entries: **1.2s laptop, ~5s phone**
+
+
+          Both sit well inside the 30s Alden set as acceptable for an edge
+          failure case.
+
+
+          **Superseded 2026-09-18, and not in the direction I expected.** Those
+          two figures came from
+
+          extrapolating a 2000-edit measurement, and replay was not linear;
+          measured, 100k edits took 12.5s.
+
+          DAW-39 then made replay linear and cheap: **100k edits now replay in
+          129ms on a laptop, so ~0.5s
+
+          on a phone** - the full-recovery case, from an empty store, with no
+          keyframe at all.
+
+
+          That dissolves the case for a geometric ladder as a LATENCY measure:
+          reaching back the whole 100k
+
+          costs half a second, so no undo depth is slow enough to need a nearer
+          base.
+
+
+          **And then a second look said don't build it yet.** Alden asked
+          whether the ladder survives as "a
+
+          data transfer helper rather than a speed thing". The answer turned out
+          to be neither, because of a
+
+          constant neither of us had looked at: **`MAX_DEPTH = 500`**
+          (`editLog.ts`). The in-memory undo
+
+          stack holds 500 steps. Past that the oldest step is shifted off and
+          the edit is no longer undoable
+
+          by any means - so undo's reach is 500 of your OWN edits, whatever the
+          ring does.
+
+
+          Which means the current ring is already about the right size.
+          `KEYFRAME_RETAIN_WINDOW` is 2000
+
+          entries, and 500 of your own edits fits inside 2000 total entries
+          unless three other people are
+
+          editing as fast as you are. A 128k-edit ladder would sit underneath a
+          500-step stack, reachable by
+
+          nothing.
+
+
+          **So the ladder waits on `MAX_DEPTH` rising, and nothing is asking for
+          that.** 500 undo steps is
+
+          generous, and the comment on the constant already says the right
+          thing: deeper history is what the
+
+          version timeline is for, undo is the recent-gesture buffer. Recovery
+          from a corrupt keyframe - the
+
+          reason this ticket exists - needs the LOG, not the ring, since
+          `recomputeHead` replays from empty
+
+          at seq -1 when no keyframe is usable. That half is done.
+
+
+          **And then Alden named the case that makes it live anyway
+          (2026-09-18), which is the case the whole
+
+          ticket came from: being offline for a flight while someone else keeps
+          working.**
+
+
+          The reasoning above measured `MAX_DEPTH` against a solo timeline,
+          where 500 of your own steps and
+
+          2000 log entries are about the same distance. They are not the same
+          AXIS. `MAX_DEPTH` bounds how
+
+          many steps you hold; the ring bounds **how far below HEAD those steps
+          may sit** - and an 8-hour
+
+          flight stretches the second one without touching the first:
+
+
+          - Alice edits to seq 1000, goes offline. - Bob works for eight hours;
+          head reaches seq 30,000. - Alice reconnects. Her offline edits append
+          near head and stay undoable. Her PRE-flight edits sit
+            29,000 entries below the oldest retained keyframe, so `dropUnreachable` silently drops every
+            one of those steps.
+
+          She has 500 perfectly good undo steps and no base to rebuild any of
+          them from. That is the scenario
+
+          the deep log was for, and without a deeper ring the log does not help,
+          since a rebuild needs a base
+
+          BELOW the edit. **So: build the ladder.** Reaching 128k covers a
+          flight, a weekend, a fortnight.
+
+
+          ## But do not page the log to the client to do it
+
+
+          The tempting follow-on is to page old entries down to the client so IT
+          can rebuild. Price it first:
+
+          Alice's rebuild needs every entry from a base below seq 1000 up to
+          head, which is 30,000 rows, and
+
+          at a measured 405 bytes that is **~12MB onto a phone to take back one
+          edit**.
+
+
+          The authority already holds all of it, and DAW-39 made the replay
+          itself cost ~200ms. So a deep undo
+
+          should be **submitted, not simulated**: the client sends the tombstone
+          (it already does), the
+
+          authority rebuilds and broadcasts the new head (it already does), and
+          the client waits instead of
+
+          rebuilding locally - the same conflict-hold path it already takes when
+          it cannot compute a local
+
+          answer. What the client needs to keep is the entry IDS of its own old
+          edits, which are small and
+
+          which it already persists.
+
+
+          That reframes the client-side work in DAW-40: **stop dropping a step
+          whose entry the client holds
+
+          just because its own base is too new.** Let the authority answer, and
+          page nothing.
+
+
+          The remaining ring work is small: change the eviction rule in
+          `planKeyframes` from "oldest" to "most
+
+          redundant" and take `KEYFRAME_RING_SIZE` to 9. `rebuildBase` and
+          `oldestBase` need no change - they
+
+          already ask for the newest base below a seq, which is exactly right
+          for an uneven ladder.
+
+
+          ## The ordered plan (2026-09-18)
+
+
+          **0. Merge the open stack first** (#144, #145, #146, #147). Every step
+          below sits on top of it.
+
+
+          **1. DAW-41, the seed-fold bug.** A tombstone naming an edit the
+          client has folded into its seed is
+
+          silently ignored, so the client keeps an edit the authority removed.
+          Reproduced. It is narrow today
+
+          only because the authority's 2000-entry reach usually refuses such an
+          undo first - and step 2 is
+
+          precisely the change that removes that accidental protection. **So
+          this comes before the ladder,
+
+          not after it.**
+
+
+          **2. The geometric ring** (authority-only, shippable alone).
+          `planKeyframes` evicts the most
+
+          REDUNDANT slot (the one nearest a neighbour in log distance) rather
+          than the oldest;
+
+          `KEYFRAME_RING_SIZE` 5 -> 9. The surviving set settles into a ladder
+          on its own and old rungs are
+
+          promoted as head advances. Test it by driving a long log and asserting
+          the spacing that results.
+
+
+          **3. Write `project.json` immediately after a tombstone rebuild.**
+          Today `persistKeyframe` runs on
+
+          the 100-edit cadence, so the save file a client re-reads could still
+          be the pre-undo one. A deep
+
+          undo is rare and a write is cheap.
+
+
+          **4. Bound the two whole-log reads.** `recomputeHead` (`rooms.ts:509`)
+          and `canHonourUndo`
+
+          (`rooms.ts:453`) both call `readEdits(-1)`. At 100k retained that is a
+          per-undo cost nobody should
+
+          pay; both want "above the base". Prerequisite for the raised cap,
+          independent of the ladder.
+
+
+          **5. The client stops giving up** (DAW-40's first half).
+          `EditLog.dropUnreachable` drops a step
+
+          whose entry is at or below the local base. Keep a step whose ENTRY the
+          client still holds, mark it
+
+          authority-only, and on press send the tombstone and wait rather than
+          rebuilding locally - the
+
+          conflict-hold path already models "the live store shows the
+          authority's answer".
+
+
+          **6. Adopt an authoritative project.** The receiving half of 5 and the
+          fix for 1: when a client
+
+          cannot fold a tombstone correctly, re-read `project.json`, re-seed,
+          replay `pending` on top. One
+
+          mechanism serves both.
+
+
+          **7. Feed paging** (DAW-8.17) and the `subscribe` `baseSeq` field -
+          the ~800KB catch-up window.
+
+          Genuinely separate, and the lowest priority of the seven.
+
+
+          ## Progress
+
+
+          - **Step 0** - the four-PR stack, merged 2026-09-18. - **Step 1** -
+          DAW-41, PR #148. - **Step 2** - the geometric ring, PR #149.
+          `planKeyframes` evicts the rung whose removal opens
+            the smallest gap relative to its own age, which settles into a ladder without anything
+            having to plan one. Simulated over 200k edits: at head 100k the rungs sit 500, 1000, 2000,
+            4500, 10500, 22500 and 44000 behind, against 4500 for the whole of an evenly-spaced nine.
+            A rung below the retention floor is now recycled rather than held, so the ladder does not
+            keep a slot open for a base the log can no longer reach.
+          - **Step 3** - the immediate keyframe write, landed early in #148
+          because the client fix needs it. - **Step 5** - the client stops
+          giving up, PR #149. `dropUnreachable` drew the wrong line: it
+            asked whether THIS log could rebuild a step, and dropped it when not. With a remote to ask,
+            a step now survives as long as its edit does, and pressing it forwards the tombstone and
+            waits rather than simulating an answer the base cannot produce. Local-only projects keep
+            the old behaviour, because there is nobody to ask.
+
+          - The piece that was not in the plan: `EditLog.rebaseOnto`. Adopting
+          the authority's answer in the
+            session left the log rebuilding from a base written before the undo, so the next ordinary
+            undo put the deep edit straight back. The session now re-bases the log onto what it
+            accepted, naming its pending edits so they stay above the new base.
+          - **Step 4** - bounding the two whole-log reads, PR #149.
+          `reflogReach` asks `readEditSeqs`
+            where one edit sits instead of pulling every row to find it. `recomputeHead` reads the tail
+            above the keyframe, then asks the same narrow question of the ids the tail's reflog entries
+            name, and widens only when one really is below the base - with the entries re-read to match
+            it, since a widened base replayed against a tail that starts above it is a gap, and the one
+            way this rebuild can be silently wrong.
+          - **Step 5's recovery action**, PR #152, and the last of this ticket.
+          The bug underneath it was not
+            the corruption but what the corruption MEANT: `load` answered "no keyframe" with null,
+            callers read null as "nothing saved here yet", and autosave answered that by writing the
+            empty live store over the top - taking the log that could have rebuilt the project with
+            it. So `UnreadableProjectError` now separates a damaged bundle from an empty one, nothing
+            is written while the question is open, and `rebuildFromLog` replays from the newest
+            retained keyframe below the log's first entry (or an empty project, when the log still
+            reaches the project's first edit) and heals `project.json` with the result. Raised from
+            boot AND from a project switch, which used to reject into nowhere. When there is no floor
+            at all it refuses rather than replaying a tail onto an empty project, and offers a new
+            project beside the damaged one, which stays in the library untouched.
+
+          **Also fixed in #149, found by a test that would not seed:**
+          `appendEdits` put every entry in ONE
+
+          insert statement, and past roughly 3500 rows that statement inserted
+          nothing and raised nothing -
+
+          the transaction committed an empty log and returned the max seq of a
+          project that had not been
+
+          written. Chunked at 500 rows, still inside the one transaction.
+          Production appends one edit at a
+
+          time so it was never hit there, but a bulk path silently discarding
+          its input is not a thing to
+
+          leave in a store.
+
+
+          ## The work
+
+
+          **1. Raise the server log cap** from `SNAPSHOT_WINDOW` (2000) to
+          ~100k. **Leave the client mirror at
+
+          `MAX_PERSISTED_ENTRIES` (2000)** - 40MB of edits in a browser cache is
+          not a trade worth making for
+
+          offline, and recovery is an online action. The deep log is the
+          authority's.
+
+
+          **2. Make the ring geometric.** Today `planKeyframes` evicts the
+          OLDEST slot, which gives fixed
+
+          spacing and a fixed reach. Evict the **most redundant** slot instead -
+          the one closest to a
+
+          neighbour in log-distance - and the surviving set settles into a
+          geometric ladder on its own, with
+
+          old keyframes promoted up the rungs as the head advances rather than
+          rewritten. `KEYFRAME_RING_SIZE`
+
+          becomes 9. `rebuildBase`/`oldestBase` need no change: they already ask
+          for the newest base below a
+
+          seq, which is exactly right for an uneven ladder.
+
+
+          **3. Bound the two paths that read the whole log.**
+          `Room.recomputeHead` and `Room.canHonourUndo`
+
+          both call `readEdits(-1)`. That is capped at 2000 rows today only by
+          the pruning; at 100k it is a
+
+          per-undo cost nobody should pay. Both want "above the base" instead.
+          This is a prerequisite, not a
+
+          nice-to-have.
+
+
+          **4. The recovery action.** "Rebuild project state?" with a progress
+          indicator rather than a
+
+          several-minutes warning - the numbers above say seconds. If the
+          rebuild itself cannot produce a
+
+          usable project, offer **fork to a new project** from the current
+          state. Alden's read, and it is
+
+          right: the user in that position has been offline for weeks or months
+          and then reconnected into a
+
+          project that moved on, so a fork is close to what they expected
+          anyway.
+
+
+          ## Measure first
+
+
+          **Count the edits in a real project.** Cheap to instrument, and it
+          turns every figure above from
+
+          arithmetic into a fact - in particular whether 100k is generous or
+          mean. (The per-row cost is
+
+          measured now; the COUNT for a real project is the half still open.)
+          Stage F's phone
+
+          measurement is the other half of the same question: if a rebuild is
+          much slower on a phone than 4x,
+
+          the cap comes down.
+
+
+          **The one real datapoint so far** (Alden, 2026-09-18): the deployed
+          Neon database holds **4160 edit
+
+          rows in total, across a few projects** - and no real track has been
+          written with the tool yet, so
+
+          that is incidental testing. It settles one thing: the current 2000
+          window is the same order as
+
+          CASUAL use, so it would be pruning real history rather than ancient
+          history the moment anyone
+
+          writes something. It says nothing yet about the shape of a real
+          project, since a test project is a
+
+          handful of gestures rather than months of arranging - but it makes
+          100k look like the right order
+
+          rather than a generous one.
+
+
+          **Bytes per row, measured** (Alden, same day): 4160 rows occupying
+          1,687,552 bytes including
+
+          indexes and toast = **405 bytes a row**, against the 400 this ticket's
+          arithmetic assumed. So the
+
+          40MB cap figure stands as written, and it is a measurement rather than
+          an estimate.
+
+
+          One shape could skew it upward on a real project: a plural command
+          (`addNotes`, `editNotes`) carries
+
+          an array and can run to several KB in one row - though it also
+          replaces the rows the individual
+
+          edits would have been, so it roughly cancels. Worth re-running the
+          query once a real track exists
+
+          rather than assuming it does.
+
+
+          ## Not this ticket
+
+
+          A **cold archive** - pruning the working log but writing pruned edits
+          to a bundle file nothing reads
+
+          on the hot path - is the variant to reach for if 40MB a project turns
+          out to be unwelcome. It buys
+
+          the same recovery without touching either hot path, at the cost of a
+          second storage shape. Recorded
+
+          rather than chosen, because the simple cap is worth trying first.
+        id: 01a0d019-39b6-77ab-a1ee-b3144b0361be
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-39
+        area: DAW
+        title: Rebuilding a project from its log is linear in the log
+        status: done
+        sort_path: "000039"
+        deps:
+          - DAW-34
+        body: >
+          Found 2026-09-18 by the bench DAW-34 stage F asked for, on its first
+          run. Replay was super-linear:
+
+          100k edits took **12.5s** where the arithmetic in DAW-38 said 1.2s,
+          and 50k took 2.7s. Every
+
+          replay figure in DAW-38 was taken from a 2000-edit measurement and
+          extrapolated, so every one of
+
+          them was wrong by a factor that grew with depth - which is precisely
+          the depth DAW-38 wants to add.
+
+
+          ## The cause, which was not where I first said it was
+
+
+          A CPU profile put 78% of a replay inside `ClipStore.view` (the sorted
+          note array). My first guess
+
+          was that `ClipStore.emit()` re-sorted the clip on every note added,
+          and making that cache lazy
+
+          changed the numbers by **nothing at all**, because something was
+          reading it between every write.
+
+
+          That something was `ProjectStore.emit()`, one level up: it rebuilt the
+          whole structural view on
+
+          every mutation, and `buildStructure` walks every track, group, effect
+          and clip - including
+
+          `clip.store.getClip().lengthBeats`, which materializes and re-sorts
+          the notes just to read a
+
+          number. So replaying n edits into a project of t tracks did n
+          structure builds, each re-sorting
+
+          the entire song. O(edits x project), presenting as a curve.
+
+
+          ## The fix
+
+
+          Both caches are lazy: a mutation clears the cached object, the next
+          read builds it. The contract
+
+          `useSyncExternalStore` needs (a stable reference between mutations) is
+          unchanged - the object is
+
+          just built a moment later. `trackMeta` asks `getLength()` for the
+          length, which is the number it
+
+          wanted. Nothing bulk (replay, `load`, the Node mirror) reads between
+          its own writes, so a replay
+
+          pays one structure build at the end instead of one per entry.
+
+
+          | 40 tracks, notes piled on | before | after |
+
+          |---|---|---|
+
+          | 10,000 edits | 158ms | 20ms |
+
+          | 50,000 edits | 2,714ms | 46ms |
+
+          | 100,000 edits | 12,483ms | **129ms** |
+
+          | 2,500 `createTrack` | 507ms | 30ms |
+
+
+          That last row was also the CI timeout on the DAW-38 branch
+          (`startKeyframe.test.ts` seeding 2500
+
+          edits), which was this same bug seen from the other end.
+
+
+          `test/lazyViews.test.ts` pins the shape rather than the timings, which
+          vary by machine: replaying
+
+          201 edits builds the structure 0 times (203 before the fix) and once
+          when the structure is read.
+
+
+          ## What it does to the live path
+
+
+          Less than it does to replay, and deliberately so. React's
+          `useSyncExternalStore` calls `getSnapshot`
+
+          from its own store-change handler, so a mounted UI still causes a
+          build per edit - which is the
+
+          cost it always paid, for a reason, at one edit per gesture. The win is
+          entirely on the paths with
+
+          no subscriber, which is every path that replays a log.
+
+
+          ## Two lessons worth keeping
+
+
+          - The bench earned its cost on its first run, having been written to
+          answer a different question
+            (is a phone fast enough). Both of my extrapolations from the 2000-edit measurement were wrong.
+          - The profile disagreed with my diagnosis, and the diagnosis was
+          wrong. The first fix measured as
+            exactly zero improvement, which is the only reason it got profiled rather than believed.
+        id: 01a0d019-39b6-77ab-a1ee-ac1b249a957b
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-40
+        area: DAW
+        title: A client loads the log it needs, not the whole window
+        status: to-do
+        sort_path: "000040"
+        deps:
+          - DAW-38
+        body: >
+          Alden, 2026-09-18, on hearing the log cap would go to 100k: "we don't
+          want to transfer all 100k
+
+          edits to the client on startup. How difficult would it be to only give
+          them the latest 100 or so
+
+          (including at least 1 keyframe) and then request more as needed?"
+
+
+          **Loading a project already works this way, and DAW-38 does not change
+          that.** `project.json` IS a
+
+          keyframe at head, and `ProjectRepository.load` replays only the
+          entries above it
+
+          (`projectRepository.ts`). The 2000 (`MAX_PERSISTED_ENTRIES`) is a
+          ceiling on that tail, not the
+
+          normal cost, and `RETAINED_EDITS` is the authority's floor - the
+          client is never sent it.
+
+
+          What a client does pull a window for is two other things:
+
+
+          - **The activity feed**, which wants history for its own sake. Already
+          ticketed as DAW-8.17
+            (load older on demand), and it is the one that genuinely wants paging.
+          - **Undo depth**, which only needs entries back to the oldest usable
+          base - a few hundred.
+
+          ## The work, which is small
+
+
+          1. **`subscribe` carries the client's `baseSeq`**
+          (`src/contract/ws.ts`, one field), so the
+
+             catch-up feed the room sends is the gap plus a small feed window rather than a fixed 2000.
+          2. **`readEdits` grows a backwards direction.** `server/api/app.ts`
+          and `src/audio/remoteStore.ts`
+             both express "the newest N above `since`". Paging older needs "the N below `before`", which is
+             one more parameter and the same index.
+          3. The feed UI asks for the next page when it reaches the end of what
+          it has (DAW-8.17).
+
+          Worth doing when the cap actually goes up, not before: at 2000
+          retained the current behaviour is
+
+          already the behaviour this describes.
+
+
+          **Revised 2026-09-18, and it got smaller.** The offline case in DAW-38
+          prices client-side paging at
+
+          ~12MB onto a phone to take back one edit, against an authority that
+          can rebuild the same thing in
+
+          ~200ms. So the deep-undo half of this is not paging at all: **stop
+          dropping a step whose entry the
+
+          client holds just because its own base is too new**, submit the
+          tombstone, and wait for the
+
+          authority's answer on the conflict-hold path the client already has.
+          Paging stays only for what
+
+          genuinely wants history on the client, which is the activity feed
+          (DAW-8.17) and the ~800KB-per-
+
+          connection catch-up window.
+
+
+          **2026-09-23:** step 1 is no longer needed for correctness. A client
+          whose head is below the snapshot window now bridges the gap itself
+          from `project.json` (see DAW-42), so `subscribe` carrying `baseSeq`
+          would only trim the wire, not fix anything. What is left here is the
+          feed's paging, which is DAW-8.17.
+        id: 01a0d019-39b6-77ab-a1ee-ab7cbb43c157
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-41
+        area: DAW
+        title: A tombstone for an edit inside a session's seed is silently ignored
+        status: done
+        sort_path: "000041"
+        deps:
+          - DAW-34
+        body: >
+          Found 2026-09-18 while planning DAW-38, by testing a claim rather than
+          asserting it. **Reproduced,
+
+          and it is a silent split-brain: the client keeps an edit the authority
+          has removed, with no error
+
+          anywhere.**
+
+
+          ## The mechanism
+
+
+          `SharedSession` holds `seed` + `confirmed` + `pending`. A peer's
+          tombstone is folded by
+
+          `foldConfirmed`, which calls `rebuildBase()` - seed, replay
+          `confirmed`, honour its tombstones.
+
+          But `trimConfirmed` folds entries older than `CONFIRMED_WINDOW` (2000)
+          INTO the seed, and an edit
+
+          baked into the seed cannot be replayed without. So the tombstone
+          excludes nothing, `rebuildBase`
+
+          returns a project that still contains the undone edit, and the client
+          believes it.
+
+
+          This is the same trap `headFromLog` was written for on the authority
+          side ("a tombstone can take
+
+          back an edit already in the base, so pick an older base"). The live
+          session has no equivalent,
+
+          because it has nowhere older to go.
+
+
+          ## The repro, which passes as a failing test
+
+
+          A session, a snapshot at head -1, 2100 `editApplied` entries each
+          creating a track, then an
+
+          `editApplied` with `kind: "undo"` naming entry 0. Expected: track
+          `t-0` gone. Actual: 2100 tracks,
+
+          `t-0` among them.
+
+
+          ## Reachable today, and wide open after DAW-38
+
+
+          Today it needs a tab that has seen 2000+ confirmed entries in one
+          session and then an undo of an
+
+          edit about that far back - narrow, because the authority's own reach
+          is a 2000-entry keyframe
+
+          window, so it usually refuses first. **The geometric ring removes
+          exactly that accidental
+
+          protection**: the authority would accept undos 128k back while the
+          client's seed still folds at
+
+          2000. So this is a hard prerequisite for DAW-38's ladder, not a
+          follow-up.
+
+
+          ## The fix
+
+
+          The client cannot rebuild it, so it should not try. Detect the case -
+          a tombstone whose `undoes` is
+
+          not in `confirmed` - and re-seed from the authority's `project.json`
+          instead (which the authority
+
+          will have just written), replaying `pending` on top. That is the same
+          "submit, do not simulate"
+
+          move DAW-38 and DAW-40 settle on, applied to the receiving side.
+
+
+          ## Built 2026-09-18 (PR #148), and it turned up a second bug
+
+
+          Three parts, and the middle one was not planned:
+
+
+          1. **The authority writes `project.json` the moment it honours a
+          tombstone**, rather than on the
+             hundred-edit cadence. Step 3 of the plan, pulled forward because the client fix reads that
+             exact file and the cadence version could still be the pre-undo snapshot.
+          2. **`headFromLog` asks whether an edit is CONTESTED, not whether it
+          is tombstoned right now.**
+             Writing a keyframe straight after an undo exposed this: undo an edit, let a keyframe land
+             without it, then redo, and the edit never came back - it was no longer tombstoned, so
+             nothing asked for an older base, and forward replay cannot resurrect an edit below the base.
+             **Pre-existing**, reproduced on the branch tip without any of this change: the cadence just
+             made the keyframe land later, and the redo failed the same way.
+          3. **The session detects the unfoldable tombstone and re-seeds.**
+          `trimConfirmed` now runs BEFORE
+             the check rather than inside `rebuildBase`, because whether a tombstone can be honoured is
+             a question about what survives the trim; asking first gets the answer for a window that is
+             about to stop existing.
+
+          `ProjectRepository.readHeadKeyframe` is the read, split out of `load`.
+          `SharedSession` takes it as
+
+          `readAuthoritativeHead`; without it an unfoldable tombstone is
+          reported rather than applied, which
+
+          is the same call minus the recovery.
+
+
+          ## Revised the same day (PR #149), because the recovery was firing far
+          too often
+
+
+          Alden: "surely that's something we can most often derive on the client
+          side and all we'd need to
+
+          send is the tombstone notification?" Right, and measuring first showed
+          how badly it was needed: a
+
+          session's `confirmed` starts EMPTY when a tab opens, so an undo of
+          anything from before that -
+
+          after a reload, or a tab that joined late - was unfoldable and went to
+          the network. Verified with
+
+          a session loaded at head 5000: an undo of edit 4990 went straight to
+          the recovery read.
+
+
+          The session was asking the wrong object. `EditLog` holds the loaded
+          entries AND a base at the
+
+          oldest retained keyframe, so it reaches back much further and can
+          rebuild the thing locally. It
+
+          now answers first, via `rebuiltWithout(undoes, pending)` - the log
+          rebuilt with the tombstone
+
+          honoured and the caller's unconfirmed edits left out, or null when it
+          cannot reach either.
+
+
+          Which in turn made the authority's write conditional: only a **deep**
+          undo (one at or below the
+
+          last keyframe) writes a keyframe straight away, because only that one
+          might need re-reading.
+
+          Above it the edit is in the recent tail every client's log covers.
+          `undoReach` returns
+
+          `{ honour, deep }` where `canHonourUndo` returned a boolean, since the
+          reach check already knew.
+
+
+          ## The redo half, which Alden would not let go of
+
+
+          "Do we not still need to make sure we have the corresponding undo
+          locally, otherwise we need to
+
+          rebuild server side?" Yes. The first attempt to reproduce it built the
+          wrong setup and came back
+
+          clean; the second one - a session that joined at head 5, an undo of an
+          edit at seq 0 it never
+
+          saw, then a redo of the same - reproduced it in one go. The redo was
+          silently lost.
+
+
+          The shortcut was `canFold` returning true for any redo, on the
+          reasoning that putting an edit back
+
+          is the harmless direction. It is not, once a seed can be ADOPTED:
+          adopt one after a deep undo and
+
+          the edit is baked out of it, with nothing left in the window to put
+          back. The mirror of the
+
+          "contested" bug fixed on the authority in #148, arriving from the
+          other side.
+
+
+          Fixed in all three places, since the asymmetry ran through all of
+          them:
+
+
+          - `canFold` asks the same question of both kinds. -
+          `EditLog.rebuiltWithout` became `rebuiltFor({ undoes, kind })`, which
+          applies the reflog entry
+            in its own direction: an undo adds its target to the excluded set, a redo takes it out.
+          - `Room.canHonourUndo` became `reflogReach`, and a redo is now refused
+          on the same terms as an
+            undo when no base sits below its target - and marks the write deep the same way.
+        id: 01a0d019-39b6-77ab-a1ee-a5924c582faa
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-42
+        area: DAW
+        title: Catching up on a long gap reloads the project once per entry
+        status: review
+        sort_path: "000042"
+        deps:
+          - DAW-34
+        body: >
+          Noticed 2026-09-18 while writing DAW-41's tests, which is also how it
+          was measured: driving 2100
+
+          confirmed entries through a `SharedSession` took **14 seconds**, and
+          the same log as notes rather
+
+          than tracks took 4. The test was rewritten to keep the project small;
+          the cost it found was not.
+
+
+          `rebuildLive` runs on every confirmed entry and does
+          `projectStore.load(scratch.snapshot())` - a
+
+          full project load, building every instrument the project describes.
+          Live that is one load per
+
+          peer edit, at a few milliseconds, and nobody notices. **On a catch-up
+          it is one load per entry in
+
+          the gap**, which is precisely the flight case DAW-38 exists for:
+          reconnect after eight hours and
+
+          the session replays thousands of entries, reloading the whole project
+          each time.
+
+
+          The shape of the fix is the one DAW-39 used a level down: the work is
+          only needed when something
+
+          reads the result. A catch-up should fold its entries and load the live
+          store ONCE at the end,
+
+          rather than after each. `foldConfirmed` and `rebuildLive` are already
+          separate calls, so this is
+
+          about giving the snapshot path a batch entry point rather than
+          restructuring either.
+
+
+          Measure before and after with the same harness: deliver N
+          `editApplied` messages, time it.
+
+
+          **Resolved 2026-09-23: the measured path is not the catch-up path.** A
+          reconnect's catch-up arrives as ONE `snapshot` message, and
+          `onSnapshot` already folds every entry and calls `rebuildLive` once at
+          the end. The 14 seconds came from a test delivering 2100 `editApplied`
+          messages one by one, which is live peer traffic, where one load per
+          edit is the right cost. Nothing to batch.
+
+
+          **What looking found instead:** the snapshot carries the newest 2000
+          entries (`SNAPSHOT_WINDOW`), not everything since the client's head. A
+          client away for more than 2000 edits folded a window that started
+          above it, onto a base missing everything in between, with nothing to
+          say so. `SharedSession.spansGap` now spots that, and
+          `catchUpAcrossGap` adopts the authority's `project.json` (rewritten
+          every 100 edits, so always inside the window) before folding, holding
+          later messages until it has. A head the window cannot take over from
+          reports "reload" rather than folding over the hole.
+          `test/snapshotGap.test.ts`; `unreachableUndo.test.ts` had been passing
+          over exactly this hole (its pruned log starts above the client) and
+          now goes through the recovery.
+        id: 01a0d019-39b6-77ab-a1ee-a0641665c5ec
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
+      - ref: DAW-43
+        area: DAW
+        title: The client keeps its history twice, and the gap between the two is where
+          the bugs live
+        status: to-do
+        sort_path: "000043"
+        deps:
+          - DAW-38
+        body: >
+          Named 2026-09-18 during a stock-take of the undo system, having
+          patched the same seam four times
+
+          in one day. Alden asked for it to go on the list.
+
+
+          ## The two accounts
+
+
+          **`EditLog`**: `entries` (the loaded window), `base` (a retained
+          keyframe and the seq it reflects),
+
+          `undone`, and the undo/redo stacks. Rebuilds by replaying entries over
+          the base.
+
+
+          **`SharedSession`**: `seed` (the project as loaded), `confirmed`
+          (entries since this session began),
+
+          `pending` (unsent local edits), `base` (a store). Rebuilds by
+          replaying confirmed over the seed.
+
+
+          They describe the same history from different starting points, and the
+          session's is strictly
+
+          shallower - `confirmed` begins EMPTY when a tab opens, where the log
+          keeps what it loaded.
+
+
+          ## What the gap has cost so far
+
+
+          Every one of these is the same seam, found separately:
+
+
+          - **DAW-41**: a tombstone naming an edit folded into the session's
+          seed rebuilt to a project that
+            still contained it. Silently.
+          - **DAW-41 again**: a redo of an edit below the seed, lost the same
+          way from the other side. - **DAW-38 step 5**: `foldFromLog` - the
+          session asking the log, because the log can reach what it
+            cannot. A patch over the asymmetry rather than a removal of it.
+          - **`EditLog.rebaseOnto`**: after the session adopts the authority's
+          answer, the log has to be told,
+            or the next ordinary undo rebuilds from a base written before the undo and puts the edit back.
+
+          ## The shape of the fix
+
+
+          One account. The session holds `pending` and the transport; the log
+          holds history and answers "what
+
+          is the authoritative project", which it can already do better than the
+          session can. `foldFromLog`,
+
+          `rebaseOnto`, `adoptSeed`, `canFold` and `trimConfirmed` are all
+          plumbing between the two, and most
+
+          of them should not survive it.
+
+
+          Not small, and not urgent - what exists is correct and tested. But
+          every future change to undo pays
+
+          this tax, and the four bugs above were each cheap to fix and expensive
+          to find.
+        id: 01a0d019-39b6-77ab-a1ee-9f4fb9e54edd
+        created_at: 2026-09-23T16:20:15.000Z
+        updated_at: 2026-09-23T16:20:15.000Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -13274,7 +13336,7 @@ projects:
       - ref: INST-12
         area: INST
         title: Envelopes and per-note gates in the declarative format
-        status: review
+        status: to-do
         sort_path: "000012"
         deps:
           - INST-4
@@ -13326,47 +13388,6 @@ projects:
         id: 019ff33c-1864-7429-b406-ac6dcb4704de
         created_at: 2026-08-11T23:50:29.732Z
         updated_at: 2026-08-11T23:50:29.732Z
-        comments:
-          - body: >-
-              **Built 2026-09-24; how each open question was settled.**
-
-
-              - **How a node gets the gate:** an `env` kind the interpreter
-              special-cases, as the ticket guessed. Attack/decay/sustain are
-              read when the note starts, release when it ends, so a release
-              knob turned mid-note still counts. Linear segments, like the base
-              amp envelope, because release has to anchor at the envelope's
-              true level and a line is trivial to evaluate (the Chrome
-              `cancelAndHoldAtTime` bug rules out letting the browser do it).
-
-              - **What it outputs:** a `ConstantSourceNode` from 0 to 1, wired
-              like any LFO. The biquad gained `detune` as a modulatable param,
-              so a filter envelope sweeps in cents - musical intervals at any
-              cutoff - rather than Hz.
-
-              - **The amp ADSR:** neither extreme. A voice wired to the new
-              reserved `out` shapes its own amplitude with an `env` into a VCA,
-              and the base drops to a 3ms fade at each end; one wired to `amp`
-              keeps the base's envelope, so the class instruments and existing
-              defs are untouched. Worth more than expected: the base envelope
-              turned out to be attack/release only, so no instrument could
-              decay at all before this.
-
-              - **Release:** the base asks the voice's envelopes how long they
-              need and keeps an `out` voice alive that long. For an `amp`
-              voice the base's release still ends the sound, but the graph's
-              envelopes are let go with it.
-
-
-              `env` is refused in an effect graph (no notes to follow), and a
-              voice wired to both `amp` and `out` is refused. Subtractive now
-              uses both envelopes; its new params default to the old sound
-              (sustain 1, filter env 0). `describe_device_format` teaches the
-              envelope and its example is now a pluck, tested to validate.
-            audience: user
-            id: 01a0d3d3-1433-7a8f-881b-f7fbc36b7764
-            at: 2026-09-24T14:30:20.979Z
-            actor: claude
       - ref: INST-13
         area: INST
         title: Grow the native-node vocabulary

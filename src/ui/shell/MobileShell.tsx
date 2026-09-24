@@ -51,8 +51,7 @@ import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
 import { ClipRail } from "../ClipRail";
 import { TransportBar } from "../TransportBar";
-import { AccountAvatar } from "../AccountAvatar";
-import { SettingsIcon } from "../ActivityRail";
+import { BrandMark } from "../BrandMark";
 import { Menu, type MenuItem } from "../Menu";
 import { IconButton } from "../controls/IconButton";
 import { iconButtonClass } from "../controls/iconButtonStyle";
@@ -180,7 +179,6 @@ function LibraryContent({
   dispatch,
   onOpenShare,
   onOpenSettings,
-  onOpenAccount,
   onOpenAgent,
   agentOpen,
   agent,
@@ -196,7 +194,6 @@ function LibraryContent({
   | "dispatch"
   | "onOpenShare"
   | "onOpenSettings"
-  | "onOpenAccount"
 > & {
   onClose: () => void;
   /** Set only where this is a sheet: see `LibraryPanel`'s `onPick`. */
@@ -294,13 +291,17 @@ function LibraryContent({
       <div hidden={!agentOpen} className="flex-1 min-h-0 flex flex-col">
         {agent}
       </div>
-      <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-t border-line">
-        <span className="w-10 shrink-0 empty:hidden">
-          <AccountAvatar onClick={onOpenAccount} />
-        </span>
-        <IconButton label="Settings" size="lg" onClick={onOpenSettings} className="ml-auto">
-          <SettingsIcon className="w-5 h-5" />
-        </IconButton>
+      {/* The logo is the way into account and settings, as it is at the foot of the desktop rail. */}
+      <div className="shrink-0 flex items-center justify-end px-2 py-1.5 border-t border-line">
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          aria-label="Account and settings"
+          title="Account and settings"
+          className="flex items-center justify-center w-11 h-11 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
+        >
+          <BrandMark size={34} />
+        </button>
       </div>
     </>
   );
@@ -337,8 +338,8 @@ export function MobileShell({
   onSelectView,
   search,
   onSearch,
+  onOpenAgentSettings,
   onOpenSettings,
-  onOpenAccount,
   onOpenShare,
 }: ShellProps & { shape: DeviceShape }) {
   /**
@@ -580,7 +581,7 @@ export function MobileShell({
       dispatch={dispatch}
       scheduler={scheduler}
       hasApiKey={hasApiKey}
-      onOpenSettings={onOpenSettings}
+      onOpenAgentSettings={onOpenAgentSettings}
     />
   );
 
@@ -611,7 +612,6 @@ export function MobileShell({
       dispatch={dispatch}
       onOpenShare={onOpenShare}
       onOpenSettings={onOpenSettings}
-      onOpenAccount={onOpenAccount}
     />
   );
 

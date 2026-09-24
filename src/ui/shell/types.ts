@@ -59,7 +59,7 @@ export interface ShellProps {
   agentCollapsed: boolean;
   onSetAgentCollapsed: (collapsed: boolean) => void;
 
+  onOpenAgentSettings: () => void;
   onOpenSettings: () => void;
-  onOpenAccount: () => void;
   onOpenShare: (projectId: string, projectName: string) => void;
 }

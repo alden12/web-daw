@@ -463,6 +463,14 @@ export class Room {
     for (const client of this.clients) client.send(message);
   }
 
+  /** Resolves once the background work queued so far (keyframe writes, rebuilds) has finished. */
+  whenSettled(): Promise<void> {
+    return this.afterWork.then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+
   /** Run `task` after every task queued before it, whether those succeeded or not. */
   private queueAfterWork(task: () => Promise<unknown>): Promise<unknown> {
     this.afterWork = this.afterWork.then(task, task);
@@ -588,15 +596,70 @@ export class Room {
   }
 }
 
-/** Registry of live rooms, one per project. Lazily loads a room on first access and evicts it when its
- *  last client disconnects (freeing the in-memory `ProjectStore`). */
+/** How long a room with nobody connected stays loaded after its last use. */
+const IDLE_ROOM_MS = 10 * 60 * 1000;
+/** How often idle rooms are looked for. */
+const SWEEP_INTERVAL_MS = 60 * 1000;
+
+export interface RoomRegistryOptions {
+  /** Drop a room nobody is connected to once it has gone unused this long. */
+  idleMs?: number;
+  /** How often to look; 0 for no timer, so a test can call `sweep` itself. */
+  sweepMs?: number;
+  now?: () => number;
+}
+
+/**
+ * Registry of live rooms, one per project. Lazily loads a room on first access and evicts it when its
+ * last client disconnects (freeing the in-memory `ProjectStore`).
+ *
+ * **A room can also be opened without anyone joining it** - the hosted MCP server edits through
+ * rooms but is not a connected client - so `leave` never runs for it. The sweep catches those: a room
+ * with no connections, unused for `idleMs`, is dropped once its queued writes have finished. Ten
+ * minutes rather than straight away, because an agent makes many calls in a row and each would
+ * otherwise reload the project from the database. Nothing is lost by dropping one: every edit is in
+ * the log, and the next caller loads it back from there.
+ */
 export class RoomRegistry {
   private readonly rooms = new Map<string, Room>();
   private readonly loading = new Map<string, Promise<Room>>();
+  /** When each loaded room was last handed out. */
+  private readonly lastUsed = new Map<string, number>();
   private readonly db: Db;
+  private readonly idleMs: number;
+  private readonly now: () => number;
 
-  constructor(db: Db) {
+  constructor(
+    db: Db,
+    { idleMs = IDLE_ROOM_MS, sweepMs = SWEEP_INTERVAL_MS, now = Date.now }: RoomRegistryOptions = {},
+  ) {
     this.db = db;
+    this.idleMs = idleMs;
+    this.now = now;
+    // Unref'd, so an idle sweep never keeps the process (or a test run) alive.
+    if (sweepMs > 0) setInterval(() => void this.sweep(), sweepMs).unref();
+  }
+
+  /** Drop every room nobody is connected to that has gone unused for `idleMs`. */
+  async sweep(): Promise<void> {
+    const cutoff = this.now() - this.idleMs;
+    const idle = [...this.rooms].filter(
+      ([projectId, room]) => room.connectionCount === 0 && (this.lastUsed.get(projectId) ?? 0) <= cutoff,
+    );
+    await Promise.all(
+      idle.map(async ([projectId, room]) => {
+        const usedAt = this.lastUsed.get(projectId);
+        await room.whenSettled();
+        // Someone may have picked it up while its writes finished; then it is not idle any more.
+        const untouched = this.rooms.get(projectId) === room && this.lastUsed.get(projectId) === usedAt;
+        if (untouched && room.connectionCount === 0) this.evict(projectId);
+      }),
+    );
+  }
+
+  private evict(projectId: string): void {
+    this.rooms.delete(projectId);
+    this.lastUsed.delete(projectId);
   }
 
   /**
@@ -609,6 +672,7 @@ export class RoomRegistry {
   async get(projectId: string, principal: Accessor): Promise<Room | null> {
     const access = await resolveProjectAccess(this.db, principal, projectId);
     if (!access.allowed) return null;
+    this.lastUsed.set(projectId, this.now());
     const live = this.rooms.get(projectId);
     if (live) return live;
     const pending = this.loading.get(projectId);
@@ -627,6 +691,6 @@ export class RoomRegistry {
     const room = this.rooms.get(projectId);
     if (!room) return;
     room.remove(client);
-    if (room.connectionCount === 0) this.rooms.delete(projectId);
+    if (room.connectionCount === 0) this.evict(projectId);
   }
 }
