@@ -11,35 +11,12 @@ import { RAIL_ITEMS, type LibraryView } from "./libraryViews";
 
 export type { LibraryView, RailItem } from "./libraryViews";
 
-/**
- * The settings cog. It no longer appears in this rail - the mark at the bottom opens the panel now -
- * but the touch shell still shows one, and this is where it has always lived. Its own component
- * because the toothed ring is drawn on a 24-unit grid, unlike the 16-grid view icons.
- */
-export function SettingsIcon({ className = "w-4.5 h-4.5" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
 export function ActivityRail({
   active,
   collapsed,
   onSelect,
   onToggleCollapse,
-  onOpenAccount,
+  onOpenSettings,
 }: {
   active: LibraryView;
   collapsed: boolean;
@@ -47,7 +24,7 @@ export function ActivityRail({
   /** Fired when the *active* icon is clicked: collapse the panel to the rail (or reopen). */
   onToggleCollapse: () => void;
   /** Fired by the mark at the bottom: open the settings panel on its Account tab. */
-  onOpenAccount: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <nav
@@ -90,7 +67,7 @@ export function ActivityRail({
           type="button"
           title="Account and settings"
           aria-label="Account and settings"
-          onClick={onOpenAccount}
+          onClick={onOpenSettings}
           className="flex items-center justify-center w-full h-11 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
         >
           <BrandMark size={34} />

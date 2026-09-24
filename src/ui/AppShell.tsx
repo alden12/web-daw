@@ -157,9 +157,9 @@ export function AppShell() {
   const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("corrente:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const deviceShape = useDeviceShape();
-  // Null when the settings panel is closed, otherwise the tab it opened on: the gear asks for
-  // Agent, the rail's mark and the touch shell's avatar ask for Account. One panel either way.
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
+  // Null when the settings panel is closed. Open, it names the tab to show when a caller means one
+  // (the agent panel's link asks for Agent); the logo names none, and gets the tab you left it on.
+  const [settings, setSettings] = useState<{ tab?: SettingsTab } | null>(null);
   // The project being shared (its id + name), or null when the Share panel is closed.
   const [share, setShare] = useState<{ id: string; name: string } | null>(null);
   const agentConfig = useAgentConfig();
@@ -465,8 +465,8 @@ export function AppShell() {
     onToggleLibCollapsed: () => setLibCollapsed(!libCollapsed),
     agentCollapsed,
     onSetAgentCollapsed: setAgentCollapsed,
-    onOpenSettings: () => setSettingsTab("agent"),
-    onOpenAccount: () => setSettingsTab("account"),
+    onOpenAgentSettings: () => setSettings({ tab: "agent" }),
+    onOpenSettings: () => setSettings({}),
     onOpenShare: (id, name) => setShare({ id, name }),
   };
 
@@ -482,7 +482,7 @@ export function AppShell() {
         ) : (
           <MobileShell {...shellProps} shape={deviceShape} />
         )}
-        {settingsTab && (
+        {settings && (
           <SettingsPanel
             agentConfig={agentConfig}
             authorColors={authorColors}
@@ -490,8 +490,8 @@ export function AppShell() {
             midiInput={midiInput}
             recorder={recorder}
             engine={engine}
-            initialTab={settingsTab}
-            onClose={() => setSettingsTab(null)}
+            initialTab={settings.tab}
+            onClose={() => setSettings(null)}
           />
         )}
         {share && <SharePanel projectId={share.id} projectName={share.name} onClose={() => setShare(null)} />}
