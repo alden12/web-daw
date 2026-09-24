@@ -237,6 +237,36 @@ export const SAMPLES = {
     setup: [{ type: "addCustomEffect", def: CUSTOM_EFFECT }],
     command: { type: "removeCustomEffect", deviceType: CUSTOM_EFFECT.type },
   },
+  // Edited while a track plays it, with a param turned: undoing has to put back the old schema on
+  // the track's store as well as the old def.
+  updateCustomInstrument: {
+    setup: [
+      { type: "addCustomInstrument", def: CUSTOM_INSTRUMENT },
+      { type: "setInstrument", trackId: "t-1", instrumentType: CUSTOM_INSTRUMENT.type },
+      { type: "setParam", trackId: "t-1", id: "amp.level", value: 0.3 },
+    ],
+    command: {
+      type: "updateCustomInstrument",
+      def: {
+        ...CUSTOM_INSTRUMENT,
+        label: "Invert Synth 2",
+        schema: [
+          ...CUSTOM_INSTRUMENT.schema,
+          { id: "tone", label: "Tone", kind: "number", min: 0, max: 1, default: 0.25 },
+        ],
+      },
+    },
+  },
+  updateCustomEffect: {
+    setup: [
+      { type: "addCustomEffect", def: CUSTOM_EFFECT },
+      { type: "addEffect", hostId: "t-1", effectType: CUSTOM_EFFECT.type, id: "fx-custom" },
+    ],
+    command: {
+      type: "updateCustomEffect",
+      def: { ...CUSTOM_EFFECT, graph: { ...CUSTOM_EFFECT.graph, nodes: [{ id: "gain", kind: "gain", gain: 0.9 }] } },
+    },
+  },
 
   // Removed from the MIDDLE of the chain, with a non-default parameter and a bypass set, so the
   // inverse has to restore the slot and the state rather than just re-adding the device.

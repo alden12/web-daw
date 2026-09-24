@@ -1035,6 +1035,7 @@ export class ProjectStore {
       const existing = byId.get(wanted.id);
       if (existing && existing.type === wanted.type) {
         existing.bypassed = wanted.bypassed;
+        existing.params.reschema(effectSchema(wanted.type)); // a custom effect edited since
         existing.params.load(wanted.params);
         return existing;
       }
@@ -1051,6 +1052,7 @@ export class ProjectStore {
       const existing = byId.get(wanted.id);
       if (existing && existing.type === wanted.type) {
         existing.bypassed = wanted.bypassed;
+        existing.params.reschema(effectSchema(wanted.type)); // a custom effect edited since
         existing.params.load(wanted.params);
         return existing;
       }
@@ -1510,10 +1512,14 @@ export class ProjectStore {
   }
 
   /** Add (or replace by type) a custom instrument, registering its schema. The def is validated at
-   *  the boundary (MCP / project load); this is also the authored command's replay path. */
+   *  the boundary (MCP / project load); this is also the authored command's replay path. Tracks
+   *  already playing it take the new schema, keeping the values of params it still has. */
   addCustomInstrument(def: GraphInstrumentDef): void {
     this.customInstrumentDefs = [...this.customInstrumentDefs.filter((existing) => existing.type !== def.type), def];
     this.registerInstrumentDef(def);
+    for (const track of this.tracks) {
+      if (track.kind === "instrument" && track.instrumentType === def.type) track.params.reschema(def.schema);
+    }
     this.emit();
   }
   removeCustomInstrument(type: string): void {
@@ -1525,7 +1531,21 @@ export class ProjectStore {
   addCustomEffect(def: GraphEffectDef): void {
     this.customEffectDefs = [...this.customEffectDefs.filter((existing) => existing.type !== def.type), def];
     this.registerEffectDef(def);
+    const hosts = [...this.tracks, ...this.groups];
+    for (const effect of hosts.flatMap((host) => host.effects)) {
+      if (effect.type === def.type) effect.params.reschema(def.schema);
+    }
     this.emit();
+  }
+
+  /** How many tracks play a custom instrument, or how many slots hold a custom effect: what
+   *  removing it would leave without a sound. */
+  customDeviceUses(type: string): number {
+    const instruments = this.tracks.filter((track) => track.kind === "instrument" && track.instrumentType === type);
+    const effects = [...this.tracks, ...this.groups]
+      .flatMap((host) => host.effects)
+      .filter((effect) => effect.type === type);
+    return instruments.length + effects.length;
   }
   removeCustomEffect(type: string): void {
     if (!this.customEffectDefs.some((def) => def.type === type)) return;
@@ -1570,6 +1590,8 @@ export class ProjectStore {
     // per-track bindings stay live across the load (clips are not engine-bound).
     const reused = reuse?.kind === "instrument" && reuse.instrumentType === stored.instrumentType ? reuse : undefined;
     const params = reused?.params ?? new ParamStore(instrumentSchema(stored.instrumentType));
+    // A reused store may have been built from another version of a custom instrument (undoing an edit).
+    reused?.params.reschema(instrumentSchema(stored.instrumentType));
     params.load(sound.params);
     const launchedClipId =
       stored.launchedClipId && clips.some((clip) => clip.id === stored.launchedClipId) ? stored.launchedClipId : null;

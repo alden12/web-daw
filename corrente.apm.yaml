@@ -6205,6 +6205,30 @@ projects:
         id: 01a0d465-84bf-71ad-9391-fde0ee2bf46c
         created_at: 2026-09-24T17:10:18.047Z
         updated_at: 2026-09-24T17:10:18.047Z
+      - ref: INST-21
+        area: INST
+        title: Edit custom devices over MCP (read back, update in place, see what uses them)
+        status: review
+        sort_path: "000021"
+        deps:
+          - INST-4
+        body: |-
+          Asked 2026-09-24: Alden wants to iterate on agent-authored instruments/effects on the go without a pile of near-duplicates. Before this, MCP could create, list and remove custom devices but not read one back or edit it: every `create_*` minted a new type id, so an "edit" was create-copy, move tracks, remove old.
+
+          **What it adds.**
+          - `get_custom_device`: the full def (label, schema, voice/graph), to read before editing.
+          - `update_instrument` / `update_effect`: replace the def under its existing type id. Whole-def replacement (the agent reads, changes, sends back), `label` kept when omitted, validated like create.
+          - `list_custom_devices` reports `uses` (tracks playing an instrument, slots holding an effect), so unused ones are easy to spot and remove.
+
+          **How an edit reaches live tracks.**
+          - New edit commands `updateCustomInstrument` / `updateCustomEffect` (distinct for history text; the store call is the same replace-by-type add).
+          - `ParamStore.reschema` adopts the new schema *in place* (the engine's bindings and the UI hold the store): surviving ids keep their value, coerced to the new spec; new params start at default; dropped ones go. `addCustomInstrument/Effect` reschemas every store of that type; `load` reschemas reused stores too, which is what makes undoing an edit restore the old schema.
+          - The engine keys registered custom factories by the def's JSON, rebuilding only instruments/effects whose def *content* changed. By content rather than identity because every load (undo/redo) re-parses defs, and an unchanged one must not cut held notes.
+
+          **Not done.** Removing a device still in use leaves those tracks pointing at a missing type (unchanged behaviour); `uses` makes it visible rather than refusing.
+        id: 01a0d473-8aaf-7399-bf22-2fe2107a1f6d
+        created_at: 2026-09-24T17:25:37.071Z
+        updated_at: 2026-09-24T17:25:37.071Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
