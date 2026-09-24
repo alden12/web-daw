@@ -11,10 +11,15 @@
  * it, sharing the label between them, and each pair disables at its limit. Both pairs work
  * in whole rows, so a tablet's two-octave rows come and go in pairs and no row is ever left
  * half the width of the one above it.
+ *
+ * **Chords mode** (MOBILE-12) swaps each note pad for a chord: the base row is each degree's
+ * triad and the rows above are its variations (`chordRows`), so you play the triad and reach
+ * up for the colour.
  */
 import { Menu, type MenuItem } from "../Menu";
 import { pitchName } from "../noteNames";
 import { PITCH_CLASSES, SCALE_NAMES, accidentalWidth, padRows } from "../../audio/theory/scales";
+import { chordRows } from "../../audio/theory/chords";
 import { ACCIDENTAL_HEIGHT, PAD_GAP, PAD_HEIGHT, rowGap } from "./geometry";
 import type { PadSettings } from "./padSettings";
 import { PadButton } from "./PadButton";
@@ -36,8 +41,9 @@ export function ScalePadControls({
   octavesPerRow: number;
   inline: boolean;
 }) {
-  const { scale, tonic, accidentals } = settings;
-  const pairs = octavesPerRow > 1;
+  const { scale, tonic, accidentals, chords } = settings;
+  const pairs = octavesPerRow > 1 && !chords;
+  const sizeWhat = chords ? "chord rows" : "octaves";
 
   const keyItems: MenuItem[] = [
     {
@@ -57,7 +63,14 @@ export function ScalePadControls({
       })),
     },
     { separator: true },
-    { label: "Accidentals", checked: accidentals, onClick: () => settings.setAccidentals(!accidentals) },
+    { label: "Chords", checked: chords, onClick: () => settings.setChords(!chords) },
+    // Chords are all in the key, so there is nothing for the band above them to hold.
+    {
+      label: "Accidentals",
+      checked: accidentals && !chords,
+      disabled: chords,
+      onClick: () => settings.setAccidentals(!accidentals),
+    },
   ];
 
   return (
@@ -95,7 +108,7 @@ export function ScalePadControls({
           ▸
         </IconButton>
         <IconButton
-          label={pairs ? "Fewer octaves (a row of two)" : "Fewer octaves"}
+          label={pairs ? "Fewer octaves (a row of two)" : `Fewer ${sizeWhat}`}
           size="lg"
           onClick={() => settings.sizeRange(-1)}
           disabled={!settings.canSize(-1)}
@@ -103,7 +116,7 @@ export function ScalePadControls({
           −
         </IconButton>
         <IconButton
-          label={pairs ? "More octaves (a row of two)" : "More octaves"}
+          label={pairs ? "More octaves (a row of two)" : `More ${sizeWhat}`}
           size="lg"
           onClick={() => settings.sizeRange(1)}
           disabled={!settings.canSize(1)}
@@ -129,6 +142,7 @@ export function ScalePads({
    */
   octavesPerRow: number;
 }) {
+  if (settings.chords) return <ChordPads settings={settings} touch={touch} />;
   const { tonic, scale, lowOctave, octaves, accidentals } = settings;
   const rows = padRows({ tonic, scale, lowOctave, octaves, octavesPerRow, accidentals });
 
@@ -144,7 +158,7 @@ export function ScalePads({
               {row.accidentals.map((pad) => (
                 <PadButton
                   key={pad.pitch}
-                  pitch={pad.pitch}
+                  pitches={[pad.pitch]}
                   name={pitchName(pad.pitch)}
                   label={pad.interval}
                   tone="accidental"
@@ -167,7 +181,7 @@ export function ScalePads({
             {row.pitches.map((pad) => (
               <PadButton
                 key={pad.pitch}
-                pitch={pad.pitch}
+                pitches={[pad.pitch]}
                 name={pitchName(pad.pitch)}
                 label={pad.interval}
                 sublabel={pitchName(pad.pitch)}
@@ -177,6 +191,43 @@ export function ScalePads({
               />
             ))}
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The chord pads: a column per degree, its triad at the bottom and its variations stacked
+ * above in the order they are ranked. A degree with fewer variations than there are rows leaves
+ * a gap rather than borrowing a chord from outside the key.
+ */
+function ChordPads({ settings, touch }: { settings: PadSettings; touch: PadTouch }) {
+  const { tonic, scale, lowOctave, chordRows: rows, chordOrder: order } = settings;
+  const layout = chordRows({ tonic, scale, lowOctave, rows, order });
+  return (
+    // High row on top, like the note pads, and the wide gap the note pads use with the
+    // accidentals off: two rows of chords abut the same way, and a touch on the seam would
+    // play both.
+    <div className="shrink-0 flex flex-col-reverse px-2 pb-2" style={{ gap: rowGap(false) }}>
+      {layout.map((row, rowIndex) => (
+        <div key={rowIndex} data-chord-row={rowIndex} className="shrink-0 flex gap-1" style={{ height: PAD_HEIGHT }}>
+          {row.map((chord, column) =>
+            chord ? (
+              <PadButton
+                key={column}
+                pitches={chord.pitches}
+                name={chord.name}
+                label={chord.name}
+                sublabel={chord.caption}
+                tone={rowIndex === 0 && column % (row.length - 1) === 0 ? "tonic" : "in-scale"}
+                touch={touch}
+                className="flex-1 min-w-0"
+              />
+            ) : (
+              <div key={column} className="flex-1 min-w-0" />
+            ),
+          )}
         </div>
       ))}
     </div>

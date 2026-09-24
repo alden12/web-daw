@@ -47,10 +47,19 @@ export const SUSTAIN_DRAG_PX = 34;
  */
 export const AXIS_LOCK_PX = 8;
 
+/**
+ * A pad's notes: one for a note pad, three or more for a chord (MOBILE-12). A pad is known by
+ * them - `padKey` - so a chord and the note pads need no id scheme of their own.
+ */
+export type PadNotes = readonly number[];
+
+/** What identifies a pad, and what it carries in `data-pitches` for a slide to find it by. */
+export const padKey = (pitches: PadNotes) => pitches.join(",");
+
 /** The pad under a point, or null where there is none - a gap, or off the section entirely. */
-function pitchAtPoint(clientX: number, clientY: number): number | null {
-  const pad = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-pitch]");
-  return pad ? Number(pad.dataset.pitch) : null;
+function padAtPoint(clientX: number, clientY: number): PadNotes | null {
+  const pad = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-pitches]");
+  return pad?.dataset.pitches ? pad.dataset.pitches.split(",").map(Number) : null;
 }
 
 /**
@@ -64,7 +73,7 @@ export const PAD_VELOCITY = 0.85;
 /** A finger currently down on a pad. */
 interface Press {
   /** The pad it is sounding *now*, which a slide moves out from under it. */
-  pitch: number;
+  pitches: PadNotes;
   startX: number;
   startY: number;
   /** Which gesture the finger committed to, once it has moved far enough to say. */
@@ -75,11 +84,11 @@ interface Press {
 
 export interface PadTouch {
   /** Sounding right now, whether held by a finger or latched. */
-  isSounding: (pitch: number) => boolean;
+  isSounding: (pitches: PadNotes) => boolean;
   /** Sounding with nothing on it - latched, or about to be if the finger lifts here. */
-  isLatched: (pitch: number) => boolean;
+  isLatched: (pitches: PadNotes) => boolean;
   /** Pointer handlers for one pad. */
-  padProps: (pitch: number) => {
+  padProps: (pitches: PadNotes) => {
     onPointerDown: (event: ReactPointerEvent) => void;
     onPointerMove: (event: ReactPointerEvent) => void;
     onPointerUp: (event: ReactPointerEvent) => void;
@@ -95,88 +104,114 @@ export function usePadTouch(target: PadNoteTarget): PadTouch {
   // `releaseAll` is used as an effect cleanup, and one that changed identity every render
   // would silence the pads on every unrelated re-render.
   const presses = useRef(new Map<number, Press>());
-  /** Notes left sounding after the finger lifted. Notes still under a finger are not in here. */
-  const latched = useRef(new Set<number>());
-  const [sounding, setSounding] = useState<{ pressed: Set<number>; latched: Set<number> }>(() => ({
+  /**
+   * Pads left sounding after the finger lifted, by `padKey`. Pads still under a finger are not
+   * in here.
+   */
+  const latched = useRef(new Map<string, PadNotes>());
+  const [sounding, setSounding] = useState<{ pressed: Set<string>; latched: Set<string> }>(() => ({
     pressed: new Set(),
     latched: new Set(),
   }));
 
   const publish = useCallback(() => {
-    const pressed = new Set<number>();
-    const latching = new Set(latched.current);
+    const pressed = new Set<string>();
+    const latching = new Set(latched.current.keys());
     presses.current.forEach((press) => {
-      pressed.add(press.pitch);
-      if (press.latching) latching.add(press.pitch);
+      pressed.add(padKey(press.pitches));
+      if (press.latching) latching.add(padKey(press.pitches));
     });
     setSounding({ pressed, latched: latching });
   }, []);
 
-  /** Silence the latched notes, except any a finger is currently holding down. */
-  const releaseLatched = useCallback(() => {
-    const held = new Set([...presses.current.values()].map((press) => press.pitch));
-    latched.current.forEach((pitch) => {
-      if (!held.has(pitch)) target.noteOff(pitch);
+  /**
+   * Every note some pad is holding, but for the pads left out. Two chords share notes (C and Am
+   * share two), so a note is only let go once nothing else is holding it, and only started if
+   * nothing already is - restarting it would cut the note the other finger is playing.
+   */
+  const heldNotes = useCallback((exceptPointer?: number, withoutLatched = false) => {
+    const held = new Set<number>();
+    presses.current.forEach((press, pointerId) => {
+      if (pointerId !== exceptPointer) press.pitches.forEach((pitch) => held.add(pitch));
     });
+    if (!withoutLatched) latched.current.forEach((pitches) => pitches.forEach((pitch) => held.add(pitch)));
+    return held;
+  }, []);
+
+  const play = useCallback(
+    (pitches: PadNotes, held: Set<number>) =>
+      pitches.filter((pitch) => !held.has(pitch)).forEach((pitch) => target.noteOn(pitch, PAD_VELOCITY)),
+    [target],
+  );
+  const letGo = useCallback(
+    (pitches: PadNotes, held: Set<number>) =>
+      pitches.filter((pitch) => !held.has(pitch)).forEach((pitch) => target.noteOff(pitch)),
+    [target],
+  );
+
+  /** Silence the latched pads, except any notes a finger is currently holding down. */
+  const releaseLatched = useCallback(() => {
+    const held = heldNotes(undefined, true);
+    latched.current.forEach((pitches) => letGo(pitches, held));
     latched.current.clear();
-  }, [target]);
+  }, [heldNotes, letGo]);
 
   const releaseAll = useCallback(() => {
-    presses.current.forEach((press) => target.noteOff(press.pitch));
+    const everything = heldNotes(undefined, true);
     presses.current.clear();
+    letGo([...everything], new Set());
     releaseLatched();
     publish();
-  }, [publish, releaseLatched, target]);
+  }, [heldNotes, letGo, publish, releaseLatched]);
 
   const end = useCallback(
     (event: ReactPointerEvent, latch: boolean) => {
       const press = presses.current.get(event.pointerId);
       if (!press) return;
       presses.current.delete(event.pointerId);
-      if (latch && press.latching) latched.current.add(press.pitch);
-      else target.noteOff(press.pitch);
+      if (latch && press.latching) latched.current.set(padKey(press.pitches), press.pitches);
+      else letGo(press.pitches, heldNotes());
       publish();
     },
-    [publish, target],
+    [heldNotes, letGo, publish],
   );
 
   /**
-   * Move a sliding finger's note to the pad it is now over. The old note is released unless
-   * another finger is also on it - a two-handed glissando crosses, and the crossing must not
-   * silence the note the other hand is still holding.
+   * Move a sliding finger to the pad it is now over. Its old notes are released unless another
+   * finger is also holding them - a two-handed glissando crosses, and the crossing must not
+   * silence the note the other hand is still holding - and a note the two pads share keeps
+   * sounding rather than restarting.
    */
   const slideTo = useCallback(
     (event: ReactPointerEvent, press: Press) => {
-      const pitch = pitchAtPoint(event.clientX, event.clientY);
+      const pitches = padAtPoint(event.clientX, event.clientY);
       // No pad under the finger: hold the note rather than cutting out. Sliding through the
       // gap above an accidental is a slide, not a lift.
-      if (pitch === null || pitch === press.pitch) return;
-      const heldElsewhere = [...presses.current].some(
-        ([pointerId, other]) => pointerId !== event.pointerId && other.pitch === press.pitch,
-      );
-      if (!heldElsewhere) target.noteOff(press.pitch);
-      press.pitch = pitch;
-      target.noteOn(pitch, PAD_VELOCITY);
+      if (pitches === null || padKey(pitches) === padKey(press.pitches)) return;
+      const heldElsewhere = heldNotes(event.pointerId);
+      letGo(press.pitches, new Set([...heldElsewhere, ...pitches]));
+      play(pitches, new Set([...heldElsewhere, ...press.pitches]));
+      press.pitches = pitches;
       publish();
     },
-    [publish, target],
+    [heldNotes, letGo, play, publish],
   );
 
   const padProps = useCallback(
-    (pitch: number) => ({
+    (pitches: PadNotes) => ({
       onPointerDown: (event: ReactPointerEvent) => {
         // Capture on the pad, not the surface, so this finger's note is this finger's to end
         // however far it wanders - including off the section entirely.
         event.currentTarget.setPointerCapture(event.pointerId);
         releaseLatched();
+        play(pitches, heldNotes());
         presses.current.set(event.pointerId, {
-          pitch,
+          pitches,
           startX: event.clientX,
           startY: event.clientY,
           axis: null,
           latching: false,
         });
-        target.noteOn(pitch, PAD_VELOCITY);
         publish();
       },
       onPointerMove: (event: ReactPointerEvent) => {
@@ -201,12 +236,12 @@ export function usePadTouch(target: PadNoteTarget): PadTouch {
       // so it never latches.
       onPointerCancel: (event: ReactPointerEvent) => end(event, false),
     }),
-    [end, publish, releaseLatched, slideTo, target],
+    [end, heldNotes, play, publish, releaseLatched, slideTo],
   );
 
   return {
-    isSounding: (pitch) => sounding.pressed.has(pitch) || sounding.latched.has(pitch),
-    isLatched: (pitch) => sounding.latched.has(pitch),
+    isSounding: (pitches) => sounding.pressed.has(padKey(pitches)) || sounding.latched.has(padKey(pitches)),
+    isLatched: (pitches) => sounding.latched.has(padKey(pitches)),
     padProps,
     releaseAll,
   };

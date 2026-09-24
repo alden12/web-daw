@@ -25,7 +25,7 @@ import { usePersistentBoolean } from "../usePersistent";
 import { KitPads } from "./KitPads";
 import { ScalePadControls, ScalePads } from "./ScalePads";
 import { fitPads } from "./geometry";
-import { usePadSettings } from "./padSettings";
+import { CHORDS_KEY, usePadSettings } from "./padSettings";
 import { usePadTouch, type PadNoteTarget } from "./usePadTouch";
 
 export function NotePads({
@@ -47,7 +47,8 @@ export function NotePads({
   // Read before the settings, because how many rows fit depends on whether the accidentals
   // are taking a band above each one.
   const [accidentals] = usePersistentBoolean("corrente:pads-accidentals", true);
-  const fit = fitPads(room, accidentals);
+  const [chords] = usePersistentBoolean(CHORDS_KEY, false);
+  const fit = fitPads(room, accidentals && !chords);
   const settings = usePadSettings(octavesPerRow, fit.rows);
   const touch = usePadTouch(notes);
   const isKit = track.instrumentType === "drumkit";
