@@ -62,6 +62,30 @@ describe("chordRows", () => {
     names.forEach((name) => expect(name).not.toMatch(/[()]/));
   });
 
+  it("flips each triad's third: secondary dominants from the minor chords, borrowed minors from the major", () => {
+    const [base, flipped] = layout({ rows: 2, order: ["flip"] });
+    expect(names(flipped)).toEqual(["Cm", "D", "E", "Fm", "Gm", "A", "Bm", "Cm"]);
+    expect(flipped.map((pad) => pad?.caption)).toEqual(["i", "V/V", "V/vi", "iv", "v", "V/ii", "vii", "i"]);
+    expect(flipped.every((pad) => pad?.outside)).toBe(true);
+    expect(base.some((pad) => pad?.outside)).toBe(false);
+  });
+
+  it("offers a V7 only where it resolves to a chord of the key and is not already in it", () => {
+    const [, dominants] = layout({ rows: 2, order: ["dominantOf"] });
+    // No F7 (its target, Bb, is outside C major) and no G7 (already the plain 7th).
+    expect(names(dominants)).toEqual(["C7", "D7", "E7", null, null, "A7", "B7", "C7"]);
+    expect(dominants[2]?.caption).toBe("V7/vi");
+  });
+
+  it("puts the chords from outside the key last in every column by default", () => {
+    const all = layout({ rows: CHORD_ROW_LIMIT });
+    all[0].forEach((_base, column) => {
+      const outside = all.flatMap((row) => (row[column] ? [row[column]!.outside] : []));
+      // Once a column steps outside the key it stays outside: every in-key chord comes first.
+      expect(outside.slice(outside.indexOf(true))).not.toContain(false);
+    });
+  });
+
   it("transposes with the octave", () => {
     expect(layout({ lowOctave: 4 })[0][0]?.pitches).toEqual([60, 64, 67]);
   });
@@ -72,6 +96,7 @@ describe("chordRows", () => {
         const inScale = new Set(SCALES[scale].map((interval) => (tonic + interval) % 12));
         layout({ scale, tonic, rows: CHORD_ROW_LIMIT })
           .flat()
+          .filter((pad) => pad && !pad.outside)
           .forEach((pad) => pad?.pitches.forEach((pitch) => expect(inScale.has(pitch % 12)).toBe(true)));
       }),
     );

@@ -1277,11 +1277,11 @@ test.describe("phone", () => {
     await page.getByRole("menuitemradio", { name: "Chords" }).click();
     await setDetent(page, "full");
 
-    // Every variation is reachable by scrolling, however few rows are on show.
+    // Every variation is reachable by scrolling, however few rows are on show: D7 is the top row.
     const scroller = pads(page).locator("[data-chord-scroll]");
-    await expect(pad(page, "D5")).not.toBeInViewport();
+    await expect(pad(page, "D7")).not.toBeInViewport();
     await scroller.evaluate((element) => element.scrollTo({ top: -element.scrollHeight }));
-    await expect(pad(page, "D5")).toBeInViewport();
+    await expect(pad(page, "D7")).toBeInViewport();
     await scroller.evaluate((element) => element.scrollTo({ top: 0 }));
     await page.screenshot({ path: "test-results/chord-pads.png" });
 

@@ -44,7 +44,17 @@ export function ChordPads({ settings, touch }: { settings: PadSettings; touch: P
             name={chord.name}
             label={chord.name}
             sublabel={chord.favourite ? `★ ${chord.caption}` : chord.caption}
-            tone={chord.favourite ? "favourite" : rowIndex === 0 && chord.degree === 0 ? "tonic" : "in-scale"}
+            // A chord reaching outside the key sits back the way an accidental does, so you can see
+            // you are leaving the key before you hear it.
+            tone={
+              chord.favourite
+                ? "favourite"
+                : chord.outside
+                  ? "accidental"
+                  : rowIndex === 0 && chord.degree === 0
+                    ? "tonic"
+                    : "in-scale"
+            }
             touch={touch}
             className="flex-1 min-w-0"
             editing={
