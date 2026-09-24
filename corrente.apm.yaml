@@ -4907,7 +4907,7 @@ projects:
       - ref: DAW-44
         area: DAW
         title: Keep your selected track across a refresh and a reload
-        status: review
+        status: done
         sort_path: "000044"
         body: |-
           Reported 2026-09-24: refreshing the page changed the selected track. Long-standing since hosted sync, not a regression.
@@ -4921,7 +4921,8 @@ projects:
           Selection stays per-viewer by design: one person's selection should never move another's.
         id: 01a0d4ca-3380-75ff-9323-1f757da7f613
         created_at: 2026-09-24T19:00:16.384Z
-        updated_at: 2026-09-24T19:00:16.384Z
+        updated_at: 2026-09-24T21:06:30.095Z
+        closed_at: 2026-09-24T21:06:30.095Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -6043,7 +6044,7 @@ projects:
       - ref: INST-15
         area: INST
         title: Worklet-backed leaf primitives in the vocabulary
-        status: to-do
+        status: done
         sort_path: "000015"
         deps:
           - INST-4
@@ -6072,7 +6073,8 @@ projects:
           - **Nimbus and Wavetable stay hand-written devices.** Each is a whole polyphonic synth inside one worklet managing its own voice slots; as a per-voice graph they would be slower and gain the agent nothing. The leaves are for new instruments, not for converting these two. They become graph defs only once the graph engine exists.
         id: 019ff33c-8335-7093-bc59-fb75c9788b8d
         created_at: 2026-08-11T23:50:57.077Z
-        updated_at: 2026-09-24T17:09:50.600Z
+        updated_at: 2026-09-24T21:06:39.763Z
+        closed_at: 2026-09-24T21:06:39.763Z
         comments:
           - body: "Contract answers from INST-15.1: a block is a vocabulary entry with `processor` set; its `audioParams` are the processor's parameter names, so the DOM-free VOCABULARY carries it and `workletLeaf` in nodes.ts is generic. First-party modules load with the fixed list at start (no on-demand loading needed yet). Missing processor = pass-through + one warning. Gotcha: a processor returning false before its input starts is stopped for good, so `worklets/lifetime.ts` keeps it alive until input first arrives. No construction-time options yet; 15.3's table choice will be the first."
             audience: user
@@ -6087,7 +6089,7 @@ projects:
       - ref: INST-15.1
         area: INST
         title: Worklet leaf seam, ladder filter and bitcrusher (Bitcrusher effect becomes a graph)
-        status: review
+        status: done
         sort_path: "000015.000001"
         parent: INST-15
         deps:
@@ -6095,11 +6097,12 @@ projects:
         body: First of the three INST-15 PRs; answers the seam's contract questions (modulatable params into the DOM-free `VOCABULARY`, construction-time options, on-demand `addModule`, behaviour when a leaf is unavailable) against `dsp/ladder` and `dsp/bitcrush`. Includes the lower voice cap for graphs containing a worklet leaf. Bitcrusher, the last effect still a class, becomes a graph def.
         id: 01a0d465-3f65-7753-9656-d616f7ad738a
         created_at: 2026-09-24T17:10:00.293Z
-        updated_at: 2026-09-24T18:08:26.430Z
+        updated_at: 2026-09-24T21:06:31.313Z
+        closed_at: 2026-09-24T21:06:31.313Z
       - ref: INST-15.2
         area: INST
         title: Band-limited oscillator leaf (PolyBLEP saw/square/pulse, pulse width)
-        status: review
+        status: done
         sort_path: "000015.000002"
         parent: INST-15
         deps:
@@ -6107,7 +6110,8 @@ projects:
         body: "A source leaf over `dsp/oscillators`: alias-free saw/square/pulse with a modulatable pulse width, which the native `OscillatorNode` cannot do (PWM). The first worklet leaf that is a *source*, so it also settles how a worklet leaf joins `SOURCE_KINDS`, starts and stops with the voice, and tracks the note frequency like `osc`."
         id: 01a0d465-4690-7240-b72f-4a3663b8f859
         created_at: 2026-09-24T17:10:02.128Z
-        updated_at: 2026-09-24T18:22:55.681Z
+        updated_at: 2026-09-24T21:06:32.593Z
+        closed_at: 2026-09-24T21:06:32.593Z
         comments:
           - body: "How a worklet *source* works (answers \"how it joins SOURCE_KINDS and starts/stops with the voice\"): it is paired with a gate, a ConstantSourceNode at 1 feeding it, which is the voice's AudioScheduledSourceNode, so BaseInstrument starts, stops and tears it down unchanged. The processor plays only while the gate's *value* is up: a not-yet-started source still feeds its input with zeros, so checking connection alone made it sound before its note (caught by e2e). Enum fields go to a k-rate param (`shape`), set synchronously; a port message would arrive after early notes rendered. Missing processor falls back to a native oscillator."
             audience: user
@@ -6117,7 +6121,7 @@ projects:
       - ref: INST-15.3
         area: INST
         title: Wavetable oscillator leaf (table + position)
-        status: review
+        status: done
         sort_path: "000015.000003"
         parent: INST-15
         deps:
@@ -6125,7 +6129,8 @@ projects:
         body: "A source leaf over `dsp/wavetable`: a construction-time table choice (enum field, like `buffer.sample`) and a modulatable position. Lets the agent author wavetable voices; it does not convert the hand-written Wavetable instrument (see INST-15's 2026-09-24 decision)."
         id: 01a0d465-4f2f-762a-b009-fd7e00b59394
         created_at: 2026-09-24T17:10:04.335Z
-        updated_at: 2026-09-24T18:36:10.528Z
+        updated_at: 2026-09-24T21:06:33.892Z
+        closed_at: 2026-09-24T21:06:33.892Z
       - ref: INST-16
         area: INST
         title: Drum kits as swappable, saveable presets, with a changeable default kit
@@ -6269,7 +6274,7 @@ projects:
       - ref: INST-22
         area: INST
         title: "Sampler Start: skip into a sample, to trim a recording's late start"
-        status: review
+        status: done
         sort_path: "000022"
         body: |-
           Asked for 2026-09-24: a recorded sample often catches some silence or a false start before the sound, and without an editor to trim it, there has to be a way to start later into it.
@@ -6280,7 +6285,8 @@ projects:
           - Defaults to 0, so saved projects play as before. Any custom instrument can use it, a drum kit pad included.
         id: 01a0d4df-fd80-75be-b8b9-63d7e454b7c4
         created_at: 2026-09-24T19:24:04.353Z
-        updated_at: 2026-09-24T19:24:04.353Z
+        updated_at: 2026-09-24T21:06:35.187Z
+        closed_at: 2026-09-24T21:06:35.187Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
@@ -6866,9 +6872,9 @@ projects:
             - B° flips to Bm.
           - **V7 of**: a dominant seventh on each degree that resolves to a chord of the key (C7 D7 E7 A7 B7 in C major). There's no F7, since its B♭ target is outside the key, and no G7, which is already the plain 7th.
 
-          They come last by default and wear the accidentals' muted label, so you see you're leaving the key before you hear it. The rest of the borrowed chords (B♭, A♭ and E♭ in C major) have roots outside the scale, so no column to live in. They're left out for now; they could have a row of their own later.
+          They come last in the Type order and wear the accidentals' muted label, so you see you're leaving the key before you hear it. The rest of the borrowed chords (B♭, A♭ and E♭ in C major) have roots outside the scale, so no column to live in. They're left out for now; they could have a row of their own later.
 
-          ## The pads (first PR, #175)
+          ## The pads (first PR, #175, merged)
 
           - **Base row** = the triads. **Rows above** = each column's variations in its arranged order.
           - `+`/`-` set how many rows are on show, within the same room-based ceiling (`fitPads`, laid out as accidentals-off, with the wide row gap, since two chord rows touching are as easy to straddle as two note rows).
@@ -6881,7 +6887,6 @@ projects:
           Asked for after trying the first: an order **per column**, **favourite** chords, a way to reach an odd chord without rearranging, and more room for the pads while only playing.
 
           - **The arrangement** (`audio/theory/chordPrefs.ts`, pure) is a global order and hidden set, plus per-column overrides **keyed by degree, not note**, so "on ii, sus2 first" follows you into any key.
-            - It's **shared across scales**: the ii column in major and in minor use one arrangement, even though the chords differ. Where a family doesn't fit that degree, the column just skips it. Per-scale arrangements were offered as a small follow-up (one more level of nesting by scale name).
             - Favourites are `degree:family`.
             - It's saved per browser as JSON, read through zod, and anything unreadable falls back to the defaults. A family added later gets appended to a saved order, so it's offered rather than lost.
           - **Edit mode** ("Edit chords…" in the key menu) replaces the key/octave row with an edit bar. A tap then selects a pad instead of playing it. The pads get a dashed edge, and hidden chords are laid out dimmed so they can be shown again.
@@ -6892,12 +6897,29 @@ projects:
           - **Scrolling:** the base row stays put and the rows above scroll, snapping to whole rows, so every chord is reachable. The pads can't be the scroll handle (drag down is the sustain latch), so each row leaves a 20px strip on its right edge that scrolls natively, with a rail drawn over it. A wheel or trackpad scrolls from anywhere. In edit mode the pads scroll too (`touch-action: pan-y`), since they don't latch there.
           - **Folding the roll:** on an instrument track, the surface above the pads (titled Roll, Clips or Rack) is an `EditorSection` like the pads, so the sheet reads as **two collapsible sections**. Folded, the pads get the whole room less that header (`fitPads(..., filling)`), and they stay at the foot of the sheet where the thumbs are. Picking a surface, or folding the pads, unfolds it. It's saved per browser.
             - A header button was tried first and replaced the same day, for consistency with the section that was already there.
-            - The price is the section header's 36px, which the roll gives up when open.
+            - The price is the section header's 36px, which the roll gives up when open. The compact roll lost its own vertical padding and the sections their top rules, since the headers space and divide them.
+            - Rows come whole, so a folded roll could leave up to a row's worth of gap. The rows now **stretch into it** (`stretchedPadHeight`, up to 16px each, only when every row that fits is on show).
+            - The fitting also stopped charging for a gap after the last row, and now counts the accidental band's own gap. `SHEET_HEADER_HEIGHT` is corrected to the real 58px (it was 65), and the room subtracts the home-indicator inset (`insetPixels`).
+            - The growing section clips, so at the lowest detent the ROLL header no longer draws over PADS.
+
+          ## Arrange by Popular, Type or Custom (third PR, #179)
+
+          - **Popular** (the default, `chordPopular.ts`) is curated per degree, not measured. Hooktheory has real data but it isn't open, so these tables encode common practice, meant to be tuned by ear:
+            - In major: ii leads with m7 then D (V/V), iii with E (V/vi), V with G7 then Gsus4.
+            - In minor: v leads with its major chord and V7, the cadence a minor key wants.
+            - Tables are **keyed by semitones above the tonic**, so a pentatonic's fourth note (the V) gets the V's list. Each scale borrows the major or minor table by its third.
+          - **Type** is the one order for every column (the arrangement as it was before).
+          - **Custom** is yours, **per scale**, and **editing is always of Custom**.
+            - Opening "Edit chords…" switches to Custom first (`startEditing`). If the scale has a saved Custom arrangement, that's what you edit. Otherwise you get a copy of the Popular or Type arrangement that was on show, remembered as what it started from.
+            - This was decided after an early version seeded Custom on the first edit: an edit made while on Popular then replaced a saved Custom arrangement without ever showing it.
+            - "Reset column" hands a column back to what Custom started from. "Reset all" forgets the scale's Custom arrangement and returns to that mode.
+            - An arrangement saved before modes existed becomes the major scale's Custom one.
+          - "Arrange by ▸ Popular / Type / Custom" is in the key menu, under Edit chords….
 
           **Momentary or sticky** is moot for this layout: a variation is its own pad, not a modifier.
         id: 019fd2b0-8ab5-76bb-8196-ef22b9f84005
         created_at: 2026-08-05T16:10:13.045Z
-        updated_at: 2026-09-24T20:33:33.815Z
+        updated_at: 2026-09-24T21:18:42.223Z
       - ref: MOBILE-13
         area: MOBILE
         title: The pads light up with what the track is actually playing

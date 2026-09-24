@@ -10,15 +10,8 @@
  * laid out, dimmed, while editing), so a move never jumps further than it looks.
  */
 import { useState, type ReactNode } from "react";
-import { chordRows, type ChordFamily } from "../../audio/theory/chords";
-import {
-  DEFAULT_CHORD_PREFS,
-  resetColumn,
-  setHidden,
-  swapFamilies,
-  toggleFavourite,
-  type ChordScope,
-} from "../../audio/theory/chordPrefs";
+import { arrangementFor, chordRows, type ChordFamily } from "../../audio/theory/chords";
+import { resetColumn, setHidden, swapFamilies, toggleFavourite, type ChordScope } from "../../audio/theory/chordPrefs";
 import { Button } from "../controls/Button";
 import { IconButton } from "../controls/IconButton";
 import type { PadSettings } from "./padSettings";
@@ -55,9 +48,11 @@ export function ChordEditBar({ settings, inline }: { settings: PadSettings; inli
     return bar(
       <>
         <span className="flex-1 min-w-0 truncate text-[11px] text-muted">Tap a chord to arrange it</span>
-        <Button size="sm" onClick={() => setChordPrefs(DEFAULT_CHORD_PREFS)}>
-          Reset all
-        </Button>
+        {settings.chordArrangeMode === "custom" && (
+          <Button size="sm" onClick={settings.resetChordArrangement}>
+            Reset all
+          </Button>
+        )}
         {done}
       </>,
     );
@@ -107,9 +102,11 @@ export function ChordEditBar({ settings, inline }: { settings: PadSettings; inli
       <IconButton
         label="Reset this column"
         size="lg"
-        onClick={() => setChordPrefs(resetColumn(prefs, selection.degree))}
+        onClick={() => setChordPrefs(resetColumn(prefs, selection.degree, settings.chordBase))}
         disabled={
-          !prefs.columns[selection.degree] && !prefs.favourites.some((key) => key.startsWith(`${selection.degree}:`))
+          JSON.stringify(arrangementFor(prefs, selection.degree)) ===
+            JSON.stringify(arrangementFor(settings.chordBase, selection.degree)) &&
+          !prefs.favourites.some((key) => key.startsWith(`${selection.degree}:`))
         }
       >
         ↺
