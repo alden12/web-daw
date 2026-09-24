@@ -9,6 +9,9 @@ import {
   rowGap,
   fitPads,
   padRowHeight,
+  padRowsHeight,
+  PAD_GAP,
+  SECTION_HEADER,
 } from "../src/ui/pads/geometry";
 
 /**
@@ -30,12 +33,12 @@ const ROOM = {
 const rollHeight = (room: number, accidentals: boolean) => {
   const fit = fitPads(room, accidentals);
   const chrome = 36 + 8 + (fit.inlineControls ? 0 : 38);
-  return room - EDITOR_CHROME - chrome - fit.rows * padRowHeight(accidentals);
+  return room - EDITOR_CHROME - SECTION_HEADER - chrome - padRowsHeight(fit.rows, accidentals);
 };
 
 describe("padRowHeight", () => {
   it("counts the accidental band only when the accidentals are on", () => {
-    expect(padRowHeight(true)).toBe(PAD_HEIGHT + ACCIDENTAL_HEIGHT + ROW_GAP);
+    expect(padRowHeight(true)).toBe(PAD_HEIGHT + ACCIDENTAL_HEIGHT + PAD_GAP + ROW_GAP);
     expect(padRowHeight(false)).toBe(PAD_HEIGHT + BARE_ROW_GAP);
   });
 
@@ -100,7 +103,7 @@ describe("fitPads", () => {
     // is given up deliberately, and the disclosure hands it back.
     [ROOM.phoneHalf, ROOM.phoneFull, ROOM.tabletHalf, ROOM.tabletFull, ROOM.tabletPortraitFull, 5000].forEach(
       (room) => {
-        const editor = room - EDITOR_CHROME;
+        const editor = room - EDITOR_CHROME - SECTION_HEADER;
         expect(rollHeight(room, true)).toBeGreaterThanOrEqual(editor * (1 - PADS_SHARE) - 1);
       },
     );
@@ -108,7 +111,7 @@ describe("fitPads", () => {
 
   it("fits more rows with the accidentals off, in the same room", () => {
     // Measured somewhere with the room to show it. A row without accidentals is 64px against
-    // 86px with them, but rows only come whole - at `phoneHalf` both round down to one, so
+    // 90px with them, but rows only come whole - at `phoneHalf` both round down to one, so
     // asserting there would be asserting about the rounding rather than about the heights.
     expect(fitPads(ROOM.phoneFull, false).rows).toBeGreaterThan(fitPads(ROOM.phoneFull, true).rows);
   });
@@ -119,8 +122,8 @@ describe("fitPads", () => {
     [100, 133, 200, 251, 372, 500, 666, 815].forEach((room) => {
       const fit = fitPads(room, true);
       if (!fit.rows) return;
-      const used = fit.rows * padRowHeight(true) + (fit.inlineControls ? chrome.inline : chrome.stacked);
-      expect(used + EDITOR_CHROME).toBeLessThanOrEqual(room);
+      const used = padRowsHeight(fit.rows, true) + (fit.inlineControls ? chrome.inline : chrome.stacked);
+      expect(used + EDITOR_CHROME + SECTION_HEADER).toBeLessThanOrEqual(room);
     });
   });
 

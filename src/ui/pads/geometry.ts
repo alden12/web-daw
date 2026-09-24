@@ -108,9 +108,20 @@ const ARRANGEMENTS: readonly { inlineControls: boolean; padsShare: number; limit
   { inlineControls: true, padsShare: 1, limit: 1 },
 ];
 
-/** How tall one row of pads is, accidentals included when they are on. */
+/**
+ * How much one more row of pads costs: the row (its accidental band and the gap under that
+ * included, when the accidentals are on) and the gap before the next.
+ */
 export const padRowHeight = (accidentals: boolean) =>
-  PAD_HEIGHT + (accidentals ? ACCIDENTAL_HEIGHT : 0) + rowGap(accidentals);
+  PAD_HEIGHT + (accidentals ? ACCIDENTAL_HEIGHT + PAD_GAP : 0) + rowGap(accidentals);
+
+/**
+ * How tall `rows` rows are drawn. Gaps only go *between* rows, so the last one's is not there -
+ * which the fitting used to charge for anyway, up to 12px, and on the wrong phone that was a
+ * whole row left as a gap.
+ */
+export const padRowsHeight = (rows: number, accidentals: boolean) =>
+  rows > 0 ? rows * padRowHeight(accidentals) - rowGap(accidentals) : 0;
 
 /**
  * What fits in `room` pixels of editor - the sheet's content box at the committed detent.
@@ -129,7 +140,8 @@ export function fitPads(room: number, accidentals: boolean, filling = false): Pa
   const fits = arrangements.map(({ inlineControls, padsShare, limit }) => {
     const chrome = SECTION_HEADER + PADS_PADDING + (inlineControls ? 0 : CONTROLS_HEIGHT);
     return {
-      rows: Math.max(0, Math.min(limit, Math.floor((editor * padsShare - chrome) / rowHeight))),
+      // The last row has no gap after it, so the room gets that gap back before dividing.
+      rows: Math.max(0, Math.min(limit, Math.floor((editor * padsShare - chrome + rowGap(accidentals)) / rowHeight))),
       inlineControls,
     };
   });
