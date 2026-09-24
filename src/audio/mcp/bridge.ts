@@ -34,6 +34,15 @@ export interface McpBridgeHandle {
   dispose(): void;
 }
 
+/**
+ * Whether this page could reach the local MCP server at all. It listens on the laptop running
+ * Claude Code, at `localhost`, so only a page served from that same machine can talk to it. The
+ * hosted app (or a phone on the LAN) would only fail to connect and retry forever, filling the
+ * console with refused connections - its agents use the hosted `/mcp` instead.
+ */
+export const localBridgeReachable = (hostname: string = location.hostname): boolean =>
+  ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hostname);
+
 export function connectMcpBridge(deps: McpBridgeDeps, options: McpBridgeOptions = {}): McpBridgeHandle {
   const { projectStore, engine, scheduler, editLog, versionStore } = deps;
   const url = options.url ?? `ws://localhost:${DEFAULT_WS_PORT}`;
