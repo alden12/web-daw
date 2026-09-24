@@ -106,14 +106,15 @@ describe("the hosted MCP server's HTTP edges", () => {
   });
 
   it("lets a browser-based MCP client post, and read the sign-in challenge", async () => {
-    const response = await (
-      await app()
-    ).request("http://corrente.test/mcp", {
+    // One app for both requests: a database takes a couple of seconds to set up on CI, and two
+    // of them ran this test past its timeout.
+    const server = await app();
+    const response = await server.request("http://corrente.test/mcp", {
       method: "OPTIONS",
       headers: { Origin: "https://inspector.example", "Access-Control-Request-Method": "POST" },
     });
     expect(response.headers.get("Access-Control-Allow-Methods")).toContain("POST");
-    const challenge = await (await app()).request("http://corrente.test/mcp", { method: "POST" });
+    const challenge = await server.request("http://corrente.test/mcp", { method: "POST" });
     expect(challenge.headers.get("Access-Control-Expose-Headers")).toContain("WWW-Authenticate");
   });
 });

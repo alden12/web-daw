@@ -10,11 +10,20 @@
 import bitcrusherUrl from "./bitcrusher.worklet.ts?worker&url";
 import ladderUrl from "./ladder.worklet.ts?worker&url";
 import analogOscUrl from "./analogOsc.worklet.ts?worker&url";
+import wavetableOscUrl from "./wavetableOsc.worklet.ts?worker&url";
 import captureUrl from "./capture.worklet.ts?worker&url";
 import wavetableUrl from "../instruments/wavetable.worklet.ts?worker&url";
 import nimbusUrl from "../instruments/nimbus.worklet.ts?worker&url";
 
-const MODULE_URLS: string[] = [bitcrusherUrl, ladderUrl, analogOscUrl, captureUrl, wavetableUrl, nimbusUrl];
+const MODULE_URLS: string[] = [
+  bitcrusherUrl,
+  ladderUrl,
+  analogOscUrl,
+  wavetableOscUrl,
+  captureUrl,
+  wavetableUrl,
+  nimbusUrl,
+];
 
 const loaded = new WeakMap<BaseAudioContext, Promise<void>>();
 

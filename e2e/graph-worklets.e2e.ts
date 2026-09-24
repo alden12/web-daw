@@ -100,25 +100,23 @@ test("an envelope into a ladder's detune sweeps it down as the note goes on", as
   expect(late.brightness).toBeLessThan(early.brightness * 0.6);
 });
 
-test("an instrument using a custom block plays at most 8 notes at once; a native one is not capped", async ({
+test("an instrument with two custom blocks plays at most 12 notes at once; a native one is not capped", async ({
   page,
 }) => {
   const unison = (count: number): Played => ({ notes: Array(count).fill(57), at: 0.05, seconds: 0.8 });
   const window: [number, number][] = [[0.3, 0.6]];
-  // Identical notes add up exactly, so loudness counts how many are sounding.
-  const [eightCapped] = await renderVoice(page, sawThroughLadder({ frequency: 2000 }), INTO_LADDER, unison(8), window);
-  const [twelveCapped] = await renderVoice(
-    page,
-    sawThroughLadder({ frequency: 2000 }),
-    INTO_LADDER,
-    unison(12),
-    window,
-  );
+  // Two blocks, so 24 copies go 12 notes each. Identical notes add up exactly: loudness counts them.
+  const twoBlocks: VoiceNode[] = [
+    { id: "osc", kind: "analogOsc", waveform: "saw" },
+    { id: "filter", kind: "ladder", frequency: 2000 },
+  ];
+  const [twelveCapped] = await renderVoice(page, twoBlocks, INTO_LADDER, unison(12), window);
+  const [sixteenCapped] = await renderVoice(page, twoBlocks, INTO_LADDER, unison(16), window);
   const native: VoiceNode[] = [{ id: "osc", kind: "osc", waveform: "sawtooth" }];
-  const [eightNative] = await renderVoice(page, native, [["osc", "amp"]], unison(8), window);
   const [twelveNative] = await renderVoice(page, native, [["osc", "amp"]], unison(12), window);
-  expect(twelveCapped.rms / eightCapped.rms).toBeCloseTo(1, 1);
-  expect(twelveNative.rms / eightNative.rms).toBeCloseTo(1.5, 1);
+  const [sixteenNative] = await renderVoice(page, native, [["osc", "amp"]], unison(16), window);
+  expect(sixteenCapped.rms / twelveCapped.rms).toBeCloseTo(1, 1);
+  expect(sixteenNative.rms / twelveNative.rms).toBeCloseTo(16 / 12, 1);
 });
 
 test("the Bitcrusher, now a graph, crushes a tone to a few levels", async ({ page }) => {
@@ -146,6 +144,38 @@ test("the Bitcrusher, now a graph, crushes a tone to a few levels", async ({ pag
   // 2 bits is 4 levels; the dry path is fully off at mix 1.
   expect(levels).toBeGreaterThan(1);
   expect(levels).toBeLessThanOrEqual(4);
+});
+
+test("the Bitcrusher keeps working after its input is disconnected and reconnected", async ({ page }) => {
+  // The engine rewires an effect chain in place; a processor that took a moment's disconnection as
+  // the end of its life went silent for good (until a reload).
+  const [before, after] = await page.evaluate(async () => {
+    const { createEffect, effectSchema } = await import(/* @vite-ignore */ "/src/audio/effects/registry.ts");
+    const { ParamStore } = await import(/* @vite-ignore */ "/src/audio/params/store.ts");
+    const { loadWorklets } = await import(/* @vite-ignore */ "/src/audio/worklets/index.ts");
+    const sampleRate = 44100;
+    const context = new OfflineAudioContext(1, sampleRate, sampleRate);
+    await loadWorklets(context);
+    const store = new ParamStore(effectSchema("bitcrusher"));
+    store.set("mix", 1);
+    const effect = createEffect("bitcrusher", context, store);
+    effect.output.connect(context.destination);
+    const trackInput = context.createGain();
+    trackInput.connect(effect.input);
+    const tone = context.createOscillator();
+    tone.connect(trackInput);
+    tone.start(0);
+    void context.suspend(0.3).then(() => (trackInput.disconnect(), context.resume()));
+    void context.suspend(0.4).then(() => (trackInput.connect(effect.input), context.resume()));
+    const samples = (await context.startRendering()).getChannelData(0);
+    const rms = (from: number, to: number) => {
+      const window = samples.subarray(from * sampleRate, to * sampleRate);
+      return Math.sqrt(window.reduce((sum, sample) => sum + sample * sample, 0) / window.length);
+    };
+    return [rms(0.1, 0.25), rms(0.5, 0.9)];
+  });
+  expect(before).toBeGreaterThan(0.3);
+  expect(after).toBeGreaterThan(before * 0.9);
 });
 
 const A3: Played = { notes: [57], at: 0.2, seconds: 0.6 }; // 220Hz, starting well after it is built
@@ -202,4 +232,35 @@ test("an LFO into an analogOsc's pulseWidth modulates it", async ({ page }) => {
   const measures = await renderVoice(page, nodes, connections, A3, windows, 220);
   const seconds = measures.map((measure) => measure.harmonics[1] / measure.harmonics[0]);
   expect(Math.max(...seconds)).toBeGreaterThan(0.2);
+});
+
+test("a wavetableOsc morphs through its bank: a sine at 0, a saw at 1 on classic", async ({ page }) => {
+  const wavetable = (bank: string, position: number): VoiceNode[] => [
+    { id: "osc", kind: "wavetableOsc", bank, position },
+  ];
+  const window: [number, number][] = [[0.3, 0.7]];
+  const [sine] = await renderVoice(page, wavetable("classic", 0), [["osc", "amp"]], A3, window, 220);
+  const [saw] = await renderVoice(page, wavetable("classic", 1), [["osc", "amp"]], A3, window, 220);
+  const [organ] = await renderVoice(page, wavetable("harmonics", 1), [["osc", "amp"]], A3, window, 220);
+  expect(sine.harmonics[0]).toBeGreaterThan(0.01);
+  expect(sine.harmonics[1]).toBeLessThan(sine.harmonics[0] / 100);
+  expect(saw.harmonics[1] / saw.harmonics[0]).toBeCloseTo(0.5, 1); // a saw's 2nd is half its 1st
+  expect(organ.harmonics[3] / organ.harmonics[0]).toBeCloseTo(1, 1); // 16 equal harmonics
+});
+
+test("an envelope into a wavetableOsc's position moves its timbre as the note goes on", async ({ page }) => {
+  const nodes: VoiceNode[] = [
+    { id: "osc", kind: "wavetableOsc", bank: "classic", position: 0 },
+    { id: "sweep", kind: "env", attack: 1, decay: 250, sustain: 0 },
+  ];
+  const connections: [string, string][] = [
+    ["osc", "amp"],
+    ["sweep", "osc.position"],
+  ];
+  const [early, late] = await renderVoice(page, nodes, connections, A3, [
+    [0.21, 0.24],
+    [0.6, 0.7],
+  ]);
+  // Starts at a saw (the envelope's peak), settles to a sine.
+  expect(late.brightness).toBeLessThan(early.brightness * 0.5);
 });
