@@ -43,6 +43,12 @@ describe("chordRows", () => {
     expect(second[2]).toMatchObject({ name: "Em/B", pitches: [59, 64, 67] });
   });
 
+  it("writes names without brackets, short enough for a phone's pad", () => {
+    const names = layout({ rows: 10 }).flat().flatMap((pad) => (pad ? [pad.name] : []));
+    expect(names).toContain("Dmadd9");
+    names.forEach((name) => expect(name).not.toMatch(/[()]/));
+  });
+
   it("transposes with the octave", () => {
     expect(layout({ lowOctave: 4 })[0][0]?.pitches).toEqual([60, 64, 67]);
   });
