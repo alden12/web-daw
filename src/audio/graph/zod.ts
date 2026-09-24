@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 import type { ParamSchema } from "../params/types";
-import { IMPULSE_SHAPES, NOISE_COLORS, SHAPER_SHAPES } from "./types";
+import { ANALOG_WAVEFORMS, IMPULSE_SHAPES, NOISE_COLORS, SHAPER_SHAPES } from "./types";
 import type { Graph, GraphInstrumentDef, GraphEffectDef } from "./types";
 import { validateGraph, INSTRUMENT_RESERVED, EFFECT_RESERVED } from "./validate";
 import { tableProblem } from "./table";
@@ -112,6 +112,17 @@ const nodeSpec = z.discriminatedUnion("kind", [
       id: z.string(),
       kind: z.literal("convolver"),
       impulse: z.object({ shape: z.enum(IMPULSE_SHAPES), seconds: numberField }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      id: z.string(),
+      kind: z.literal("analogOsc"),
+      waveform: z.union([z.enum(ANALOG_WAVEFORMS), paramRef]).optional(),
+      frequency: numberField.optional(),
+      noteRatio: numberField.optional(),
+      detune: numberField.optional(),
+      pulseWidth: numberField.optional(),
     })
     .strict(),
   z

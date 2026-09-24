@@ -6076,7 +6076,7 @@ projects:
       - ref: INST-15.2
         area: INST
         title: Band-limited oscillator leaf (PolyBLEP saw/square/pulse, pulse width)
-        status: to-do
+        status: review
         sort_path: "000015.000002"
         parent: INST-15
         deps:
@@ -6084,7 +6084,13 @@ projects:
         body: "A source leaf over `dsp/oscillators`: alias-free saw/square/pulse with a modulatable pulse width, which the native `OscillatorNode` cannot do (PWM). The first worklet leaf that is a *source*, so it also settles how a worklet leaf joins `SOURCE_KINDS`, starts and stops with the voice, and tracks the note frequency like `osc`."
         id: 01a0d465-4690-7240-b72f-4a3663b8f859
         created_at: 2026-09-24T17:10:02.128Z
-        updated_at: 2026-09-24T17:10:02.128Z
+        updated_at: 2026-09-24T18:22:55.681Z
+        comments:
+          - body: "How a worklet *source* works (answers \"how it joins SOURCE_KINDS and starts/stops with the voice\"): it is paired with a gate, a ConstantSourceNode at 1 feeding it, which is the voice's AudioScheduledSourceNode, so BaseInstrument starts, stops and tears it down unchanged. The processor plays only while the gate's *value* is up: a not-yet-started source still feeds its input with zeros, so checking connection alone made it sound before its note (caught by e2e). Enum fields go to a k-rate param (`shape`), set synchronously; a port message would arrive after early notes rendered. Missing processor falls back to a native oscillator."
+            audience: user
+            id: 01a0d4a8-0d24-75da-b948-a33e25af8f1a
+            at: 2026-09-24T18:22:58.340Z
+            actor: claude
       - ref: INST-15.3
         area: INST
         title: Wavetable oscillator leaf (table + position)

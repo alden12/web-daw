@@ -19,6 +19,7 @@ import type {
   NumberField,
   EnumField,
   OscNodeSpec,
+  AnalogOscNodeSpec,
   ShaperNodeSpec,
   EnvNodeSpec,
   ConvolverNodeSpec,
@@ -162,10 +163,16 @@ function applyFields(
     case "osc": {
       const osc = node as OscillatorNode;
       enumField(spec.waveform, "waveform", "sine");
-      bindOscFrequency(spec, osc, ctx, startTime, context, addTarget);
+      bindOscFrequency(spec, osc.frequency, ctx, startTime, context, addTarget);
       numberField(spec.detune, osc.detune);
       break;
     }
+    case "analogOsc":
+      enumField(spec.waveform, "waveform", "saw");
+      bindOscFrequency(spec, impl.audioParam(node, "frequency")!, ctx, startTime, context, addTarget);
+      numberField(spec.detune, impl.audioParam(node, "detune"));
+      numberField(spec.pulseWidth, impl.audioParam(node, "pulseWidth"));
+      break;
     case "gain":
       numberField(spec.gain, (node as GainNode).gain);
       break;
@@ -267,30 +274,30 @@ function bindProperty(
 
 /** Oscillator frequency: an absolute Hz, or the note frequency times an optional ratio. */
 function bindOscFrequency(
-  spec: OscNodeSpec,
-  osc: OscillatorNode,
+  spec: OscNodeSpec | AnalogOscNodeSpec,
+  frequency: AudioParam,
   ctx: BaseAudioContext,
   startTime: number,
   context: GraphContext,
   addTarget: AddTarget,
 ): void {
   if (spec.frequency !== undefined) {
-    bindNumber(spec.frequency, osc.frequency, ctx, startTime, context.readParam, addTarget);
+    bindNumber(spec.frequency, frequency, ctx, startTime, context.readParam, addTarget);
     return;
   }
   const base = context.noteFreq ?? 440;
   const ratio = spec.noteRatio;
   if (ratio === undefined) {
-    osc.frequency.setValueAtTime(base, startTime);
+    frequency.setValueAtTime(base, startTime);
     return;
   }
   if (typeof ratio === "number") {
-    osc.frequency.setValueAtTime(base * ratio, startTime);
+    frequency.setValueAtTime(base * ratio, startTime);
     return;
   }
   const compute = (raw: ParamValue): number => base * resolveNumber(raw as number, ratio);
-  osc.frequency.setValueAtTime(compute(context.readParam(ratio.param)), startTime);
-  addTarget(ratio.param, (value, smoothMs) => rampParam(ctx, osc.frequency, compute(value), smoothMs));
+  frequency.setValueAtTime(compute(context.readParam(ratio.param)), startTime);
+  addTarget(ratio.param, (value, smoothMs) => rampParam(ctx, frequency, compute(value), smoothMs));
 }
 
 /** Waveshaper curve: rebuilt from its family whenever the amount changes. */

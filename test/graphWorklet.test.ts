@@ -42,7 +42,12 @@ function fakeContext() {
 
 let workletsLoaded = true;
 class FakeAudioWorkletNode {
-  parameters = new Map(["frequency", "resonance", "detune", "bits", "downsample"].map((name) => [name, fakeParam()]));
+  parameters = new Map(
+    ["frequency", "resonance", "detune", "bits", "downsample", "pulseWidth", "shape"].map((name) => [
+      name,
+      fakeParam(),
+    ]),
+  );
   constructor(_context: unknown, processor: string) {
     if (!workletsLoaded) throw new DOMException(`${processor} is not registered`, "InvalidStateError");
   }
@@ -75,8 +80,8 @@ const ladderSynth: GraphInstrumentDef = {
 };
 
 describe("custom-DSP kinds as data", () => {
-  it("are ladder and bitcrush, and a def can bind and modulate their fields", () => {
-    expect([...WORKLET_KINDS].sort()).toEqual(["bitcrush", "ladder"]);
+  it("are analogOsc, ladder and bitcrush, and a def can bind and modulate their fields", () => {
+    expect([...WORKLET_KINDS].sort()).toEqual(["analogOsc", "bitcrush", "ladder"]);
     expect(parseInstrumentDef(ladderSynth)).toMatchObject({ ok: true });
   });
 
@@ -163,5 +168,61 @@ describe("a custom-DSP processor's lifetime", () => {
       true,
       false,
     ]);
+  });
+});
+
+describe("the analogOsc block", () => {
+  const pwmSynth: GraphInstrumentDef = {
+    type: "ci-pwm",
+    schema: [{ id: "width", label: "Width", kind: "number", min: 0, max: 1, default: 0.3 }],
+    voice: {
+      nodes: [
+        { id: "osc", kind: "analogOsc", waveform: "pulse", pulseWidth: { param: "width" }, noteRatio: 0.5 },
+        { id: "lfo", kind: "osc", frequency: 3 },
+        { id: "lfoDepth", kind: "gain", gain: 0.2 },
+      ],
+      connections: [
+        ["osc", "amp"],
+        ["lfo", "lfoDepth"],
+        ["lfoDepth", "osc.pulseWidth"],
+      ],
+    },
+  };
+
+  it("is a source kind a def can bind and modulate, with its own waveforms", () => {
+    expect(WORKLET_KINDS).toContain("analogOsc");
+    expect(parseInstrumentDef(pwmSynth)).toMatchObject({ ok: true });
+    const sine = structuredClone(pwmSynth);
+    sine.voice.nodes[0] = { id: "osc", kind: "analogOsc", waveform: "sine" as never };
+    expect(parseInstrumentDef(sine).ok).toBe(false);
+  });
+
+  it("starts and stops with the note through its gate, and counts towards the voice cap", () => {
+    const { context, stops } = fakeContext();
+    const synth = new GraphInstrument(context as never, new ParamStore(pwmSynth.schema), pwmSynth);
+    synth.playNote(60, 0.5, 1, 1);
+    // Two sources per voice: the oscillator's gate and the LFO, both stopped after the release.
+    expect(stops).toHaveLength(2);
+    for (let note = 0; note < WORKLET_VOICE_CAP; note++) synth.noteOn(40 + note, 1, 2);
+    expect(stops.length).toBe(2 + 2); // the ninth note cut the oldest held one
+  });
+
+  it("falls back to a native oscillator when its code did not load, still following the note", () => {
+    workletsLoaded = false;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const frequencies: number[] = [];
+    const { context } = fakeContext();
+    const withOscillator = {
+      ...context,
+      createOscillator: () => {
+        const frequency = { ...fakeParam(), setValueAtTime: (value: number) => frequencies.push(value) };
+        return fakeNode({ type: "sine", frequency, detune: fakeParam(), start() {}, stop() {}, onended: null });
+      },
+    };
+    const synth = new GraphInstrument(withOscillator as never, new ParamStore(pwmSynth.schema), pwmSynth);
+    expect(() => synth.noteOn(69, 1, 0)).not.toThrow();
+    expect(frequencies).toContain(220); // A4 at noteRatio 0.5
+    expect(warn.mock.calls.some(([message]) => String(message).includes("plain oscillator"))).toBe(true);
+    warn.mockRestore();
   });
 });

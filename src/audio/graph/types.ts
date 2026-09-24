@@ -217,7 +217,27 @@ export interface BitcrushNodeSpec {
   downsample?: NumberField;
 }
 
+/** The waveforms of an `analogOsc`: a sawtooth, or a pulse whose width is `pulseWidth`. */
+export const ANALOG_WAVEFORMS = ["saw", "pulse"] as const;
+export type AnalogWaveform = (typeof ANALOG_WAVEFORMS)[number];
+
+/**
+ * An analog-style oscillator: alias-free (PolyBLEP) saw or pulse, and a pulse whose `pulseWidth`
+ * (0..1, 0.5 a square) can be modulated - pulse-width modulation, which `osc` cannot do. Its
+ * frequency follows the note like an `osc`'s (`noteRatio`, or an absolute `frequency`).
+ */
+export interface AnalogOscNodeSpec {
+  id: string;
+  kind: "analogOsc";
+  waveform?: EnumField<AnalogWaveform>;
+  frequency?: NumberField;
+  noteRatio?: NumberField;
+  detune?: NumberField;
+  pulseWidth?: NumberField;
+}
+
 export type NodeSpec =
+  | AnalogOscNodeSpec
   | LadderNodeSpec
   | BitcrushNodeSpec
   | BufferNodeSpec
