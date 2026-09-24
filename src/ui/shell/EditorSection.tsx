@@ -42,7 +42,9 @@ export function EditorSection({
 }) {
   return (
     <section
-      className={`border-t border-line ${grow && open ? "flex-1 min-h-0 flex flex-col" : "shrink-0"}`}
+      // No rule above it: the header is the divider, and a line on top of it only added a seam
+      // right where the roll now runs up to the section below without padding.
+      className={grow && open ? "flex-1 min-h-0 flex flex-col" : "shrink-0"}
       data-section={title.toLowerCase()}
       data-open={open}
     >
