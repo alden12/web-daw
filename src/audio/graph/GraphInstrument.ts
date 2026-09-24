@@ -1,9 +1,13 @@
 /**
  * A polyphonic instrument driven by a declarative voice graph (types.ts) instead of
- * hand-written code. It reuses BaseInstrument for the voice pool, velocity, and the
- * amp ADSR: each note builds a fresh copy of the voice graph (so it picks up the
- * current knob values), wired into the base's enveloped `amp` gain, which we connect
- * to the instrument output. Parameter changes fan out to every live voice.
+ * hand-written code. It reuses BaseInstrument for the voice pool and velocity: each note
+ * builds a fresh copy of the voice graph (so it picks up the current knob values), wired
+ * into the base's `amp` gain, which we connect to the instrument output. Parameter
+ * changes fan out to every live voice.
+ *
+ * A voice wired to `amp` gets the base's attack/release envelope. One wired to `out`
+ * shapes its own amplitude with `env` nodes, and the base only fades it in and out fast
+ * enough not to click (INST-12). Either way its envelopes are let go with the note.
  */
 import type { ParamStore } from "../params/store";
 import type { ParamBinding } from "../params/binding";
@@ -12,10 +16,13 @@ import type { VoiceHandle } from "../instruments/types";
 import { midiToFreq } from "../instruments/binding";
 import { buildGraph, collectParamIds, type BuiltGraph } from "./build";
 import type { GraphInstrumentDef } from "./types";
+import { wiresToOut } from "./validate";
 
 export class GraphInstrument extends BaseInstrument {
   private readonly def: GraphInstrumentDef;
   private readonly paramIds: string[];
+  /** Wired to `out`, so it shapes its own amplitude rather than taking the base's envelope. */
+  private readonly ownsAmplitude: boolean;
   /** Per-voice live graph, so a param change can reach each sounding voice. */
   private readonly voiceGraphs = new WeakMap<VoiceHandle, BuiltGraph>();
 
@@ -23,6 +30,7 @@ export class GraphInstrument extends BaseInstrument {
     super(ctx, store);
     this.def = def;
     this.paramIds = collectParamIds(def.voice);
+    this.ownsAmplitude = wiresToOut(def.voice);
     this.init();
   }
 
@@ -46,13 +54,18 @@ export class GraphInstrument extends BaseInstrument {
     const amp = this.ctx.createGain();
     const built = buildGraph(this.def.voice, {
       ctx: this.ctx,
-      reserved: { amp },
+      // Both endpoints are the same gain; which one the graph names decides who envelopes it.
+      reserved: { amp, out: amp },
       noteFreq: midiToFreq(midi),
       startTime: when, // stamp initial values at the note's scheduled time (lookahead-safe)
       readParam: (id) => this.store.get(id),
     });
     amp.connect(this.output);
-    const handle: VoiceHandle = { amp, sources: built.sources };
+    const handle: VoiceHandle = {
+      amp,
+      sources: built.sources,
+      envelope: { ownsAmplitude: this.ownsAmplitude, release: built.release },
+    };
     this.voiceGraphs.set(handle, built);
     return handle;
   }

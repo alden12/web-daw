@@ -84,12 +84,31 @@ export interface ShaperNodeSpec {
   curve: { shape: ShaperShape; amount: NumberField };
 }
 
-export type NodeSpec = OscNodeSpec | GainNodeSpec | BiquadNodeSpec | DelayNodeSpec | ShaperNodeSpec;
+/**
+ * An ADSR envelope, instruments only (INST-12): a control signal that rises 0 -> 1 over `attack`
+ * when the note starts, falls to `sustain` over `decay`, holds there while the note is held, and
+ * falls to 0 over `release` once it is let go. Wire it like an LFO - into a `gain` to scale it,
+ * then into any `.param` - so one envelope sweeps a filter, bends a pitch, or shapes the
+ * amplitude when the voice is wired to `out`. Times are milliseconds, sustain is 0..1. Attack,
+ * decay and sustain are read when the note starts, release when it ends.
+ */
+export interface EnvNodeSpec {
+  id: string;
+  kind: "env";
+  attack?: NumberField;
+  decay?: NumberField;
+  sustain?: NumberField;
+  release?: NumberField;
+}
+
+export type NodeSpec = OscNodeSpec | GainNodeSpec | BiquadNodeSpec | DelayNodeSpec | ShaperNodeSpec | EnvNodeSpec;
 
 /**
  * A connection `[from, to]`. `to` is a node id (connect into its audio input) or
  * `"nodeId.param"` to modulate that node's AudioParam. Reserved ids: `amp` (an
- * instrument voice's enveloped gain), `in` / `wet` (an effect's input / wet bus).
+ * instrument voice's output through the built-in attack/release envelope), `out` (the
+ * voice's output as-is, for a voice that shapes its own amplitude with an `env`), and
+ * `in` / `wet` (an effect's input / wet bus). A voice uses `amp` or `out`, not both.
  */
 export type Connection = [from: string, to: string];
 

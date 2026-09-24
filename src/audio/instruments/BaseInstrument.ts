@@ -9,6 +9,10 @@ import type { ParamStore } from "../params/store";
 import type { Instrument, VoiceHandle } from "./types";
 import { bindParams, rampParam, type ParamBinding } from "./binding";
 
+/** The fade at each end of a voice that shapes its own amplitude: long enough not to click, too
+ *  short to hear as an envelope. */
+const DECLICK_SECONDS = 0.003;
+
 export abstract class BaseInstrument implements Instrument {
   protected readonly ctx: BaseAudioContext;
   protected readonly store: ParamStore;
@@ -61,7 +65,7 @@ export abstract class BaseInstrument implements Instrument {
   }
 
   private startVoice(voice: VoiceHandle, velocity: number, when: number): void {
-    const attack = this.env.attackMs / 1000;
+    const attack = voice.envelope?.ownsAmplitude ? DECLICK_SECONDS : this.env.attackMs / 1000;
     const g = voice.amp.gain;
     const level = Math.max(0.0001, velocity);
     voice.level = level;
@@ -82,7 +86,13 @@ export abstract class BaseInstrument implements Instrument {
     if (this.releasing.has(voice)) return;
     this.releasing.add(voice);
     const at = Math.max(when, this.ctx.currentTime);
-    const release = this.env.releaseMs / 1000;
+    // A voice with its own envelopes lets them go too. If they shape the amplitude, the fade out
+    // waits for the longest of them; otherwise the base's release is what you hear, and it
+    // ends the voice regardless.
+    const envelopeTail = voice.envelope?.release(at) ?? 0;
+    const ownsAmplitude = voice.envelope?.ownsAmplitude ?? false;
+    const fadeFrom = ownsAmplitude ? at + envelopeTail : at;
+    const release = ownsAmplitude ? DECLICK_SECONDS : this.env.releaseMs / 1000;
     const g = voice.amp.gain;
     // Anchor the gain at its true value at `at` (mid-attack or full sustain), then ramp to 0.
     // We compute the held value ourselves rather than calling cancelAndHoldAtTime, whose Chrome
@@ -95,8 +105,9 @@ export abstract class BaseInstrument implements Instrument {
       at <= attackStart ? 0 : at >= attackEnd ? level : level * ((at - attackStart) / (attackEnd - attackStart));
     g.cancelScheduledValues(at);
     g.setValueAtTime(heldLevel, at);
-    g.linearRampToValueAtTime(0, at + release);
-    for (const source of voice.sources) source.stop(at + release + 0.02);
+    if (fadeFrom > at) g.setValueAtTime(heldLevel, fadeFrom);
+    g.linearRampToValueAtTime(0, fadeFrom + release);
+    for (const source of voice.sources) source.stop(fadeFrom + release + 0.02);
   }
 
   noteOn(midi: number, velocity = 1, when?: number): void {

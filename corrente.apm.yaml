@@ -13274,7 +13274,7 @@ projects:
       - ref: INST-12
         area: INST
         title: Envelopes and per-note gates in the declarative format
-        status: to-do
+        status: review
         sort_path: "000012"
         deps:
           - INST-4
@@ -13326,6 +13326,47 @@ projects:
         id: 019ff33c-1864-7429-b406-ac6dcb4704de
         created_at: 2026-08-11T23:50:29.732Z
         updated_at: 2026-08-11T23:50:29.732Z
+        comments:
+          - body: >-
+              **Built 2026-09-24; how each open question was settled.**
+
+
+              - **How a node gets the gate:** an `env` kind the interpreter
+              special-cases, as the ticket guessed. Attack/decay/sustain are
+              read when the note starts, release when it ends, so a release
+              knob turned mid-note still counts. Linear segments, like the base
+              amp envelope, because release has to anchor at the envelope's
+              true level and a line is trivial to evaluate (the Chrome
+              `cancelAndHoldAtTime` bug rules out letting the browser do it).
+
+              - **What it outputs:** a `ConstantSourceNode` from 0 to 1, wired
+              like any LFO. The biquad gained `detune` as a modulatable param,
+              so a filter envelope sweeps in cents - musical intervals at any
+              cutoff - rather than Hz.
+
+              - **The amp ADSR:** neither extreme. A voice wired to the new
+              reserved `out` shapes its own amplitude with an `env` into a VCA,
+              and the base drops to a 3ms fade at each end; one wired to `amp`
+              keeps the base's envelope, so the class instruments and existing
+              defs are untouched. Worth more than expected: the base envelope
+              turned out to be attack/release only, so no instrument could
+              decay at all before this.
+
+              - **Release:** the base asks the voice's envelopes how long they
+              need and keeps an `out` voice alive that long. For an `amp`
+              voice the base's release still ends the sound, but the graph's
+              envelopes are let go with it.
+
+
+              `env` is refused in an effect graph (no notes to follow), and a
+              voice wired to both `amp` and `out` is refused. Subtractive now
+              uses both envelopes; its new params default to the old sound
+              (sustain 1, filter env 0). `describe_device_format` teaches the
+              envelope and its example is now a pluck, tested to validate.
+            audience: user
+            id: 01a0d3d3-1433-7a8f-881b-f7fbc36b7764
+            at: 2026-09-24T14:30:20.979Z
+            actor: claude
       - ref: INST-13
         area: INST
         title: Grow the native-node vocabulary

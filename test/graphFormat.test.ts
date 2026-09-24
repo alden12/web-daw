@@ -38,7 +38,21 @@ describe("validateGraph", () => {
 describe("collectParamIds", () => {
   it("finds every parameter the graph binds (including nested noteRatio / curve)", () => {
     expect(collectParamIds(subtractive.voice).sort()).toEqual(
-      ["filter.cutoff", "filter.resonance", "osc.detune", "osc.waveform"].sort(),
+      [
+        "filter.cutoff",
+        "filter.resonance",
+        "osc.detune",
+        "osc.waveform",
+        "filter.env",
+        "fenv.attack",
+        "fenv.decay",
+        "fenv.sustain",
+        "fenv.release",
+        "env.attack",
+        "env.decay",
+        "env.sustain",
+        "env.release",
+      ].sort(),
     );
     expect(collectParamIds(fm.voice).sort()).toEqual(["fm.index", "fm.ratio"].sort());
     expect(collectParamIds(distortion.graph)).toContain("dist.drive"); // nested in curve.amount

@@ -16,6 +16,7 @@ export const SECTION_LABELS: Record<string, string> = {
   wt: "Wavetable",
   sampler: "Sampler",
   filter: "Filter",
+  fenv: "Filter Env",
   env: "Envelope",
   amp: "Amp",
 };

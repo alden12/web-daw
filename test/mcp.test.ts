@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { WebSocket } from "ws";
 import { createDawMcp, type DawMcp } from "../server/mcpServer";
+import { parseInstrumentDef } from "../src/audio/graph/zod";
 
 const PORT = 8799;
 const URL = `ws://localhost:${PORT}`;
@@ -71,6 +72,13 @@ describe("MCP server (tracks)", () => {
     expect(kinds).toContain("osc");
     expect(kinds).toContain("biquad");
     expect(doc.reserved.instrument).toContain("amp");
+    expect(kinds).toContain("env");
+  });
+
+  it("describe_device_format's example is a def that validates, so it teaches a working one", async () => {
+    const doc = parse(await call("describe_device_format"));
+    const result = parseInstrumentDef({ ...doc.example, type: "ci-example" });
+    expect(result.ok ? [] : result.errors).toEqual([]);
   });
 
   it("create_instrument rejects a malformed def at the boundary", async () => {

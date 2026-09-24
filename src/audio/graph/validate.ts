@@ -6,7 +6,7 @@
  */
 import type { ParamSchema } from "../params/types";
 import type { Graph } from "./types";
-import { isKnownKind, isAudioParam } from "./vocabulary";
+import { isKnownKind, isAudioParam, GATED_KINDS } from "./vocabulary";
 
 /**
  * Every parameter id a graph references (for building bindings + validation). Pure - kept
@@ -24,6 +24,12 @@ export function collectParamIds(graph: Graph): string[] {
   graph.nodes.forEach(walk);
   return [...ids];
 }
+
+/** The endpoint id a connection lands on, without any `.param`. */
+const targetNode = (to: string): string => to.split(".")[0];
+
+/** Whether an instrument voice is wired to `out`, so it shapes its own amplitude. */
+export const wiresToOut = (graph: Graph): boolean => graph.connections.some(([, to]) => targetNode(to) === "out");
 
 /** Return a list of problems (empty = valid). `reserved` are the allowed non-node endpoints. */
 export function validateGraph(schema: ParamSchema, graph: Graph, reserved: readonly string[]): string[] {
@@ -54,9 +60,19 @@ export function validateGraph(schema: ParamSchema, graph: Graph, reserved: reado
       }
     }
   }
+  // An instrument voice: envelopes need a note, and the voice goes out one way.
+  const isVoice = reserved.includes("out");
+  if (!isVoice) {
+    for (const node of graph.nodes) {
+      if (GATED_KINDS.includes(node.kind))
+        errors.push(`node "${node.id}": ${node.kind} only works in an instrument voice`);
+    }
+  } else if (wiresToOut(graph) && graph.connections.some(([, to]) => targetNode(to) === "amp")) {
+    errors.push("wire the voice to amp (the built-in envelope) or out (its own env), not both");
+  }
   return errors;
 }
 
 /** Reserved endpoint ids for each device kind. */
-export const INSTRUMENT_RESERVED = ["amp"] as const;
+export const INSTRUMENT_RESERVED = ["amp", "out"] as const;
 export const EFFECT_RESERVED = ["in", "wet"] as const;

@@ -45,11 +45,13 @@ export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
       const filter = node as BiquadFilterNode;
       return field === "frequency"
         ? filter.frequency
-        : field === "q"
-          ? filter.Q
-          : field === "gain"
-            ? filter.gain
-            : undefined;
+        : field === "detune"
+          ? filter.detune
+          : field === "q"
+            ? filter.Q
+            : field === "gain"
+              ? filter.gain
+              : undefined;
     },
     setProperty: (node, field, value) => {
       if (field === "filterType") (node as BiquadFilterNode).type = value as BiquadFilterType;
@@ -67,6 +69,17 @@ export const NODE_IMPLS: Record<NodeSpec["kind"], NodeImpl> = {
       return { node };
     },
     audioParam: () => undefined, // the curve is set as a whole (see build.ts), not ramped
+    setProperty: () => {},
+  },
+  // A constant source whose level the envelope schedules (build.ts), started and stopped with the
+  // voice like an oscillator. Its default offset is 1, so it is zeroed until the note starts.
+  env: {
+    create: (ctx) => {
+      const node = ctx.createConstantSource();
+      node.offset.value = 0;
+      return { node, source: node };
+    },
+    audioParam: () => undefined,
     setProperty: () => {},
   },
 };
