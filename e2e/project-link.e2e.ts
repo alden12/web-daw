@@ -51,6 +51,10 @@ test("the URL names the open project, and opening that URL opens it again", asyn
  * race into a certainty, so this is the one that actually guards it.
  */
 test("switching projects never puts one project's name on another's link", async ({ page }) => {
+  // Twice the default budget: the throttled switch is slow by design, and on a CI runner it already
+  // took two thirds of the default before the desktop keys panel (DAW-12.1) added its mount. It
+  // guards a race, not a speed, so the headroom costs it nothing.
+  test.setTimeout(60_000);
   // Boot at full speed. Throttling from the start made this test fail on CI for a reason that
   // had nothing to do with the bug: a runner is already slow, and 20x on top of that spent the
   // whole timeout getting the app up. The throttle belongs around the race, not the fixture.

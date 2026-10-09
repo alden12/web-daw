@@ -2322,6 +2322,12 @@ projects:
         id: 01a0ed75-7b72-737e-8449-14e6116e1332
         created_at: 2026-09-29T13:58:14.642Z
         updated_at: 2026-10-02T14:33:49.995Z
+        comments:
+          - body: "2026-10-09: the feed also moves inside the app (COMM-1.9): it replaces the library's per-type views on desktop and is the home tab on mobile (MOBILE-19). Its v1 mix is your project's devices + top rated + most added. Build the shelves/cards once and use them in both places."
+            audience: user
+            id: 01a121ad-5f6b-7186-b226-d32c1696a5d1
+            at: 2026-10-09T17:19:32.715Z
+            actor: claude
       - ref: COMM-1.4
         area: COMM
         title: "Audition and scratchpad: play a synth and keep clips without a project"
@@ -2452,6 +2458,42 @@ projects:
         id: 01a0ed75-f030-70df-bb48-05beb0d68e16
         created_at: 2026-09-29T13:58:44.528Z
         updated_at: 2026-10-04T16:07:14.149Z
+      - ref: COMM-1.9
+        area: COMM
+        title: Device feed replaces the library's Instruments / Effects / Patches / Samples views
+        status: planning
+        sort_path: "000001.000009"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+        body: |-
+          Decided 2026-10-09. The feed stops being only a landing page (COMM-1.3) and becomes **the** place you browse devices inside the app.
+
+          **Where it lives:**
+          - **Desktop:** one **Feed** view in the left library panel replaces the Instruments, Effects, Patches and Samples rail items (`RAIL_ITEMS` in `src/ui/libraryViews.tsx`). Search, Project and Activity stay.
+          - **Mobile:** the Feed is the **home tab** of the new bottom tab bar (MOBILE ticket filed alongside).
+
+          **What it shows (v1 ranking, deliberately simple):** an interleaved mix of three sources:
+          - **Your project's devices** - instruments, effects and MIDI devices already in the open project, so tweaking and re-adding what you use is one tap.
+          - **Top rated** in the published catalogue (COMM-1.2's rating).
+          - **Most added** - count of add-to-project events per published device. Needs an `adds` counter (or event table, indexed by device id) recorded when Add to project runs.
+          A better algorithm (follows, taste, recency decay - COMM-1.8) replaces the mix later; keep the mixing a pure function over the three lists so it can be swapped.
+
+          **Built-ins still reachable.** Factory instruments, effects, patches and samples are not in the published catalogue yet; seed them as Curated (COMM-1.3's seeding plan) or show them as a source of their own so a fresh install is never empty. Filter chips (Instruments / Effects / MIDI / Samples) cover the old per-type browsing.
+
+          **Card actions:** play the demo phrase, Add to project (to the selected track where it applies, as the library does now), open details.
+
+          Ideation mockup: the "Feed layout" artifact (2026-10-09).
+        id: 01a121ad-490d-724b-a141-d46353d5a865
+        created_at: 2026-10-09T17:19:26.989Z
+        updated_at: 2026-10-09T17:19:26.989Z
+        comments:
+          - body: "Mobile side is MOBILE-19 (Feed as the home tab of three: Project, Feed, Studio)."
+            audience: user
+            id: 01a121ad-5f42-719b-a21f-51acdd48f0ff
+            at: 2026-10-09T17:19:32.674Z
+            actor: claude
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
@@ -7825,3 +7867,28 @@ projects:
         id: 01a077a4-5bf3-757d-882d-44dd30d72a2a
         created_at: 2026-09-06T16:54:15.283Z
         updated_at: 2026-09-07T22:21:48.865Z
+      - ref: MOBILE-19
+        area: MOBILE
+        title: "Three bottom tabs: Project, Feed, Studio; account button replaces the ☰"
+        status: planning
+        sort_path: "000019"
+        deps:
+          - COMM-1.9
+        body: |-
+          Decided 2026-10-09. The touch shell (`src/ui/shell/MobileShell.tsx`) gets a bottom tab bar again, with **Feed as home**:
+
+          1. **Project** - the project explorer (`ProjectView`: tracks, groups, mixer). A **back arrow** goes up a level to your projects list (today's switcher in `LibraryHeader`).
+          2. **Feed** (home) - the device feed (COMM-1 sub-ticket filed alongside).
+          3. **Studio** - the existing layout: arrangement as background, `EditorSheet` over it, pads under the roll. Unchanged.
+
+          **The ☰ goes.** The library it opened is now split between Project and Feed. The top-right gets an **account / settings** button (avatar) instead.
+
+          **Why tabs are back, given MOBILE-5 removed them:** MOBILE-5 removed tabs that split the *workspace* (Arrange / Edit / Clips / Devices) and was right to. These tabs switch between *places* (your project, the catalogue, the workspace), and Studio keeps the occluded arrangement + editor intact. The ~56px bar cost is accepted; consider hiding it while the editor sheet is at Full.
+
+          **Open questions:**
+          - **Where the agent lives** - it currently sits in the ☰ column's rail. Options: a ✦ in the top bar opening a sheet, or a fourth tab.
+          - **Adding from the feed while in Studio** - a feed sheet over Studio (MOBILE-9's get-out-of-the-way rule) versus switching tabs and back.
+          - **Tablet:** the docked library column becomes the Feed/Project column; tabs may only be needed on phones.
+        id: 01a121ad-494f-736e-bc76-c75313d6965a
+        created_at: 2026-10-09T17:19:27.055Z
+        updated_at: 2026-10-09T17:19:32.614Z
