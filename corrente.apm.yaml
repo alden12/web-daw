@@ -8123,7 +8123,7 @@ projects:
       - ref: MOBILE-19.2
         area: MOBILE
         title: "Tab bar shell: Projects / Explore / Studio, account button, ☰ removed"
-        status: review
+        status: done
         sort_path: "000019.000002"
         parent: MOBILE-19
         body: |-
@@ -8137,7 +8137,8 @@ projects:
           Mockups: `PhoneSheet` (tab bar), `ProjectsHome`, `FeedHome`.
         id: 01a12246-2546-75ad-b63b-8fc2ad977ba5
         created_at: 2026-10-09T20:06:24.838Z
-        updated_at: 2026-10-09T20:30:01.564Z
+        updated_at: 2026-10-09T22:07:49.795Z
+        closed_at: 2026-10-09T22:07:49.795Z
         comments:
           - body: "Decided 2026-10-09: the agent gets a ✦ button in the top bar, **to the left of the account button**, opening the agent as a sheet (docked column on a tablet). Not a fourth tab."
             audience: user
