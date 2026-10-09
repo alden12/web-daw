@@ -86,11 +86,24 @@ describe("keyboardRows, chords", () => {
       "Am",
       "B°",
       "C",
-      null,
-      null,
+      "Dm",
+      "Em",
     ]);
     expect(pitchesOf("KeyZ", { chords: true })).toEqual([48, 52, 55]);
+    // Past the closing tonic, the row carries on an octave up.
+    expect(rows).toHaveLength(4);
+    expect(pitchesOf("Period", { chords: true })).toEqual([62, 65, 69]);
     expect(rows[1][0].pad?.name).toBe("Cmaj7");
+  });
+});
+
+describe("keyboardRows, arranging chords", () => {
+  it("lays out every row the key offers, past the keyboard's four, on cells no key plays", () => {
+    const rows = layout({ chords: true, editing: true });
+    expect(rows.length).toBeGreaterThan(4);
+    expect(rows[3][0].code).toBe("Digit1");
+    expect(rows[4][0].code).toBe("arrange-4-0");
+    expect(rows[4][0].pad).not.toBeNull();
   });
 });
 

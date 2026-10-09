@@ -19,9 +19,9 @@ import { PadButton } from "../pads/PadButton";
 import type { PadSettings } from "../pads/padSettings";
 import { ScalePadControls } from "../pads/ScalePads";
 import type { PadTouch } from "../pads/usePadTouch";
-import { isAccidentalRow, qwertyLabel, type KeyCell, type KeyPad, type KeyRowMode } from "./keyLayout";
+import { isAccidentalRow, isArrangeCode, qwertyLabel, type KeyCell, type KeyPad, type KeyRowMode } from "./keyLayout";
 import type { KeyboardPlaying } from "./useKeyboardPlaying";
-import { BODY_PADDING, KEY_GAP, KEY_HEIGHT, KEY_MAX_WIDTH, KEYS_HEADER_HEIGHT, ROW_UNITS } from "./panelGeometry";
+import { BODY_PADDING, KEY_GAP, KEY_HEIGHT, KEYS_HEADER_HEIGHT, rowUnits } from "./panelGeometry";
 
 /** `navigator.keyboard.getLayoutMap`, where the browser has it (Chromium): what each key prints. */
 type LayoutMap = { get(code: string): string | undefined };
@@ -41,7 +41,8 @@ function useKeycapLabels(): (code: string) => string {
       active = false;
     };
   }, []);
-  return (code) => layout?.get(code)?.toUpperCase() ?? qwertyLabel(code);
+  // The rows shown only while arranging chords are not on any key.
+  return (code) => (isArrangeCode(code) ? "" : (layout?.get(code)?.toUpperCase() ?? qwertyLabel(code)));
 }
 
 export function KeysPanel({
@@ -99,16 +100,16 @@ export function KeysPanel({
       {open && (
         <div className="flex-1 min-h-0 flex" style={{ padding: BODY_PADDING, gap: BODY_PADDING }}>
           <VelocityStrip velocity={velocity} onVelocity={onVelocity} />
-          <div className="flex-1 min-w-0">
-            <div
-              className="mx-auto flex flex-col-reverse"
-              style={{ gap: KEY_GAP, maxWidth: ROW_UNITS * KEY_MAX_WIDTH }}
-            >
-              {rows.slice(0, shownRows).map((row, rowIndex) => (
+          {/* Scrolls only while arranging chords, when every row the key offers is laid out above the
+              keys; column-reverse, so it opens at the bottom with the keys in view. */}
+          <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain flex flex-col-reverse [scrollbar-width:thin]">
+            <div className="flex flex-col-reverse" style={{ gap: KEY_GAP }}>
+              {(settings.editingChords ? rows : rows.slice(0, shownRows)).map((row, rowIndex) => (
                 <KeyRow
                   key={rowIndex}
                   row={row}
                   offset={offset(rowIndex)}
+                  units={rowUnits(rowMode === "accidentals" && !settings.chords)}
                   settings={settings}
                   touch={lit}
                   heldAt={keyboard.heldAt}
@@ -124,12 +125,13 @@ export function KeysPanel({
 }
 
 /**
- * One keyboard row. Widths are shares of `ROW_UNITS` keys, so the keys fill the panel and line up
+ * One keyboard row. Widths are shares of `units` keys, so the keys fill the panel and line up
  * across rows whatever its width.
  */
 function KeyRow({
   row,
   offset,
+  units,
   settings,
   touch,
   heldAt,
@@ -138,12 +140,14 @@ function KeyRow({
   row: KeyCell[];
   /** Set half a key across: a note row, with the accidentals between its keys. */
   offset: boolean;
+  /** The row's width in keys (`rowUnits`), the same for every row so their keys line up. */
+  units: number;
   settings: PadSettings;
   touch: PadTouch;
   heldAt: KeyboardPlaying["heldAt"];
   keycap: (code: string) => string;
 }) {
-  const unit = `(100% / ${ROW_UNITS})`;
+  const unit = `(100% / ${units})`;
   const style = { width: `calc(${unit} - ${KEY_GAP}px)`, marginRight: KEY_GAP };
   const edges = offscreenEdges(row, heldAt);
   return (
@@ -159,7 +163,9 @@ function KeyRow({
             label={<OneLine keycap={keycap(code)} what={`${pad.label} ${pad.sublabel}`} />}
             tone={pad.tone}
             touch={touch}
-            className="shrink-0 overflow-hidden"
+            // The label is capped at the key's width (`[&>span]`, PadButton's label wrapper), so a long
+            // chord name ellipsises rather than spilling over the keycap.
+            className="shrink-0 overflow-hidden px-1.5 [&>span]:max-w-full"
             style={{ ...style, ...edge }}
             editing={editingFor(pad, settings)}
           />
@@ -217,12 +223,13 @@ const editingFor = (pad: KeyPad, settings: PadSettings) =>
       }
     : undefined;
 
-/** The keycap, then what it plays, small: `Q 1 C5`, `Z C I`. */
+/** The keycap, then what it plays, small: `Q 1 C5`, `Z C I`. The keycap always shows; what it
+ *  plays is cut short with an ellipsis when the key is too narrow for it. */
 function OneLine({ keycap, what }: { keycap: string; what: string }) {
   return (
-    <span className="flex items-baseline gap-1.5">
-      <span className="text-[13px]">{keycap}</span>
-      <span className="text-[10px] font-normal text-muted">{what}</span>
+    <span className="flex items-baseline gap-1.5 min-w-0 max-w-full" title={`${keycap}  ${what}`}>
+      {keycap && <span className="shrink-0 text-[13px]">{keycap}</span>}
+      <span className="min-w-0 truncate text-[10px] font-normal text-muted">{what}</span>
     </span>
   );
 }

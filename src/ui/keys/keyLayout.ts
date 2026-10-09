@@ -24,7 +24,8 @@
  *   playing one note, where a gap says plainly that there is nothing there.
  *
  * In chords mode the bottom row is each degree's triad and the rows above are its variations,
- * exactly as the chord pads stack them; the columns past the closing tonic are blank.
+ * exactly as the chord pads stack them. Past the closing tonic, the keys left in a row carry on into
+ * the octave above (Dm and Em on the last two keys in C major), as the note rows do.
  *
  * Pure and DOM-free; the panel draws it and `useKeyboardPlaying` plays it.
  */
@@ -138,11 +139,30 @@ function noteKeys(options: KeyboardLayoutOptions): KeyCell[][] {
   );
 }
 
+/**
+ * While the chords are being arranged, the rows past the keyboard's four - every family the key
+ * offers, hidden ones too - so they can be selected and moved down onto the keys. They have no key,
+ * so their cells take a code no key event carries.
+ */
+const arrangeCodes = (rowIndex: number): readonly string[] =>
+  Array.from({ length: KEYS_PER_ROW }, (_unused, column) => `arrange-${rowIndex}-${column}`);
+
+/** Whether a cell is one of the arranging rows' rather than a real key. */
+export const isArrangeCode = (code: string) => code.startsWith("arrange-");
+
 function chordKeys({ tonic, scale, lowOctave, prefs, editing }: KeyboardLayoutOptions): KeyCell[][] {
-  const grid = chordRows({ tonic, scale, lowOctave, prefs, editing, rows: KEY_ROW_COUNT });
-  return KEY_ROWS.map((codes, rowIndex) =>
-    codes.map((code, column) => {
-      const chord = grid[rowIndex]?.[column];
+  const grid = (octave: number, rows?: number) =>
+    chordRows({ tonic, scale, lowOctave: lowOctave + octave, prefs, editing, rows });
+  // Every row the key fills while arranging, the keyboard's four otherwise; the same for each octave.
+  const depth = editing ? Math.max(KEY_ROW_COUNT, grid(0).length) : KEY_ROW_COUNT;
+  // A grid per octave the row reaches: each starts on the tonic, so a column past the scale's last
+  // degree is that column of the octave above (and the closing tonic is the next octave's first).
+  const degrees = SCALES[scale].length;
+  const grids = Array.from({ length: Math.ceil(KEYS_PER_ROW / degrees) }, (_unused, octave) => grid(octave, depth));
+  const codesFor = (rowIndex: number) => KEY_ROWS[rowIndex] ?? arrangeCodes(rowIndex);
+  return Array.from({ length: depth }, (_unused, rowIndex) =>
+    codesFor(rowIndex).map((code, column) => {
+      const chord = grids[Math.floor(column / degrees)][rowIndex]?.[column % degrees];
       if (!chord) return { code, pad: null };
       return {
         code,
