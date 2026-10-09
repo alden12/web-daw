@@ -8,6 +8,7 @@
  * Extracted from CenterWorkbench when the touch shell gave the editor its own tab
  * (MOBILE-1); the behaviour is unchanged.
  */
+import type { ReactNode } from "react";
 import type { InstrumentTrack, ProjectStore } from "../../audio/project/projectStore";
 import type { Scheduler } from "../../audio/sequencer/scheduler";
 import type { Recorder } from "../../audio/recording/recorder";
@@ -51,6 +52,7 @@ export function InstrumentEditor({
   dispatch,
   projectStore,
   compact = false,
+  rollFooter,
 }: {
   track: InstrumentTrack;
   samples: SampleAsset[];
@@ -60,6 +62,8 @@ export function InstrumentEditor({
   projectStore: ProjectStore;
   /** Touch layout: the roll hands its toolbar to the shell's ⋮ (MOBILE-1). */
   compact?: boolean;
+  /** Under the piano roll's velocity lane (not the drum editors, whose keys are the kit's). */
+  rollFooter?: ReactNode;
 }) {
   const isDrumkit = track.instrumentType === "drumkit";
   const [mode, setMode] = usePersistentString<DrumEditor>(`corrente:drum-editor:${track.id}`, "keys", DRUM_EDITORS);
@@ -114,6 +118,7 @@ export function InstrumentEditor({
             dispatch={dispatch}
             projectStore={projectStore}
             compact={compact}
+            footer={rollFooter}
           />
         )}
       </div>

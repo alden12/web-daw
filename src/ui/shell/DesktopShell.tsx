@@ -16,6 +16,8 @@ import { ArrangementTimeline } from "../ArrangementTimeline";
 import { ResizeHandle } from "../ResizeHandle";
 import { usePersistentNumber } from "../usePersistent";
 import type { ShellProps } from "./types";
+import { KeysPanel } from "../keys/KeysPanel";
+import { useDesktopKeys } from "../keys/useDesktopKeys";
 
 // Layout bounds. The activity rail is always shown on the left; the library panel
 // beside it collapses to that rail. The agent pane collapses away entirely (its
@@ -31,6 +33,7 @@ export function DesktopShell({
   editLog,
   versionStore,
   dispatch,
+  liveNotes,
   selectedTrack,
   isPlaying,
   started,
@@ -54,6 +57,9 @@ export function DesktopShell({
   const [agentWidth, setAgentWidth] = usePersistentNumber("corrente:agent-width", 320, 240, 620);
   const [timelineH, setTimelineH] = usePersistentNumber("corrente:timeline-height", 244, 120, 2000);
   const [dragging, setDragging] = useState(false);
+  // The computer keyboard, played in key (DAW-12.1). Here rather than in the piano roll that shows
+  // it, so the keys play whatever the workbench is showing.
+  const keys = useDesktopKeys(liveNotes, started);
 
   // Track the body height so the timeline can never crowd out the workbench:
   // the effective height is clamped to leave at least MIN_CENTER up top, which
@@ -120,6 +126,7 @@ export function DesktopShell({
         syncStatus={syncStatus}
         agentCollapsed={agentCollapsed}
         onExpandAgent={() => onSetAgentCollapsed(false)}
+        keys={{ panel: <KeysPanel {...keys.panel} />, height: keys.height }}
       />
       {!agentCollapsed && (
         <AgentPanel

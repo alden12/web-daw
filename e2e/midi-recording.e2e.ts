@@ -35,15 +35,16 @@ test("records live MIDI into the selected instrument track", async ({ page }) =>
   await record.click();
   await expect(record).toHaveAttribute("aria-pressed", "true"); // capture has begun
 
-  // Play a couple of notes on the computer keyboard (a = C4, s = D4). While a note
-  // is held, a live ghost note appears in the roll; on release it stays as captured.
-  await page.keyboard.down("a");
+  // Play a couple of notes on the computer keyboard (z = C3, x = D3: the bottom row is the
+  // scale's notes whichever way the rows above are set). While a note is held, a live ghost
+  // note appears in the roll; on release it stays as captured.
+  await page.keyboard.down("z");
   await expect(page.getByTestId("ghost-note").first()).toBeVisible();
   await page.waitForTimeout(120);
-  await page.keyboard.up("a");
-  await page.keyboard.down("s");
+  await page.keyboard.up("z");
+  await page.keyboard.down("x");
   await page.waitForTimeout(120);
-  await page.keyboard.up("s");
+  await page.keyboard.up("x");
   await expect(page.getByTestId("ghost-note")).toHaveCount(2); // both notes captured
 
   await record.click(); // stop -> finalize the take

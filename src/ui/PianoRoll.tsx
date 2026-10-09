@@ -26,7 +26,7 @@
  * arrangement loop region lives in the timeline). The grid is drawn past the clip
  * end so you can scroll there and drag the end out.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import { noteKey } from "../audio/commands/authorship";
 import { authorNoteStyle } from "./authorStyle";
@@ -163,6 +163,7 @@ export function PianoRoll({
   projectStore,
   rows = CHROMATIC_ROWS,
   compact = false,
+  footer,
 }: {
   clipStore: ClipStore;
   scheduler: Scheduler;
@@ -182,6 +183,8 @@ export function PianoRoll({
    * buttons in a row, and every surface having its own toolbar would stack three of them.
    */
   compact?: boolean;
+  /** Under the velocity lane, outside the scroll: the computer-keyboard panel (DAW-12.1). */
+  footer?: ReactNode;
 }) {
   const clip = useClip(clipStore);
   const presence = useAuthorPresence();
@@ -1121,6 +1124,7 @@ export function PianoRoll({
           </div>
         </div>
       </div>
+      {footer && <div className="shrink-0 border-t border-line">{footer}</div>}
     </div>
   );
 }

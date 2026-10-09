@@ -8,7 +8,7 @@
  * device chain (`workbench/DeviceRack`). Only the arrangement lives here; each piece
  * owns its own behaviour.
  */
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectStore, Track } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -71,6 +71,7 @@ export function CenterWorkbench({
   syncStatus,
   agentCollapsed,
   onExpandAgent,
+  keys,
 }: {
   projectStore: ProjectStore;
   scheduler: Scheduler;
@@ -86,6 +87,8 @@ export function CenterWorkbench({
   /** The agent pane is collapsed away; the tab bar hosts its expand control. */
   agentCollapsed: boolean;
   onExpandAgent: () => void;
+  /** The computer-keyboard panel (DAW-12.1), shown in the piano roll under its velocity lane. */
+  keys?: { panel: ReactNode; height: number };
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -218,6 +221,9 @@ export function CenterWorkbench({
             recorder={recorder}
             dispatch={dispatch}
             projectStore={projectStore}
+            // The keys sit in the roll under the velocity lane, as the pads sit under the roll on
+            // mobile (MOBILE-6): play, and watch it land.
+            rollFooter={keys && <div style={{ height: keys.height }}>{keys.panel}</div>}
           />
 
           {/* The device rack sits below the notes (resizable height, drag its top edge),

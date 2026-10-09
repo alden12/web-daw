@@ -667,7 +667,9 @@ projects:
 
         **But while sole author you already have full relicensing freedom** - you own everything - so no CLA is needed yet; DCO is correct low-friction hygiene. The **trigger** to decide is the *first non-trivial outside contribution*, at which point that slice becomes AGPL-locked unless you first: (a) add a lightweight "CLA-lite" clause to `CONTRIBUTING.md` (inbound under AGPL **plus** a grant to relicense under future project licences - middle path, low friction), or (b) adopt a full CLA + signing bot (max optionality, max friction), or (c) accept AGPL-lock and move on. Keep the SPDX copyright as the sole holder (not "contributors") to keep this clean.
 
-        **The extension SDK (INST-5) is the related structural lever:** the intended growth model is extension, not modification - the core stays a single-owner, dual-licensable unit, and a permissive SDK package lets extensions be owned by their authors under any licence.
+        **The open/private repo split (HOST-23) makes this a must rather than an option.** The private hosting server imports the open core (project store, protocol, catalogs, history, command replay), so an AGPL-only contribution to any of those would oblige the server to be published. **Decided 2026-10-04: CLA-lite (option a)**, revisited only if it proves too weak.
+
+        **The extension SDK (INST-5) is the related structural lever:** the intended growth model is extension, not modification - the core stays a single-owner, dual-licensable unit, and a permissive SDK package lets extensions be owned by their authors under any licence. It is aimed at plugin authors and complements CLA-lite rather than replacing it; making the whole server-imported core permissive was considered and rejected, because that core is the engine the AGPL exists to protect.
 
         ## Trademark: territorial, defer to traction
 
@@ -686,7 +688,7 @@ projects:
         ## Decisions / triggers (deferred, not blocking)
 
         - **Licence:** stay AGPL through development and launch. Revisit BSL only on real traction + genuine rehosting-target status, applied to new versions.
-        - **CLA:** none needed while solo. Decide at the first non-trivial outside PR (CLA-lite vs full CLA vs accept AGPL-lock). Preserve sole-copyright SPDX headers until then.
+        - **CLA:** **CLA-lite, decided 2026-10-04** (HOST-23 phase 1). The clause goes into `CONTRIBUTING.md` before the first outside contribution lands, at the latest; worth a lawyer's look before launch. Preserve sole-copyright SPDX headers.
         - **Trademark:** name settled (Corrente), register searched 2026-09-23, nothing blocking in classes 9 or 42. File UK 9 + 42 at public launch (~£220). Open brand hygiene: the free domains and social handles are not yet grabbed.
       Slice history: |-
         The build order, kept because the sequencing rationale is itself the record of how the thesis was tested. Slice numbers appear throughout ticket bodies and code comments.
@@ -2157,7 +2159,58 @@ projects:
           - **Search by feeling** via CLAP embeddings - COMM-1.5
           - **Forks, lineage and usage-based ranking** - COMM-1.6
           - **Effects, sample-based patches and WASM devices**, with moderation - COMM-1.7
-          - **A light social layer** - COMM-1.8
+          - **A light social layer** - COMM-1.8 (which also holds the follow-feed scaling design)
+
+          ## Architecture (MVP)
+
+          From the user's system-design sketch (2026-10-04), reconciled with the sub-tickets. **No new service:** the feed is new routes on the existing Hono sync API (`server/api/app.ts`, routes declared in `src/contract/http.ts`) and new tables in the same Postgres. At the MVP's scale (the HOST-20 allowlist, under 50 users) one server and one database comfortably meet a sub-500ms read target; replicas, queues and caches are COMM-1.8's, gated on real numbers.
+
+          ```mermaid
+          flowchart LR
+            subgraph Browser
+              Feed["Feed page (COMM-1.3)"]
+              Publish["Publish dialog (COMM-1.1)"]
+              Render["Isolated-device render (AGENT-4.8)"]
+            end
+            subgraph API["Sync API (Hono, existing)"]
+              Routes["/published routes"]
+              Validate["parseInstrumentDef / parseEffectDef"]
+            end
+            DB[("Postgres (existing)")]
+            Feed -- "GET shelves, search" --> Routes
+            Publish -- "POST snapshot" --> Routes
+            Routes --> Validate --> DB
+            Routes -- "SQL" --> DB
+            Feed -- "play: demo phrase + defs" --> Render
+          ```
+
+          The preview never touches the server as audio: the card fetches the version's definitions and demo phrase, and the browser renders them (COMM-1.1).
+
+          **Endpoints.** Plural resource paths, matching `/projects/...`. The acting user always comes from the session (`who(c)` in `app.ts`), never the body. Lists page by **cursor** (the last item's sort key), not page number, so items published mid-scroll don't repeat or vanish.
+
+          | Route | Does | Ticket |
+          | --- | --- | --- |
+          | `GET /published?shelf=curated\|top\|new&tag=&cursor=` | One shelf of cards. The landing page fetches its shelves in parallel. | COMM-1.3 |
+          | `GET /published/search?q=&tags=&cursor=` | Name search (Postgres full-text) filtered by tags. | COMM-1.3 |
+          | `GET /published/:id` (`?version=`) | A version's full content: inlined defs, patch, demo phrase. Immutable, so cacheable forever. | COMM-1.1 |
+          | `POST /published` | Publish a **self-contained snapshot** (patch + inlined definitions + demo phrase + metadata), not a `{ projectId, deviceId }` reference: devices are project-scoped and projects may be browser-only. | COMM-1.1 |
+          | `POST /published/:id/versions` | Publish a new version of your own item. | COMM-1.1 |
+          | `DELETE /published/:id` | Unlist (versions stay, so existing uses keep working). | COMM-1.1 |
+          | `PUT /published/:id/rating { stars }` | One rating per user, idempotent. **Only if** COMM-1.2 keeps stars. | COMM-1.2 |
+          | `POST /published/:id/usage { kind }` | Log a preview, add-to-project or new-project use. | COMM-1.2 |
+
+          **Tables.** Every column a query filters on gets an index (CLAUDE.md's Database rule). One migration via `drizzle-kit generate`, renamed to say what it does.
+
+          | Table | Columns | Indexes |
+          | --- | --- | --- |
+          | `published_items` | `id`, `author_id`, `name`, `description`, `tags text[]`, `curated`, `unlisted`, `latest_version`, `rating_sum` / `rating_count` (if stars), `search tsvector`, `created_at` | `created_at`, `author_id`, GIN on `tags`, GIN on `search`, partial on `curated` |
+          | `published_versions` | `item_id`, `version`, `content jsonb`, `content_hash`, `licence`, `created_at`. Write-once, like `edits`. | PK `(item_id, version)`, `content_hash` |
+          | `ratings` (if stars) | `user_id`, `item_id`, `stars` | PK `(user_id, item_id)` |
+          | `usage_events` | `item_id`, `user_id`, `kind`, `at` | `(item_id, at)` |
+
+          **Ranking.** `top` is a **Bayesian average** of stars, or usage over the last 30 days, whichever COMM-1.2 settles on; `rating_sum` and `rating_count` are updated in the same transaction as the rating, so the shelf sorts without aggregating. `new` is `created_at`; `curated` is the admin flag.
+
+          **Dedupe.** `content_hash` of each inlined definition makes re-publishing an identical synth detectable, and "Add to project" keys copied defs by it so adding twice stores one (COMM-1.1).
 
           ## Where the codebase stands (checked 2026-10-02)
 
@@ -2174,9 +2227,10 @@ projects:
           - **Public visibility outside projects** - COMM-1.1 / COMM-1.3.
           - **Who the community is.** Sign-in is gated by an email allowlist (HOST-20, `allowed_emails`), so today the feed's publishers and listeners are only allowlisted people. Opening it up, or a signed-out feed, is a launch decision - COMM-1.3.
           - **An engine that can play a synth without an open project** - COMM-1.4.
+          - **Where it runs after HOST-23.** The feed routes and tables are hosting code, so they belong in the private repo once the split lands; the feed page and the contract types stay open.
         id: 01a0ed74-b1e7-7459-964f-6026eb7d8f2d
         created_at: 2026-09-29T13:57:23.048Z
-        updated_at: 2026-10-02T14:32:47.609Z
+        updated_at: 2026-10-04T16:06:54.585Z
       - ref: COMM-1.1
         area: COMM
         title: "Publish a synth: self-contained, versioned, openly licensed"
@@ -2212,30 +2266,35 @@ projects:
         updated_at: 2026-10-02T14:32:58.121Z
       - ref: COMM-1.2
         area: COMM
-        title: Tags and ratings for published synths
+        title: Tags, favourites-as-likes and usage counts for published devices
         status: to-do
         sort_path: "000001.000002"
         parent: COMM-1
         deps:
           - COMM-1.1
         body: |-
-          MVP step 2 of COMM-1. The minimum signal for a feed to sort and filter by.
+          MVP step 2 of COMM-1. The minimum signal for Explore (COMM-1.9) to sort and filter by.
 
           **Tags.** Chosen by the author at publish from a **curated vocabulary**, so search stays clean:
           - *Role*: bass, lead, pad, pluck, keys, arp, fx, percussion (synthesized - sample kits wait for COMM-1.7).
           - *Character*: warm, bright, dark, gritty, airy, lush, glassy, retro, aggressive, soft (extend as the catalogue grows).
-          Free-form tags wait until there is moderation. Later, CLAP can suggest tags at publish (COMM-1.5). Keep the vocabulary as data (a key -> label map), not hardcoded in the UI, per the catalog convention.
+          Free-form tags wait until there is moderation. Later, CLAP can suggest tags at publish (COMM-1.5). Keep the vocabulary as data (a key -> label map), not hardcoded in the UI, per the catalog convention. Built-ins get tags from the same vocabulary (COMM-1.9.1).
 
-          **Record usage events from day one**, whatever the ranking: previews played, adds to a project, "new project with this". They are cheap to log now and are the stronger quality signal later (COMM-1.6). Index by item and time.
+          **Record usage events from day one:** previews played, tries, adds to a project, "new project with this". They are cheap to log now and are the stronger quality signal later (COMM-1.6). Index by item and time.
 
-          **Ratings - decide at start (raised 2026-10-02).**
-          - **Stars in the MVP:** one 1-5 rating per account per item, not your own. Show the average with its count, and **rank by a Bayesian average**, not the raw mean, so one 5-star rating can't top the chart.
-          - **Or skip stars and rank by usage from the start:** COMM-1's own principle is that usage beats stars, and the usage events above are logged anyway. A simple "adds in the last 30 days" ranking avoids a rating UI, the self-rating rule and rating-gaming, and COMM-1.6 refines it later. Thin data while the community is small (the HOST-20 allowlist) hurts both options equally; curation (COMM-1.3) carries the feed until then.
-
-          Leaning: skip stars, since every MVP rating would come from a handful of allowlisted friends. Confirm with the user.
+          **No star ratings - decided 2026-10-09.** The **favourite button doubles as the like** (COMM-1.9.3's `favourites` table), so the signals are:
+          - **Most favourited:** a count of favourites per item. Keep a denormalised counter on the published item, updated in the same transaction as the favourite, so the shelf query doesn't count rows on every read.
+          - **Most added:** add-to-project events over the last 30 days.
+          One tap to favourite is lower friction than a rating, there's no self-rating or rating-gaming UI, and it matches COMM-1's principle that usage beats stars. Thin data while the community is small (the HOST-20 allowlist) hurts any option equally; curation (COMM-1.3) carries the feed until then.
         id: 01a0ed75-5c1a-7748-b5d8-955392a8234a
         created_at: 2026-09-29T13:58:06.618Z
-        updated_at: 2026-10-02T14:33:11.249Z
+        updated_at: 2026-10-09T20:06:13.381Z
+        comments:
+          - body: "2026-10-09: the approved Explore design (COMM-1.9) has a **Top rated** shelf next to Most added, which implies **stars in the MVP** (Bayesian average). This is the open ratings question above; confirm with the user before building."
+            audience: user
+            id: 01a12242-f2d2-742c-b10b-b27d463c40b0
+            at: 2026-10-09T20:02:55.314Z
+            actor: claude
       - ref: COMM-1.3
         area: COMM
         title: "The feed: landing page with curated, top and new synths"
@@ -2268,27 +2327,72 @@ projects:
         id: 01a0ed75-7b72-737e-8449-14e6116e1332
         created_at: 2026-09-29T13:58:14.642Z
         updated_at: 2026-10-02T14:33:49.995Z
+        comments:
+          - body: "2026-10-09: the feed also moves inside the app (COMM-1.9): it replaces the library's per-type views on desktop and is the home tab on mobile (MOBILE-19). Its v1 mix is your project's devices + top rated + most added. Build the shelves/cards once and use them in both places."
+            audience: user
+            id: 01a121ad-5f6b-7186-b226-d32c1696a5d1
+            at: 2026-10-09T17:19:32.715Z
+            actor: claude
       - ref: COMM-1.4
         area: COMM
-        title: "Audition and scratchpad: play a synth and keep clips without a project"
-        status: planning
+        title: "Try before you add: audition any device without editing the project (and a scratchpad later)"
+        status: to-do
         sort_path: "000001.000004"
         parent: COMM-1
-        deps:
-          - COMM-1.3
         body: |-
-          Later step of COMM-1 (from the original prompt: "play around on them with the keyboard, create clips with them (without them going straight into your timeline)").
+          Revised 2026-10-09 with approved mockups: the "Corrente Feed Layout" artifact (https://claude.ai/artifact/X6xQfnrfcnHspPxXDkNMeY), boards `PhoneTryInstrument`, `PhoneTryEffect`, `PhoneTryPack`, `DesktopTry` and `ExploreKeys`. Originally "play around on them with the keyboard, create clips with them (without them going straight into your timeline)".
 
-          **Audition.** Play any feed synth live on the on-screen or MIDI keyboard without opening a project. The engine is only constructed inside `AppShell` today (`src/ui/AppShell.tsx`, behind `AuthGate`), so the feed has no live audio.
+          **The rule:** trying a device **never edits the project**. No edit, no history entry, nothing recorded until you press Add.
 
-          **Probably smaller than a new engine** (checked 2026-10-02). `AudioEngine` takes no arguments, and `ProjectStore` already runs in memory with no repository behind it (the history replay, project seeding and the hosted MCP all construct throwaway ones). So audition can be a **scratch `ProjectStore` holding one track** with the patch applied, bound to an `AudioEngine`, never saved and with no version history - the real engine and real device factories, not a parallel one. What needs care: one `AudioContext` for the page (hand it over, or dispose the scratch engine, when a project opens), and lifting engine construction out of `AppShell` so the feed can own one. The playing surfaces (keyboard, chord pads, MIDI input) should then work against the scratch track unchanged.
+          **How (checked 2026-10-02):** a **scratch `ProjectStore` holding one track** with the device applied, bound to the real `AudioEngine` and factories, never saved. One `AudioContext` for the page: the try view plays on a **preview bus** of the open project's engine when there is one, or on an engine Explore owns when there isn't (lift engine construction out of `AppShell`). Works on built-ins from day one; published devices once COMM-1.1 lands.
 
-          **Scratchpad.** Record what you play into personal clips that live outside any timeline, then drag one into a project later - "keep this for later" without committing to an arrangement. A per-user server store (a small table keyed by user), not a project; clip notes are already plain data.
+          **Per kind:**
+          - **Instrument or patch:** pads in the project's key (phone) or the **computer keyboard** (desktop: the keys panel retargets to the preview and shows a "Playing Glass Pad · trying" tag), plus the device's top 4 params as knobs. **Alone / With the project** toggle: the project can play along so you hear it in context. **Swap onto <track>** or **Add as a new track**.
+          - **Effect:** "Hear it on" **Demo phrase / <selected track> / Your playing**. On a track it is a **temporary insert that is not an edit** (only you hear it, gone on close). **Hold to hear without it** compares wet and dry. A small chain shows **where it would go**, draggable. Then **Add to <track>, after <device>**.
+          - **Sample pack:** pads of its sounds with waveforms; tap to hear. **New Drum Kit track from these 16**, or put a sound on a pad.
+          - **MIDI device:** plays the selected track's instrument (or a default synth) through it.
 
-          Together these close the loop from hearing a preview to actually playing a sound, which is where discovery turns into making music.
+          **Surfaces:** a bottom sheet on phone, a drawer at the bottom of the Explore panel on desktop, and the **docked note keyboard** on mobile Explore (COMM-1.9), which switches sound when another card's try button is tapped.
+
+          **Scratchpad (later, separate):** record what you play into personal clips outside any timeline and drag one into a project later. A per-user server table, not a project.
         id: 01a0ed75-93d2-753f-9576-19567bbe93d2
         created_at: 2026-09-29T13:58:20.882Z
-        updated_at: 2026-10-02T14:33:39.745Z
+        updated_at: 2026-10-09T20:07:06.332Z
+      - ref: COMM-1.4.1
+        area: COMM
+        title: "Play and try instruments and patches: demo play, preview track, pads / computer keys, docked keyboard"
+        status: to-do
+        sort_path: 000001.000004.000001
+        parent: COMM-1.4
+        deps:
+          - COMM-1.9.1
+        body: |-
+          Slice 4 of the Explore work. The core of COMM-1.4, for instruments and patches:
+          - **The preview track:** a scratch `ProjectStore` with one track and the device applied, on a preview bus of the open engine. Never saved, never an edit. Closing it disposes the track.
+          - **Play button:** renders a short demo phrase through the device. Built-ins need a default phrase (a few bars in the project's key); published ones bring their own (COMM-1.1).
+          - **Try button:**
+            - Phone: the try sheet (`PhoneTryInstrument`) and the **docked keyboard on Explore** (`ExploreKeys`), which switches sound in place.
+            - Desktop: the try drawer in the panel (`DesktopTry`), with the **computer keyboard retargeted** to the preview (the keys panel's `LiveNotes` target swaps, with a "trying" tag).
+          - **Alone / With the project** toggle. The top 4 params as knobs. **Swap onto <track>** / **Add as a new track** are the only edits, each one undoable.
+          - MIDI devices follow the same path through the selected track's instrument.
+        id: 01a12246-816d-755d-ae7b-7586bf1178cc
+        created_at: 2026-10-09T20:06:48.429Z
+        updated_at: 2026-10-09T20:06:48.429Z
+      - ref: COMM-1.4.2
+        area: COMM
+        title: "Try effects and sample packs: temporary insert, hold to compare, pack pads"
+        status: to-do
+        sort_path: 000001.000004.000002
+        parent: COMM-1.4
+        deps:
+          - COMM-1.4.1
+        body: |-
+          Slice 7 of the Explore work (approved boards `PhoneTryEffect`, `PhoneTryPack`):
+          - **Effect:** "Hear it on" **Demo phrase / <selected track> / Your playing**. On a track it is a **temporary insert in the engine only**: not in the `ProjectStore`, not an edit, removed on close. **Hold to hear without it** bypasses it while held. A draggable "where it would go" chain; **Add to <track>, after <device>** commits it as one edit.
+          - **Sample pack:** pads of its sounds with waveforms, tap to hear; **New Drum Kit track from these 16**; put one sound on a kit pad.
+        id: 01a12246-81fa-767d-915b-b90723ca4ea6
+        created_at: 2026-10-09T20:06:48.570Z
+        updated_at: 2026-10-09T20:06:48.570Z
       - ref: COMM-1.5
         area: COMM
         title: "Search by feeling: CLAP embeddings of each synth's demo phrase"
@@ -2360,9 +2464,177 @@ projects:
           Profiles, follows, a "from people you follow" shelf, comments, notifications. Deliberately last: each brings moderation load (abuse in comments, spam profiles) and the core value is the sound browser, not the social graph. Add each only where it earns its place, and only once COMM-1.7's reporting and takedown tooling exists to carry it.
 
           Follows are likely the first worth having - a personalised shelf is cheap and high-value. Comments likely the last.
+
+          ## Follow feed: start simple, scale on evidence
+
+          From the user's system-design sketch (2026-10-04). **Build the simple version first.** At first, the "from people you follow" shelf is one query on the COMM-1 MVP tables: a join of `follows` against `published_items`, ordered by `created_at`. With an index on `follows (follower_id)` it stays fast well past the allowlist's size. Everything below is the path once real numbers say the query hurts. **Measure before building it:** daily active users, publishes a day, follows per user, and p99 feed latency against the 500ms target. Feeds are heavily read-skewed, so reads give out first.
+
+          **New table, needed from the first follow:** `follows (follower_id, followee_id, created_at)`, PK `(follower_id, followee_id)`, plus an index on `followee_id` for "who follows X", which fan-out and the profile page both read.
+
+          ```mermaid
+          flowchart LR
+            Client --> Gateway["API gateway: auth, rate limits"]
+            Gateway --> PublishSvc["Publish service"]
+            Gateway --> FeedSvc["Feed service"]
+            PublishSvc -- "write version + outbox row (one txn)" --> Primary[("Postgres primary")]
+            Primary -- "outbox" --> Queue[["Queue"]]
+            Queue --> Fanout["Fan-out workers"]
+            Fanout -- "push item id to each follower's feed" --> FeedStore[("Feed store: Redis sorted sets")]
+            Queue -.-> DLQ[["Dead letter queue"]]
+            FeedSvc -- "read own feed" --> FeedStore
+            FeedSvc -- "pull recents of big publishers you follow" --> Replica[("Read replicas")]
+            Primary --> Replica
+            Primary -- "outbox" --> Search["Search index (Postgres FTS first, Elasticsearch later)"]
+            Client -- "version content (immutable)" --> CDN["CDN"]
+          ```
+
+          **The design, and why each piece:**
+          - **Hybrid fan-out.** On publish, push the item onto each follower's feed (fan-out on write), so reading a feed is a single lookup. Publishers above a follower threshold are **skipped** at write time; their recent items are pulled at read time and merged in. That stops one big publisher from causing a write storm.
+          - **Fan-out is asynchronous.** Publishing writes the version and an **outbox** row in one transaction; workers consume it from a queue. Publishing stays fast, and a slow fan-out only delays feeds, which "availability over consistency" allows. Failed deliveries retry, then park in a dead letter queue. The outbox (rather than writing to the queue directly) means a crash can't publish an item that never fans out.
+          - **The feed store is a list, not a relational model.** Per user, a sorted set of `(created_at, item_id)` capped at a few hundred entries. Card details are hydrated from the item cache or a replica. In Postgres the equivalent is one `feed_items (user_id, created_at, item_id)` table keyed on `(user_id, created_at)`; a separate `feeds` table adds nothing.
+          - **Read replicas, with read-your-writes.** Replica lag means an author can publish and then not see their own item. Route the author's reads of their own items to the primary for a short window after publishing.
+          - **Cold start.** A new user follows nobody, so the follow shelf is empty. It stays one shelf among COMM-1.3's curated, top and new shelves rather than replacing them, which fits COMM-1's "never an empty feed".
+          - **Search stays in Postgres** (full-text plus the GIN index on tags) until it measurably can't keep up. Elasticsearch then needs keeping in sync, fed from the same outbox. Search by feeling (COMM-1.5) is a separate vector index either way.
+          - **CDN for content.** Published versions are immutable (COMM-1.1), so `GET /published/:id?version=` can be cached forever at the edge.
+          - **Service split.** Publish and feed services sharing one Postgres is fine; giving each its own database is a later step, only if the teams or load diverge.
+
+          **Where it lives:** all of this is hosting code, in the private repo after HOST-23.
         id: 01a0ed75-f030-70df-bb48-05beb0d68e16
         created_at: 2026-09-29T13:58:44.528Z
-        updated_at: 2026-09-29T13:58:44.528Z
+        updated_at: 2026-10-04T16:07:14.149Z
+      - ref: COMM-1.9
+        area: COMM
+        title: "Explore: the device feed replaces the library's per-type views (shelves, categories, tags, favourites)"
+        status: to-do
+        sort_path: "000001.000009"
+        parent: COMM-1
+        body: |-
+          Decided 2026-10-09. **Explore** becomes **the** place you browse devices inside the app, not only a landing page (COMM-1.3). The layout is Spotify-inspired with Corrente's own flair. **Approved mockups:** the "Corrente Feed Layout" artifact (https://claude.ai/artifact/X6xQfnrfcnHspPxXDkNMeY), boards `FeedHome`, `FeedCategory`, `FeedDesktop` and `ExploreKeys`. Earlier rows on that canvas are superseded explorations, and their "Top rated" labels are superseded by "Most favourited".
+
+          **Built in slices:** COMM-1.9.1 (Explore on built-ins), COMM-1.9.2 (sound portraits), COMM-1.9.3 (favourites and search), COMM-1.9.4 (published shelves). Trying devices is COMM-1.4.1 and COMM-1.4.2; the mobile shell is MOBILE-19.
+
+          **Name and icon:** **Explore**, with the **2x2 tiles icon**.
+
+          **Where it lives:**
+          - **Desktop:** one Explore view in the left library panel (about 344px wide) replaces the Instruments, Effects, Patches and Samples rail items (`RAIL_ITEMS` in `src/ui/libraryViews.tsx`). Search, Project and Activity stay.
+          - **Mobile:** the middle tab (MOBILE-19).
+
+          **Explore home, top to bottom:**
+          1. **Search** by name or `#tag`, with a row of tag chips that filter (COMM-1.2's vocabulary).
+          2. **Category tiles** (2x3): **Favourites, Instruments, Patches, Effects, MIDI devices, Samples.** Everything stays reachable as it is today, and **built-in factory content appears in them too** (marked BUILT-IN), so Explore works before anything is published.
+          3. **Two shelves for now:** **Most favourited** and **Most added** (COMM-1.2: no star ratings; the favourite button is the like). They need the published catalogue (COMM-1.1). More shelves and smarter ranking come later (COMM-1.6, COMM-1.8).
+
+          **Category page:** looks like a playlist. A collage header and count, sort (Most favourited / Most added / A to Z), tag filters, play-all-demos, then numbered rows: thumbnail, name, author, counts, tags, and the card buttons.
+
+          **Cards:** square, with a **generated thumbnail**: the kind's colour gradient with a **sound portrait** drawn over it (instruments and patches: a phase scope of one held note; effects: their impulse response; MIDI devices: the phrase from one held chord; packs: the waveform). **Custom artwork comes later**, with the portrait as the default.
+          - **Buttons:** **play** (hear the demo), **try** (keyboard icon: opens the try view, COMM-1.4), **favourite** (heart, which doubles as the like).
+
+          **Favourites:** a heart on every card and row, plus the Favourites category. A `favourites` table indexed by user; signed in only (HOST-23: the private half).
+
+          **Search, one for desktop and mobile:** the Search view's grouped results (local today) gain a **Published** group from the server. Typing in Explore's search box opens the same results.
+
+          **Samples** live in packs (the Samples category), or inside a Drum Kit or Sampler patch. A device never contains samples.
+
+          **Note keyboard on mobile Explore** (`ExploreKeys`): a card's try button docks a pads keyboard at the bottom while the feed stays scrollable; another card's try button switches the sound in place. The dock has **Add** and **hide**.
+
+          **Deferred:** chains or collections (track recipes), more shelves, smarter ranking.
+        id: 01a121ad-490d-724b-a141-d46353d5a865
+        created_at: 2026-10-09T17:19:26.989Z
+        updated_at: 2026-10-09T20:07:06.289Z
+        comments:
+          - body: "Mobile side is MOBILE-19 (Feed as the home tab of three: Project, Feed, Studio)."
+            audience: user
+            id: 01a121ad-5f42-719b-a21f-51acdd48f0ff
+            at: 2026-10-09T17:19:32.674Z
+            actor: claude
+          - body: 'Ideation 2026-10-09, not yet decided: shelves (headings, sideways rows) over one mixed list. Card art = **sound portraits** generated at publish from the demo render: instruments draw a phase scope of the timbre, effects their impulse response, MIDI devices the phrase they play, samples their waveform. No uploads, so nothing to moderate. Collections become **chains** (instrument + ordered effects + samples, "adds 2 tracks"). Hold-to-hear instead of a play button, to read less like Spotify. Mockups: the "Corrente Feed Layout" artifact.'
+            audience: user
+            id: 01a121c1-8f9d-716a-b300-97da9d29afce
+            at: 2026-10-09T17:41:35.773Z
+            actor: claude
+          - body: |-
+              2026-10-09 ideation, continued:
+              - **Sound portraits are the default art.** Custom artwork comes later.
+              - **Samples:** they live in packs, or inside a Drum Kit or Sampler patch, never inside a device. A chain's drum track is a kit patch.
+              - **Try before you add:** a sheet (phone) or a drawer in the panel (desktop) plays the device on its own preview bus, without editing the project.
+                - Instruments: play pads or the computer keys, alone or with the project playing along.
+                - Effects: hear them on a demo phrase, on a track (a temporary insert that is not an edit), or on your own playing. Hold to compare without it.
+                - Packs: tap any sound, or make a kit from 16 of them.
+            audience: user
+            id: 01a121cc-4510-72bb-9a10-f8f9da5c772c
+            at: 2026-10-09T17:53:17.584Z
+            actor: claude
+      - ref: COMM-1.9.1
+        area: COMM
+        title: "Explore on built-ins: home, category tiles, playlist-style category pages, desktop rail"
+        status: to-do
+        sort_path: 000001.000009.000001
+        parent: COMM-1.9
+        deps:
+          - MOBILE-19.2
+        body: |-
+          Slice 3 of the Explore work. Explore working entirely on **local content**: the built-in catalogs (`src/audio/instruments/catalog.ts`, `effects/catalog.ts`, MIDI devices), factory patches (`src/audio/patches/factory.ts`), your own patches, and the sample library.
+          - **Home:** search box, tag chips, and the 2x3 **category tiles** (Favourites is a placeholder until COMM-1.9.3). Shelves wait for COMM-1.9.4.
+          - **Category pages:** playlist-style, with header, count, sort (A to Z for now), tag filters and numbered rows. Placeholder thumbnails until COMM-1.9.2.
+          - **Tags on built-ins:** add tags from COMM-1.2's vocabulary to catalog entries and factory patches, as data. Iterate the catalogs; no hardcoded lists.
+          - **Desktop:** the rail's Instruments / Effects / Patches / Samples items become one **Explore** item (`RAIL_ITEMS`, `LIBRARY_VIEWS`), with the same home and category pages in the panel. Keep drag-onto-a-track and add-to-selected-track.
+          - **Mobile:** fills the Explore tab from MOBILE-19.2.
+          - Update e2e tests that click the old rail items (`e2e/activity-rail.e2e.ts` and others).
+          Mockups: `FeedHome`, `FeedCategory`, `FeedDesktop`.
+        id: 01a12246-2578-76bc-b8d2-ef13a98b3e25
+        created_at: 2026-10-09T20:06:24.888Z
+        updated_at: 2026-10-09T20:06:24.888Z
+      - ref: COMM-1.9.2
+        area: COMM
+        title: Sound portrait thumbnails, generated from an isolated render
+        status: to-do
+        sort_path: 000001.000009.000002
+        parent: COMM-1.9
+        deps:
+          - COMM-1.9.1
+        body: |-
+          Slice 5 of the Explore work. The generated card art (approved board `Portraits`, used on `FeedHome`):
+          - **Render the device alone:** the isolated-device render that AGENT-4.8 phase 1 also needs (generalise `renderWorkletSmokeTest` in `src/audio/engine/renderOffline.ts` into a plain function). Build it here if AGENT-4.8 hasn't, and share it.
+          - **Draw by kind:** instruments and patches as a phase scope of one held note; effects as their impulse response; MIDI devices as the phrase from one held chord; packs as the waveform. Over the kind's colour gradient, square.
+          - **Built-ins:** generate at build time into static SVG, so nothing renders in the browser on load. Published devices: generate at publish (COMM-1.1) and store the SVG with the version.
+          - Custom artwork later; this stays the default.
+        id: 01a12246-81a3-74b0-beac-eb931b262fbe
+        created_at: 2026-10-09T20:06:48.484Z
+        updated_at: 2026-10-09T20:06:48.484Z
+      - ref: COMM-1.9.3
+        area: COMM
+        title: Favourites (the like button) and one combined search with tags
+        status: to-do
+        sort_path: 000001.000009.000003
+        parent: COMM-1.9
+        deps:
+          - COMM-1.9.1
+        body: |-
+          Slice 8 of the Explore work.
+          - **Favourites:** a heart on every card and row, and the Favourites category. The `favourites (user_id, device_ref, created_at)` table with an index on `user_id` (and on `device_ref` for counts), made with `drizzle-kit generate`. `device_ref` must name built-ins, your own patches and (later) published versions. Favourites **double as likes** (COMM-1.2: no stars). Offline / no-API builds keep them locally.
+          - **One search:** Explore's search box and the Search view are one query. Results are grouped (tracks, instruments, patches, effects, MIDI, samples), with `#tag` matching. The **Published** group arrives in COMM-1.9.4.
+        id: 01a12246-8223-7079-b6f0-7c65acbf0664
+        created_at: 2026-10-09T20:06:48.611Z
+        updated_at: 2026-10-09T20:06:48.611Z
+      - ref: COMM-1.9.4
+        area: COMM
+        title: "Shelves from the published catalogue: Most favourited, Most added, Published search"
+        status: to-do
+        sort_path: 000001.000009.000004
+        parent: COMM-1.9
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+          - COMM-1.9.3
+        body: |-
+          Slice 10 of the Explore work, after publishing (COMM-1.1) and the signals (COMM-1.2):
+          - **Most favourited** and **Most added** shelves on Explore home, served by indexed queries (the denormalised favourite counter; add events over 30 days).
+          - Category pages gain those sort orders and list published devices beside built-ins.
+          - The **Published** group in search: Postgres full-text on name and description plus tags, with an index on the search vector.
+          - Cards show author and counts; agent-built devices are marked.
+        id: 01a12246-824e-71b4-8de7-0768248f2153
+        created_at: 2026-10-09T20:06:48.654Z
+        updated_at: 2026-10-09T20:06:48.654Z
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
@@ -3086,7 +3358,7 @@ projects:
       - ref: DAW-12.1
         area: DAW
         title: "Chords and scale playing, on any surface: the pads and the QWERTY keyboard"
-        status: to-do
+        status: review
         sort_path: "000012.000001"
         parent: DAW-12
         body: |
@@ -3126,7 +3398,13 @@ projects:
           Most musical value of the pad follow-ups, and the most self-contained: pure maths plus labels.
         id: 01a06ceb-cf46-7418-a66e-e55aa8a8fbda
         created_at: 2026-09-04T14:56:28.486Z
-        updated_at: 2026-09-04T14:56:28.486Z
+        updated_at: 2026-10-09T16:33:59.627Z
+        comments:
+          - body: "**QWERTY surface built (2026-10-09), in review.** Desktop keys panel in the piano roll under the velocity lane (`src/ui/keys/`). All four letter/number rows play in key, by `KeyboardEvent.code`, one line per key with keycap first. The pads' Accidentals switch picks the row mode: on, alternate rows are accidentals up-and-right as on a piano (two octaves); off, each row is an octave and Shift shows the sharps on the same keys, blanking the rest. Chords mode stacks triads and variations. `[` `]` move the octave, +/- set rows drawn (all four always play), a drag strip sets strike velocity. Prototyped and dropped: staggered rows, a pads layout, a timeline placement, Caps Lock, and Shift falling back to flats with merged pads. Voicing and momentary-vs-sticky variations are still open."
+            audience: user
+            id: 01a12183-ab97-731b-952a-24688fc55d87
+            at: 2026-10-09T16:33:59.703Z
+            actor: claude
       - ref: DAW-13
         area: DAW
         title: Audio export and mixdown
@@ -6037,6 +6315,58 @@ projects:
         id: 01a0d5bf-aed7-7513-8e4b-a2b01696c3c4
         created_at: 2026-09-24T23:28:24.279Z
         updated_at: 2026-10-02T14:31:18.371Z
+      - ref: HOST-23
+        area: HOST
+        title: Split into an open app repo and a private hosting repo
+        status: planning
+        sort_path: "000023"
+        body: |-
+          **The split.** The app, the device format and SDK, and the local MCP stay in the public AGPL repo (`alden12/web-daw`). The hosted product moves to a private repo: the sync API, the database, auth on the server, the hosted MCP, deploy config and the workers to come (HOST-22, the COMM-1 feed backend). This mirrors the split planned for ai-project-manager. Plan of record for the licensing side is `apm: "Licensing and business model"`, and this ticket follows it: sole copyright is what lets the server be private, and the trademark rather than the licence protects the hosted service.
+
+          **The code already splits along this line (surveyed 2026-10-04).** Dependencies run one way only: nothing in `src/` imports `server/`, while `server/` imports about 20 modules from `src/`. Among them are `project/projectStore`, `mcp/protocol`, `commands/{types,authors,replay}`, `instruments/catalog`, `graph/{validate,vocabulary}`, `params/validate`, `project/{schema,types,documentMigration}`, `history/{paths,keyframes}`, `patches/patchTools` and `contract/{http,ws}`. Inside `server/`, only `server/mcp/hosted.ts` reaches into `api/` and `db/` (for `Room`, `listProjects` and `Db`), and only `api/mcpHttp.ts` reaches back into it. So the cut is:
+
+          | Open (stays) | Private (moves) |
+          | --- | --- |
+          | `src/` whole, including `src/contract/` (the wire contract), `src/auth/session.ts`, `AuthGate`, `OAuthConsent`, the sync client | `server/api/`, `server/db/`, `server/mcp/hosted.ts` |
+          | `server/index.ts`, `server/mcpServer.ts`, `server/mcp/{shared,context,target}.ts`, `server/mcp/tools/` (the local stdio MCP, whose tools the hosted one shares) | `drizzle/`, `drizzle.config.ts`, `Dockerfile`, `.dockerignore`, `fly.toml`, `scripts/deploy.sh`, `docker-compose.yml` |
+          | `e2e/` (already runs with no backend: `.env.test` blanks `VITE_DAW_API_URL`), HOST-18's GitHub Pages demo | The server half of `tsconfig.server.json` / `check:server`, `yarn api` / `start` / `dev:all` |
+
+          The client's auth and sync code stays open. That is fine as long as every hosted URL and Supabase setting comes from `VITE_*` env vars, with nothing secret or deployment-specific committed.
+
+          ## Phases
+
+          1. **Licensing first, before any outside contribution lands.** Today `CONTRIBUTING.md` asks for a **DCO** (Developer Certificate of Origin), whose inbound licence equals the outbound one and grants no relicensing. The split raises the stakes: the private server *imports* the open core. So once an outside contribution lands in any module it uses, the private server is combined with someone else's AGPL code and must be published itself, unless their contribution came with a broader grant. Pick one of these and record it in the licensing section:
+             - **CLA-lite.** A clause in `CONTRIBUTING.md` granting the right to relicense, keeping the DCO sign-off. Lowest friction, and it covers the whole core.
+             - **A permissive shared core.** Relicense the modules the server imports (format, catalogs, protocol, contract) as MIT/Apache. This overlaps heavily with INST-5's planned permissive SDK; the server's import list above is wider than INST-5's (it adds the project store, history and command replay), so decide whether those join the SDK or stay behind a CLA.
+             - **Full CLA plus a signing bot.** The most options, the most friction.
+
+             The current "decide at the first outside PR" trigger still holds; the split only makes it a must-do rather than a nice-to-have. While Alden is still the only author (true as of 2026-10-04: 671 of 671 commits), the slate is clean.
+          2. **Give the open side a real export surface.** The server currently deep-imports `../../src/audio/...` paths. Add a package entry point (`package.json` `exports`, or a `src/index.server.ts` barrel) listing exactly what the private side may use, and switch `server/` onto it while everything is still in one repo. That surface becomes the stable promise across repos, so it's worth keeping small. It's cheap and reversible, and it catches any hidden coupling before the cut.
+          3. **Cut.** Keep `alden12/web-daw` as the open repo, so its history, stars and issues stay put, and create the private repo holding the moved files. The private repo pins the open one at a commit SHA (git dependency or submodule; a published package can wait for INST-5). Its Dockerfile builds the client from that pin. Server code already pushed stays public under AGPL in the history; only work from here on is private.
+          4. **CI and dev loop on both sides.**
+             - **Open CI:** `build`, `test`, `test:e2e`, `tsc` for the client and local MCP.
+             - **Private CI:** `check:server`, migrations and an integration run against the pinned open SHA.
+             - **Bumping the pin:** a private PR, so a breaking change to the contract surfaces there, not in production.
+             - **Dev loop:** `yarn dev` stays standalone in the open repo; `dev:all` (Postgres, API, client) moves to the private one.
+             - **CLAUDE.md:** gets split to match.
+          5. **Split the plan.** `corrente.apm.yaml` is committed to the public repo, and the HOST area carries infrastructure detail (Fly, Neon, the allowlist, the render service's private network). Move the hosting tickets into a private apm store and link across with `key:REF` deps. The open plan keeps the app, INST, AGENT (local), MOBILE and the parts of COMM a self-hoster would see.
+
+          ## Costs to accept
+
+          - **Cross-repo changes become two PRs.** A document-schema bump (`documentMigration`), a protocol or contract change, or a new MCP tool used by both servers means one PR in each repo, landed in order. Stacked PRs within one repo stop covering it.
+          - **Self-hosters lose the sync server.** The open app is local-only (OPFS) plus the local MCP. Accounts, multiplayer, sync and the hosted MCP are the moat the licensing section already names; a self-host story for them would be a later, deliberate choice.
+          - **Not legal advice**, same caveat as the licensing section. Phase 1 is worth a look by someone who does this for a living before launch.
+
+          **Related:** INST-5 (permissive SDK, which overlaps phase 1), HOST-18 (the public demo, which stays open), HOST-22 and COMM-1 (new private-side services, which are cheaper to start in the private repo than to move later).
+        id: 01a10782-c474-757a-bf05-14cd7670afdf
+        created_at: 2026-10-04T15:22:52.916Z
+        updated_at: 2026-10-04T15:22:52.916Z
+        comments:
+          - body: "**Phase 1 decided (2026-10-04): CLA-lite.** A clause in `CONTRIBUTING.md` granting the right to relicense, on top of the existing DCO sign-off. A full CLA or a permissive core can be revisited later if needed. The narrow permissive SDK for plugin authors (INST-5) is separate and still planned. The clause should go in before the first outside contribution lands, and is worth a lawyer's look before launch."
+            audience: user
+            id: 01a107a3-800c-7538-8599-6e51458fd7da
+            at: 2026-10-04T15:58:38.092Z
+            actor: claude
       - ref: INST-1
         area: INST
         title: Built-in instruments
@@ -7161,6 +7491,12 @@ projects:
         id: 019fb8bf-4e50-76ff-9b52-af40940356fa
         created_at: 2026-07-31T15:16:13.008Z
         updated_at: 2026-08-03T19:46:58.146Z
+        comments:
+          - body: "2026-10-09: the detents are being revised in MOBILE-19.1 (minimised preview bar with expand, half, full covering everything with a minimise button). Peek and the 0.82 full were too fiddly in use."
+            audience: user
+            id: 01a121c9-b913-7084-b276-8494abd3951d
+            at: 2026-10-09T17:50:30.675Z
+            actor: claude
       - ref: MOBILE-6
         area: MOBILE
         title: Pads and clips as sections under the roll
@@ -7678,3 +8014,102 @@ projects:
         id: 01a077a4-5bf3-757d-882d-44dd30d72a2a
         created_at: 2026-09-06T16:54:15.283Z
         updated_at: 2026-09-07T22:21:48.865Z
+      - ref: MOBILE-19
+        area: MOBILE
+        title: "Three bottom tabs: Projects, Explore, Studio; account button replaces the ☰"
+        status: to-do
+        sort_path: "000019"
+        deps:
+          - COMM-1.9
+        body: |-
+          Decided 2026-10-09. **Approved mockups:** the "Corrente Feed Layout" artifact (https://claude.ai/artifact/X6xQfnrfcnHspPxXDkNMeY), boards `ProjectsHome`, `ProjectOverview`, `ProjectHistory` (projects tab), `FeedHome` / `ExploreKeys` (Explore) and `PhoneSheet*` (Studio, MOBILE-19.1).
+
+          The touch shell (`src/ui/shell/MobileShell.tsx`) gets a bottom tab bar again:
+          1. **Projects** (folder icon).
+          2. **Explore** (2x2 tiles icon). The device feed, COMM-1.9.
+          3. **Studio** (lanes icon). The existing layout: arrangement as background, `EditorSheet` over it, pads under the roll. Its detents change in MOBILE-19.1.
+
+          **The ☰ goes.** The library it opened is split between Projects and Explore. The top-right gets an **account / settings** button (avatar) instead.
+
+          **Projects tab:**
+          - **Top level:** the **open project as a large card** with an **arrangement thumbnail** (its own lanes and clips drawn as coloured blocks, drawn from project data with no render needed). It has **Back to the Studio**, **Tracks** and **Share**. Below it, **Recent / Shared with you** lists with thumbnails, meta (edited, BPM, track count) and collaborator faces; a kebab per row (rename, duplicate, delete); and **+ New**. This replaces the switcher in `LibraryHeader` on touch.
+          - **Inside a project** (back arrow up to the list):
+            - A header with the name, collaborator faces and **Share**, plus tappable chips for tempo, meter, key and length.
+            - **Tracks tab:** `ProjectView`'s tree, each track with its **device chain in one line** (`ELECTRIC PIANO → TAPE DELAY`), mute/solo and a level bar. Tapping a track selects it and opens Studio. Add with **+ Track from Explore** or **+ Empty track**.
+            - **History tab:** the version history (`VersionTimeline`) as a timeline in each author's colour (you, agent, collaborators), grouped by day. Saved versions are cards with **Listen / Restore / Copy as new project**, and **Save this version…** sits at the bottom.
+
+          **Why tabs are back, given MOBILE-5 removed them:** MOBILE-5 removed tabs that split the *workspace* and was right to. These switch between *places*, and Studio keeps the occluded arrangement and editor intact.
+
+          **Open questions:**
+          - **Where the agent lives** (it sits in the ☰ column's rail today): a ✦ in the top bar opening a sheet, or a fourth tab.
+          - **Adding from Explore while in Studio:** an Explore sheet over Studio (MOBILE-9's get-out-of-the-way rule), or switching tabs.
+          - **Tablet:** the docked library column becomes the Explore/Projects column; tabs may only be needed on phones.
+        id: 01a121ad-494f-736e-bc76-c75313d6965a
+        created_at: 2026-10-09T17:19:27.055Z
+        updated_at: 2026-10-09T20:07:06.374Z
+      - ref: MOBILE-19.1
+        area: MOBILE
+        title: "Editor sheet detents: a minimised preview, half, and fully covered"
+        status: in-progress
+        sort_path: "000019.000001"
+        parent: MOBILE-19
+        body: |-
+          Decided 2026-10-09, to land with MOBILE-19's tab work. Revises MOBILE-5's detents (`src/ui/shell/detents.ts`: today peek 0.14 / half 0.55 / full 0.82).
+
+          **Why:** the current peek and full are too fiddly. Peek is a thin grabber strip that is hard to hit, and full stops short of the top (it keeps the selected lane showing), so it is neither out of the way nor a proper full-screen editor.
+
+          **The three detents:**
+          - **Minimised** - a compact **preview** bar: the selected track and clip, a mini strip of the clip's notes, and an **expand** button. Tap expand (or the bar) to go to half; dragging and throwing still work.
+          - **Half** - unchanged: edit and arrange at once.
+          - **Full** - **covers the whole workspace** (cover 1.0), with a **minimise** button in its header, so leaving it never depends on finding the grabber. Dragging down still works.
+
+          **Notes:**
+          - Every detent has a button route as well as the drag, so a throw is a shortcut, not the only way.
+          - The full detent no longer shows the selected lane. If that strip proves missed, the header can carry the clip's position instead.
+          - The tab bar (MOBILE-19) sits under the sheet; consider hiding it at full.
+          - The landscape-phone (`short`) set needs the same three, tuned there.
+
+          Mockups: the "Corrente Feed Layout" artifact, Studio detent boards.
+        id: 01a121c9-b8dd-70bf-a2c6-2bca21840288
+        created_at: 2026-10-09T17:50:30.621Z
+        updated_at: 2026-10-09T20:07:06.413Z
+        comments:
+          - body: "Approved mockups: https://claude.ai/artifact/X6xQfnrfcnHspPxXDkNMeY, boards `PhoneSheet` (minimised), `PhoneSheetHalf`, `PhoneSheetFull`."
+            audience: user
+            id: 01a12243-004b-77fb-beb6-781f793dbcc8
+            at: 2026-10-09T20:02:58.763Z
+            actor: claude
+      - ref: MOBILE-19.2
+        area: MOBILE
+        title: "Tab bar shell: Projects / Explore / Studio, account button, ☰ removed"
+        status: to-do
+        sort_path: "000019.000002"
+        parent: MOBILE-19
+        body: |-
+          Slice 2 of the Explore work (plan 2026-10-09). The shell change alone, with existing content in each tab:
+          - A bottom tab bar in `MobileShell.tsx`: **Projects** (folder), **Explore** (2x2 tiles), **Studio** (lanes). Studio is today's layout. Persist the last tab.
+          - **Projects** shows today's `ProjectView` tree, plus the project list (today's `LibraryHeader` switcher) a back arrow up. The richer design is MOBILE-19.3.
+          - **Explore** shows today's library views (Instruments, Effects, Patches, Samples) until COMM-1.9.1 replaces them.
+          - The **☰ goes**; an **account / settings** avatar button sits top-right.
+          - The agent needs a home now that the ☰ column is gone. Decide at start (✦ in the top bar opening a sheet is the lighter option).
+          - Phones first. Check the tablet's docked column still makes sense.
+          Mockups: `PhoneSheet` (tab bar), `ProjectsHome`, `FeedHome`.
+        id: 01a12246-2546-75ad-b63b-8fc2ad977ba5
+        created_at: 2026-10-09T20:06:24.838Z
+        updated_at: 2026-10-09T20:06:24.838Z
+      - ref: MOBILE-19.3
+        area: MOBILE
+        title: "Projects tab: open-project card, Recent / Shared lists, Tracks and History inside a project"
+        status: to-do
+        sort_path: "000019.000003"
+        parent: MOBILE-19
+        deps:
+          - MOBILE-19.2
+        body: |-
+          Slice 6 of the Explore work. The Projects tab design from MOBILE-19's body (approved boards `ProjectsHome`, `ProjectOverview`, `ProjectHistory`):
+          - **Arrangement thumbnails** drawn from project data (lanes and clips as coloured blocks). The project list needs a light summary per project (track colours, clip spans), so a project's thumbnail doesn't mean loading the whole project. Store that summary with the project row.
+          - Open-project card; **Recent / Shared with you** lists; row kebab; **+ New**.
+          - Inside a project: the header with chips and Share; a **Tracks** tab with one-line device chains, mute/solo and a level bar; a **History** tab built from `VersionTimeline` data, coloured by author, with saved versions as cards (Listen / Restore / Copy as new project).
+        id: 01a12246-81d0-7612-a250-4e836b5325f6
+        created_at: 2026-10-09T20:06:48.528Z
+        updated_at: 2026-10-09T20:06:48.528Z
