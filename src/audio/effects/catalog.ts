@@ -168,7 +168,8 @@ export interface EffectInfo {
   label: string;
   schema: ParamSchema;
   /** Tags from the vocabulary (`tags.ts`), for Explore's chips and search. */
-  tags?: readonly Tag[];
+  tags?: readonly Tag[]; /** Authored in a project (by you or the agent), not shipped with the app: registered on load. */
+  custom?: boolean;
 }
 
 /** The effect data registry (insertion order = palette / add-button order). */

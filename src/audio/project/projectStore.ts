@@ -1497,10 +1497,16 @@ export class ProjectStore {
   }
 
   private registerInstrumentDef(def: GraphInstrumentDef): void {
-    registerInstrument({ type: def.type, label: def.label ?? def.type, schema: def.schema, family: "Custom" });
+    registerInstrument({
+      type: def.type,
+      label: def.label ?? def.type,
+      schema: def.schema,
+      family: "Custom",
+      custom: true,
+    });
   }
   private registerEffectDef(def: GraphEffectDef): void {
-    registerEffect({ type: def.type, label: def.label ?? def.type, schema: def.schema });
+    registerEffect({ type: def.type, label: def.label ?? def.type, schema: def.schema, custom: true });
   }
 
   /**
