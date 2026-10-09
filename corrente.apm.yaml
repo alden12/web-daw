@@ -8082,7 +8082,7 @@ projects:
       - ref: MOBILE-19.2
         area: MOBILE
         title: "Tab bar shell: Projects / Explore / Studio, account button, ☰ removed"
-        status: to-do
+        status: review
         sort_path: "000019.000002"
         parent: MOBILE-19
         body: |-
@@ -8096,7 +8096,33 @@ projects:
           Mockups: `PhoneSheet` (tab bar), `ProjectsHome`, `FeedHome`.
         id: 01a12246-2546-75ad-b63b-8fc2ad977ba5
         created_at: 2026-10-09T20:06:24.838Z
-        updated_at: 2026-10-09T20:06:24.838Z
+        updated_at: 2026-10-09T20:30:01.564Z
+        comments:
+          - body: "Decided 2026-10-09: the agent gets a ✦ button in the top bar, **to the left of the account button**, opening the agent as a sheet (docked column on a tablet). Not a fourth tab."
+            audience: user
+            id: 01a12251-eb43-7569-95e8-86c8d9cbc501
+            at: 2026-10-09T20:19:16.419Z
+            actor: claude
+          - body: |-
+              Built 2026-10-09:
+              - **Top bar order:** transport, undo, redo, ✦ agent, account, ⋮. The ⋮ stays rightmost because anchoring its menu further in made its submenus open over the items being tapped (caught by the menus and mobile e2e tests).
+              - **Tablets get the same tabs.** The docked library column is gone; the agent docks on the right. If tablets miss Explore beside the Studio, a docked Explore column is a follow-up.
+              - Tab persisted under `corrente:mobile-tab`, default Studio until COMM-1.9.1 makes Explore worth landing on.
+            audience: user
+            id: 01a1225b-c325-70e9-b646-4e47fc81ac48
+            at: 2026-10-09T20:30:01.509Z
+            actor: claude
+          - body: |-
+              2026-10-09, after local testing:
+              - **The ⋮ is gone on both shells.** Tempo, meter, metronome, count-in and groove are a **Timing** page in settings; the user picked that name over "Project". Groove amount is a slider.
+              - **Editing tools sit beside their surface** under a sliders icon: the roll's in the sheet header and the desktop roll toolbar, the arrangement's in the timeline's ruler corner on touch. On desktop the timeline kebab became a **+** for adding groups and tracks.
+              - **Account button is your initials** on both shells.
+              - **Top bar:** play is an icon, undo and redo are on the left.
+              - The sheet's spring damping ratio is 0.83, tuned by the user.
+            audience: user
+            id: 01a12279-8fc9-73b6-856b-813e97b0d864
+            at: 2026-10-09T21:02:34.441Z
+            actor: claude
       - ref: MOBILE-19.3
         area: MOBILE
         title: "Projects tab: open-project card, Recent / Shared lists, Tracks and History inside a project"

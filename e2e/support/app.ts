@@ -31,3 +31,23 @@ export async function dismissStart(page: Page): Promise<void> {
   // beat after the click - interacting before that races the re-layout.
   await expect(start).toHaveCount(0);
 }
+
+/**
+ * Open the settings panel on its Timing page (tempo, meter, metronome, count-in, groove - MOBILE-19),
+ * from the account button on either shell. The panel reopens on the page it was closed on, so on a
+ * phone the category list is only there to tap on the first opening.
+ */
+export async function openTimingSettings(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Account and settings" }).click();
+  const timing = page.getByRole("tab", { name: "Timing" });
+  if (await timing.isVisible()) await timing.click();
+  // Scoped to the panel: the desktop transport has a tempo field of its own.
+  await expect(page.getByRole("dialog").getByRole("spinbutton", { name: "Tempo", exact: true })).toBeVisible();
+}
+
+/** Set the count-in from the Timing page and close the panel again. */
+export async function setCountIn(page: Page, choice: "None" | "1 bar" | "2 bars"): Promise<void> {
+  await openTimingSettings(page);
+  await page.getByRole("radio", { name: choice }).click();
+  await page.getByRole("button", { name: "Close settings" }).click();
+}

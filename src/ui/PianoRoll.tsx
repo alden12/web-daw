@@ -53,6 +53,8 @@ import { Menu, type MenuItem } from "./Menu";
 import { ObjectHandles } from "./editing/ObjectHandles";
 import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
+import { iconButtonClass } from "./controls/iconButtonStyle";
+import { ToolsIcon } from "./controls/ToolsIcon";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { isBlackKey, pitchName } from "./noteNames";
 
@@ -866,13 +868,19 @@ export function PianoRoll({
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-stage overflow-hidden">
-      {/* toolbar - replaced by the shell's ⋮ when compact (see compactControls above) */}
+      {/* toolbar - replaced by the sheet header's tools menu when compact (see the publish above) */}
       <div
         hidden={compact}
         className="flex items-center gap-3 px-2.5 py-1.5 border-b border-line bg-panel shrink-0 text-muted"
       >
         <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">Piano roll</span>
-        <Menu items={rollControls} label="Roll settings" align="left" />
+        <Menu
+          items={rollControls}
+          label="Notes tools"
+          align="left"
+          triggerClassName={iconButtonClass({ size: "sm", className: "shrink-0" })}
+          trigger={<ToolsIcon className="w-4 h-4" />}
+        />
         {/* Quantize keeps a button as well as its menu entry: it is the one action here
             you repeat, and it reads the selection, so its label is worth seeing. */}
         <Button

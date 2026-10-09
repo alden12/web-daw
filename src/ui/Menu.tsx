@@ -22,11 +22,10 @@
  * Only one (top-level) menu is open at a time, and within a popover only one row's submenu:
  * hovering a sibling closes the last, so flyouts cannot pile up.
  *
- * A row is a leaf action, a radio selection, a submenu parent, a separator, a **group
- * heading**, or a **number field** - all of them `MenuItem` data, so a caller composes a menu
- * rather than rendering one. The last two exist for the touch shell's ⋮, which is several
- * surfaces' toolbars in one list (headings say which), and which has no toolbar to put a
- * tempo field on (so the field comes here).
+ * A row is a leaf action, a radio selection, a submenu parent, a separator or a fader - all of
+ * them `MenuItem` data, so a caller composes a menu rather than rendering one. (Group headings
+ * and number fields went with the touch shell's ⋮, MOBILE-19: its surfaces' tools are menus of
+ * their own now, and tempo and meter are fields on the settings panel's Timing page.)
  */
 import {
   useEffect,
@@ -46,22 +45,6 @@ const POPOVER_ATTR = "data-menu-popover";
 
 /** How long a flyout survives the pointer leaving its row, so the gap to it is crossable. */
 const HOVER_GRACE_MS = 140;
-
-/**
- * A number a list of presets cannot honestly cover. Tempo is 20-300 and beats-per-bar is
- * 1-32; a submenu of either is a scroll rather than a control, and picking "the ones worth
- * an entry" makes the menu quietly less capable than the field on desktop.
- */
-export interface MenuNumber {
-  value: number;
-  min: number;
-  max: number;
-  /** What the nudge buttons move by, and the field's own step. Defaults to 1. */
-  step?: number;
-  /** A short suffix after the field (BPM). */
-  unit?: string;
-  onChange: (value: number) => void;
-}
 
 /**
  * A continuous value set in place, rather than behind a submenu.
@@ -95,14 +78,6 @@ export interface MenuItem {
   submenu?: MenuItem[];
   /** A horizontal divider between groups of items (no label/action). */
   separator?: boolean;
-  /**
-   * A non-interactive group title. Menus that gather several sources into one list (the touch
-   * shell's ⋮) need to say where a row came from - two surfaces both offering "Snap to grid"
-   * is otherwise a coin toss.
-   */
-  heading?: string;
-  /** A number field with nudge buttons, in place of a submenu of preset values. */
-  number?: MenuNumber;
   /** A fader set inline, in place of a submenu of preset values. */
   fader?: MenuFader;
 }
@@ -237,90 +212,6 @@ function Popover({
   );
 }
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-/**
- * A number field as a menu row. Typing is the point (tempo is 20-300), and the − / + buttons
- * are there because on touch a nudge otherwise costs a keyboard.
- *
- * The draft is held as text rather than a number so a half-typed "1" on the way to "140" does
- * not snap the project to the minimum under your finger; it commits whatever parses, and the
- * store clamps. An external change (undo, the agent, the other field) resyncs it, adjusted
- * during render rather than in an effect so it lands before paint.
- */
-function NumberRow({
-  label,
-  number,
-  disabled,
-  reserveCheck,
-}: {
-  label?: string;
-  number: MenuNumber;
-  disabled?: boolean;
-  reserveCheck: boolean;
-}) {
-  const { value, min, max, step = 1, unit, onChange } = number;
-  const [draft, setDraft] = useState(String(value));
-  const [seen, setSeen] = useState(value);
-  if (seen !== value) {
-    setSeen(value);
-    setDraft(String(value));
-  }
-
-  const commit = (text: string) => {
-    setDraft(text);
-    const parsed = Number(text);
-    if (text.trim() !== "" && Number.isFinite(parsed)) onChange(clamp(parsed, min, max));
-  };
-  const nudge = (delta: number) => onChange(clamp(value + delta * step, min, max));
-  const nudgeClass =
-    "shrink-0 flex items-center justify-center w-7 h-7 rounded-md border border-line bg-ground text-[15px] leading-none text-muted cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed";
-
-  return (
-    <div role="group" aria-label={label} className="flex items-center gap-2 px-3 py-1 text-[12.5px] text-ink">
-      {reserveCheck && <span aria-hidden="true" className="w-3 shrink-0" />}
-      <span className="flex-1 whitespace-nowrap">{label}</span>
-      <button
-        type="button"
-        aria-label={`${label} down`}
-        disabled={disabled || value <= min}
-        onClick={() => nudge(-1)}
-        className={nudgeClass}
-      >
-        −
-      </button>
-      <input
-        type="number"
-        inputMode="numeric"
-        aria-label={label}
-        min={min}
-        max={max}
-        step={step}
-        value={draft}
-        disabled={disabled}
-        onChange={(event) => commit(event.target.value)}
-        // Leaving the field with nothing usable in it puts the live value back, so the row
-        // never sits showing a number the project does not have.
-        onBlur={() => setDraft(String(value))}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-        }}
-        className="w-14 shrink-0 font-mono text-[12.5px] text-center px-1 py-1 rounded-md border border-line bg-ground text-strong"
-      />
-      <button
-        type="button"
-        aria-label={`${label} up`}
-        disabled={disabled || value >= max}
-        onClick={() => nudge(1)}
-        className={nudgeClass}
-      >
-        +
-      </button>
-      {unit && <span className="shrink-0 font-mono text-[10px] text-muted">{unit}</span>}
-    </div>
-  );
-}
-
 /**
  * A `MenuFader` as a row.
  *
@@ -376,19 +267,6 @@ function Row({
   useEffect(() => () => clearTimeout(grace.current), []);
 
   if (item.separator) return <div role="separator" className="my-1 border-t border-line" />;
-  if (item.heading)
-    return (
-      // A rule above rather than a separator item, so a group is one thing in the list and
-      // cannot be left with a stray divider when it publishes nothing.
-      <div
-        role="presentation"
-        className="mt-1.5 pt-1.5 px-3 pb-0.5 border-t border-line font-mono text-[10px] uppercase tracking-wider text-muted first:mt-0 first:pt-0 first:border-t-0"
-      >
-        {item.heading}
-      </div>
-    );
-  if (item.number)
-    return <NumberRow label={item.label} number={item.number} disabled={item.disabled} reserveCheck={reserveCheck} />;
   if (item.fader) return <FaderRow label={item.label} fader={item.fader} reserveCheck={reserveCheck} />;
   // Show the check column for radio items; reserve an empty one on the menu's other
   // rows when any sibling is checkable, so plain/submenu rows still line up.
@@ -503,7 +381,7 @@ function MenuList({ items, side, onDismiss }: { items: MenuItem[]; side: "left" 
           // ("Snap to grid" belongs to both the arrangement and the roll), so the label alone
           // is not an identity. The label still rides along, so a row whose label changes
           // ("Quantize 3 selected") remounts rather than keeping a stale field's draft.
-          key={`${index}:${item.label ?? item.heading ?? ""}`}
+          key={`${index}:${item.label ?? ""}`}
           item={item}
           side={side}
           open={openRow === index}

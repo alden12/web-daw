@@ -6,7 +6,7 @@
  * that view (expanding first if collapsed). The set of views is data (libraryViews.tsx),
  * shared with the touch shell's strip, so adding one is a single entry there.
  */
-import { BrandMark } from "./BrandMark";
+import { AccountAvatar } from "./AccountAvatar";
 import { RAIL_ITEMS, type LibraryView } from "./libraryViews";
 
 export type { LibraryView, RailItem } from "./libraryViews";
@@ -56,21 +56,19 @@ export function ActivityRail({
         );
       })}
 
-      {/* Pinned below the views: the mark, and the rail's only control that is not one. It holds the
-          slot the account avatar used to, and has taken that button's job - so unlike the views
-          above it opens a panel rather than switching one. The settings gear that used to sit under
-          it is gone, because account and settings are now one panel and two buttons onto the same
-          thing is one too many. Unlike the avatar it renders in local/dev too, so the brand is
-          there whether or not anyone is signed in. */}
+      {/* Pinned below the views: you, as your initials (`AccountAvatar`, the same chip as the touch
+          top bar), and the rail's only control that opens a panel rather than switching a view.
+          Account and settings are one panel, so this is the one button onto both. It renders in
+          local/dev too, from your handle, so it is there whether or not anyone is signed in. */}
       <div className="mt-auto flex flex-col items-center w-full">
         <button
           type="button"
           title="Account and settings"
           aria-label="Account and settings"
           onClick={onOpenSettings}
-          className="flex items-center justify-center w-full h-11 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
+          className="flex items-center justify-center w-full h-11 cursor-pointer"
         >
-          <BrandMark size={34} />
+          <AccountAvatar size={30} />
         </button>
       </div>
     </nav>

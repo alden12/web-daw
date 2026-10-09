@@ -1,6 +1,6 @@
 /**
- * The settings modal, opened from the logo (the rail's on a desktop, the library sheet's on a phone).
- * "Account" is everyone in the project and how they are coloured, you first, plus the way out;
+ * The settings modal, opened from the logo at the foot of the desktop rail, or your initials in the
+ * touch top bar. "Timing" is tempo, meter, metronome, count-in and groove (`TimingSettings`); "Account" is everyone in the project and how they are coloured, you first, plus the way out;
  * "Agent" holds the BYOK provider/key/model config; "MIDI" holds hardware MIDI input; "Recording"
  * the input and count-in; "Appearance" the theme.
  *
@@ -22,6 +22,9 @@ import { AgentSettingsSection } from "./AgentSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { MidiSettings } from "./MidiSettings";
 import { RecordingSettings } from "./RecordingSettings";
+import { TimingSettings } from "./TimingSettings";
+import type { ProjectStore } from "../audio/project/projectStore";
+import type { Dispatch } from "../audio/commands/types";
 import type { AgentConfig } from "../audio/agent/config";
 import type { AuthorColorConfig } from "./authorColors";
 import type { EditLog } from "../audio/commands/editLog";
@@ -29,9 +32,17 @@ import type { MidiInput } from "../audio/midi/midiInput";
 import type { Recorder } from "../audio/recording/recorder";
 import type { AudioEngine } from "../audio/engine/AudioEngine";
 
-export type SettingsTab = "account" | "agent" | "midi" | "recording" | "appearance";
-const TAB_IDS = ["account", "agent", "midi", "recording", "appearance"] as const satisfies readonly SettingsTab[];
+export type SettingsTab = "timing" | "account" | "agent" | "midi" | "recording" | "appearance";
+const TAB_IDS = [
+  "timing",
+  "account",
+  "agent",
+  "midi",
+  "recording",
+  "appearance",
+] as const satisfies readonly SettingsTab[];
 const TABS: { id: SettingsTab; label: string }[] = [
+  { id: "timing", label: "Timing" },
   { id: "account", label: "Account" },
   { id: "agent", label: "Agent" },
   { id: "midi", label: "MIDI" },
@@ -51,6 +62,8 @@ export function SettingsPanel({
   midiInput,
   recorder,
   engine,
+  projectStore,
+  dispatch,
   initialTab,
   onClose,
 }: {
@@ -60,6 +73,8 @@ export function SettingsPanel({
   midiInput: MidiInput;
   recorder: Recorder;
   engine: AudioEngine;
+  projectStore: ProjectStore;
+  dispatch: Dispatch;
   /** The tab a caller means, if it means one. Omitted, the panel opens on the one you left it on. */
   initialTab?: SettingsTab;
   onClose: () => void;
@@ -155,6 +170,7 @@ export function SettingsPanel({
             aria-label={label}
             className={`${listing ? "hidden sm:flex" : "flex"} flex-1 min-w-0 flex-col gap-4 p-4 sm:p-6 overflow-y-auto`}
           >
+            {tab === "timing" && <TimingSettings projectStore={projectStore} dispatch={dispatch} />}
             {tab === "account" && <AccountSettings config={authorColors} editLog={editLog} onClose={onClose} />}
             {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
             {tab === "midi" && <MidiSettings midiInput={midiInput} />}

@@ -18,8 +18,7 @@
 import type { ReactNode } from "react";
 import { DETENT_ORDER, stepDetent, type Detent, type DetentSet } from "./detents";
 import { useSheetDrag } from "./useSheetDrag";
-import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
-import { IconButton } from "../controls/IconButton";
+import { SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
 
 /**
  * The grabber and title row, as a number. It is a constant rather than a measurement because
@@ -29,34 +28,6 @@ import { IconButton } from "../controls/IconButton";
  */
 export const SHEET_HEADER_HEIGHT = 58;
 
-/**
- * Every detent has a button route as well as the drag (MOBILE-19.1), so a throw is a shortcut
- * rather than the only way: minimised has **expand**, half has **minimise** and **expand**,
- * full has **minimise** and **back to half**. Data, so the header renders whichever apply.
- */
-const GLYPHS = {
-  up: <path d="M3.5 10 8 5.5l4.5 4.5" />,
-  down: <path d="M3.5 6 8 10.5 12.5 6" />,
-  half: (
-    <>
-      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
-      <path d="M2.5 8h11" />
-    </>
-  ),
-};
-
-const DETENT_BUTTONS: Record<Detent, { to: Detent; label: string; glyph: keyof typeof GLYPHS }[]> = {
-  peek: [{ to: "half", label: "Expand the editor", glyph: "up" }],
-  half: [
-    { to: "peek", label: "Minimise the editor", glyph: "down" },
-    { to: "full", label: "Expand the editor to full screen", glyph: "up" },
-  ],
-  full: [
-    { to: "peek", label: "Minimise the editor", glyph: "down" },
-    { to: "half", label: "Back to half", glyph: "half" },
-  ],
-};
-
 export function EditorSheet({
   detent,
   detents,
@@ -65,6 +36,7 @@ export function EditorSheet({
   subtitle,
   controls,
   preview,
+  tools,
   children,
 }: {
   detent: Detent;
@@ -81,6 +53,8 @@ export function EditorSheet({
    * the header is all there is. Tapping it opens the sheet to half.
    */
   preview?: ReactNode;
+  /** The surface's tools menu (MOBILE-19), beside the controls while the sheet is open. */
+  tools?: ReactNode;
   children: ReactNode;
 }) {
   const { sheetRef, handleProps } = useSheetDrag({ detent, detents, onDetentChange });
@@ -95,8 +69,9 @@ export function EditorSheet({
       className="absolute bottom-0 left-0 right-0 flex flex-col rounded-t-2xl border-t border-line bg-panel shadow-[0_-14px_40px_-12px_var(--sheet-shadow)] will-change-transform"
       // The insets go here rather than as padding on the workspace: an absolutely
       // positioned box resolves against its containing block's *padding box*, so padding
-      // out there would be silently ignored by this element (MOBILE-8).
-      style={{ paddingBottom: SAFE_BOTTOM, paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
+      // out there would be silently ignored by this element (MOBILE-8). Not the bottom one:
+      // the tab bar below the workspace carries that (MOBILE-19).
+      style={{ paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
     >
       {/*
        * The whole header drags, not just the grabber - it is the easiest thing on screen
@@ -139,17 +114,11 @@ export function EditorSheet({
               {preview}
             </button>
           ) : (
-            controls
+            <>
+              {controls}
+              {tools}
+            </>
           )}
-          <div className={`flex shrink-0 ${minimised ? "" : "ml-1"}`}>
-            {DETENT_BUTTONS[detent].map((button) => (
-              <IconButton key={button.to} label={button.label} onClick={() => onDetentChange(button.to)}>
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  {GLYPHS[button.glyph]}
-                </svg>
-              </IconButton>
-            ))}
-          </div>
         </div>
       </div>
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{children}</div>

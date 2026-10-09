@@ -140,19 +140,19 @@ test("the roll toolbar fits when the panel is narrow, keeping zoom reachable", a
   const zoom = (await page.getByTitle("Zoom out (time)").boundingBox())!;
   expect(zoom.x + zoom.width).toBeLessThanOrEqual(bar.x + size.client + 1);
 
-  // Snap and quantize are still reachable, in the settings menu.
-  await page.getByRole("button", { name: "Roll settings" }).click();
+  // Snap and quantize are still reachable, in the roll's tools menu.
+  await page.getByRole("button", { name: "Notes tools" }).click();
   await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: /Quantize all notes|Quantize \d+ selected/ })).toBeVisible();
 });
 
-test("the velocity lane collapses from the roll settings menu", async ({ page }) => {
+test("the velocity lane collapses from the roll's tools menu", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
   const lane = page.getByTitle("Velocity - drag a bar");
   await expect(lane).toBeVisible();
 
-  await page.getByRole("button", { name: "Roll settings" }).click();
+  await page.getByRole("button", { name: "Notes tools" }).click();
   await page.getByRole("menuitemradio", { name: /Velocity lane/i }).click();
   await expect(lane).toBeHidden();
 

@@ -23,11 +23,13 @@ import { projectDetent, trimSamples, velocityFrom, type Detent, type DetentSet, 
 /** Fast enough to feel decisive, slow enough to read as physical. */
 const STIFFNESS = 220;
 /**
- * Exactly critical: the fastest settle that never overshoots. It was 26, a touch under, which
- * read as a small bounce at every detent - most visibly at full, which now meets the top edge
- * (MOBILE-19.1). The release velocity still carries in; it just lands rather than rebounds.
+ * How much the settle gives, as a share of critical damping (`2 * sqrt(STIFFNESS)`, the fastest
+ * settle that never overshoots): 1 lands dead, lower overshoots more. Tuned by feel on a phone
+ * (MOBILE-19.1): critical felt lifeless, 0.83 lands with a little give. Kept as a ratio so a
+ * change of stiffness keeps the feel.
  */
-const DAMPING = 2 * Math.sqrt(STIFFNESS);
+const DAMPING_RATIO = 0.83;
+const DAMPING = 2 * DAMPING_RATIO * Math.sqrt(STIFFNESS);
 /** Sub-step the integration: a stiff spring on a dropped frame explodes at a variable dt. */
 const MAX_STEP_S = 0.004;
 const REST_POSITION = 0.4;

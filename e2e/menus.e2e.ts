@@ -16,8 +16,8 @@ test("add a track via the toolbar group picker and delete it via the row menu", 
   const trackMenus = page.getByRole("button", { name: "Track actions" });
   const before = await trackMenus.count();
 
-  // Toolbar menu -> New MIDI track in (submenu) -> New group.
-  await page.getByRole("button", { name: "Timeline options" }).click();
+  // The toolbar's "+" -> New MIDI track in (submenu) -> New group.
+  await page.getByRole("button", { name: "Add to the arrangement" }).click();
   await page.getByRole("menuitem", { name: "New MIDI track in" }).hover();
   await page.getByRole("menuitem", { name: "New group" }).click();
   await expect(trackMenus).toHaveCount(before + 1);
@@ -118,59 +118,58 @@ async function liftFinger(page: Page, name: string) {
 test.describe("placement", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("a third level opens, on screen, and its choice lands", async ({ page }) => {
+  test("a flyout opened by a tap stays open, on screen, and its choice lands", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    // Meter -> Beat unit -> 8 is a deepest-in-the-app chain, and the shape that broke: a
-    // flyout given `overflow-y: auto` clips the flyout *it* opens, so the third level
-    // answered a tap with a scrollbar and nothing else.
-    await page.getByRole("button", { name: "More controls" }).tap();
-    await page.getByRole("menuitem", { name: /^Meter/ }).tap();
-    await page.getByRole("menuitem", { name: "Beat unit" }).tap();
+    // The arrangement's tools (MOBILE-19), in the timeline's top-left corner: a flyout opened
+    // near the left edge, which is where a flyout most wants to run off the screen.
+    await page.getByRole("button", { name: "Arrangement tools" }).tap();
+    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
     // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
     // opened by a tap has to survive the finger that opened it leaving.
-    await liftFinger(page, "Beat unit");
+    await liftFinger(page, "Snap to");
 
     // Polls, so no fixed wait for the flyout to open and settle.
-    const levels = await settledPopoverBoxes(page, 3);
-    expect(levels, "three levels open at once").toHaveLength(3);
+    const levels = await settledPopoverBoxes(page, 2);
+    expect(levels, "both levels open at once").toHaveLength(2);
 
-    await page.getByRole("menuitemradio", { name: "8", exact: true }).tap();
+    await page.getByRole("menuitemradio", { name: "1/2", exact: true }).tap();
     await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
-    await page.getByRole("button", { name: "More controls" }).tap();
-    await expect(page.getByRole("menuitem", { name: /^Meter/ })).toContainText("4/8");
+    await page.getByRole("button", { name: "Arrangement tools" }).tap();
+    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
+    await expect(page.getByRole("menuitemradio", { name: "1/2", exact: true })).toHaveAttribute("aria-checked", "true");
   });
 
   /**
-   * A resize used to close the menu, which is fine for a rotated phone and wrong for the one
-   * resize that matters here: a virtual keyboard. Tapping the tempo field would have shut the
-   * menu the field is in, before a digit could be typed. Each popover re-places instead.
+   * A resize used to close the menu, which is fine for a rotated phone and wrong for the resize a
+   * virtual keyboard makes. Each popover re-places instead.
    */
   test("a resize re-places the menu rather than closing it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    await page.getByRole("button", { name: "More controls" }).tap();
-    await page.getByRole("spinbutton", { name: "Tempo" }).tap();
+    await page.getByRole("button", { name: "Notes tools" }).tap();
+    await settledPopoverBoxes(page, 1);
     // What the keyboard does to the viewport, without needing a keyboard.
     await page.setViewportSize({ width: 390, height: 500 });
 
     // The resize triggers a re-place, so the box has to be read once that has run.
     await settledPopoverBoxes(page, 1);
-    await page.getByRole("spinbutton", { name: "Tempo" }).fill("96");
-    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("96");
+    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
   });
 
   test("a menu too tall for the viewport scrolls instead of running off it", async ({ page }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await page.goto("/");
     await dismissStart(page);
+    // Then short enough that the arrangement's tools cannot fit below their corner button. After
+    // the start dialog, which needs the room to be dismissed.
+    await page.setViewportSize({ width: 844, height: 220 });
 
-    await page.getByRole("button", { name: "More controls" }).tap();
-    const [overflow] = await settledPopoverBoxes(page, 1);
-    expect(overflow.rows, "more rows than a 390px-tall viewport can show").toBeGreaterThan(10);
-    expect(overflow.scrolls).toBe(true);
+    await page.getByRole("button", { name: "Arrangement tools" }).tap();
+    const [menu] = await settledPopoverBoxes(page, 1);
+    expect(menu.scrolls, "more rows than fit").toBe(true);
 
     // Scrolling *inside* the menu is the menu being used, not the page moving under it -
     // and the popover closes on any other scroll, so the two have to be told apart.

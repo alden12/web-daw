@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { setCountIn } from "./support/app";
 
 /**
  * MIDI recording into an instrument track. Unlike audio recording (which needs the
@@ -19,10 +20,7 @@ async function startAudio(page: Page) {
 }
 
 async function setNoCountIn(page: Page) {
-  await page.getByRole("button", { name: "Timeline options" }).click();
-  await page.getByRole("menuitem", { name: "Count-in" }).hover();
-  await page.getByRole("menuitemradio", { name: "No count-in" }).click();
-  await page.keyboard.press("Escape"); // close the menu
+  await setCountIn(page, "None");
 }
 
 test("records live MIDI into the selected instrument track", async ({ page }) => {
