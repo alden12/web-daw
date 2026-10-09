@@ -17,7 +17,7 @@ const SECONDS_PER_BEAT = 0.5; // 120 BPM
 
 export function capturePhrase(
   type: string,
-  { bars = 2, params = {} }: { bars?: number; params?: Record<string, ParamValue> } = {},
+  { bars = 1, params = {} }: { bars?: number; params?: Record<string, ParamValue> } = {},
 ): { notes: PhraseNote[]; spanSec: number } {
   const spanSec = bars * 4 * SECONDS_PER_BEAT;
   const notes: PhraseNote[] = [];

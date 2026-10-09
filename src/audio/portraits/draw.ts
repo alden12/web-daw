@@ -126,12 +126,16 @@ export interface PhraseNote {
   length: number;
 }
 
-/** Note blocks over `spanSec`, one row per pitch between the lowest and highest (at least 8 rows). */
+/**
+ * Note blocks over `spanSec`, one row per **distinct pitch played** (low at the bottom) rather than
+ * per semitone: at card size a triad spread over eight semitone rows is three hairlines, where
+ * three rows of its own are three bars you can see. The contour survives; the intervals do not
+ * need to. At least 4 rows, so a single repeated note is not one slab filling the card.
+ */
 export function phrase(notes: PhraseNote[], spanSec: number): string {
   if (notes.length === 0) return "";
-  const pitches = notes.map((note) => note.pitch);
-  const low = Math.min(...pitches);
-  const rows = Math.max(8, Math.max(...pitches) - low + 1);
+  const pitches = [...new Set(notes.map((note) => note.pitch))].sort((low, high) => low - high);
+  const rows = Math.max(4, pitches.length);
   const rowHeight = 76 / rows;
   const x = (seconds: number) => 8 + (Math.min(seconds, spanSec) / spanSec) * 84;
   return notes
@@ -139,8 +143,8 @@ export function phrase(notes: PhraseNote[], spanSec: number): string {
     .map((note) => {
       const left = x(note.start);
       const width = Math.max(0.8, x(note.start + note.length) - left - 0.8);
-      const top = 12 + (rows - 1 - (note.pitch - low)) * rowHeight;
-      return `M${point(left, top)} h${round(width)} v${round(Math.max(0.8, rowHeight - 1))} h${round(-width)} Z`;
+      const top = 12 + (rows - 1 - pitches.indexOf(note.pitch)) * rowHeight;
+      return `M${point(left, top)} h${round(width)} v${round(Math.max(0.8, rowHeight - 2))} h${round(-width)} Z`;
     })
     .join(" ");
 }
