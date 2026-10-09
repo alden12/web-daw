@@ -23,7 +23,7 @@ describe("capturePhrase", () => {
   });
 
   it("steps a generator through the phrase once, not twice at its start", () => {
-    const { notes } = capturePhrase("arpeggiator");
+    const { notes } = capturePhrase("arpeggiator", { bars: 2 });
     const starts = notes.map((note) => note.start);
     expect(new Set(starts).size).toBe(starts.length);
     expect(Math.max(...starts)).toBeGreaterThan(1);
