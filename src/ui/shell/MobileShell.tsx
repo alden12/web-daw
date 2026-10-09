@@ -48,7 +48,7 @@ import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
 import { ClipRail } from "../ClipRail";
 import { TransportBar } from "../TransportBar";
-import { BrandMark } from "../BrandMark";
+import { AccountAvatar } from "../AccountAvatar";
 import { Menu, type MenuItem } from "../Menu";
 import { IconButton } from "../controls/IconButton";
 import { iconButtonClass } from "../controls/iconButtonStyle";
@@ -493,7 +493,7 @@ export function MobileShell({
           paddingRight: atLeast("0.5rem", SAFE_RIGHT),
         }}
       >
-        <div className="min-w-0 flex-1 overflow-x-auto">
+        <div className="shrink-0">
           <TransportBar
             projectStore={projectStore}
             scheduler={scheduler}
@@ -505,27 +505,29 @@ export function MobileShell({
           />
         </div>
         {/* Undo / redo earn permanent slots on touch: there is no keyboard shortcut to
-            fall back on, and fearless iteration is the point of the authored edit log. */}
+            fall back on, and fearless iteration is the point of the authored edit log. Beside
+            the transport, so the left of the bar is "doing" and the right is "you". */}
         <BarButton label="Undo" onClick={() => editLog.undo()} disabled={!canUndo}>
           <UndoIcon />
         </BarButton>
         <BarButton label="Redo" onClick={() => editLog.redo()} disabled={!canRedo}>
           <UndoIcon flip />
         </BarButton>
+        <div className="flex-1" />
         <BarButton label="Agent" tint="agent" onClick={() => setAgentOpen(!agentOpen)} active={agentOpen}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-5 h-5">
             <path d="M8 1.75l1.6 4.15 4.15 1.6-4.15 1.6L8 13.25l-1.6-4.15L2.25 7.5l4.15-1.6z" />
           </svg>
         </BarButton>
-        {/* The logo is the way into account and settings, as it is at the foot of the desktop rail. */}
+        {/* You, as your initials: the way into account and settings. */}
         <button
           type="button"
           onClick={onOpenSettings}
           aria-label="Account and settings"
           title="Account and settings"
-          className="shrink-0 flex items-center justify-center w-9 h-9 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
+          className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full cursor-pointer focus-visible:outline-2 focus-visible:outline-you"
         >
-          <BrandMark size={30} />
+          <AccountAvatar size={30} />
         </button>
         <Menu
           items={overflowItems}

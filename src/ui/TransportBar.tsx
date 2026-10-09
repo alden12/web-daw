@@ -88,22 +88,38 @@ export function TransportBar({
       )}
 
       {/* Grey while stopped, teal while playing: the accent says what the transport is doing
-          rather than which button is the important one. */}
-      <Button
-        tone="you"
-        active={isPlaying}
-        disabled={!started}
-        title={isPlaying ? "Stop" : "Play"}
-        // Stopping while recording finalizes the take (recorder.stop also stops the
-        // transport), so Stop never leaves a recording dangling.
-        onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
-        // Pulled 4px back towards the record button. The gap is measured between the two
-        // boxes, but record has no visible box at rest, so the eye measures from the dot
-        // instead and reads the same 12px as a hole. Closing it to 8px looks like 12.
-        className={`font-mono min-w-18 -ml-1 ${compact ? "h-9" : ""}`}
-      >
-        {isPlaying ? "■ Stop" : "▶ Play"}
-      </Button>
+          rather than which button is the important one. Compact (touch) is the icon alone:
+          the word cost a phone's top bar the width undo and redo now use. */}
+      {compact ? (
+        <IconButton
+          label={isPlaying ? "Stop" : "Play"}
+          size="lg"
+          active={isPlaying}
+          disabled={!started}
+          onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
+          className="-ml-1"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-4.5 h-4.5">
+            {isPlaying ? <rect x="3.5" y="3.5" width="9" height="9" rx="1" /> : <path d="M4.5 2.75v10.5L13 8z" />}
+          </svg>
+        </IconButton>
+      ) : (
+        <Button
+          tone="you"
+          active={isPlaying}
+          disabled={!started}
+          title={isPlaying ? "Stop" : "Play"}
+          // Stopping while recording finalizes the take (recorder.stop also stops the
+          // transport), so Stop never leaves a recording dangling.
+          onClick={() => (recording ? void recorder.stop() : isPlaying ? scheduler.stop() : scheduler.play())}
+          // Pulled 4px back towards the record button. The gap is measured between the two
+          // boxes, but record has no visible box at rest, so the eye measures from the dot
+          // instead and reads the same 12px as a hole. Closing it to 8px looks like 12.
+          className="font-mono min-w-18 -ml-1"
+        >
+          {isPlaying ? "■ Stop" : "▶ Play"}
+        </Button>
+      )}
       {/* The word labels drop below `sm`: on a phone the transport is pinned above every
           view (MOBILE-1) and has to fit 390px without clipping. The fields keep their
           `aria-label` / `title`, so nothing is lost to assistive tech. */}

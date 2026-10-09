@@ -17,10 +17,8 @@ import { authEnabled, readAuthState, signOut, subscribeAuth } from "../auth/sess
 import { AuthorColorSettings } from "./AuthorColorSettings";
 import type { EditLog } from "../audio/commands/editLog";
 import { type AuthorColorConfig } from "./authorColors";
-import { useAuthorPresence } from "./authorColorsContext";
-import { authorHex } from "./authorStyle";
 import { readCurrentUser, subscribeCurrentUser, writeCurrentUser, DEFAULT_USER } from "./currentUser";
-import { initials } from "./initials";
+import { AccountAvatar } from "./AccountAvatar";
 
 export function AccountSettings({
   config,
@@ -33,7 +31,6 @@ export function AccountSettings({
 }) {
   const authState = useSyncExternalStore(subscribeAuth, readAuthState, readAuthState);
   const currentUser = useSyncExternalStore(subscribeCurrentUser, readCurrentUser, readCurrentUser);
-  const presence = useAuthorPresence();
   const signedIn = authEnabled && authState.status === "signed-in";
 
   return (
@@ -42,7 +39,6 @@ export function AccountSettings({
         <SignedInIdentity
           name={authState.status === "signed-in" ? authState.user.name : ""}
           email={authState.status === "signed-in" ? authState.user.email : undefined}
-          chip={authorHex(presence.self, presence)}
         />
       ) : (
         <HandleField currentUser={currentUser} />
@@ -67,15 +63,10 @@ export function AccountSettings({
 }
 
 /** Signed in: the avatar, display name and email, none of which this panel can change. */
-function SignedInIdentity({ name, email, chip }: { name: string; email?: string; chip: string }) {
+function SignedInIdentity({ name, email }: { name: string; email?: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span
-        className="w-12 h-12 rounded-full flex items-center justify-center text-base font-semibold leading-none shrink-0"
-        style={{ background: chip, color: "var(--color-ground)" }}
-      >
-        {initials(name || email || "?")}
-      </span>
+      <AccountAvatar size={48} />
       <div className="min-w-0">
         <div className="text-[13px] text-ink truncate">{name}</div>
         {email && <div className="text-[11px] text-faint truncate">{email}</div>}
