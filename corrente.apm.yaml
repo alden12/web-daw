@@ -2682,6 +2682,26 @@ projects:
         id: 01a122bf-a272-754d-a86f-388e151649e9
         created_at: 2026-10-09T22:19:06.739Z
         updated_at: 2026-10-09T22:19:06.739Z
+      - ref: COMM-1.9.6
+        area: COMM
+        title: "Portraits for custom devices: drawn in the browser on creation, saved with the device"
+        status: to-do
+        sort_path: 000001.000009.000006
+        parent: COMM-1.9
+        deps:
+          - COMM-1.9.2
+        body: |-
+          COMM-1.9.2 draws portraits for the built-ins only, as a committed `portraits.json`. Custom devices (user or agent-authored, registered from the project at load) show the category glyph. The drawing code already works on them: `renderIsolated` builds through the same factories, and a portrait renders in well under a second.
+
+          **Agreed shape (user, 2026-10-09):**
+          - **Stored with the device:** the portrait (about 1-2KB of SVG path) lives **inline in the custom device's definition** in the project document, not in blob storage (that's for audio-sized assets). It travels with the device, so **publishing carries it** (COMM-1.1) like the rest of the definition.
+          - **Drawn in the browser** when the device is created or changed (`renderPortraits`' per-kind logic, run on one device in the background), and saved through an authored edit so it syncs.
+          - **A hash of the definition beside it.** When the agent edits the device, the hash stops matching and the portrait redraws. A project document bump needs an upcaster in `documentMigration.ts` (the field is optional, so existing devices just have none until drawn).
+          - **The hosted MCP server has no browser,** so a device an agent makes through it can't be drawn at creation. The first browser to open the project draws and saves it. Once the render service (HOST-22) exists, the server can draw it at creation instead.
+          - **Your saved patches** (localStorage, cross-project) could take the same treatment, stored on the patch.
+        id: 01a122e1-5156-7033-b5be-c38513cd0e90
+        created_at: 2026-10-09T22:55:54.198Z
+        updated_at: 2026-10-09T22:55:54.198Z
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
