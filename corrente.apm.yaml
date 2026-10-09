@@ -2576,7 +2576,7 @@ projects:
       - ref: COMM-1.9.1
         area: COMM
         title: "Explore on built-ins: home, category tiles, playlist-style category pages, desktop rail"
-        status: review
+        status: done
         sort_path: 000001.000009.000001
         parent: COMM-1.9
         deps:
@@ -2592,7 +2592,8 @@ projects:
           Mockups: `FeedHome`, `FeedCategory`, `FeedDesktop`.
         id: 01a12246-2578-76bc-b8d2-ef13a98b3e25
         created_at: 2026-10-09T20:06:24.888Z
-        updated_at: 2026-10-09T21:23:33.833Z
+        updated_at: 2026-10-09T23:11:11.848Z
+        closed_at: 2026-10-09T23:11:11.848Z
         comments:
           - body: "Built notes: search on the phone moved to the Projects tab (Explore searches its own contents from its own box; the library's box hides on Explore). Tag chips are one horizontal scrolling row everywhere (user feedback: wrapped, they ate the desktop panel). No sort control yet, just an \"A to Z\" caption, since there is one order. No drag-onto-a-track existed in the old views, so none to keep. The open page persists (`corrente:explore-page`), which is how the Sampler's \"browse samples\" link lands on Samples."
             audience: user
@@ -8241,7 +8242,7 @@ projects:
       - ref: MOBILE-19.4
         area: MOBILE
         title: Editor settings get Arrangement and Piano roll settings pages; on touch they leave the tools menus
-        status: review
+        status: done
         sort_path: "000019.000004"
         parent: MOBILE-19
         deps:
@@ -8255,7 +8256,8 @@ projects:
           - **One value, not a copy**: the preferences are hooks over their persisted keys in `src/ui/editorPrefs.ts`, used by the surfaces and the pages alike.
         id: 01a122a3-258e-7348-bfee-84e007432011
         created_at: 2026-10-09T21:47:59.758Z
-        updated_at: 2026-10-09T21:51:14.056Z
+        updated_at: 2026-10-09T23:11:11.899Z
+        closed_at: 2026-10-09T23:11:11.899Z
         comments:
           - body: "Extended in #190 at the user's request: on touch both surface tools menus are gone. Adding is a + in the top bar (Studio tab only), zoom is pinch only, and Quantize moved to the selected note's own menu (that note, or its selection), on both shells. Manual \"quantize the whole clip\" is now desktop-only; on a phone it's select-then-quantize, or auto-quantize from settings."
             audience: user
