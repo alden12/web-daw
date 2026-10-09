@@ -1,11 +1,12 @@
 /**
- * Placeholder artwork for an Explore item or category (COMM-1.9.1): the category's hue as a
- * gradient, its glyph on top. Sound portraits drawn from each device's demo replace it in
- * COMM-1.9.2; until then a nudge of hue per name keeps a list of one category from reading as a
- * single repeated tile.
+ * The artwork for an Explore item or category: the category's hue as a gradient, and on it the
+ * item's sound portrait (COMM-1.9.2) - or, for what has none yet (your patches, samples), the
+ * category's glyph. A nudge of hue per name keeps a list of one category from reading as a single
+ * repeated tile.
  */
 import type { ReactNode } from "react";
 import { CATEGORIES, type ExploreCategory } from "./exploreItems";
+import type { Portrait } from "../../audio/portraits/draw";
 
 const GLYPHS: Record<ExploreCategory, ReactNode> = {
   favourites: <path d="M8 13.2s-5-3.1-6.1-6A3.1 3.1 0 0 1 8 4.4a3.1 3.1 0 0 1 6.1 2.8C13 10.1 8 13.2 8 13.2z" />,
@@ -40,10 +41,13 @@ const hueShift = (seed: string) =>
 export function ExploreThumb({
   category,
   seed = "",
+  portrait,
   size,
 }: {
   category: ExploreCategory;
   seed?: string;
+  /** The item's sound portrait, drawn in place of the glyph when there is one (COMM-1.9.2). */
+  portrait?: Portrait;
   size: number;
 }) {
   const hue = CATEGORIES[category].hue + hueShift(seed);
@@ -57,17 +61,35 @@ export function ExploreThumb({
         background: `linear-gradient(150deg, hsl(${hue} 46% 42%), hsl(${hue + 40} 50% 20%))`,
       }}
     >
-      <svg
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ width: size * 0.48, height: size * 0.48 }}
-      >
-        {GLYPHS[category]}
-      </svg>
+      {portrait ? (
+        // A soft glow, as on a scope's screen. `non-scaling-stroke`, so a 40px row and a 96px header
+        // draw the same weight of line.
+        <svg viewBox="0 0 100 100" className="w-full h-full [filter:drop-shadow(0_0_2px_rgb(255_255_255/0.45))]">
+          {portrait.fill && <path d={portrait.fill} fill="currentColor" fillOpacity={0.9} />}
+          {portrait.line && (
+            <path
+              d={portrait.line}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.4}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+        </svg>
+      ) : (
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ width: size * 0.48, height: size * 0.48 }}
+        >
+          {GLYPHS[category]}
+        </svg>
+      )}
     </span>
   );
 }

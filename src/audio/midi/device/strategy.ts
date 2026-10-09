@@ -23,6 +23,11 @@ export interface MidiStrategy {
   playNote(midi: number, durationSec: number, velocity: number | undefined, when: number | undefined): void;
   allNotesOff(): void;
   dispose(): void;
+  /**
+   * Generators only (`StepStrategy`): forward the steps in [fromTime, toTime) now, without the
+   * lookahead timer. A tap forwards as notes arrive, so it has nothing to schedule.
+   */
+  scheduleWindow?(fromTime: number, toTime: number): void;
 }
 
 /** Shift an absolute time by a beat offset; live events (no `when`) or zero offsets pass through. */

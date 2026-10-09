@@ -61,7 +61,8 @@ Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.
 - Instruments, effects, and their parameters are declared once in the pure
   catalogs (`src/audio/instruments/catalog.ts`, `src/audio/effects/catalog.ts`)
   and realized by the registries (`registry.ts`). These are the single extension
-  points. Adding one should be: add a schema + catalog entry, add a factory.
+  points. Adding one should be: add a schema + catalog entry, add a factory, then
+  `yarn portraits` to draw its Explore card art (a unit test fails until you do).
 - The registries are typed `Record<InstrumentType, ...>` / `Record<EffectType, ...>`
   off the catalog keys, so a cataloged type without a factory is a compile error.
 - UI and MCP must **iterate the catalogs**, never hardcode instrument/effect/param

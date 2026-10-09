@@ -84,6 +84,16 @@ export class GraphMidiDevice implements NoteTarget {
     this.next.allNotesOff();
   }
 
+  /**
+   * Play a generator's steps in [fromTime, toTime) through at once, ahead of its timer: how a
+   * phrase is captured without waiting for it in real time (the Explore portraits, COMM-1.9.2).
+   * Call it in the same task as the notes that start the phrase, then `dispose`, so the timer
+   * those notes started never fires and plays the opening steps a second time.
+   */
+  scheduleWindow(fromTime: number, toTime: number): void {
+    this.strategy.scheduleWindow?.(fromTime, toTime);
+  }
+
   /** Release held state into the downstream (avoids stuck notes on removal) and stop any timer. */
   dispose(): void {
     this.strategy.dispose();

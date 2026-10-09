@@ -74,6 +74,11 @@ export function ExploreView({
 
   const items = exploreItems({ savedPatches, samples: project.samples });
   const inCategory = (key: ExploreCategory) => items.filter((item) => item.category === key);
+  /** A category's cover: the first of its devices, A to Z, that has a portrait. */
+  const coverOf = (key: ExploreCategory) =>
+    inCategory(key)
+      .sort(byName)
+      .find((item) => item.portrait)?.portrait;
   const list = (shown: ExploreItem[], showKind = false) => (
     <ExploreList items={shown} actions={actions} dispatch={dispatch} onPicked={onPicked} showKind={showKind} />
   );
@@ -108,7 +113,7 @@ export function ExploreView({
           Explore
         </button>
         <div className="flex items-end gap-3 px-3.5">
-          <ExploreThumb category={category} size={72} />
+          <ExploreThumb category={category} portrait={coverOf(category)} size={72} />
           <div className="min-w-0 pb-0.5">
             <div className="font-mono text-[9.5px] tracking-widest text-you">CATEGORY</div>
             <h2 className="text-[20px] font-semibold text-strong leading-tight truncate">
@@ -185,7 +190,7 @@ export function ExploreView({
                 onClick={() => openPage(key)}
                 className="flex items-center gap-2 h-11 pointer-coarse:h-13 pr-2 rounded-md bg-stage overflow-hidden text-left cursor-pointer hover:bg-you/10"
               >
-                <ExploreThumb category={key} size={44} />
+                <ExploreThumb category={key} portrait={coverOf(key)} size={44} />
                 <span className="flex-1 min-w-0 truncate text-[12.5px] font-semibold text-strong">
                   {CATEGORIES[key].label}
                 </span>

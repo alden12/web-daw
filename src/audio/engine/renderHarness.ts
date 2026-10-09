@@ -15,6 +15,8 @@ import { renderWorkletSmokeTest, renderProjectOffline, analyzeProjectMix, peakAm
 import { ProjectStore } from "../project/projectStore";
 import { encodeWav } from "../recording/wav";
 import { putAudio } from "../audioStore";
+import { renderPortraits } from "../portraits/renderPortraits";
+import type { Portrait } from "../portraits/draw";
 
 interface RenderHarness {
   __dawRenderWorkletSmoke?: () => Promise<number>;
@@ -23,6 +25,7 @@ interface RenderHarness {
   __dawRenderAudioTrackSmoke?: () => Promise<number>;
   __dawRenderMidiDeviceSmoke?: () => Promise<number>;
   __dawAnalyzeMix?: () => Promise<unknown>;
+  __dawRenderPortraits?: () => Promise<Record<string, Portrait>>;
 }
 
 // Build a tiny project (the seeded default instrument track + a wavetable/worklet track), put a
@@ -81,4 +84,6 @@ export function installRenderHarness(): void {
   harness.__dawRenderMidiDeviceSmoke = async () => peakAmplitude(await renderProjectOffline(buildMidiDeviceProject()));
   // The full "agent ears" chain: render offline -> analyze -> model-friendly report.
   harness.__dawAnalyzeMix = async () => analyzeProjectMix(buildSmokeProject());
+  // Every built-in's Explore portrait (COMM-1.9.2): what `yarn portraits` collects and commits.
+  harness.__dawRenderPortraits = renderPortraits;
 }

@@ -37,7 +37,7 @@ export function ExploreRow({
         className="flex-1 min-w-0 flex items-center gap-2.5 pl-2 py-1.5 text-left cursor-pointer"
       >
         <span className="w-5 shrink-0 text-right font-mono text-[10px] text-faint tabular-nums">{index}</span>
-        <ExploreThumb category={item.category} seed={item.name} size={40} />
+        <ExploreThumb category={item.category} seed={item.name} portrait={item.portrait} size={40} />
         <span className="flex-1 min-w-0 flex flex-col leading-tight">
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="truncate text-[13px] text-strong">{item.name}</span>
