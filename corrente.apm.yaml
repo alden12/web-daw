@@ -2602,7 +2602,7 @@ projects:
       - ref: COMM-1.9.2
         area: COMM
         title: Sound portrait thumbnails, generated from an isolated render
-        status: to-do
+        status: review
         sort_path: 000001.000009.000002
         parent: COMM-1.9
         deps:
@@ -2615,7 +2615,13 @@ projects:
           - Custom artwork later; this stays the default.
         id: 01a12246-81a3-74b0-beac-eb931b262fbe
         created_at: 2026-10-09T20:06:48.484Z
-        updated_at: 2026-10-09T20:06:48.484Z
+        updated_at: 2026-10-09T22:19:06.852Z
+        comments:
+          - body: 'Built: "build time" is a committed `src/ui/explore/portraits.json` from `yarn portraits` (headless Chromium via the dev-only `__dawRenderPortraits` hook), not a CI build step. A unit test fails if a built-in lacks one. Effects pick by RMS ring length (a 20ms tone burst): over 0.2s draws an envelope (delay, reverb), otherwise an input-vs-output transfer curve. Your saved patches and samples keep the glyph for now. `renderIsolated` is the shared isolated-device render AGENT-4.8 wanted.'
+            audience: user
+            id: 01a122bf-a311-713f-934d-9375e8f2015a
+            at: 2026-10-09T22:19:06.897Z
+            actor: claude
       - ref: COMM-1.9.3
         area: COMM
         title: Favourites (the like button) and one combined search with tags
@@ -2641,6 +2647,7 @@ projects:
           - COMM-1.1
           - COMM-1.2
           - COMM-1.9.3
+          - COMM-1.9.5
         body: |-
           Slice 10 of the Explore work, after publishing (COMM-1.1) and the signals (COMM-1.2):
           - **Most favourited** and **Most added** shelves on Explore home, served by indexed queries (the denormalised favourite counter; add events over 30 days).
@@ -2649,7 +2656,32 @@ projects:
           - Cards show author and counts; agent-built devices are marked.
         id: 01a12246-824e-71b4-8de7-0768248f2153
         created_at: 2026-10-09T20:06:48.654Z
-        updated_at: 2026-10-09T20:06:48.654Z
+        updated_at: 2026-10-09T22:19:06.803Z
+      - ref: COMM-1.9.5
+        area: COMM
+        title: "Explore queries run on the server: paged category pages, search, tag filters and chip counts"
+        status: to-do
+        sort_path: 000001.000009.000005
+        parent: COMM-1.9
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+        body: |-
+          **Why (user, 2026-10-09):** Explore currently builds every item in the browser and filters, sorts and ranks tags there (`exploreItems.ts`: `matchesQuery`, `hasTags`, `rankTags`, `tagsIn`). That's fine for about 30 built-ins, but it breaks down once the published catalogue has real users: every device can't be shipped to every client, and per-render passes over the whole list won't scale. This has to land before the published catalogue does.
+
+          **Shape:**
+          - **One query endpoint** (Hono, beside the sync API), roughly `GET /api/explore?category&q&tags[]&sort&cursor`. It returns a page of items, a total, and the **tag facet counts** for the filtered set.
+          - **Chip ranking moves to the server** with the same rule as `rankTags`: score = min(count, total − count) per tag, picked tags first. That rule is the reference implementation, so unit-test the server version against it.
+          - **Indexes:** GIN on the `tags` array and on a full-text `tsvector` (name, description and tags, as COMM-1.9.4 plans), plus btree on the sort keys (the favourite counter, recent adds, name). Measure, per CLAUDE.md: target p95 under 100ms at 100k published devices, seeded.
+          - **Keyset pagination** (cursor = last sort key + id), not offset. The client pages in with infinite scroll, and long lists get a **virtualised** row list.
+          - **Built-ins and your own things stay local:** catalog devices, factory patches, your saved patches and project samples. The UI reads through one `ExploreSource` seam: a local source (today's pure functions) and a remote one, merged. Local items list first, or interleave by the same sort. Decide when building.
+          - **Offline / no-API builds** (OPFS-only, the HOST-18 demo) keep the local source alone, so Explore works with no server.
+          - Portraits for published devices are stored with each version (COMM-1.9.2), so a page of results needs no rendering.
+
+          COMM-1.9.4 (the shelves and the published search group) builds on this endpoint rather than adding its own queries.
+        id: 01a122bf-a272-754d-a86f-388e151649e9
+        created_at: 2026-10-09T22:19:06.739Z
+        updated_at: 2026-10-09T22:19:06.739Z
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
