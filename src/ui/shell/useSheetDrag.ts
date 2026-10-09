@@ -20,9 +20,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { projectDetent, trimSamples, velocityFrom, type Detent, type DetentSet, type PointerSample } from "./detents";
 
-/** Critically-damped-ish. Fast enough to feel decisive, slow enough to read as physical. */
+/** Fast enough to feel decisive, slow enough to read as physical. */
 const STIFFNESS = 220;
-const DAMPING = 26;
+/**
+ * Exactly critical: the fastest settle that never overshoots. It was 26, a touch under, which
+ * read as a small bounce at every detent - most visibly at full, which now meets the top edge
+ * (MOBILE-19.1). The release velocity still carries in; it just lands rather than rebounds.
+ */
+const DAMPING = 2 * Math.sqrt(STIFFNESS);
 /** Sub-step the integration: a stiff spring on a dropped frame explodes at a variable dt. */
 const MAX_STEP_S = 0.004;
 const REST_POSITION = 0.4;

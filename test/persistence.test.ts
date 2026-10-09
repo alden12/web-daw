@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectStore } from "../src/audio/project/projectStore";
 import { EditLog } from "../src/audio/commands/editLog";
 import { attachAutosave, attachUndoPersistence, restoreProject } from "../src/audio/persistence";
-import { ProjectRepository } from "../src/audio/projectRepository";
+import { ProjectRepository, markProjectLoaded, setCurrentProject } from "../src/audio/projectRepository";
 import { MemoryBundleStore } from "../src/audio/bundleStore";
 import type { ProjectData } from "../src/audio/project/types";
 
@@ -124,6 +124,38 @@ describe("project + edit-log persistence", () => {
     const entries = log2.getState().entries;
     expect(entries.map((e) => e.command.type)).toEqual(["createTrack", "setTempo"]);
     expect(entries.map((e) => e.author)).toEqual(["you", "agent:you"]);
+  });
+
+  it("saves nothing mid-switch, so the old project never lands in the new one's bundle", async () => {
+    // Production path: no repo injected, so it follows the current project. A rename just before
+    // New project left a save pending; it fired after the repository was repointed and before the
+    // store was loaded, and wrote the old project into the new bundle (found on CI).
+    vi.useFakeTimers();
+    setCurrentProject("p-old");
+    markProjectLoaded("p-old");
+    const project = new ProjectStore(false);
+    const log = new EditLog(project);
+    const dispose = attachAutosave(project, log);
+    const appended = vi.spyOn(ProjectRepository.prototype, "appendEdits");
+    const keyframed = vi.spyOn(ProjectRepository.prototype, "writeKeyframe");
+
+    log.dispatch({ type: "setTempo", bpm: 90 });
+    setCurrentProject("p-new"); // repointed; the store still holds p-old
+    await vi.runAllTimersAsync();
+    expect(appended).not.toHaveBeenCalled();
+    expect(keyframed).not.toHaveBeenCalled();
+
+    // Once the store holds the new project, saving resumes - into the new project.
+    markProjectLoaded("p-new");
+    log.dispatch({ type: "setTempo", bpm: 100 });
+    await vi.runAllTimersAsync();
+    expect(
+      appended.mock.contexts.concat(keyframed.mock.contexts).map((repo) => (repo as ProjectRepository).id),
+    ).toContain("p-new");
+
+    dispose();
+    appended.mockRestore();
+    keyframed.mockRestore();
   });
 
   it("reconstructs HEAD from a keyframe plus a replayed edit tail", async () => {
