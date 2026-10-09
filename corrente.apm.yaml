@@ -8198,3 +8198,9 @@ projects:
         id: 01a122a3-258e-7348-bfee-84e007432011
         created_at: 2026-10-09T21:47:59.758Z
         updated_at: 2026-10-09T21:51:14.056Z
+        comments:
+          - body: "Extended in #190 at the user's request: on touch both surface tools menus are gone. Adding is a + in the top bar (Studio tab only), zoom is pinch only, and Quantize moved to the selected note's own menu (that note, or its selection), on both shells. Manual \"quantize the whole clip\" is now desktop-only; on a phone it's select-then-quantize, or auto-quantize from settings."
+            audience: user
+            id: 01a122b1-3f8f-72d3-aa22-ceb68361ca1c
+            at: 2026-10-09T22:03:23.919Z
+            actor: claude
