@@ -781,19 +781,19 @@ test.describe("phone", () => {
     expect(await roll.evaluate((el) => Math.round(el.scrollTop))).toBe(parked);
   });
 
-  test("every detent has a button route, so the drag is a shortcut rather than the only way", async ({ page }) => {
+  test("the drag is not the only way: tap the preview to open, the keyboard steps every detent", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    const button = (name: string) => sheet(page).getByRole("button", { name, exact: true });
     await setDetent(page, "peek");
 
-    await button("Expand the editor").tap();
+    await sheet(page).getByRole("button", { name: "Open the editor", exact: true }).tap();
     await expect.poll(() => detentOf(page)).toBe("half");
-    await button("Expand the editor to full screen").tap();
+
+    const height = sheet(page).getByRole("slider", { name: "Editor height" });
+    await height.press("ArrowUp");
     await expect.poll(() => detentOf(page)).toBe("full");
-    await button("Back to half").tap();
-    await expect.poll(() => detentOf(page)).toBe("half");
-    await button("Minimise the editor").tap();
+    await height.press("ArrowDown");
+    await height.press("ArrowDown");
     await expect.poll(() => detentOf(page)).toBe("peek");
   });
 
