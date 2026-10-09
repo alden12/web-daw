@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart, openTimingSettings, setCountIn } from "./support/app";
+import { dismissStart, openExploreCategory, openTimingSettings, setCountIn } from "./support/app";
 
 /**
  * The touch shell (MOBILE-1, restructured by MOBILE-5). At phone/tablet size the app swaps
@@ -711,9 +711,10 @@ test.describe("phone", () => {
     await setDetent(page, "peek");
 
     await tab(page, "Explore").tap();
+    await openExploreCategory(page, "Instruments");
     // The row's "+", not the row itself: a primary tap applies the instrument to the
     // selected track, where "+" adds a new one and selects it. Taking it goes back to the Studio.
-    await page.getByRole("button", { name: "Add a Sampler track", exact: true }).tap();
+    await page.getByRole("button", { name: 'Add "Sampler" as a new track', exact: true }).tap();
 
     // A new selection is a request to edit that track, so the sheet meets you at Half.
     await expect.poll(() => detentOf(page)).toBe("half");
@@ -1145,8 +1146,9 @@ test.describe("phone", () => {
     await expect(sheet(page)).toBeVisible();
 
     await tab(page, "Explore").tap();
-    await expect(page.getByRole("navigation", { name: "Explore views" })).toBeVisible();
-    await expect(page.getByText("Subtractive", { exact: true })).toBeVisible();
+    // One view, so no strip of views to switch between: straight to the category tiles.
+    await expect(page.getByRole("navigation", { name: "Explore views" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Instruments\b/ })).toBeVisible();
     await expect(sheet(page)).toBeHidden();
 
     await tab(page, "Projects").tap();
@@ -1164,6 +1166,7 @@ test.describe("phone", () => {
     await expect(sheet(page).getByText("subtractive", { exact: true })).toBeVisible();
 
     await tab(page, "Explore").tap();
+    await openExploreCategory(page, "Instruments");
     await page.getByRole("button", { name: "FM", exact: true }).tap();
 
     // The track it changed is in the Studio, so that is where you land; staying on a
@@ -1172,13 +1175,16 @@ test.describe("phone", () => {
     await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
   });
 
-  test("a search typed from Projects shows its results in Explore", async ({ page }) => {
+  test("a search typed from Projects shows its results there, and clearing it goes back", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await tab(page, "Projects").tap();
-    await page.getByRole("searchbox", { name: /search the library/i }).fill("fm");
-    await expect(tab(page, "Explore")).toHaveAttribute("aria-current", "page");
+    const search = page.getByRole("searchbox", { name: /search the library/i });
+    await search.fill("fm");
+    await expect(tab(page, "Projects")).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: "FM", exact: true })).toBeVisible();
+    await search.fill("");
+    await expect(page.getByRole("button", { name: "Project menu" })).toBeVisible();
   });
 
   test("the pads sit under the roll, in the key they say they are in", async ({ page }) => {

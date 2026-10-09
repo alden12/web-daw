@@ -9,6 +9,7 @@
  * registered in registry.ts.
  */
 import type { ParamSchema } from "../params/types";
+import type { Tag } from "../tags";
 
 export const delaySchema: ParamSchema = [
   {
@@ -166,6 +167,8 @@ export interface EffectInfo {
   type: string;
   label: string;
   schema: ParamSchema;
+  /** Tags from the vocabulary (`tags.ts`), for Explore's chips and search. */
+  tags?: readonly Tag[];
 }
 
 /** The effect data registry (insertion order = palette / add-button order). */
@@ -203,10 +206,10 @@ export function effectSchema(type: string): ParamSchema {
 }
 
 // --- built-in effects (self-registered) -----------------------------------
-registerEffect({ type: "delay", label: "Delay", schema: delaySchema });
-registerEffect({ type: "distortion", label: "Distortion", schema: distortionSchema });
-registerEffect({ type: "reverb", label: "Reverb", schema: reverbSchema });
-registerEffect({ type: "filter", label: "Filter", schema: filterSchema });
-registerEffect({ type: "chorus", label: "Chorus", schema: chorusSchema });
-registerEffect({ type: "tremolo", label: "Tremolo", schema: tremoloSchema });
-registerEffect({ type: "bitcrusher", label: "Bitcrusher", schema: bitcrusherSchema });
+registerEffect({ type: "delay", label: "Delay", schema: delaySchema, tags: ["space"] });
+registerEffect({ type: "distortion", label: "Distortion", schema: distortionSchema, tags: ["gritty", "aggressive"] });
+registerEffect({ type: "reverb", label: "Reverb", schema: reverbSchema, tags: ["space", "lush", "airy"] });
+registerEffect({ type: "filter", label: "Filter", schema: filterSchema, tags: ["fx", "dark"] });
+registerEffect({ type: "chorus", label: "Chorus", schema: chorusSchema, tags: ["lush", "warm"] });
+registerEffect({ type: "tremolo", label: "Tremolo", schema: tremoloSchema, tags: ["retro"] });
+registerEffect({ type: "bitcrusher", label: "Bitcrusher", schema: bitcrusherSchema, tags: ["gritty", "retro"] });

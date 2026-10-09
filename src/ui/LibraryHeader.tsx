@@ -24,10 +24,7 @@ import { Menu, type MenuItem } from "./Menu";
 
 const VIEW_TITLE: Record<Exclude<LibraryView, "project">, string> = {
   search: "Search",
-  instruments: "Instruments",
-  effects: "Effects",
-  patches: "Patches",
-  samples: "Samples",
+  explore: "Explore",
   activity: "Activity",
 };
 

@@ -15,6 +15,7 @@
  */
 import type { ParamSchema, ParamSpec } from "../params/types";
 import { BUILTIN_SAMPLES, builtinRef } from "../samples/catalog";
+import type { Tag } from "../tags";
 
 export const WAVEFORMS = ["sine", "sawtooth", "square", "triangle"] as const;
 export type Waveform = (typeof WAVEFORMS)[number];
@@ -560,6 +561,8 @@ export interface InstrumentInfo {
    * resolve). Used by the "none" sentinel - an empty track with no instrument yet.
    */
   hidden?: boolean;
+  /** Tags from the vocabulary (`tags.ts`), for Explore's chips and search. */
+  tags?: readonly Tag[];
 }
 
 /** The sentinel instrument type for an empty track (no instrument chosen yet). */
@@ -611,14 +614,68 @@ export function instrumentFamily(type: string): string {
 }
 
 // --- built-in instruments (self-registered) -------------------------------
-registerInstrument({ type: "subtractive", label: "Subtractive", schema: subtractiveSchema, family: "Synths" });
-registerInstrument({ type: "fm", label: "FM", schema: fmSchema, family: "Bass" });
-registerInstrument({ type: "supersaw", label: "Supersaw", schema: supersawSchema, family: "Synths" });
-registerInstrument({ type: "organ", label: "Organ", schema: organSchema, family: "Keys" });
-registerInstrument({ type: "mellotron", label: "Mellotron Flute", schema: mellotronFluteSchema, family: "Keys" });
-registerInstrument({ type: "wavetable", label: "Wavetable", schema: wavetableSchema, family: "Synths" });
-registerInstrument({ type: "nimbus", label: "Nimbus", schema: nimbusSchema, family: "Synths" });
-registerInstrument({ type: "sampler", label: "Sampler", schema: samplerSchema, family: "Percussion" });
-registerInstrument({ type: "drumkit", label: "Drum Kit", schema: drumkitSchema, family: "Percussion" });
+registerInstrument({
+  type: "subtractive",
+  label: "Subtractive",
+  schema: subtractiveSchema,
+  family: "Synths",
+  tags: ["bass", "lead", "warm"],
+});
+registerInstrument({
+  type: "fm",
+  label: "FM",
+  schema: fmSchema,
+  family: "Bass",
+  tags: ["bass", "keys", "bright", "glassy"],
+});
+registerInstrument({
+  type: "supersaw",
+  label: "Supersaw",
+  schema: supersawSchema,
+  family: "Synths",
+  tags: ["lead", "pad", "bright", "lush"],
+});
+registerInstrument({
+  type: "organ",
+  label: "Organ",
+  schema: organSchema,
+  family: "Keys",
+  tags: ["keys", "retro", "warm"],
+});
+registerInstrument({
+  type: "mellotron",
+  label: "Mellotron Flute",
+  schema: mellotronFluteSchema,
+  family: "Keys",
+  tags: ["keys", "retro", "airy"],
+});
+registerInstrument({
+  type: "wavetable",
+  label: "Wavetable",
+  schema: wavetableSchema,
+  family: "Synths",
+  tags: ["pad", "lead", "glassy"],
+});
+registerInstrument({
+  type: "nimbus",
+  label: "Nimbus",
+  schema: nimbusSchema,
+  family: "Synths",
+  tags: ["pad", "bass", "warm", "lush", "retro"],
+});
+registerInstrument({
+  type: "sampler",
+  label: "Sampler",
+  schema: samplerSchema,
+  family: "Percussion",
+  tags: ["percussion", "keys"],
+});
+registerInstrument({
+  type: "drumkit",
+  label: "Drum Kit",
+  schema: drumkitSchema,
+  family: "Percussion",
+  tags: ["percussion"],
+});
 // The empty-track sentinel: no params, hidden from the palette, silent factory (registry.ts).
 registerInstrument({ type: EMPTY_INSTRUMENT, label: "No instrument", schema: [], family: "main", hidden: true });

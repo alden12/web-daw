@@ -10,6 +10,7 @@
  */
 import type { ParamSchema } from "../../params/types";
 import { RATE_OPTIONS } from "./devices/rate";
+import type { Tag } from "../../tags";
 
 export const octavatorSchema: ParamSchema = [
   { id: "octaveUp", label: "Octave up", kind: "boolean", default: true },
@@ -51,6 +52,8 @@ export interface MidiDeviceInfo {
   type: string;
   label: string;
   schema: ParamSchema;
+  /** Tags from the vocabulary (`tags.ts`), for Explore's chips and search. */
+  tags?: readonly Tag[];
 }
 
 /** The MIDI-device data registry (insertion order = palette / add-button order). */
@@ -83,6 +86,6 @@ export function midiDeviceSchema(type: string): ParamSchema {
 }
 
 // --- built-in MIDI devices (self-registered) ------------------------------
-registerMidiDevice({ type: "octavator", label: "Octavator", schema: octavatorSchema });
-registerMidiDevice({ type: "arpeggiator", label: "Arpeggiator", schema: arpeggiatorSchema });
-registerMidiDevice({ type: "euclidean", label: "Euclidean", schema: euclideanSchema });
+registerMidiDevice({ type: "octavator", label: "Octavator", schema: octavatorSchema, tags: ["bass", "lead"] });
+registerMidiDevice({ type: "arpeggiator", label: "Arpeggiator", schema: arpeggiatorSchema, tags: ["arp"] });
+registerMidiDevice({ type: "euclidean", label: "Euclidean", schema: euclideanSchema, tags: ["rhythm", "percussion"] });

@@ -71,7 +71,7 @@ import { readRecordOffsetMs } from "./recordOffset";
 import { readOutputDeviceId } from "./outputDevice";
 import { isTypingTarget } from "./typingTarget";
 
-const LIBRARY_VIEWS = ["search", "project", "instruments", "effects", "patches", "samples", "activity"] as const;
+const LIBRARY_VIEWS = ["search", "project", "explore", "activity"] as const;
 
 // Computer-keyboard -> MIDI note, one octave from C4 (the classic tracker layout).
 const KEY_MAP: Record<string, number> = {
@@ -142,7 +142,7 @@ export function AppShell() {
   // expand the library panel as a side effect of changing the view. Panel *geometry*
   // (widths, the timeline split) is private to the desktop shell.
   const [libCollapsed, setLibCollapsed] = usePersistentBoolean("corrente:lib-collapsed", false);
-  const [libView, setLibView] = usePersistentString<LibraryView>("corrente:lib-view", "instruments", LIBRARY_VIEWS);
+  const [libView, setLibView] = usePersistentString<LibraryView>("corrente:lib-view", "explore", LIBRARY_VIEWS);
   const [agentCollapsed, setAgentCollapsed] = usePersistentBoolean("corrente:agent-collapsed", true);
   const [search, setSearch] = useState("");
   const deviceShape = useDeviceShape();

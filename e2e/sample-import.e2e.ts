@@ -1,9 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart } from "./support/app";
+import { dismissStart, openExploreCategory } from "./support/app";
 
 /**
- * Importing a sample into the project library (the Library panel "Samples"
- * section): the file is stored content-addressed, added as an asset record, and
+ * Importing a sample into the project library (Explore's Samples
+ * page): the file is stored content-addressed, added as an asset record, and
  * survives a reload. Fixture-driven with a tiny generated WAV - no mic, no real
  * audio file on disk.
  */
@@ -35,7 +35,7 @@ const sampleRow = (page: Page) => page.getByTitle('Add a Sampler track playing "
 test("import a sample, it lists, and persists across reload", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
-  await page.getByRole("button", { name: "Samples" }).click(); // open the Samples rail view
+  await openExploreCategory(page, "Samples");
 
   await expect(sampleRow(page)).toHaveCount(0);
 
@@ -57,6 +57,7 @@ test("an audio clip becomes a sample: a library entry for the same audio, and a 
 }) => {
   await page.goto("/");
   await dismissStart(page);
+  await openExploreCategory(page, "Samples");
   await page
     .getByTestId("audio-import-input")
     .setInputFiles({ name: "take.wav", mimeType: "audio/wav", buffer: tinyWav() });
@@ -64,7 +65,6 @@ test("an audio clip becomes a sample: a library entry for the same audio, and a 
 
   // A Sampler track, set to the new library entry.
   await expect(page.getByText("sampler", { exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Samples" }).click();
   await expect(page.getByTitle('Add a Sampler track playing "take"')).toBeVisible();
 
   // The same audio again is the same library entry, not a second copy.

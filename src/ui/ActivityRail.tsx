@@ -1,7 +1,6 @@
 /**
  * The activity rail (far left): a thin icon bar that switches the library panel
- * between one view at a time - Project / Instruments / Effects / Patches / Samples
- * / Activity. Clicking the active icon collapses the panel to just this rail
+ * between one view at a time - Search / Project / Explore / Activity. Clicking the active icon collapses the panel to just this rail
  * (mirroring the agent panel's collapse-to-rail); clicking any other icon selects
  * that view (expanding first if collapsed). The set of views is data (libraryViews.tsx),
  * shared with the touch shell's strip, so adding one is a single entry there.
