@@ -11,7 +11,7 @@
  * ear-knowledge to Nimbus's schema, with the chorus effect bundled where the sound
  * wants that lush ensemble shimmer. Names are our own.
  */
-import type { Tag } from "../tags";
+import type { KnownTag } from "../tags";
 import { listPatches, type Patch, type PatchEffect } from "./library";
 
 /** Juno-style chorus settings for the lush presets (bundled as the one effect). */
@@ -22,7 +22,8 @@ const chorusII: PatchEffect = { type: "chorus", params: { "chorus.rate": 1.6, "c
 function nimbus(
   category: string,
   name: string,
-  tags: readonly Tag[],
+  /** Built-ins tag from the known vocabulary, so they stay consistent with each other. */
+  tags: readonly KnownTag[],
   params: Patch["params"],
   effects: PatchEffect[] = [],
 ): Patch & { category: string } {

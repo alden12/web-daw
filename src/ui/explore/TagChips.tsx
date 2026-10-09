@@ -3,13 +3,14 @@
  *
  * The row is short and ranked (`rankTags`): what you have picked, then the few tags that best
  * split what is on screen. It cannot show the whole vocabulary, which only grows, so "More tags"
- * opens every tag the page has, grouped by role and character. One row that scrolls sideways, on
+ * opens every tag the page has, grouped by role, character and other. One row that scrolls sideways, on
  * every device: wrapped, even a short list ate a third of the desktop panel.
  */
 import { useState } from "react";
-import { TAGS, type Tag } from "../../audio/tags";
+import { tagGroup, type Tag } from "../../audio/tags";
 
-const GROUPS = { role: "Role", character: "Character" } as const;
+/** The "More tags" sections. A tag outside the known vocabulary is as valid, and lists under Other. */
+const GROUPS = { role: "Role", character: "Character", other: "Other" } as const;
 
 function Chip({ tag, on, onToggle }: { tag: Tag; on: boolean; onToggle: (tag: Tag) => void }) {
   return (
@@ -21,7 +22,7 @@ function Chip({ tag, on, onToggle }: { tag: Tag; on: boolean; onToggle: (tag: Ta
         on ? "border-you bg-you/15 text-you" : "border-line bg-ground text-muted hover:text-ink"
       }`}
     >
-      #{TAGS[tag].label}
+      #{tag}
     </button>
   );
 }
@@ -62,7 +63,7 @@ export function TagChips({
       {more && (
         <div role="group" aria-label="All tags" className="flex flex-col gap-2 p-2 rounded-md bg-stage">
           {Object.entries(GROUPS).map(([group, label]) => {
-            const inGroup = all.filter((tag) => TAGS[tag].group === group);
+            const inGroup = all.filter((tag) => tagGroup(tag) === group);
             return (
               inGroup.length > 0 && (
                 <div key={group} className="flex flex-col gap-1">
