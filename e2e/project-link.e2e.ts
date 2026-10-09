@@ -106,11 +106,13 @@ test("a sign-in round trip comes back to the project it left", async ({ page }) 
   await expect(page).toHaveURL(/\/p\/deep-house-jam~/);
   const path = new URL(page.url()).pathname;
 
-  // Switch away, so opening the remembered path has to do real work. A new project mounts the
-  // whole workbench afresh, which under a fully parallel run can outlast the default wait.
+  // Switch away, so opening the remembered path has to do real work. This step is also what
+  // caught the autosave writing the renamed project into the new one's bundle mid-switch
+  // (`liveRepository` in persistence.ts): the new project then opened as a copy, and the URL
+  // stayed on the old name for good.
   await projectMenu(page).click();
   await page.getByRole("menuitem", { name: "New project" }).click();
-  await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/p\/untitled~/);
 
   // An OAuth return lands on the bare origin with the path in the tab's memory - `redirectTo`
   // is the origin, because Supabase silently falls back to its configured Site URL for any
