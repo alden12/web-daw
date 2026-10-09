@@ -405,12 +405,10 @@ export function Menu({
   trigger = "⋮",
 }: {
   /**
-   * The rows, or a getter for them. Pass a **getter** when the items are derived from
-   * state this component does not re-render for - notably the touch shell's ⋮, which
-   * folds in every mounted surface's controls (`surfaceControls.ts`) and is not re-rendered
-   * when one of those surfaces' own state changes. An array captured by the caller's last render
-   * would show a stale `checked` tick or a stale `disabled`; a getter is read while the
-   * menu is open, so it always reflects now.
+   * The rows, or a getter for them. Pass a **getter** when the items are derived from state this
+   * component's owner does not re-render for (a marker's or a clip's kebab, built by a parent that
+   * renders once per arrangement change). An array captured by the owner's last render would show
+   * a stale `checked` tick or `disabled`; a getter is read while the menu is open, so it reflects now.
    */
   items: MenuItem[] | (() => MenuItem[]);
   label?: string;

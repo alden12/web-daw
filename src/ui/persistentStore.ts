@@ -16,7 +16,7 @@
  * preferences in mid-edit would be a surprise rather than a feature.
  *
  * Pure data plus a subscribe seam, like the other small stores (`gridView.ts`,
- * `currentUser.ts`, `surfaceControls.ts`); the React binding is `usePersistent.ts`.
+ * `currentUser.ts`); the React binding is `usePersistent.ts`.
  */
 
 function readStorage(key: string): string | null {
