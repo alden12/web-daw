@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart } from "./support/app";
+import { dismissStart, openTimingSettings, setCountIn } from "./support/app";
 
 /**
  * The touch shell (MOBILE-1, restructured by MOBILE-5). At phone/tablet size the app swaps
@@ -91,16 +91,17 @@ async function setDetent(page: Page, target: "peek" | "half" | "full") {
 }
 
 /**
- * Open the shell's ⋮. Retried because `Menu` dismisses itself on any scroll and a surface
- * that has just mounted may still be restoring its own scroll offset, which can close the
- * popover the instant it opens.
+ * Open a surface's tools menu (MOBILE-19): "Notes" in the editor sheet's header, "Arrangement" in
+ * the timeline's corner. Retried because `Menu` dismisses itself on any scroll and a surface that
+ * has just mounted may still be restoring its own scroll offset, which can close the popover the
+ * instant it opens.
  */
-async function openOverflow(page: Page) {
+async function openTools(page: Page, surface: "Notes" | "Arrangement") {
   const menu = page.getByRole("menu").first();
   await expect(async () => {
     // Only tap when it is not already open - the trigger toggles, so a blind retry would
     // close the menu the previous attempt had just managed to open.
-    if (!(await menu.isVisible())) await page.getByRole("button", { name: "More controls" }).tap();
+    if (!(await menu.isVisible())) await page.getByRole("button", { name: `${surface} tools` }).tap();
     await expect(menu).toBeVisible({ timeout: 800 });
   }).toPass({ timeout: 10_000 });
 }
@@ -1017,7 +1018,7 @@ test.describe("phone", () => {
     expect(Math.abs(box.y - workspaceTop), "the sheet reaches the top of the workspace").toBeLessThan(2);
   });
 
-  test("undo and redo are in the top bar, and tempo has moved to the overflow menu", async ({ page }) => {
+  test("undo and redo are in the top bar, and tempo is on the Timing settings page", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
@@ -1026,88 +1027,68 @@ test.describe("phone", () => {
     await expect(undo).toBeDisabled();
     await expect(redo).toBeDisabled();
 
-    // Tempo gave up its slot for them; it lives in the menu now, as a field rather than a
-    // list of presets - a range of 20-300 cannot honestly be a submenu, and the curated
-    // subset it used to be made the phone less capable than the desktop field it stood in for.
+    // Tempo gave up its top-bar slot for them; it is a field on the Timing page (MOBILE-19), so
+    // any tempo in the range is reachable rather than a list of presets.
     await expect(page.getByRole("spinbutton", { name: /tempo/i })).toHaveCount(0);
-    await openOverflow(page);
+    await openTimingSettings(page);
     const tempo = page.getByRole("spinbutton", { name: "Tempo" });
-    await expect(tempo).toBeVisible();
-
-    // A value no preset list would have offered.
     await tempo.fill("173");
+    await tempo.press("Enter");
+    await page.getByRole("button", { name: "Close settings" }).tap();
     await expect(undo).toBeEnabled();
-    await page.keyboard.press("Escape");
-    await openOverflow(page);
-    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("173");
 
-    // ...and the nudge buttons, so changing it by one costs no keyboard.
-    await page.getByRole("button", { name: "Tempo up" }).click();
-    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("174");
-    await page.keyboard.press("Escape");
+    await openTimingSettings(page);
+    await expect(page.getByRole("spinbutton", { name: "Tempo" })).toHaveValue("173");
+    await page.getByRole("button", { name: "Close settings" }).tap();
 
     await undo.tap();
     await expect(redo).toBeEnabled();
   });
 
   /**
-   * The menu is one list of every mounted surface's controls, not the front-most one's. At
-   * Half you are looking at the timeline and the roll at once, so a menu that followed focus
-   * was hiding controls for a panel in plain view - and hiding count-in and groove behind
-   * parking the sheet at any detent at all (MOBILE-11).
+   * Each surface's tools sit beside it (MOBILE-19), and the timing settings are on the settings
+   * panel's Timing page - count-in and groove are project settings, not the arrangement's or the
+   * roll's (MOBILE-11).
    */
-  test("the overflow menu holds every surface's controls at once, under headings", async ({ page }) => {
+  test("each surface's tools sit beside it, and the project's settings are in settings", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
     await setDetent(page, "half");
 
-    await openOverflow(page);
-    const menu = page.getByRole("menu").first();
-    await expect(menu.getByText("Arrangement", { exact: true })).toBeVisible();
-    await expect(menu.getByText("Notes", { exact: true })).toBeVisible();
-    await expect(menu.getByText("Project", { exact: true })).toBeVisible();
-
-    // The arrangement's, the roll's and the project's, all reachable without changing detent.
+    await openTools(page, "Arrangement");
     await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Count-in" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    await openTools(page, "Notes");
     await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: /Metronome/i })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
-    // Both surfaces offer a "Snap to grid", which is exactly why the headings are there.
-    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toHaveCount(2);
-
-    // And a row sits under the heading it belongs to: count-in and groove are project
-    // settings, so they are in the project's group and not the arrangement's (MOBILE-11).
-    const order = await menu.evaluate((popover) =>
-      [...popover.children].map((row) => row.textContent?.replace(/[✓◂▸]/g, "").trim()),
-    );
-    // The headings are uppercased in CSS, so the text is still title case here.
-    const groupOf = (row: string) =>
-      order
-        .slice(0, order.indexOf(row))
-        .filter((entry) => ["Arrangement", "Notes", "Project"].includes(entry ?? ""))
-        .pop();
-    expect(groupOf("Add group")).toBe("Arrangement");
-    expect(groupOf("Velocity lane")).toBe("Notes");
-    expect(groupOf("Count-in")).toBe("Project");
-    expect(groupOf("Groove")).toBe("Project");
+    await expect(page.getByRole("button", { name: "More controls" })).toHaveCount(0);
+    await openTimingSettings(page);
+    await expect(page.getByRole("radiogroup", { name: "Count-in" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Groove" })).toBeVisible();
   });
 
   test("beats per bar is a field too, so the whole 1-32 range is reachable", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
-    await openOverflow(page);
-    await page.getByRole("menuitem", { name: /Meter/ }).click();
+    await openTimingSettings(page);
     const beats = page.getByRole("spinbutton", { name: "Beats per bar" });
-    await expect(beats).toBeVisible();
     // 11/4 was not on the old preset list, and is inside the schema's range.
     await beats.fill("11");
-    await expect(page.getByRole("menuitem", { name: "Meter · 11/4" })).toBeVisible();
+    await beats.press("Enter");
+    await page.getByRole("combobox", { name: "Beat unit" }).selectOption("8");
+    await page.getByRole("button", { name: "Close settings" }).tap();
+    await openTimingSettings(page);
+    await expect(page.getByRole("spinbutton", { name: "Beats per bar" })).toHaveValue("11");
+    await expect(page.getByRole("combobox", { name: "Beat unit" })).toHaveValue("8");
   });
 
-  test("the roll has no toolbar of its own - its controls are in the shell's menu", async ({ page }) => {
+  test("the roll has no toolbar of its own - its controls are in the sheet's tools menu", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
@@ -1116,56 +1097,44 @@ test.describe("phone", () => {
     // The toolbar row is hidden, so its label is not shown...
     await expect(page.getByText("Piano roll", { exact: true })).toBeHidden();
 
-    // ...and the controls turn up in the one overflow menu, above the project's. Zoom folds
-    // into a submenu there: it is a fallback for the pinch gesture, and three surfaces share
-    // this list, so a row it does not spend is a row another surface can have.
-    await openOverflow(page);
-    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i }).first()).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: /Metronome/i })).toBeVisible();
-    await page.getByRole("menuitem", { name: "Zoom", exact: true }).last().click();
+    // ...and the controls turn up in the sheet header's tools menu. Zoom folds into a submenu
+    // there: it is a fallback for the pinch gesture, so it need not spend a row of its own.
+    await openTools(page, "Notes");
+    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
+    await page.getByRole("menuitem", { name: "Zoom", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Taller rows" })).toBeVisible();
   });
 
   /**
-   * A group is present because its surface is *mounted*, not because it is in front - which
-   * is the whole simplification. Switching to the rack really does unmount the roll, so its
-   * group goes: those rows act on a panel that is not there.
+   * A surface's tools are there because the surface is *mounted*. Switching to the rack really
+   * does unmount the roll, so its tools go: those rows act on a panel that is not there.
    */
-  test("a surface's group comes and goes with the surface, not with the detent", async ({ page }) => {
+  test("a surface's tools come and go with the surface", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    await segment(page, "Edit").tap();
+    await expect(page.getByRole("button", { name: "Notes tools" })).toBeVisible();
 
-    // Parked, with the editor behind the sheet: both groups, because both are mounted.
-    await setDetent(page, "peek");
-    await openOverflow(page);
-    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
-
-    // The rack replaces the roll, so the Notes group leaves with it - the arrangement's stays.
-    await setDetent(page, "half");
     await segment(page, "Rack").tap();
-    await openOverflow(page);
-    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("menu").first().getByText("Notes", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Notes tools" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Arrangement tools" })).toBeVisible();
   });
 
-  test("the overflow menu reflects the surface's state, not the shell's last render", async ({ page }) => {
+  test("a tools menu reflects the surface's state, not the shell's last render", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
     const velocity = () => page.getByRole("menuitemradio", { name: /Velocity lane/i });
 
     // Off to start with on touch, where the lane costs a row of pads.
-    await openOverflow(page);
+    await openTools(page, "Notes");
     await expect(velocity()).toHaveAttribute("aria-checked", "false");
     await velocity().click();
 
     // The surface's controls are published as a getter and the shell is *not* re-rendered
     // when the surface's own state changes, so an items array captured at the shell's last
     // render would still show this row unticked. `Menu` reads the getter while open instead.
-    await openOverflow(page);
+    await openTools(page, "Notes");
     await expect(velocity()).toHaveAttribute("aria-checked", "true");
   });
 
@@ -1231,11 +1200,8 @@ test.describe("phone", () => {
     await page.goto("/");
     await dismissStart(page);
 
-    // Count-in is a project setting and sits with them, reachable with the sheet up over the
-    // arrangement whose toolbar menu used to be its only home on touch (MOBILE-11).
-    await openOverflow(page);
-    await page.getByRole("menuitem", { name: "Count-in" }).click();
-    await page.getByRole("menuitemradio", { name: "No count-in" }).click();
+    // Count-in is a timing setting, on the Timing page with the others (MOBILE-11, MOBILE-19).
+    await setCountIn(page, "None");
 
     const record = page.getByRole("button", { name: "Record", exact: true });
     await record.tap();
@@ -1270,9 +1236,7 @@ test.describe("phone", () => {
 
     // One press plays the whole chord, and it records as its notes.
     const record = page.getByRole("button", { name: "Record", exact: true });
-    await openOverflow(page);
-    await page.getByRole("menuitem", { name: "Count-in" }).click();
-    await page.getByRole("menuitemradio", { name: "No count-in" }).click();
+    await setCountIn(page, "None");
     await record.tap();
     await holdPad(page, "Am", 140);
     await expect(page.getByTestId("ghost-note")).toHaveCount(3);
@@ -1580,7 +1544,7 @@ test.describe("phone, landscape", () => {
     // so on touch the lane is off until it is asked for.
     const lane = page.getByTitle("Velocity - drag a bar");
     await expect(lane).toBeHidden();
-    await openOverflow(page);
+    await openTools(page, "Notes");
     await page.getByRole("menuitemradio", { name: /Velocity lane/i }).click();
     await expect(lane).toBeVisible();
   });

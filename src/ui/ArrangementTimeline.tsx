@@ -19,7 +19,7 @@
  * is one undo step and one feed entry. Geometry is shared with the piano roll via
  * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -29,7 +29,7 @@ import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/comm
 import { clipContentOf } from "./clipContent";
 import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
 import { Menu, type MenuItem } from "./Menu";
-import { useCountInBars, useProjectSettingItems } from "./projectSettings";
+import { useCountInBars } from "./countIn";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
 import { clamp } from "../util";
@@ -46,6 +46,7 @@ import { GroupHeader, TrackRow } from "./arrangement/rows";
 import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { IconButton } from "./controls/IconButton";
+import { iconButtonClass } from "./controls/iconButtonStyle";
 import { Select } from "./controls/Select";
 import {
   ROW,
@@ -90,6 +91,7 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
+  corner,
   compact = false,
 }: {
   projectStore: ProjectStore;
@@ -103,6 +105,11 @@ export function ArrangementTimeline({
    * which pins one transport above every view, so this would be a second copy.
    */
   showTransport?: boolean;
+  /**
+   * What sits in the ruler's corner cell, above the track names (MOBILE-19): the touch shell puts
+   * the arrangement's tools menu there. Empty on desktop, which has a toolbar.
+   */
+  corner?: ReactNode;
   /**
    * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
    * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
@@ -417,11 +424,10 @@ export function ArrangementTimeline({
   const createMidiTrack = (groupId: string) =>
     dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
   const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
-  const projectSettingItems = useProjectSettingItems(project, dispatch);
 
   /**
-   * What this surface adds to a project - the only things in the toolbar's menu that are
-   * really about the arrangement.
+   * What this surface adds to a project: the toolbar's "+" on desktop, and the end of its tools
+   * menu on touch.
    */
   const trackItems: MenuItem[] = [
     {
@@ -433,18 +439,12 @@ export function ArrangementTimeline({
     { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
     { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
   ];
-  /**
-   * The desktop toolbar's kebab keeps count-in and groove: there is no other menu on this
-   * screen, and one kebab beats two. On touch they go to the shell's *project* group instead
-   * of being published with the rows above - they are project settings, and a menu that
-   * groups by surface would be filing them under a heading that is not true (MOBILE-11).
-   */
-  const optionItems: MenuItem[] = [...trackItems, { separator: true }, ...projectSettingItems];
-
-  // On touch the toolbar row goes away and its contents move to the shell's ⋮: the
-  // options above, plus the snap and zoom controls that sit on the toolbar's right. Zoom
-  // folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2), and
-  // this list shares one menu with the roll's and the project's.
+  // Count-in and groove are not here: they are timing settings, on the settings panel's Timing
+  // page (MOBILE-19, and MOBILE-11 before it for why they were never the arrangement's).
+  //
+  // On touch the toolbar row goes away and its contents move to the tools menu in the
+  // timeline's corner: the snap and zoom controls from the toolbar's right, then the "+"
+  // items. Zoom folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2).
   usePublishSurfaceControls(
     "arrangement",
     [
@@ -474,7 +474,8 @@ export function ArrangementTimeline({
   // column; as a grid item on desktop it is ignored, so the grid row decides the height.
   return (
     <div className="[grid-area:timeline] bg-ground border-t border-line flex flex-col flex-1 min-h-0">
-      {/* The whole toolbar row goes when compact - the shell owns the transport and the ⋮ -
+      {/* The whole toolbar row goes when compact - the shell owns the transport, and the tools
+          menu sits in the ruler's corner -
           except the clip-mode indicator, which is live state you need to be able to see. */}
       <div
         className={`flex items-center gap-3 px-2.5 border-b border-line bg-rail ${
@@ -494,7 +495,15 @@ export function ArrangementTimeline({
             <span className="w-px h-5 bg-line shrink-0" />
           </>
         )}
-        {!compact && <Menu label="Timeline options" align="left" items={optionItems} />}
+        {!compact && (
+          <Menu
+            label="Add to the arrangement"
+            align="left"
+            items={trackItems}
+            triggerClassName={iconButtonClass({ size: "sm", className: "shrink-0" })}
+            trigger="+"
+          />
+        )}
         {clipMode && (
           <button
             type="button"
@@ -579,7 +588,9 @@ export function ArrangementTimeline({
                     stickyHeaders ? "sticky left-0 z-10" : ""
                   }`}
                   style={{ width: headerW, height: RULER_H }}
-                />
+                >
+                  {corner}
+                </div>
                 <Ruler
                   viewBeats={viewBeats}
                   loopStart={project.loopStart}

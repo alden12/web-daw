@@ -33,10 +33,8 @@ export function TransportBar({
   isPlaying: boolean;
   started: boolean;
   /**
-   * Touch layout (MOBILE-1): keep only what you reach for mid-idea - record and play -
-   * and let the shell's ⋮ carry tempo, meter and the metronome, which frees the top bar
-   * for undo/redo. The shell owns all three outright while compact, so each has one
-   * writer, not two.
+   * Touch layout (MOBILE-1): keep only what you reach for mid-idea - record and play. Tempo,
+   * meter and the metronome are on the settings panel's Project page there (MOBILE-19).
    */
   compact?: boolean;
 }) {
@@ -44,13 +42,12 @@ export function TransportBar({
   const rec = useRecorder(recorder);
   const [metronome, setMetronome] = usePersistentBoolean("corrente:metronome", false);
 
-  // The scheduler reads this flag each tick; keep it in sync with the preference. While
-  // compact the shell's ⋮ owns the metronome instead, so this stands down rather than
-  // having two writers push the same preference at the same object.
+  // The scheduler reads this flag each tick; keep it in sync with the preference. The one
+  // writer to the scheduler, whichever control (this button, or the Project settings page)
+  // changed the preference - so this runs while compact too, with the button hidden.
   useEffect(() => {
-    if (compact) return;
     scheduler.setMetronomeEnabled(metronome);
-  }, [scheduler, metronome, compact]);
+  }, [scheduler, metronome]);
 
   const recording = rec.status === "recording" || rec.status === "counting";
 

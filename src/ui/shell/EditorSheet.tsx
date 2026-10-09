@@ -65,6 +65,7 @@ export function EditorSheet({
   subtitle,
   controls,
   preview,
+  tools,
   children,
 }: {
   detent: Detent;
@@ -81,6 +82,8 @@ export function EditorSheet({
    * the header is all there is. Tapping it opens the sheet to half.
    */
   preview?: ReactNode;
+  /** The surface's tools menu (MOBILE-19), beside the controls while the sheet is open. */
+  tools?: ReactNode;
   children: ReactNode;
 }) {
   const { sheetRef, handleProps } = useSheetDrag({ detent, detents, onDetentChange });
@@ -140,7 +143,10 @@ export function EditorSheet({
               {preview}
             </button>
           ) : (
-            controls
+            <>
+              {controls}
+              {tools}
+            </>
           )}
           <div className={`flex shrink-0 ${minimised ? "" : "ml-1"}`}>
             {DETENT_BUTTONS[detent].map((button) => (

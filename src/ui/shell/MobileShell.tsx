@@ -49,10 +49,11 @@ import { ArrangementTimeline } from "../ArrangementTimeline";
 import { ClipRail } from "../ClipRail";
 import { TransportBar } from "../TransportBar";
 import { AccountAvatar } from "../AccountAvatar";
-import { Menu, type MenuItem } from "../Menu";
+import { Menu } from "../Menu";
 import { IconButton } from "../controls/IconButton";
 import { iconButtonClass } from "../controls/iconButtonStyle";
 import { Segmented } from "../controls/Segmented";
+import { ToolsIcon } from "../controls/ToolsIcon";
 import type { LibraryView } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
@@ -65,13 +66,7 @@ import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean, usePersistentString } from "../usePersistent";
 import { useElementHeight } from "../useElementHeight";
-import { useProjectSettingItems } from "../projectSettings";
-import {
-  TEMPO_BPM_RANGE,
-  TIME_SIGNATURE_DENOMINATORS,
-  TIME_SIGNATURE_NUMERATOR_RANGE,
-} from "../../audio/project/schema";
-import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
+import { readSurfaceControls, subscribeSurfaceControls, type SurfaceKey } from "./surfaceControls";
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
@@ -280,12 +275,9 @@ export function MobileShell({
   };
   const rec = useRecorder(recorder);
   const recording = rec.status === "recording" || rec.status === "counting";
-  // The compact transport drops the metronome button, so the shell's ⋮ owns it - reading
-  // and writing the same persisted preference the desktop transport uses.
-  const [metronome, setMetronome] = usePersistentBoolean("corrente:metronome", false);
   const { canUndo, canRedo } = useEditLog(editLog);
 
-  // Every mounted workspace's own controls, in menu order (`surfaceControls.ts`).
+  // Every mounted workspace's own controls (`surfaceControls.ts`), each shown beside its surface.
   const surfaceGroups = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, readSurfaceControls);
 
   /**
@@ -357,87 +349,30 @@ export function MobileShell({
     ),
   });
 
-  // ⋮ - every mounted surface's controls, then the project's, each under a heading.
-  //
-  // The meter and the metronome are here because the compact transport drops them, which
-  // also makes this their only writer (see TransportBar's `compact`).
-  const projectSettingItems = useProjectSettingItems(project, dispatch);
-  const meter = project.timeSignature;
-  const setMeter = (patch: Partial<typeof meter>) =>
-    dispatch({
-      type: "setTimeSignature",
-      numerator: patch.numerator ?? meter.numerator,
-      denominator: patch.denominator ?? meter.denominator,
-    });
-  const projectItems: MenuItem[] = [
-    // Fields, not lists of presets: tempo is 20-300 and beats-per-bar is 1-32, and the
-    // curated subsets these used to be made the phone quietly less capable than the desktop
-    // fields they stood in for - 174 was in the list, 173 was unreachable.
-    {
-      label: "Tempo",
-      number: {
-        value: project.tempoBpm,
-        min: TEMPO_BPM_RANGE.min,
-        max: TEMPO_BPM_RANGE.max,
-        unit: "BPM",
-        onChange: (bpm) => dispatch({ type: "setTempo", bpm }),
-      },
-    },
-    {
-      label: "Metronome",
-      checked: metronome,
-      onClick: () => {
-        setMetronome(!metronome);
-        scheduler.setMetronomeEnabled(!metronome);
-      },
-    },
-    {
-      label: `Meter · ${meter.numerator}/${meter.denominator}`,
-      submenu: [
-        {
-          label: "Beats per bar",
-          number: {
-            value: meter.numerator,
-            min: TIME_SIGNATURE_NUMERATOR_RANGE.min,
-            max: TIME_SIGNATURE_NUMERATOR_RANGE.max,
-            onChange: (numerator) => setMeter({ numerator }),
-          },
-        },
-        {
-          // Still a list: the denominators are an enum (powers of two), not a range.
-          label: "Beat unit",
-          submenu: TIME_SIGNATURE_DENOMINATORS.map((denominator) => ({
-            label: String(denominator),
-            checked: meter.denominator === denominator,
-            onClick: () => setMeter({ denominator }),
-          })),
-        },
-      ],
-    },
-    // Count-in and groove, which the timeline's toolbar menu used to carry on touch as well -
-    // so they went missing the moment the editor came up, and read as arrangement settings
-    // when they never were (MOBILE-11). Count-in belongs next to the record button most of all.
-    ...projectSettingItems,
-  ];
   /**
-   * A getter, not an array: the shell is not re-rendered when a surface's own state changes
-   * (the registry only notifies on mount/unmount, by design), so an array built here would
-   * hold whatever was true at the shell's last unrelated render - a "Velocity lane" tick
-   * still on after the lane was hidden, or a stale `disabled`. `Menu` calls this while it is
-   * open, so the rows always reflect now.
+   * A surface's own tools, as a menu beside that surface (MOBILE-19): the notes' in the editor
+   * sheet's header, the arrangement's in its top-left corner. They used to share the top bar's ⋮
+   * with the project's settings, which made one long menu for everything; the settings moved to
+   * the settings panel's Timing page and the tools to where you are looking when you want them.
    *
-   * **Everything at once, whatever is in front.** Both the arrangement and the editor are
-   * mounted the whole time here and at Half you are looking at both, so a menu that swapped
-   * its contents to follow the front-most surface was hiding controls for a panel in plain
-   * view - and, at any detent, hiding count-in and groove behind parking the sheet (MOBILE-11).
-   * The headings are what makes one long list navigable, and they carry the answer to the
-   * question the swap was trying to answer: which panel a row acts on.
+   * `items` is the surface's getter, passed straight through: the shell is not re-rendered when a
+   * surface's own state changes (the registry only notifies on mount and unmount, by design), so an
+   * array built here would show a stale tick. `Menu` calls the getter while open.
    */
-  const overflowItems = (): MenuItem[] => [
-    ...surfaceGroups.flatMap((group) => [{ heading: group.title }, ...group.items()]),
-    { heading: "Project" },
-    ...projectItems,
-  ];
+  const toolsMenu = (key: SurfaceKey, trigger: ReactNode, triggerClassName: string, align: "left" | "right") => {
+    const group = surfaceGroups.find((candidate) => candidate.key === key);
+    return (
+      group && (
+        <Menu
+          items={group.items}
+          label={`${group.title} tools`}
+          align={align}
+          triggerClassName={triggerClassName}
+          trigger={trigger}
+        />
+      )
+    );
+  };
 
   const agent = (
     <AgentPanel
@@ -529,22 +464,6 @@ export function MobileShell({
         >
           <AccountAvatar size={30} />
         </button>
-        <Menu
-          items={overflowItems}
-          label="More controls"
-          align="right"
-          triggerClassName={iconButtonClass({ size: "lg", className: "shrink-0" })}
-          // A drawn glyph, not the default "⋮" character: a text kebab renders heavier
-          // than the 20px stroked icons in the buttons either side of it, so at the same
-          // box size it still read as the odd one out.
-          trigger={
-            <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-5 h-5">
-              <circle cx="8" cy="3.5" r="1.4" />
-              <circle cx="8" cy="8" r="1.4" />
-              <circle cx="8" cy="12.5" r="1.4" />
-            </svg>
-          }
-        />
       </div>
 
       {/* The middle band: whichever tab is in front, with the agent docked beside it on a
@@ -590,6 +509,15 @@ export function MobileShell({
               // a second copy, and its own options move into the shell's ⋮.
               showTransport={false}
               compact
+              corner={toolsMenu(
+                "arrangement",
+                <>
+                  <ToolsIcon className="w-3.5 h-3.5" />
+                  Arrangement
+                </>,
+                "w-full h-full flex items-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted hover:text-ink cursor-pointer",
+                "left",
+              )}
             />
           </div>
           {/* No sheet without a track: there is nothing to edit, and an empty sheet over
@@ -619,6 +547,12 @@ export function MobileShell({
                   className="ml-auto shrink-0 font-mono uppercase tracking-wide"
                 />
               }
+              tools={toolsMenu(
+                "notes",
+                <ToolsIcon className="w-5 h-5" />,
+                iconButtonClass({ size: "md", className: "shrink-0" }),
+                "right",
+              )}
             >
               {/* A section of its own only where there are pads to give the room to. Folded, an
                   empty box keeps its place, so the pads stay at the foot of the sheet where the

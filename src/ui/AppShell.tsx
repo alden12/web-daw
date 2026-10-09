@@ -485,6 +485,8 @@ export function AppShell() {
             midiInput={midiInput}
             recorder={recorder}
             engine={engine}
+            projectStore={projectStore}
+            dispatch={dispatch}
             initialTab={settings.tab}
             onClose={() => setSettings(null)}
           />
