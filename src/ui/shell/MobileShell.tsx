@@ -16,12 +16,6 @@
  * the arrangement away), and the question of
  * where selection navigates to - it does not, because the arrangement never leaves.
  *
- * Because the arrangement and the editor are mounted at the same time, **both** publish to
- * the shell's ⋮ and it shows both, under headings. It used to hand ownership to whichever
- * was in front, which is a focus idea from a screen that has focus: at Half you are looking
- * at the timeline and the roll together, so following the front-most surface meant hiding
- * controls for a panel in plain view (`surfaceControls.ts` has the longer version).
- *
  * **That workspace is the Studio, one of three tabs** (MOBILE-19): Projects, Explore and
  * Studio, along the bottom (`MobileTabs.tsx`). They replaced the ☰ library panel, whose views
  * they now host between them. The Studio stays mounted while another tab is in front, so the
@@ -42,7 +36,7 @@
  * the second section (it is still the Clips segment above), and the select-then-handles
  * editing model (MOBILE-7).
  */
-import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { LibraryPanel } from "../LibraryPanel";
 import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
@@ -65,7 +59,7 @@ import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean, usePersistentString } from "../usePersistent";
 import { useElementHeight } from "../useElementHeight";
-import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
+import { arrangementAddItems } from "../arrangement/addItems";
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
@@ -278,9 +272,6 @@ export function MobileShell({
   const recording = rec.status === "recording" || rec.status === "counting";
   const { canUndo, canRedo } = useEditLog(editLog);
 
-  // Every mounted workspace's own controls (`surfaceControls.ts`), each shown beside its surface.
-  const surfaceGroups = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, readSurfaceControls);
-
   /**
    * On a tablet the agent **docks** beside the workspace instead of sliding over it: there is
    * width for a column, and covering what you are editing to talk about it is a phone
@@ -358,14 +349,10 @@ export function MobileShell({
    * panel, zoom is the pinch gesture, and Quantize lives on a selected note, which left adding
    * things as the one job, and the top bar the place with room for it.
    *
-   * `items` is the arrangement's getter, passed straight through: the shell is not re-rendered when
-   * the arrangement's own state changes (the registry only notifies on mount and unmount, by
-   * design), so an array built here would go stale. `Menu` calls the getter while open.
    */
-  const arrangementItems = surfaceGroups.find((group) => group.key === "arrangement")?.items;
-  const addMenu = tab === "studio" && arrangementItems && (
+  const addMenu = tab === "studio" && (
     <Menu
-      items={arrangementItems}
+      items={arrangementAddItems(project.groups, dispatch)}
       label="Add to the arrangement"
       align="left"
       triggerClassName={iconButtonClass({ size: "lg", className: "shrink-0" })}
