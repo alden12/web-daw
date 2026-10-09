@@ -2295,6 +2295,11 @@ projects:
             id: 01a12242-f2d2-742c-b10b-b27d463c40b0
             at: 2026-10-09T20:02:55.314Z
             actor: claude
+          - body: 'Tag vocabulary landed as data in `src/audio/tags.ts` (COMM-1.9.1), with two roles added to the starting list: **space** (delay, reverb) and **rhythm** (Euclidean), since no instrument role fit them. The earlier "Top rated implies stars" comment is superseded: no stars, decided 2026-10-09 (see body).'
+            audience: user
+            id: 01a1228c-c77f-71be-8d41-8c5b7adbe655
+            at: 2026-10-09T21:23:33.887Z
+            actor: claude
       - ref: COMM-1.3
         area: COMM
         title: "The feed: landing page with curated, top and new synths"
@@ -2567,7 +2572,7 @@ projects:
       - ref: COMM-1.9.1
         area: COMM
         title: "Explore on built-ins: home, category tiles, playlist-style category pages, desktop rail"
-        status: to-do
+        status: review
         sort_path: 000001.000009.000001
         parent: COMM-1.9
         deps:
@@ -2583,7 +2588,13 @@ projects:
           Mockups: `FeedHome`, `FeedCategory`, `FeedDesktop`.
         id: 01a12246-2578-76bc-b8d2-ef13a98b3e25
         created_at: 2026-10-09T20:06:24.888Z
-        updated_at: 2026-10-09T20:06:24.888Z
+        updated_at: 2026-10-09T21:23:33.833Z
+        comments:
+          - body: "Built notes: search on the phone moved to the Projects tab (Explore searches its own contents from its own box; the library's box hides on Explore). Tag chips are one horizontal scrolling row everywhere (user feedback: wrapped, they ate the desktop panel). No sort control yet, just an \"A to Z\" caption, since there is one order. No drag-onto-a-track existed in the old views, so none to keep. The open page persists (`corrente:explore-page`), which is how the Sampler's \"browse samples\" link lands on Samples."
+            audience: user
+            id: 01a1228c-c7af-759e-9d37-925bc371e443
+            at: 2026-10-09T21:23:33.935Z
+            actor: claude
       - ref: COMM-1.9.2
         area: COMM
         title: Sound portrait thumbnails, generated from an isolated render
