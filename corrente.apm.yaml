@@ -8112,6 +8112,17 @@ projects:
             id: 01a1225b-c325-70e9-b646-4e47fc81ac48
             at: 2026-10-09T20:30:01.509Z
             actor: claude
+          - body: |-
+              2026-10-09, after local testing:
+              - **The ⋮ is gone on both shells.** Tempo, meter, metronome, count-in and groove are a **Timing** page in settings; the user picked that name over "Project". Groove amount is a slider.
+              - **Editing tools sit beside their surface** under a sliders icon: the roll's in the sheet header and the desktop roll toolbar, the arrangement's in the timeline's ruler corner on touch. On desktop the timeline kebab became a **+** for adding groups and tracks.
+              - **Account button is your initials** on both shells.
+              - **Top bar:** play is an icon, undo and redo are on the left.
+              - The sheet's spring damping ratio is 0.83, tuned by the user.
+            audience: user
+            id: 01a12279-8fc9-73b6-856b-813e97b0d864
+            at: 2026-10-09T21:02:34.441Z
+            actor: claude
       - ref: MOBILE-19.3
         area: MOBILE
         title: "Projects tab: open-project card, Recent / Shared lists, Tracks and History inside a project"
