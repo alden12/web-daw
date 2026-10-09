@@ -91,17 +91,16 @@ async function setDetent(page: Page, target: "peek" | "half" | "full") {
 }
 
 /**
- * Open a surface's tools menu (MOBILE-19): "Notes" in the editor sheet's header, "Arrangement" in
- * the timeline's corner. Retried because `Menu` dismisses itself on any scroll and a surface that
- * has just mounted may still be restoring its own scroll offset, which can close the popover the
- * instant it opens.
+ * Open the top bar's "+" (MOBILE-19.4). Retried because `Menu` dismisses itself on any scroll and
+ * a surface that has just mounted may still be restoring its own scroll offset, which can close
+ * the popover the instant it opens.
  */
-async function openTools(page: Page, surface: "Notes" | "Arrangement") {
+async function openAdd(page: Page) {
   const menu = page.getByRole("menu").first();
   await expect(async () => {
     // Only tap when it is not already open - the trigger toggles, so a blind retry would
     // close the menu the previous attempt had just managed to open.
-    if (!(await menu.isVisible())) await page.getByRole("button", { name: `${surface} tools` }).tap();
+    if (!(await menu.isVisible())) await page.getByRole("button", { name: "Add to the arrangement" }).tap();
     await expect(menu).toBeVisible({ timeout: 800 });
   }).toPass({ timeout: 10_000 });
 }
@@ -573,6 +572,11 @@ test.describe("phone", () => {
     await kebab.tap();
     await page.getByRole("menuitem", { name: "Duplicate" }).tap();
     await expect(notes).toHaveCount(before + 1);
+
+    // Quantize lives here on touch (MOBILE-19.4), beside the note it acts on.
+    await kebab.tap();
+    await page.getByRole("menuitem", { name: "Quantize" }).tap();
+    await expect(page.getByRole("menu")).toHaveCount(0);
 
     await kebab.tap();
     const fader = page.getByRole("slider", { name: "Velocity" });
@@ -1047,25 +1051,25 @@ test.describe("phone", () => {
   });
 
   /**
-   * Each surface's tools sit beside it (MOBILE-19), and the timing settings are on the settings
-   * panel's Timing page - count-in and groove are project settings, not the arrangement's or the
-   * roll's (MOBILE-11).
+   * Adding is the top bar's "+" (MOBILE-19.4), and the timing settings are on the settings panel's
+   * Timing page - count-in and groove are project settings, not the arrangement's or the roll's
+   * (MOBILE-11).
    */
-  test("each surface's tools sit beside it, and the project's settings are in settings", async ({ page }) => {
+  test("adding is the top bar's +, and the project's settings are in settings", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
     await setDetent(page, "half");
 
-    await openTools(page, "Arrangement");
-    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: /^Quantize/ })).toHaveCount(0);
+    const tracks = page.locator("[data-track-id]");
+    const before = await tracks.count();
+    await openAdd(page);
+    await page.getByRole("menuitem", { name: "Add group" }).tap();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await openAdd(page);
+    await expect(page.getByRole("menuitem", { name: "New MIDI track in" })).toBeVisible();
     await page.keyboard.press("Escape");
-
-    await openTools(page, "Notes");
-    await expect(page.getByRole("menuitem", { name: /^Quantize/ })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
-    await page.keyboard.press("Escape");
+    expect(await tracks.count()).toBe(before);
 
     await expect(page.getByRole("button", { name: "More controls" })).toHaveCount(0);
     await openTimingSettings(page);
@@ -1089,7 +1093,7 @@ test.describe("phone", () => {
     await expect(page.getByRole("combobox", { name: "Beat unit" })).toHaveValue("8");
   });
 
-  test("the roll has no toolbar of its own - its controls are in the sheet's tools menu", async ({ page }) => {
+  test("the roll has no toolbar or menu of its own on touch", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
@@ -1098,29 +1102,22 @@ test.describe("phone", () => {
     // The toolbar row is hidden, so its label is not shown...
     await expect(page.getByText("Piano roll", { exact: true })).toBeHidden();
 
-    // ...and the actions turn up in the sheet header's tools menu. Zoom folds into a submenu
-    // there: it is a fallback for the pinch gesture, so it need not spend a row of its own.
-    // The settings are not here: they are on the settings panel's Piano roll page (MOBILE-19.4).
-    await openTools(page, "Notes");
-    await expect(page.getByRole("menuitem", { name: "Quantize all notes" })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toHaveCount(0);
-    await page.getByRole("menuitem", { name: "Zoom", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Taller rows" })).toBeVisible();
+    // ...and nor is a tools menu in its place (MOBILE-19.4): its settings are the settings panel's
+    // Piano roll page, zoom is the pinch, and Quantize is on a selected note's own menu.
+    await expect(page.getByRole("button", { name: "Notes tools" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Arrangement tools" })).toHaveCount(0);
   });
 
-  /**
-   * A surface's tools are there because the surface is *mounted*. Switching to the rack really
-   * does unmount the roll, so its tools go: those rows act on a panel that is not there.
-   */
-  test("a surface's tools come and go with the surface", async ({ page }) => {
+  /** The "+" adds to the arrangement, so it is there with the Studio and not over Explore. */
+  test("the top bar's + belongs to the Studio", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await segment(page, "Edit").tap();
-    await expect(page.getByRole("button", { name: "Notes tools" })).toBeVisible();
-
-    await segment(page, "Rack").tap();
-    await expect(page.getByRole("button", { name: "Notes tools" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Arrangement tools" })).toBeVisible();
+    const add = page.getByRole("button", { name: "Add to the arrangement" });
+    await expect(add).toBeVisible();
+    await tab(page, "Explore").tap();
+    await expect(add).toHaveCount(0);
+    await tab(page, "Studio").tap();
+    await expect(add).toBeVisible();
   });
 
   test("the editors' settings are settings pages on touch, and what they set reaches the surface", async ({ page }) => {

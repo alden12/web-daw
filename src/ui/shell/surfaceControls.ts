@@ -29,13 +29,13 @@
 import type { MenuItem } from "../Menu";
 
 /**
- * The surfaces that can publish, and the order their groups sit in the menu - top to bottom
- * as they sit on the screen: the arrangement behind, the editor's roll over it. Adding a
- * surface is an entry here plus a `usePublishSurfaceControls` call in it.
+ * The surfaces that can publish, and the order their groups sit in. Adding a surface is an entry
+ * here plus a `usePublishSurfaceControls` call in it. Only the arrangement publishes today, its
+ * "+" items for the top bar's "+" (MOBILE-19.4): the roll's settings moved to the settings panel
+ * and its zoom to the pinch gesture, which left it nothing that needed a menu.
  */
 export const SURFACE_GROUPS = {
   arrangement: { title: "Arrangement", order: 0 },
-  notes: { title: "Notes", order: 1 },
 } as const;
 
 export type SurfaceKey = keyof typeof SURFACE_GROUPS;

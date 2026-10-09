@@ -19,7 +19,7 @@
  * is one undo step and one feed entry. Geometry is shared with the piano roll via
  * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
@@ -92,7 +92,6 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
-  corner,
   compact = false,
 }: {
   projectStore: ProjectStore;
@@ -107,13 +106,8 @@ export function ArrangementTimeline({
    */
   showTransport?: boolean;
   /**
-   * What sits in the ruler's corner cell, above the track names (MOBILE-19): the touch shell puts
-   * the arrangement's tools menu there. Empty on desktop, which has a toolbar.
-   */
-  corner?: ReactNode;
-  /**
-   * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
-   * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its "+" items for the shell's
+   * top-bar "+" (MOBILE-19.4). The clip-mode indicator stays, being live state.
    */
   compact?: boolean;
 }) {
@@ -443,24 +437,10 @@ export function ArrangementTimeline({
   // Count-in and groove are not here: they are timing settings, on the settings panel's Timing
   // page (MOBILE-19, and MOBILE-11 before it for why they were never the arrangement's).
   //
-  // On touch the toolbar row goes away. Its actions move to the tools menu in the timeline's
-  // corner: zoom (a fallback for the pinch gesture, MOBILE-2), then the "+" items. Its settings,
-  // snap, move to the settings panel's Arrangement page (MOBILE-19.4).
-  usePublishSurfaceControls(
-    "arrangement",
-    [
-      {
-        label: "Zoom",
-        submenu: [
-          { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
-          { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
-        ],
-      },
-      { separator: true },
-      ...trackItems,
-    ],
-    compact,
-  );
+  // On touch the toolbar row goes away. Its "+" items move to the "+" in the shell's top bar;
+  // its settings, snap, to the settings panel's Arrangement page (MOBILE-19.4); and zoom is the
+  // pinch gesture (MOBILE-2), which needs no menu standing in for it.
+  usePublishSurfaceControls("arrangement", trackItems, compact);
 
   // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
   // column; as a grid item on desktop it is ignored, so the grid row decides the height.
@@ -580,9 +560,7 @@ export function ArrangementTimeline({
                     stickyHeaders ? "sticky left-0 z-10" : ""
                   }`}
                   style={{ width: headerW, height: RULER_H }}
-                >
-                  {corner}
-                </div>
+                ></div>
                 <Ruler
                   viewBeats={viewBeats}
                   loopStart={project.loopStart}

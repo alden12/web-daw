@@ -63,7 +63,6 @@ import { Button } from "./controls/Button";
 import { IconButton } from "./controls/IconButton";
 import { iconButtonClass } from "./controls/iconButtonStyle";
 import { ToolsIcon } from "./controls/ToolsIcon";
-import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
 import { isBlackKey, pitchName } from "./noteNames";
 
 const MIN_PITCH = 24; // C1
@@ -730,6 +729,20 @@ export function PianoRoll({
       },
     },
     { separator: true },
+    // The note, or the whole selection when the note is part of one: the same grid and strength as
+    // the toolbar's Quantize (the Piano roll settings).
+    {
+      label: selection.size > 1 && selection.has(note.id) ? `Quantize ${selection.size} notes` : "Quantize",
+      onClick: () => {
+        const notes = selection.has(note.id) ? clip.notes.filter((each) => selection.has(each.id)) : [note];
+        dispatch({
+          type: "editNotes",
+          trackId,
+          clipId,
+          notes: quantizeNotes(notes, { gridBeats: snapDiv, strength: quantStrength, ends: quantEnds }),
+        });
+      },
+    },
     { label: "Duplicate", onClick: () => duplicateNote(note) },
     {
       label: "Delete",
@@ -838,26 +851,9 @@ export function PianoRoll({
     velocityItem,
   ];
 
-  // Touch keeps only the actions here: the settings (snap, grid, quantize, velocity lane) are on
-  // the settings panel's Piano roll page there (MOBILE-19.4), where a small screen looks for them.
-  // The zoom entries are a fallback for pinch-zoom rather than the gesture (MOBILE-2); each closes
-  // the menu.
-  usePublishSurfaceControls(
-    "notes",
-    [
-      quantizeItems[0],
-      {
-        label: "Zoom",
-        submenu: [
-          { label: "Zoom in", onClick: () => setPxPerBeat(Math.round(pxPerBeat * 1.25)) },
-          { label: "Zoom out", onClick: () => setPxPerBeat(Math.round(pxPerBeat / 1.25)) },
-          { label: "Taller rows", onClick: () => setRowH(rowH + 2) },
-          { label: "Shorter rows", onClick: () => setRowH(rowH - 2) },
-        ],
-      },
-    ],
-    compact,
-  );
+  // Touch has no menu of its own beside the roll (MOBILE-19.4): the settings are on the settings
+  // panel's Piano roll page, zoom is the pinch gesture (MOBILE-2), and Quantize is on the selected
+  // note's own menu, where the note it acts on is.
 
   return (
     <div ref={rootRef} className="h-full flex flex-col border border-line rounded-lg bg-stage overflow-hidden">

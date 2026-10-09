@@ -53,7 +53,6 @@ import { Menu } from "../Menu";
 import { IconButton } from "../controls/IconButton";
 import { iconButtonClass } from "../controls/iconButtonStyle";
 import { Segmented } from "../controls/Segmented";
-import { ToolsIcon } from "../controls/ToolsIcon";
 import type { LibraryView } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
@@ -66,7 +65,7 @@ import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
 import { usePersistentBoolean, usePersistentString } from "../usePersistent";
 import { useElementHeight } from "../useElementHeight";
-import { readSurfaceControls, subscribeSurfaceControls, type SurfaceKey } from "./surfaceControls";
+import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls";
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
@@ -353,29 +352,38 @@ export function MobileShell({
   });
 
   /**
-   * A surface's own tools, as a menu beside that surface (MOBILE-19): the notes' in the editor
-   * sheet's header, the arrangement's in its top-left corner. They used to share the top bar's ⋮
-   * with the project's settings, which made one long menu for everything; the settings moved to
-   * the settings panel's Timing page and the tools to where you are looking when you want them.
+   * The "+" in the top bar: what the arrangement's own "+" offers on desktop - a group, a MIDI or
+   * audio track in a group of your choosing (MOBILE-19.4). The surfaces used to carry a tools menu
+   * each, beside the arrangement and in the sheet header; their settings moved to the settings
+   * panel, zoom is the pinch gesture, and Quantize lives on a selected note, which left adding
+   * things as the one job, and the top bar the place with room for it.
    *
-   * `items` is the surface's getter, passed straight through: the shell is not re-rendered when a
-   * surface's own state changes (the registry only notifies on mount and unmount, by design), so an
-   * array built here would show a stale tick. `Menu` calls the getter while open.
+   * `items` is the arrangement's getter, passed straight through: the shell is not re-rendered when
+   * the arrangement's own state changes (the registry only notifies on mount and unmount, by
+   * design), so an array built here would go stale. `Menu` calls the getter while open.
    */
-  const toolsMenu = (key: SurfaceKey, trigger: ReactNode, triggerClassName: string, align: "left" | "right") => {
-    const group = surfaceGroups.find((candidate) => candidate.key === key);
-    return (
-      group && (
-        <Menu
-          items={group.items}
-          label={`${group.title} tools`}
-          align={align}
-          triggerClassName={triggerClassName}
-          trigger={trigger}
-        />
-      )
-    );
-  };
+  const arrangementItems = surfaceGroups.find((group) => group.key === "arrangement")?.items;
+  const addMenu = tab === "studio" && arrangementItems && (
+    <Menu
+      items={arrangementItems}
+      label="Add to the arrangement"
+      align="left"
+      triggerClassName={iconButtonClass({ size: "lg", className: "shrink-0" })}
+      trigger={
+        <svg
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          className="w-5 h-5"
+        >
+          <path d="M8 3v10M3 8h10" />
+        </svg>
+      }
+    />
+  );
 
   const agent = (
     <AgentPanel
@@ -447,6 +455,7 @@ export function MobileShell({
         <BarButton label="Redo" onClick={() => editLog.redo()} disabled={!canRedo}>
           <UndoIcon flip />
         </BarButton>
+        {addMenu}
         <div className="flex-1" />
         <BarButton label="Agent" tint="agent" onClick={() => setAgentOpen(!agentOpen)} active={agentOpen}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-5 h-5">
@@ -508,15 +517,6 @@ export function MobileShell({
               // a second copy, and its own options move into the shell's ⋮.
               showTransport={false}
               compact
-              corner={toolsMenu(
-                "arrangement",
-                <>
-                  <ToolsIcon className="w-3.5 h-3.5" />
-                  Arrangement
-                </>,
-                "w-full h-full flex items-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider text-muted hover:text-ink cursor-pointer",
-                "left",
-              )}
             />
           </div>
           {/* No sheet without a track: there is nothing to edit, and an empty sheet over
@@ -546,12 +546,6 @@ export function MobileShell({
                   className="ml-auto shrink-0 font-mono uppercase tracking-wide"
                 />
               }
-              tools={toolsMenu(
-                "notes",
-                <ToolsIcon className="w-5 h-5" />,
-                iconButtonClass({ size: "md", className: "shrink-0" }),
-                "right",
-              )}
             >
               {/* A section of its own only where there are pads to give the room to. Folded, an
                   empty box keeps its place, so the pads stay at the foot of the sheet where the
