@@ -69,6 +69,7 @@ import { usePersistentBoolean, usePersistentString } from "./usePersistent";
 import { readAutoQuantize } from "./quantizeSettings";
 import { readRecordOffsetMs } from "./recordOffset";
 import { readOutputDeviceId } from "./outputDevice";
+import { isTypingTarget } from "./typingTarget";
 
 const LIBRARY_VIEWS = ["search", "project", "instruments", "effects", "patches", "samples", "activity"] as const;
 
@@ -88,19 +89,6 @@ const KEY_MAP: Record<string, number> = {
   j: 71,
   k: 72,
 };
-
-// Non-text inputs (checkbox / radio / range / button ...) don't consume typed text, so
-// keyboard shortcuts and computer-keyboard playing should keep working while one is
-// focused. Only genuine text entry (text inputs, textareas, selects, contentEditable)
-// should swallow keys. Fixes toggles blocking keyboard play after you click them.
-const TEXT_INPUT_TYPES = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target.tagName === "TEXTAREA" || target.tagName === "SELECT") return true;
-  if (target.tagName === "INPUT") return TEXT_INPUT_TYPES.has((target as HTMLInputElement).type);
-  return false;
-}
 
 export function AppShell() {
   const [projectStore] = useState(() => new ProjectStore());
@@ -405,11 +393,14 @@ export function AppShell() {
 
   // Computer-keyboard plays the selected track's instrument (polyphonic) through the
   // shared live-note router, which handles per-note instrument routing and sustain.
+  // Touch tiers only: the desktop shell plays the whole keyboard in key (`useKeyboardPlaying`).
+  const keyboardInShell = deviceShape.tier === "desktop";
   useEffect(() => {
-    if (!started) return;
+    if (!started || keyboardInShell) return;
     const onDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
       if (isTypingTarget(e.target)) return; // don't play while typing (but toggles/knobs are fine)
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // a shortcut (Cmd+A), not a note
       const midi = KEY_MAP[e.key.toLowerCase()];
       if (midi !== undefined) liveNotes.noteOn(midi);
     };
@@ -423,7 +414,7 @@ export function AppShell() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [started, liveNotes]);
+  }, [started, keyboardInShell, liveNotes]);
 
   const handleStart = async () => {
     try {

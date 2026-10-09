@@ -7,6 +7,7 @@
  * Reads the project values the audio panel needs (tempo, meter, loop region) from the
  * store itself rather than making every caller thread them through.
  */
+import type { ReactNode } from "react";
 import type { ProjectStore, Track } from "../../audio/project/projectStore";
 import type { Scheduler } from "../../audio/sequencer/scheduler";
 import type { Recorder } from "../../audio/recording/recorder";
@@ -22,6 +23,7 @@ export function TrackEditor({
   dispatch,
   projectStore,
   compact = false,
+  rollFooter,
 }: {
   track: Track;
   scheduler: Scheduler;
@@ -30,6 +32,8 @@ export function TrackEditor({
   projectStore: ProjectStore;
   /** Touch layout: the editor hands its toolbar to the shell's ⋮ (MOBILE-1). */
   compact?: boolean;
+  /** Under the piano roll's velocity lane: the computer-keyboard panel (DAW-12.1). */
+  rollFooter?: ReactNode;
 }) {
   const project = useProject(projectStore);
 
@@ -44,6 +48,7 @@ export function TrackEditor({
         dispatch={dispatch}
         projectStore={projectStore}
         compact={compact}
+        rollFooter={rollFooter}
       />
     );
 
