@@ -1,5 +1,5 @@
 /**
- * The touch shell's three places (MOBILE-19): **Projects**, **Explore** and **Studio**.
+ * The touch shell's three places (MOBILE-19): **Explore**, **Studio** and **Projects**.
  *
  * Tabs came back after MOBILE-5 removed them, and the difference is what they switch between.
  * MOBILE-5's tabs split the *workspace* (arrange, edit, clips, devices), which the desktop never
