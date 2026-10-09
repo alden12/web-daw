@@ -18,6 +18,7 @@ import { useProject } from "../audio/project/useProject";
 import { GROOVES } from "../audio/grooves/catalog";
 import { TEMPO_BPM_RANGE, TIME_SIGNATURE_DENOMINATORS, TIME_SIGNATURE_NUMERATOR_RANGE } from "../audio/project/schema";
 import { Segmented } from "./controls/Segmented";
+import { OnOff, SettingsRow } from "./SettingsRow";
 import { Select } from "./controls/Select";
 import { Fader } from "./controls/Fader";
 import { usePersistentBoolean } from "./usePersistent";
@@ -37,7 +38,7 @@ export function TimingSettings({ projectStore, dispatch }: { projectStore: Proje
 
   return (
     <div className="flex flex-col gap-5">
-      <Row title="Tempo">
+      <SettingsRow title="Tempo">
         <NumberField
           label="Tempo"
           value={project.tempoBpm}
@@ -45,9 +46,9 @@ export function TimingSettings({ projectStore, dispatch }: { projectStore: Proje
           unit="BPM"
           onChange={(bpm) => dispatch({ type: "setTempo", bpm })}
         />
-      </Row>
+      </SettingsRow>
 
-      <Row title="Meter" hint="Beats per bar, and the note that gets the beat.">
+      <SettingsRow title="Meter" hint="Beats per bar, and the note that gets the beat.">
         <div className="flex items-center gap-2">
           <NumberField
             label="Beats per bar"
@@ -74,22 +75,13 @@ export function TimingSettings({ projectStore, dispatch }: { projectStore: Proje
             ))}
           </Select>
         </div>
-      </Row>
+      </SettingsRow>
 
-      <Row title="Metronome">
-        <Segmented
-          label="Metronome"
-          options={[
-            { value: "off", label: "Off" },
-            { value: "on", label: "On" },
-          ]}
-          value={metronome ? "on" : "off"}
-          onChange={(value) => setMetronome(value === "on")}
-          className="self-start"
-        />
-      </Row>
+      <SettingsRow title="Metronome">
+        <OnOff label="Metronome" on={metronome} onChange={setMetronome} />
+      </SettingsRow>
 
-      <Row title="Count-in" hint="Bars of clicks before a recording starts.">
+      <SettingsRow title="Count-in" hint="Bars of clicks before a recording starts.">
         <Segmented
           label="Count-in"
           options={COUNT_IN}
@@ -97,9 +89,9 @@ export function TimingSettings({ projectStore, dispatch }: { projectStore: Proje
           onChange={(value) => setCountInBars(Number(value))}
           className="self-start"
         />
-      </Row>
+      </SettingsRow>
 
-      <Row title="Groove" hint="Swing applied at playback. The notes themselves stay where they are.">
+      <SettingsRow title="Groove" hint="Swing applied at playback. The notes themselves stay where they are.">
         <Select
           aria-label="Groove"
           value={project.grooveId}
@@ -122,17 +114,7 @@ export function TimingSettings({ projectStore, dispatch }: { projectStore: Proje
           aria={{ now: Math.round(project.grooveAmount * 100), min: 0, max: 100 }}
           className="max-w-64"
         />
-      </Row>
-    </div>
-  );
-}
-
-function Row({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="font-mono text-[10px] tracking-[0.16em] uppercase text-faint">{title}</span>
-      {children}
-      {hint && <p className="text-[11px] text-faint leading-relaxed">{hint}</p>}
+      </SettingsRow>
     </div>
   );
 }

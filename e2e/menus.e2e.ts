@@ -122,23 +122,23 @@ test.describe("placement", () => {
     await page.goto("/");
     await dismissStart(page);
 
-    // The arrangement's tools (MOBILE-19), in the timeline's top-left corner: a flyout opened
-    // near the left edge, which is where a flyout most wants to run off the screen.
-    await page.getByRole("button", { name: "Arrangement tools" }).tap();
-    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
+    // The top bar's "+" (MOBILE-19.4), near the left edge: where a flyout most wants to run off
+    // the screen.
+    await page.getByRole("button", { name: "Add to the arrangement" }).tap();
+    await page.getByRole("menuitem", { name: "New MIDI track in", exact: true }).tap();
     // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
     // opened by a tap has to survive the finger that opened it leaving.
-    await liftFinger(page, "Snap to");
+    await liftFinger(page, "New MIDI track in");
 
     // Polls, so no fixed wait for the flyout to open and settle.
     const levels = await settledPopoverBoxes(page, 2);
     expect(levels, "both levels open at once").toHaveLength(2);
 
-    await page.getByRole("menuitemradio", { name: "1/2", exact: true }).tap();
+    const tracks = page.locator("[data-track-id]");
+    const before = await tracks.count();
+    await popovers(page).last().getByRole("menuitem").first().tap();
     await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
-    await page.getByRole("button", { name: "Arrangement tools" }).tap();
-    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
-    await expect(page.getByRole("menuitemradio", { name: "1/2", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect(tracks).toHaveCount(before + 1);
   });
 
   /**
@@ -149,25 +149,25 @@ test.describe("placement", () => {
     await page.goto("/");
     await dismissStart(page);
 
-    await page.getByRole("button", { name: "Notes tools" }).tap();
+    await page.getByRole("button", { name: "Add to the arrangement" }).tap();
     await settledPopoverBoxes(page, 1);
     // What the keyboard does to the viewport, without needing a keyboard.
     await page.setViewportSize({ width: 390, height: 500 });
 
     // The resize triggers a re-place, so the box has to be read once that has run.
     await settledPopoverBoxes(page, 1);
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
   });
 
   test("a menu too tall for the viewport scrolls instead of running off it", async ({ page }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await page.goto("/");
     await dismissStart(page);
-    // Then short enough that the arrangement's tools cannot fit below their corner button. After
-    // the start dialog, which needs the room to be dismissed.
-    await page.setViewportSize({ width: 844, height: 220 });
+    // Then short enough that the top bar's "+" menu cannot fit below its button. After the start
+    // dialog, which needs the room to be dismissed.
+    await page.setViewportSize({ width: 844, height: 130 });
 
-    await page.getByRole("button", { name: "Arrangement tools" }).tap();
+    await page.getByRole("button", { name: "Add to the arrangement" }).tap();
     const [menu] = await settledPopoverBoxes(page, 1);
     expect(menu.scrolls, "more rows than fit").toBe(true);
 

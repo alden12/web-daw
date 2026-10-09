@@ -1,6 +1,7 @@
 /**
  * The settings modal, opened from the logo at the foot of the desktop rail, or your initials in the
- * touch top bar. "Timing" is tempo, meter, metronome, count-in and groove (`TimingSettings`); "Account" is everyone in the project and how they are coloured, you first, plus the way out;
+ * touch top bar. "Timing" is tempo, meter, metronome, count-in and groove (`TimingSettings`);
+ * "Arrangement" and "Piano roll" hold the editing surfaces' settings (`EditorSettings`); "Account" is everyone in the project and how they are coloured, you first, plus the way out;
  * "Agent" holds the BYOK provider/key/model config; "MIDI" holds hardware MIDI input; "Recording"
  * the input and count-in; "Appearance" the theme.
  *
@@ -23,6 +24,7 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { MidiSettings } from "./MidiSettings";
 import { RecordingSettings } from "./RecordingSettings";
 import { TimingSettings } from "./TimingSettings";
+import { ArrangementSettings, PianoRollSettings } from "./EditorSettings";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Dispatch } from "../audio/commands/types";
 import type { AgentConfig } from "../audio/agent/config";
@@ -32,9 +34,19 @@ import type { MidiInput } from "../audio/midi/midiInput";
 import type { Recorder } from "../audio/recording/recorder";
 import type { AudioEngine } from "../audio/engine/AudioEngine";
 
-export type SettingsTab = "timing" | "account" | "agent" | "midi" | "recording" | "appearance";
+export type SettingsTab =
+  | "timing"
+  | "arrangement"
+  | "pianoRoll"
+  | "account"
+  | "agent"
+  | "midi"
+  | "recording"
+  | "appearance";
 const TAB_IDS = [
   "timing",
+  "arrangement",
+  "pianoRoll",
   "account",
   "agent",
   "midi",
@@ -43,6 +55,8 @@ const TAB_IDS = [
 ] as const satisfies readonly SettingsTab[];
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "timing", label: "Timing" },
+  { id: "arrangement", label: "Arrangement" },
+  { id: "pianoRoll", label: "Piano roll" },
   { id: "account", label: "Account" },
   { id: "agent", label: "Agent" },
   { id: "midi", label: "MIDI" },
@@ -65,6 +79,7 @@ export function SettingsPanel({
   projectStore,
   dispatch,
   initialTab,
+  touch,
   onClose,
 }: {
   agentConfig: AgentConfig;
@@ -77,6 +92,8 @@ export function SettingsPanel({
   dispatch: Dispatch;
   /** The tab a caller means, if it means one. Omitted, the panel opens on the one you left it on. */
   initialTab?: SettingsTab;
+  /** The touch shell is showing. The piano roll's velocity lane is remembered per shell. */
+  touch: boolean;
   onClose: () => void;
 }) {
   const [remembered, setRemembered] = useRememberedTab();
@@ -171,6 +188,8 @@ export function SettingsPanel({
             className={`${listing ? "hidden sm:flex" : "flex"} flex-1 min-w-0 flex-col gap-4 p-4 sm:p-6 overflow-y-auto`}
           >
             {tab === "timing" && <TimingSettings projectStore={projectStore} dispatch={dispatch} />}
+            {tab === "arrangement" && <ArrangementSettings />}
+            {tab === "pianoRoll" && <PianoRollSettings compact={touch} />}
             {tab === "account" && <AccountSettings config={authorColors} editLog={editLog} onClose={onClose} />}
             {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
             {tab === "midi" && <MidiSettings midiInput={midiInput} />}

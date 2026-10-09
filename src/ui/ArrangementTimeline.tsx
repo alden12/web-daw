@@ -19,16 +19,15 @@
  * is one undo step and one feed entry. Geometry is shared with the piano roll via
  * `timeGrid`/`Ruler`, so the two views stay pixel-for-pixel consistent.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectStore } from "../audio/project/projectStore";
 import type { Scheduler } from "../audio/sequencer/scheduler";
 import type { Recorder } from "../audio/recording/recorder";
 import type { ClipContent, GroupMeta, Placement, TrackMeta } from "../audio/project/types";
 import type { Dispatch } from "../audio/commands/types";
-import { newClipId, newGroupId, newPlacementId, newTrackId } from "../audio/commands/ids";
+import { newClipId, newPlacementId } from "../audio/commands/ids";
 import { clipContentOf } from "./clipContent";
-import { EMPTY_INSTRUMENT } from "../audio/instruments/catalog";
-import { Menu, type MenuItem } from "./Menu";
+import { Menu } from "./Menu";
 import { useCountInBars } from "./countIn";
 import { useProject } from "../audio/project/useProject";
 import { useRecorder } from "./useRecorder";
@@ -41,10 +40,11 @@ import { beatToX } from "./timeline/timeGrid";
 import { anchorZoomX } from "./timeline/anchoredZoom";
 import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
-import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { usePersistentNumber } from "./usePersistent";
+import { useArrangementSnapDivision, useArrangementSnapOn } from "./editorPrefs";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
 import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
-import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
+import { arrangementAddItems } from "./arrangement/addItems";
 import { IconButton } from "./controls/IconButton";
 import { iconButtonClass } from "./controls/iconButtonStyle";
 import { Select } from "./controls/Select";
@@ -91,7 +91,6 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
-  corner,
   compact = false,
 }: {
   projectStore: ProjectStore;
@@ -106,13 +105,8 @@ export function ArrangementTimeline({
    */
   showTransport?: boolean;
   /**
-   * What sits in the ruler's corner cell, above the track names (MOBILE-19): the touch shell puts
-   * the arrangement's tools menu there. Empty on desktop, which has a toolbar.
-   */
-  corner?: ReactNode;
-  /**
-   * Touch layout (MOBILE-1): drop the toolbar row and publish its options, snap and zoom
-   * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
+   * Touch layout (MOBILE-1): drop the toolbar row and publish its "+" items for the shell's
+   * top-bar "+" (MOBILE-19.4). The clip-mode indicator stays, being live state.
    */
   compact?: boolean;
 }) {
@@ -139,8 +133,8 @@ export function ArrangementTimeline({
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("corrente:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
-  const [snapOn, setSnapOn] = usePersistentBoolean("corrente:arr-snap-on", true);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("corrente:arr-snap-div", 1, 0.5, 4);
+  const [snapOn, setSnapOn] = useArrangementSnapOn();
+  const [snapDiv, setSnapDiv] = useArrangementSnapDivision();
   // The count-in is a persisted preference pushed to the recorder from here, because this
   // component is mounted in both shells; the rows that *set* it are project settings and are
   // built alongside groove in `projectSettings.ts`. (The Record button stays in the transport.)
@@ -408,67 +402,11 @@ export function ArrangementTimeline({
     beginPointerDrag((ev) => setHeaderW(clamp(ev.clientX - left, HEADER_MIN, HEADER_MAX)));
   };
 
-  // "New <kind> track in ..." submenu: one entry per group plus a fresh group. The
-  // caller supplies how to create the track (MIDI vs audio) given a destination group.
-  const newTrackSubmenu = (createTrack: (groupId: string) => void) => [
-    ...project.groups.map((group) => ({ label: group.name, onClick: () => createTrack(group.id) })),
-    {
-      label: "New group",
-      onClick: () => {
-        const groupId = newGroupId();
-        dispatch({ type: "createGroup", id: groupId });
-        createTrack(groupId);
-      },
-    },
-  ];
-  const createMidiTrack = (groupId: string) =>
-    dispatch({ type: "createTrack", instrumentType: EMPTY_INSTRUMENT, id: newTrackId(), groupId });
-  const createAudioTrack = (groupId: string) => dispatch({ type: "createAudioTrack", id: newTrackId(), groupId });
-
-  /**
-   * What this surface adds to a project: the toolbar's "+" on desktop, and the end of its tools
-   * menu on touch.
-   */
-  const trackItems: MenuItem[] = [
-    {
-      label: "Add group",
-      onClick: () => dispatch({ type: "createGroup", id: newGroupId() }),
-    },
-    // Every track lives in a group, so adding one picks the destination group
-    // (or a fresh group). Nested as submenus so the menu stays short.
-    { label: "New MIDI track in", submenu: newTrackSubmenu(createMidiTrack) },
-    { label: "New audio track in", submenu: newTrackSubmenu(createAudioTrack) },
-  ];
-  // Count-in and groove are not here: they are timing settings, on the settings panel's Timing
-  // page (MOBILE-19, and MOBILE-11 before it for why they were never the arrangement's).
-  //
-  // On touch the toolbar row goes away and its contents move to the tools menu in the
-  // timeline's corner: the snap and zoom controls from the toolbar's right, then the "+"
-  // items. Zoom folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2).
-  usePublishSurfaceControls(
-    "arrangement",
-    [
-      { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
-      {
-        label: "Snap to",
-        submenu: SNAP_OPTIONS.map((option) => ({
-          label: option.label,
-          checked: snapDiv === option.value,
-          onClick: () => setSnapDiv(option.value),
-        })),
-      },
-      {
-        label: "Zoom",
-        submenu: [
-          { label: "Zoom in", onClick: () => setPxPerBeat(Math.min(ZOOM.max, Math.round(pxPerBeat * 1.25))) },
-          { label: "Zoom out", onClick: () => setPxPerBeat(Math.max(ZOOM.min, Math.round(pxPerBeat / 1.25))) },
-        ],
-      },
-      { separator: true },
-      ...trackItems,
-    ],
-    compact,
-  );
+  // What this surface adds to a project: the toolbar's "+" here, and the touch top bar's "+" (which
+  // builds the same rows itself). Count-in and groove are not here: they are timing settings, on the
+  // settings panel's Timing page (MOBILE-19, and MOBILE-11 before it). On touch the toolbar row goes
+  // away; snap moves to the settings panel's Arrangement page (MOBILE-19.4), and zoom is the pinch.
+  const trackItems = arrangementAddItems(project.groups, dispatch);
 
   // `flex-1` on the root is for the touch shell, which stacks the panels in a flex
   // column; as a grid item on desktop it is ignored, so the grid row decides the height.
@@ -588,9 +526,7 @@ export function ArrangementTimeline({
                     stickyHeaders ? "sticky left-0 z-10" : ""
                   }`}
                   style={{ width: headerW, height: RULER_H }}
-                >
-                  {corner}
-                </div>
+                ></div>
                 <Ruler
                   viewBeats={viewBeats}
                   loopStart={project.loopStart}

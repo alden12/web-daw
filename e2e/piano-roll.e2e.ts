@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart } from "./support/app";
+import { dismissStart, openSettingsPage } from "./support/app";
 
 /**
  * Piano-roll mouse editing: the default project seeds one instrument track
@@ -160,6 +160,22 @@ test("the velocity lane collapses from the roll's tools menu", async ({ page }) 
   await page.reload();
   await dismissStart(page);
   await expect(page.getByTitle("Velocity - drag a bar")).toBeHidden();
+});
+
+test("the Piano roll settings page sets the same lane as the toolbar menu (MOBILE-19.4)", async ({ page }) => {
+  await page.goto("/");
+  await dismissStart(page);
+  const lane = page.getByTitle("Velocity - drag a bar");
+  await expect(lane).toBeVisible();
+
+  // On desktop the settings are in both places, and it is one value: the page turns the lane
+  // off, and the toolbar menu's tick follows.
+  await openSettingsPage(page, "Piano roll");
+  await page.getByRole("radiogroup", { name: "Velocity lane" }).getByRole("radio", { name: "Off" }).click();
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect(lane).toBeHidden();
+  await page.getByRole("button", { name: "Notes tools" }).click();
+  await expect(page.getByRole("menuitemradio", { name: /Velocity lane/i })).toHaveAttribute("aria-checked", "false");
 });
 
 /**

@@ -5,14 +5,13 @@ projects:
     status: active
     direction: The open-source browser DAW whose projects are complete, readable files - because it owns its whole device chain. One parameter schema is the keystone that UI, agent, automation and persistence all project from; every edit is an authored event in one log, so history, versioning and an AI co-author fall out rather than being bolted on.
     next:
-      - DAW-8.15
-      - DAW-8.13
-      - MOBILE-17
+      - COMM-1.9.2
+      - COMM-1.9.3
+      - MOBILE-19.3
+      - DAW-47
       - DAW-8.17
       - DAW-8.16
-      - DAW-8.10
       - HOST-16
-      - DAW-8.9
     id: 019fadff-8808-7358-b599-5f4175bd287f
     created_at: 2026-07-29T13:10:32.712Z
     updated_at: 2026-07-29T13:34:58.278Z
@@ -5553,6 +5552,30 @@ projects:
             id: 01a0da61-a8d0-715c-8945-dfc2d7fdb85f
             at: 2026-09-25T21:03:48.432Z
             actor: claude
+      - ref: DAW-47
+        area: DAW
+        title: "Clip colours: each clip its own colour, authorship as a dot by its name"
+        status: to-do
+        sort_path: "000047"
+        body: |-
+          **Decision, 2026-10-09 (user):** clips stop being coloured by author. With most clips made by you, nearly everything was the same teal, which made the arrangement hard to read and hard to find your way around. Each clip gets **its own colour**, and **authorship moves to a small dot** beside the clip's name, shown when someone else made it (a collaborator or the agent), in that author's colour.
+
+          This revises the two-voice colour decision ("Layout and UX", the Thesis) **for clips only**. Authorship colour stays on the activity feed, history, the AI cursor and focus glow, and the dot. Update those context sections when this lands.
+
+          **Shape:**
+          - **The colour lives on the clip** (`color` on clip data): a property you choose, not a view derived from the log. That makes it a project-document change, with an upcaster in `documentMigration.ts` that assigns colours to existing clips.
+          - **Defaults:** a new clip takes the next colour in a curated palette, so neighbouring clips differ without anyone picking. The palette is data, re-lit per theme like the author palette (`oklch.ts`: hue is identity, lightness is the theme's), so it holds 3:1 contrast on light and dark grounds.
+          - **Custom:** a swatch picker on the clip's menu (desktop kebab and the touch handles' kebab), through a `setClipColor` edit, so it is undoable, appears in the feed, and is reachable from MCP (a `color` field on the clip tools).
+          - **Where it shows:** arrangement placement blocks and their note-summary bars, the clip rail, clip previews (including the minimised sheet's preview, the projects-tab thumbnails in MOBILE-19.3, and DAW-25's clip tree).
+          - **The dot:** beside the clip name wherever the name is shown, when the clip's creator is not the viewer. It is perspective-relative like the rest of authorship, so your own clips never get one.
+
+          **Open questions:**
+          - **Creator or last editor?** The ask was "when it wasn't made by you", so start with the creator. A collaborator editing your clip might deserve a different cue.
+          - **Piano-roll note fill:** clip colour, or keep authorship there (per-note blame is where authorship matters most)? Leaning towards keeping authorship on notes.
+          - **Tracks:** colour them too, or let a lane read from its clips? Not asked for. Revisit after living with clip colours.
+        id: 01a122af-ba28-709f-933b-c36f4aaf14c2
+        created_at: 2026-10-09T22:01:44.232Z
+        updated_at: 2026-10-09T22:01:44.232Z
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -8100,7 +8123,7 @@ projects:
       - ref: MOBILE-19.2
         area: MOBILE
         title: "Tab bar shell: Projects / Explore / Studio, account button, ☰ removed"
-        status: review
+        status: done
         sort_path: "000019.000002"
         parent: MOBILE-19
         body: |-
@@ -8114,7 +8137,8 @@ projects:
           Mockups: `PhoneSheet` (tab bar), `ProjectsHome`, `FeedHome`.
         id: 01a12246-2546-75ad-b63b-8fc2ad977ba5
         created_at: 2026-10-09T20:06:24.838Z
-        updated_at: 2026-10-09T20:30:01.564Z
+        updated_at: 2026-10-09T22:07:49.795Z
+        closed_at: 2026-10-09T22:07:49.795Z
         comments:
           - body: "Decided 2026-10-09: the agent gets a ✦ button in the top bar, **to the left of the account button**, opening the agent as a sheet (docked column on a tablet). Not a fourth tab."
             audience: user
@@ -8157,3 +8181,27 @@ projects:
         id: 01a12246-81d0-7612-a250-4e836b5325f6
         created_at: 2026-10-09T20:06:48.528Z
         updated_at: 2026-10-09T20:06:48.528Z
+      - ref: MOBILE-19.4
+        area: MOBILE
+        title: Editor settings get Arrangement and Piano roll settings pages; on touch they leave the tools menus
+        status: review
+        sort_path: "000019.000004"
+        parent: MOBILE-19
+        deps:
+          - MOBILE-19.2
+        body: |-
+          On a phone, the arrangement's and the piano roll's settings filled the tools menus beside each surface, nested two deep, on a screen with room for neither. A small-screen user looks for settings in settings (user request, 2026-10-09).
+
+          - **Settings pages** after Timing: Arrangement (snap on/off, snap to) and Piano roll (snap, grid, quantize strength, quantize note ends, auto-quantize recordings, velocity lane).
+          - **Touch:** the tools menus keep only the actions: arrangement = zoom + add group / new track; notes = quantize now + zoom.
+          - **Desktop:** the pages show too, and each surface's toolbar menu keeps its settings as well (the user was happy to duplicate them). The velocity lane is remembered per shell, so the page sets the lane for whichever shell is showing.
+          - **One value, not a copy**: the preferences are hooks over their persisted keys in `src/ui/editorPrefs.ts`, used by the surfaces and the pages alike.
+        id: 01a122a3-258e-7348-bfee-84e007432011
+        created_at: 2026-10-09T21:47:59.758Z
+        updated_at: 2026-10-09T21:51:14.056Z
+        comments:
+          - body: "Extended in #190 at the user's request: on touch both surface tools menus are gone. Adding is a + in the top bar (Studio tab only), zoom is pinch only, and Quantize moved to the selected note's own menu (that note, or its selection), on both shells. Manual \"quantize the whole clip\" is now desktop-only; on a phone it's select-then-quantize, or auto-quantize from settings."
+            audience: user
+            id: 01a122b1-3f8f-72d3-aa22-ceb68361ca1c
+            at: 2026-10-09T22:03:23.919Z
+            actor: claude

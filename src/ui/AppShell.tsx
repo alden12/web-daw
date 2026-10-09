@@ -488,6 +488,7 @@ export function AppShell() {
             projectStore={projectStore}
             dispatch={dispatch}
             initialTab={settings.tab}
+            touch={deviceShape.tier !== "desktop"}
             onClose={() => setSettings(null)}
           />
         )}
