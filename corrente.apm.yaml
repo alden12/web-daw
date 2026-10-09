@@ -667,7 +667,9 @@ projects:
 
         **But while sole author you already have full relicensing freedom** - you own everything - so no CLA is needed yet; DCO is correct low-friction hygiene. The **trigger** to decide is the *first non-trivial outside contribution*, at which point that slice becomes AGPL-locked unless you first: (a) add a lightweight "CLA-lite" clause to `CONTRIBUTING.md` (inbound under AGPL **plus** a grant to relicense under future project licences - middle path, low friction), or (b) adopt a full CLA + signing bot (max optionality, max friction), or (c) accept AGPL-lock and move on. Keep the SPDX copyright as the sole holder (not "contributors") to keep this clean.
 
-        **The extension SDK (INST-5) is the related structural lever:** the intended growth model is extension, not modification - the core stays a single-owner, dual-licensable unit, and a permissive SDK package lets extensions be owned by their authors under any licence.
+        **The open/private repo split (HOST-23) makes this a must rather than an option.** The private hosting server imports the open core (project store, protocol, catalogs, history, command replay), so an AGPL-only contribution to any of those would oblige the server to be published. **Decided 2026-10-04: CLA-lite (option a)**, revisited only if it proves too weak.
+
+        **The extension SDK (INST-5) is the related structural lever:** the intended growth model is extension, not modification - the core stays a single-owner, dual-licensable unit, and a permissive SDK package lets extensions be owned by their authors under any licence. It is aimed at plugin authors and complements CLA-lite rather than replacing it; making the whole server-imported core permissive was considered and rejected, because that core is the engine the AGPL exists to protect.
 
         ## Trademark: territorial, defer to traction
 
@@ -686,7 +688,7 @@ projects:
         ## Decisions / triggers (deferred, not blocking)
 
         - **Licence:** stay AGPL through development and launch. Revisit BSL only on real traction + genuine rehosting-target status, applied to new versions.
-        - **CLA:** none needed while solo. Decide at the first non-trivial outside PR (CLA-lite vs full CLA vs accept AGPL-lock). Preserve sole-copyright SPDX headers until then.
+        - **CLA:** **CLA-lite, decided 2026-10-04** (HOST-23 phase 1). The clause goes into `CONTRIBUTING.md` before the first outside contribution lands, at the latest; worth a lawyer's look before launch. Preserve sole-copyright SPDX headers.
         - **Trademark:** name settled (Corrente), register searched 2026-09-23, nothing blocking in classes 9 or 42. File UK 9 + 42 at public launch (~£220). Open brand hygiene: the free domains and social handles are not yet grabbed.
       Slice history: |-
         The build order, kept because the sequencing rationale is itself the record of how the thesis was tested. Slice numbers appear throughout ticket bodies and code comments.
@@ -975,6 +977,53 @@ projects:
         id: 019fae9a-6819-768a-b897-03124af1720a
         created_at: 2026-07-29T15:59:42.617Z
         updated_at: 2026-07-29T15:59:42.617Z
+      - ref: AGENT-4.8
+        area: AGENT
+        title: Smoke-test every authored device before reporting success
+        status: to-do
+        sort_path: "000004.000008"
+        parent: AGENT-4
+        body: |-
+          Agreed with the user 2026-09-25, after a device-authoring session through the **hosted** MCP where an agent-built instrument validated but broke playback (INST-28) and only the user's ears caught it. The agent authoring devices is blind; the minimum bar is that every `create_instrument` / `update_instrument` / `create_effect` / `update_effect` proves the device **plays something sane** before reporting success.
+
+          **Neither MCP path does this today** (checked 2026-10-02; an earlier draft of this item wrongly said the local one did). Both register the same tools in `server/mcp/tools/customDevices.ts`, which parse the def, `send` it and return "Created ..." with no render. So the local path is the place to start, not something to port from.
+
+          ## Phase 1: local (no dependency)
+
+          The local target has a tab with an `AudioContext` and the real device factories, so it can render now.
+          - **Seam:** a third round-trip on `DawTarget` (`server/mcp/target.ts`) beside `requestHistory` / `requestPatch` - e.g. `requestDeviceCheck(type)` - answered by the tab over the bridge. The tools call it after the def is added and fold the verdict into their result. The hosted target answers "not available yet" until phase 2, and the tool says so rather than claiming a pass.
+          - **Render the device alone**, not via `renderProjectOffline`: that goes through the master limiter, which would hide exactly the peak and runaway faults this checks for. `renderWorkletSmokeTest` in `src/audio/engine/renderOffline.ts` is the pattern - a fresh `OfflineAudioContext`, `loadWorklets`, the real factory into `ctx.destination`. Generalise it to any instrument/effect type (custom ones resolve through the registry once the def is added). This needs to ship in production builds, unlike the dev-only `renderHarness`.
+          - **Stimulus.** Instrument: one held note then release, and a dense chord (five notes) for gain staging. Effect: a noise burst and an impulse through it.
+
+          ## The checks
+
+          - **Not silent** - peak above a floor while the note is held.
+          - **Finite** - no NaN / Infinity anywhere in the buffer (the INST-28 failure: an enum bound to a number field yields NaN in `resolveNumber`).
+          - **Bounded** - peak under a ceiling, and output decays toward silence after release (stuck voices, feedback loops that grow).
+          - **No DC offset** - mean near zero.
+          - **Gain staging (warning, not failure)** - the dense chord's summed peak near full scale. From the Tine Piano session (2026-09-25, see comment): full-scale sine voices summed across five-note chords clipped at the default Level 0.7. Threshold comes from the per-voice peak target INST-28 adds to `describe_device_format`.
+
+          **Where the result goes.** Inline in the authoring tool's result - "Created ... ; check: OK (peak -9 dBFS, decays in 480 ms)" or a clear failure naming the check - so the agent sees it in the same turn. Sub-second per AGENT-28's timings, so cheap enough to always run.
+
+          ## Phase 2: hosted
+
+          The hosted target has no audio, so it needs the render service (HOST-22). Its `requestDeviceCheck` calls that service, which runs the same isolated-device render and the same check functions, so both paths give the same verdict. Tracked as HOST-22's first consumer rather than as a dep here, so phase 1 is not blocked on it.
+
+          **Reuse.** The isolated-device render is also how COMM-1 can play previews in the listener's browser (COMM-1.1) - build it as a plain function, not as MCP plumbing.
+
+          **Why this first.** It is the smallest useful slice of agent ears for device design. Richer analysis (the probe harness - frequency response, aliasing, THD - and the perceptual tier in AGENT-4.3; tooling survey in HOST-22) waits until further authoring sessions show what the agent keeps missing.
+        id: 01a0d5bb-f04e-7499-823c-43e33fb363f4
+        created_at: 2026-09-24T23:24:18.895Z
+        updated_at: 2026-10-02T14:30:46.922Z
+        comments:
+          - body: |-
+              **Add a gain-staging check** (2026-09-25). An agent-built FM electric piano (Tine Piano, `ci-337cb74f`) clicked under dense chords; cause was clipping, not a DSP fault - full-scale sine voices summed across five-note chords with Level defaulting to 0.7. Default since lowered to 0.28.
+
+              So beyond silent/NaN/runaway/DC, the smoke test should render a dense chord and **warn when summed peak nears full scale** - a warning, not a failure, since level is user-adjustable. Pair it with a suggested per-voice peak target in `describe_device_format` (INST-28 covers that doc), so agent-authored instruments come out consistently gain-staged and the smoke test has a threshold to check against.
+            audience: user
+            id: 01a0dd9d-7853-731f-ac3f-a07e976d7810
+            at: 2026-09-26T12:07:59.827Z
+            actor: claude
       - ref: AGENT-5
         area: AGENT
         title: "Play-an-idea: notes as a prompt"
@@ -2070,6 +2119,339 @@ projects:
         id: 019fae0c-4ee3-71df-8b8d-d3b0de2a5ee6
         created_at: 2026-07-29T13:24:30.051Z
         updated_at: 2026-07-29T16:00:52.983Z
+      - ref: COMM-1
+        area: COMM
+        title: Community sound feed as the landing page
+        status: planning
+        sort_path: "000001"
+        body: |-
+          **Direction set 2026-09-25.** The landing page becomes a community sound feed: published synths you can hear, play and take into a project, instead of an empty frame.
+
+          ## The prompt (user, verbatim)
+
+          > Hi, can we change track for a bit? I'm thinking about how to make the app feel more engaging and discoverable. One of the problems I have with existing daws is that the landing page is very much like a blank canvas, it's an empty frame, and isn't particularly good at helping you to play around and discover. I was thinking that to solve this, and to start leaning on and advancing our multiplayer and cloud native advantages, we could change the landing page to be a sort of social feed. I'm thinking about showing a list of most popular and top rated synths and patches published by the community. That would require a way to publish patches, and then a way to rate them, and discover them. I'm thinking a bit like the Spotify landing page, or the thingiverse community 3d model page. It would show you sounds and effects, allow you to preview them, play around on them with the keyboard, create clips with them (without them going straight into your timeline) and to search by name or feeling/atmosphere. All of the classic social network kind of things. Firstly, what do you think of that as an idea and a solution to the aforementioned problems. And how near are we to being able to do this with out current cloud architecture?
+
+          ## Why it fits
+
+          - **Start from sound, not an empty timeline.** Discovery and play come first; arranging comes later.
+          - **The closest precedent is Shadertoy**, more than Spotify: every item is live, runnable and forkable on the page, which works because each shared thing is small, safe and instant. Declarative devices are exactly that - pure data over trusted primitives (INST-4), so running a stranger's patch is safe. WASM/Faust devices (INST-6) can join later under their own trust model.
+          - **Desktop DAWs structurally can't do this**; preset marketplaces live outside the DAW. It leans on the cloud-native and multiplayer advantages directly.
+
+          ## Shaping principles
+
+          - **Never an empty feed.** Seed it with curated synths (the user's, plus factory and clearly-labelled agent-built patches) so day one is full.
+          - **A sound browser with a community source, not a social network.** Comments, follows and notifications bring moderation load; add social features only where they earn it.
+          - **Usage beats stars.** Stars are gameable and go stale; forks, saves and uses in real projects are the stronger quality signal. Whether the MVP has stars at all is open (COMM-1.2); ranking should move to usage either way.
+          - **Returning users want their projects.** Feed as landing for new users; recent projects one tap away for everyone.
+          - **A patch needs a musical context to judge** - every published synth carries a demo phrase.
+          - **Previews are rendered, not uploaded** (added 2026-10-02). The listener's browser renders the demo phrase through the published synth, Shadertoy-style. An uploaded preview would be an arbitrary audio upload - the thing "synths first" exists to avoid - and could misrepresent the patch. Detail in COMM-1.1.
+          - **Synths first.** Samples are where copyright and abuse live; publish synthesized instruments only until moderation exists.
+
+          ## MVP (agreed 2026-09-25)
+
+          1. **Publish a synth** under an open licence - COMM-1.1
+          2. **Tags and ratings** - COMM-1.2
+          3. **A feed with basic recommendations**, seeded with the user's curated synths - COMM-1.3
+
+          ## Later
+
+          - **Audition and scratchpad** - play on the keyboard and keep clips without a project - COMM-1.4
+          - **Search by feeling** via CLAP embeddings - COMM-1.5
+          - **Forks, lineage and usage-based ranking** - COMM-1.6
+          - **Effects, sample-based patches and WASM devices**, with moderation - COMM-1.7
+          - **A light social layer** - COMM-1.8 (which also holds the follow-feed scaling design)
+
+          ## Architecture (MVP)
+
+          From the user's system-design sketch (2026-10-04), reconciled with the sub-tickets. **No new service:** the feed is new routes on the existing Hono sync API (`server/api/app.ts`, routes declared in `src/contract/http.ts`) and new tables in the same Postgres. At the MVP's scale (the HOST-20 allowlist, under 50 users) one server and one database comfortably meet a sub-500ms read target; replicas, queues and caches are COMM-1.8's, gated on real numbers.
+
+          ```mermaid
+          flowchart LR
+            subgraph Browser
+              Feed["Feed page (COMM-1.3)"]
+              Publish["Publish dialog (COMM-1.1)"]
+              Render["Isolated-device render (AGENT-4.8)"]
+            end
+            subgraph API["Sync API (Hono, existing)"]
+              Routes["/published routes"]
+              Validate["parseInstrumentDef / parseEffectDef"]
+            end
+            DB[("Postgres (existing)")]
+            Feed -- "GET shelves, search" --> Routes
+            Publish -- "POST snapshot" --> Routes
+            Routes --> Validate --> DB
+            Routes -- "SQL" --> DB
+            Feed -- "play: demo phrase + defs" --> Render
+          ```
+
+          The preview never touches the server as audio: the card fetches the version's definitions and demo phrase, and the browser renders them (COMM-1.1).
+
+          **Endpoints.** Plural resource paths, matching `/projects/...`. The acting user always comes from the session (`who(c)` in `app.ts`), never the body. Lists page by **cursor** (the last item's sort key), not page number, so items published mid-scroll don't repeat or vanish.
+
+          | Route | Does | Ticket |
+          | --- | --- | --- |
+          | `GET /published?shelf=curated\|top\|new&tag=&cursor=` | One shelf of cards. The landing page fetches its shelves in parallel. | COMM-1.3 |
+          | `GET /published/search?q=&tags=&cursor=` | Name search (Postgres full-text) filtered by tags. | COMM-1.3 |
+          | `GET /published/:id` (`?version=`) | A version's full content: inlined defs, patch, demo phrase. Immutable, so cacheable forever. | COMM-1.1 |
+          | `POST /published` | Publish a **self-contained snapshot** (patch + inlined definitions + demo phrase + metadata), not a `{ projectId, deviceId }` reference: devices are project-scoped and projects may be browser-only. | COMM-1.1 |
+          | `POST /published/:id/versions` | Publish a new version of your own item. | COMM-1.1 |
+          | `DELETE /published/:id` | Unlist (versions stay, so existing uses keep working). | COMM-1.1 |
+          | `PUT /published/:id/rating { stars }` | One rating per user, idempotent. **Only if** COMM-1.2 keeps stars. | COMM-1.2 |
+          | `POST /published/:id/usage { kind }` | Log a preview, add-to-project or new-project use. | COMM-1.2 |
+
+          **Tables.** Every column a query filters on gets an index (CLAUDE.md's Database rule). One migration via `drizzle-kit generate`, renamed to say what it does.
+
+          | Table | Columns | Indexes |
+          | --- | --- | --- |
+          | `published_items` | `id`, `author_id`, `name`, `description`, `tags text[]`, `curated`, `unlisted`, `latest_version`, `rating_sum` / `rating_count` (if stars), `search tsvector`, `created_at` | `created_at`, `author_id`, GIN on `tags`, GIN on `search`, partial on `curated` |
+          | `published_versions` | `item_id`, `version`, `content jsonb`, `content_hash`, `licence`, `created_at`. Write-once, like `edits`. | PK `(item_id, version)`, `content_hash` |
+          | `ratings` (if stars) | `user_id`, `item_id`, `stars` | PK `(user_id, item_id)` |
+          | `usage_events` | `item_id`, `user_id`, `kind`, `at` | `(item_id, at)` |
+
+          **Ranking.** `top` is a **Bayesian average** of stars, or usage over the last 30 days, whichever COMM-1.2 settles on; `rating_sum` and `rating_count` are updated in the same transaction as the rating, so the shelf sorts without aggregating. `new` is `created_at`; `curated` is the admin flag.
+
+          **Dedupe.** `content_hash` of each inlined definition makes re-publishing an identical synth detectable, and "Add to project" keys copied defs by it so adding twice stores one (COMM-1.1).
+
+          ## Where the codebase stands (checked 2026-10-02)
+
+          **In place:**
+          - **Accounts and sharing** (HOST-2, done): `users`, `projects`, `project_members` in `server/db/schema.ts`.
+          - **The patch shape**: `Patch` in `src/audio/patches/library.ts` - instrument type, params, effect and MIDI-device chains, author. Factory patches in `factory.ts` (INST-3).
+          - **Offline rendering**: `renderProjectOffline` (AGENT-4.1, AGENT-4.7) for a whole project; AGENT-4.8 adds a render of one device in isolation, which is what a feed preview needs.
+          - **The declarative device format** (`src/audio/graph/`), validated by `parseInstrumentDef` / `parseEffectDef`.
+          - **Binary storage**: the `files` table (Postgres `bytea`), content-addressed.
+
+          **Missing, and owned by:**
+          - **A server-side patch store.** Patches live only in the browser's localStorage (`corrente:patches:v1`); the hosted MCP's `save_patch` refuses ("your patches live in your browser"). Publishing needs a server record anyway - COMM-1.1.
+          - **Self-contained devices.** Custom devices are project-scoped with random ids (`ci-xxxxxxxx`), so a patch naming one dangles outside its project - COMM-1.1.
+          - **Public visibility outside projects** - COMM-1.1 / COMM-1.3.
+          - **Who the community is.** Sign-in is gated by an email allowlist (HOST-20, `allowed_emails`), so today the feed's publishers and listeners are only allowlisted people. Opening it up, or a signed-out feed, is a launch decision - COMM-1.3.
+          - **An engine that can play a synth without an open project** - COMM-1.4.
+          - **Where it runs after HOST-23.** The feed routes and tables are hosting code, so they belong in the private repo once the split lands; the feed page and the contract types stay open.
+        id: 01a0ed74-b1e7-7459-964f-6026eb7d8f2d
+        created_at: 2026-09-29T13:57:23.048Z
+        updated_at: 2026-10-04T16:06:54.585Z
+      - ref: COMM-1.1
+        area: COMM
+        title: "Publish a synth: self-contained, versioned, openly licensed"
+        status: to-do
+        sort_path: "000001.000001"
+        parent: COMM-1
+        deps:
+          - AGENT-4.8
+        body: |-
+          MVP step 1 of COMM-1. Let a user publish a synth - an instrument plus its effect chain and param values - as a public, self-contained, versioned item anyone can hear and add to a project.
+
+          **Start from the `Patch` shape** (`src/audio/patches/library.ts`): instrument type, params, effect and MIDI-device chains, author. A published version is a `Patch` plus what it needs to stand alone outside the publisher's browser and project.
+
+          **What a published version contains (immutable once written):**
+          - The patch, made **self-contained**: built-in types by id, and every custom device **definition inlined**. Custom devices are project-scoped with random ids (`ci-xxxxxxxx` / `ce-xxxxxxxx`, `server/mcp/shared.ts`), so a type id alone dangles outside its project.
+          - Name, description, author, licence, created-at, version number.
+          - A **demo phrase** - a short clip of notes the author picks, since a patch is hard to judge without musical context.
+          - **No preview audio.** The listener's browser renders the demo phrase through the synth on demand, using AGENT-4.8's isolated-device render (sub-second; cache the buffer for the session). Reasons: an uploaded preview is an arbitrary audio upload, which "synths only" exists to avoid, and it could misrepresent the patch; and there is nothing to store. Server renders (for CLAP, COMM-1.5) come from HOST-22.
+
+          **Synths only.** Reject anything using a `buffer` node, a `sample` param or a sample-based built-in (sampler, drum kit) until moderation exists (COMM-1.7). Effect-only publishing can follow cheaply once this works.
+
+          **Server.** `published_items` + write-once `published_versions`, mirroring the write-once history commits (`edits`). Validate every inlined definition server-side with `parseInstrumentDef` / `parseEffectDef` and cap size. Unpublish = unlist from feeds; versions stay so existing uses keep working. Index whatever the feed queries filter on (author, created-at, curated flag) - see CLAUDE.md's Database rule. Schema change via `drizzle-kit generate`, renamed to say what it does.
+
+          **A server-side patch store first, or alongside.** Patches live only in localStorage today, and the hosted MCP's `save_patch` refuses. Publishing could post straight from the browser's library, but a per-user `patches` table is the same shape as an unpublished draft and would also fix hosted `save_patch` and let patches follow the user across devices. Decide at start whether to build it here or split it out.
+
+          **Using one.** "Add to project" copies the inlined definitions into the project's custom devices - keyed by **content hash** of the def so re-adding dedupes (new ids today are random) - and applies the patch through the existing patch-apply edit (`createTrackFromPatch`), so it is one undoable, authored edit.
+
+          **Licence - confirm at start.** Recommended **CC BY 4.0**: open, allows commercial use, and attribution is automatic because every item carries its author (and later its fork lineage, COMM-1.6). It also keeps Corrente's dual licensing possible, since CC BY content can be bundled with attribution. Rejected: **CC BY-SA** (share-alike is murky for music made *with* a preset) and **CC0** (drops attribution, which the community will want). The publish dialog shows the licence and requires acceptance.
+
+          **MCP.** A `publish_patch` tool makes seeding the curated set (COMM-1.3) quick, and lets agent-built synths be published - labelled as agent-made. It works on the hosted MCP only once the server-side patch store exists (above).
+        id: 01a0ed75-4148-73af-977e-e332552cbad7
+        created_at: 2026-09-29T13:57:59.752Z
+        updated_at: 2026-10-02T14:32:58.121Z
+      - ref: COMM-1.2
+        area: COMM
+        title: Tags and ratings for published synths
+        status: to-do
+        sort_path: "000001.000002"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+        body: |-
+          MVP step 2 of COMM-1. The minimum signal for a feed to sort and filter by.
+
+          **Tags.** Chosen by the author at publish from a **curated vocabulary**, so search stays clean:
+          - *Role*: bass, lead, pad, pluck, keys, arp, fx, percussion (synthesized - sample kits wait for COMM-1.7).
+          - *Character*: warm, bright, dark, gritty, airy, lush, glassy, retro, aggressive, soft (extend as the catalogue grows).
+          Free-form tags wait until there is moderation. Later, CLAP can suggest tags at publish (COMM-1.5). Keep the vocabulary as data (a key -> label map), not hardcoded in the UI, per the catalog convention.
+
+          **Record usage events from day one**, whatever the ranking: previews played, adds to a project, "new project with this". They are cheap to log now and are the stronger quality signal later (COMM-1.6). Index by item and time.
+
+          **Ratings - decide at start (raised 2026-10-02).**
+          - **Stars in the MVP:** one 1-5 rating per account per item, not your own. Show the average with its count, and **rank by a Bayesian average**, not the raw mean, so one 5-star rating can't top the chart.
+          - **Or skip stars and rank by usage from the start:** COMM-1's own principle is that usage beats stars, and the usage events above are logged anyway. A simple "adds in the last 30 days" ranking avoids a rating UI, the self-rating rule and rating-gaming, and COMM-1.6 refines it later. Thin data while the community is small (the HOST-20 allowlist) hurts both options equally; curation (COMM-1.3) carries the feed until then.
+
+          Leaning: skip stars, since every MVP rating would come from a handful of allowlisted friends. Confirm with the user.
+        id: 01a0ed75-5c1a-7748-b5d8-955392a8234a
+        created_at: 2026-09-29T13:58:06.618Z
+        updated_at: 2026-10-02T14:33:11.249Z
+      - ref: COMM-1.3
+        area: COMM
+        title: "The feed: landing page with curated, top and new synths"
+        status: to-do
+        sort_path: "000001.000003"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+        body: |-
+          MVP step 3 of COMM-1. Replace the blank landing page with a feed of published synths, full from day one.
+
+          **Layout - Spotify-style shelves:**
+          - **Recent projects** strip at the top - returning users must reach their work in one tap.
+          - **Curated** - hand-picked by an admin flag (the user, to start).
+          - **Top** - by COMM-1.2's ranking (Bayesian stars or recent usage, whichever it settles on).
+          - **New**.
+          - **Shelves by tag** (Leads, Pads, Bass...).
+
+          **Card:** name, author (marked if agent-built), tags, rating or usage count, a **play button that renders and plays the demo phrase** in the browser (COMM-1.1: no stored preview audio; AGENT-4.8's isolated-device render, cached per session), and **Add to project** / **New project with this**. Playing on the keyboard without a project is COMM-1.4, not the MVP. Mobile is a first-class target (MOBILE epic): cards and shelves must work at phone width with touch.
+
+          **Search:** by name (Postgres full-text, with an index on the search vector), filter by tag. Search by feeling is COMM-1.5.
+
+          **Seeding - never empty.** Before launch, publish the user's curated synths and flag them Curated: Tine Piano, Disco Lead and Noise Sweep (custom instruments in the euclidean demo project) are candidates, plus the factory patches in `src/audio/patches/factory.ts`. COMM-1.1's `publish_patch` MCP tool makes this quick.
+
+          **Decide at start - who sees it.** Two gates, not one:
+          - **The auth gate:** `AuthGate` (`src/ui/AuthGate.tsx`) wraps the app, so a signed-out feed means rendering it outside `AuthGate`.
+          - **The email allowlist** (HOST-20, `allowed_emails`): only allowlisted people can sign in at all. While it stands, a signed-in feed is a feed for a few friends.
+          Recommend signed-in first, but note it can't help discovery until the allowlist opens; a read-only signed-out feed is the discovery lever. The offline GitHub Pages demo (HOST-18) has no server, so it shows factory content only.
+        id: 01a0ed75-7b72-737e-8449-14e6116e1332
+        created_at: 2026-09-29T13:58:14.642Z
+        updated_at: 2026-10-02T14:33:49.995Z
+      - ref: COMM-1.4
+        area: COMM
+        title: "Audition and scratchpad: play a synth and keep clips without a project"
+        status: planning
+        sort_path: "000001.000004"
+        parent: COMM-1
+        deps:
+          - COMM-1.3
+        body: |-
+          Later step of COMM-1 (from the original prompt: "play around on them with the keyboard, create clips with them (without them going straight into your timeline)").
+
+          **Audition.** Play any feed synth live on the on-screen or MIDI keyboard without opening a project. The engine is only constructed inside `AppShell` today (`src/ui/AppShell.tsx`, behind `AuthGate`), so the feed has no live audio.
+
+          **Probably smaller than a new engine** (checked 2026-10-02). `AudioEngine` takes no arguments, and `ProjectStore` already runs in memory with no repository behind it (the history replay, project seeding and the hosted MCP all construct throwaway ones). So audition can be a **scratch `ProjectStore` holding one track** with the patch applied, bound to an `AudioEngine`, never saved and with no version history - the real engine and real device factories, not a parallel one. What needs care: one `AudioContext` for the page (hand it over, or dispose the scratch engine, when a project opens), and lifting engine construction out of `AppShell` so the feed can own one. The playing surfaces (keyboard, chord pads, MIDI input) should then work against the scratch track unchanged.
+
+          **Scratchpad.** Record what you play into personal clips that live outside any timeline, then drag one into a project later - "keep this for later" without committing to an arrangement. A per-user server store (a small table keyed by user), not a project; clip notes are already plain data.
+
+          Together these close the loop from hearing a preview to actually playing a sound, which is where discovery turns into making music.
+        id: 01a0ed75-93d2-753f-9576-19567bbe93d2
+        created_at: 2026-09-29T13:58:20.882Z
+        updated_at: 2026-10-02T14:33:39.745Z
+      - ref: COMM-1.5
+        area: COMM
+        title: "Search by feeling: CLAP embeddings of each synth's demo phrase"
+        status: planning
+        sort_path: "000001.000005"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+          - HOST-22
+        body: |-
+          Later step of COMM-1 (from the original prompt: "search by name or feeling/atmosphere").
+
+          **Approach: CLAP embeddings.** Embed each published synth's demo-phrase render with LAION-CLAP (CC0), store vectors in Postgres (pgvector), and embed the user's text query ("dreamy underwater pad", "gritty 80s bass") into the same space. Nearest neighbours = search by atmosphere, not keyword guessing. The same model as HOST-22's layer 3.
+
+          **The audio comes from the render service.** COMM-1.1 stores no preview audio (previews render in the listener's browser), so the embedding worker needs a server render of each published version: HOST-22 renders the demo phrase through the synth, then the worker embeds it. Once per published version, so cheap overall.
+
+          **Bonus:** zero-shot CLAP against the tag vocabulary can **suggest tags at publish** (COMM-1.2), and "more like this" on any card falls out for free.
+
+          **Where it runs.** Not the 1GB render service: CLAP is ~1-1.5GB at fp32 (a few hundred MB quantised) and 0.5-2s per clip on CPU (rough estimates). A small async worker, or a scale-to-zero machine, processing a queue is enough - the same worker HOST-22 suggests for its layer 3. Query-side text embedding is light and could run in the API or the browser via Transformers.js. pgvector needs the extension enabled through a drizzle migration.
+        id: 01a0ed75-ad6a-721f-b288-9c9f4d14281e
+        created_at: 2026-09-29T13:58:27.434Z
+        updated_at: 2026-10-02T14:33:48.505Z
+      - ref: COMM-1.6
+        area: COMM
+        title: Forks, lineage and usage-based ranking
+        status: planning
+        sort_path: "000001.000006"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+        body: |-
+          Later step of COMM-1. The Shadertoy/Thingiverse remix loop, and a better quality signal than stars.
+
+          **Forks.** Tweak a published synth and publish the result as a derivative that links to its parent. Lineage is shown on the card ("based on X by Y"), which is also how CC BY attribution (COMM-1.1) stays automatic through any number of remixes.
+
+          **Usage-based ranking.** Rank by what people *do*: forks, saves, adds to real projects, previews that led to an add - with time decay so the feed doesn't fossilise. COMM-1.2 starts logging these events from day one so there is history to rank on when this lands. Stars remain visible but stop dominating the order.
+        id: 01a0ed75-c418-7318-867f-2dc7c49f4bce
+        created_at: 2026-09-29T13:58:33.240Z
+        updated_at: 2026-09-29T13:58:33.240Z
+      - ref: COMM-1.7
+        area: COMM
+        title: Publish effects, sample-based patches and later WASM devices, with moderation
+        status: planning
+        sort_path: "000001.000007"
+        parent: COMM-1
+        deps:
+          - COMM-1.1
+        body: |-
+          Later step of COMM-1: widen what can be published beyond synthesized instruments.
+
+          - **Effects.** Straightforward - same self-contained snapshot as COMM-1.1, previewed through a standard dry loop. Could follow the MVP quickly.
+          - **Sample-based instruments and kits.** Blocked on moderation: uploaded audio is where copyright infringement and abusive content live, and it costs real storage. Needs reporting, an admin takedown queue, content hashing to catch re-uploads of removed material, and a clear upload licence.
+          - **WASM / Faust devices** (INST-6), once that tier exists, under its own trust model - server-compiled from source, never uploaded binaries.
+        id: 01a0ed75-dc32-712c-8504-dc1253bc8f3c
+        created_at: 2026-09-29T13:58:39.410Z
+        updated_at: 2026-09-29T13:58:39.410Z
+      - ref: COMM-1.8
+        area: COMM
+        title: "A light social layer: profiles, follows, comments"
+        status: planning
+        sort_path: "000001.000008"
+        parent: COMM-1
+        deps:
+          - COMM-1.3
+        body: |-
+          Later step of COMM-1 (from the original prompt: "all of the classic social network kind of things").
+
+          Profiles, follows, a "from people you follow" shelf, comments, notifications. Deliberately last: each brings moderation load (abuse in comments, spam profiles) and the core value is the sound browser, not the social graph. Add each only where it earns its place, and only once COMM-1.7's reporting and takedown tooling exists to carry it.
+
+          Follows are likely the first worth having - a personalised shelf is cheap and high-value. Comments likely the last.
+
+          ## Follow feed: start simple, scale on evidence
+
+          From the user's system-design sketch (2026-10-04). **Build the simple version first.** At first, the "from people you follow" shelf is one query on the COMM-1 MVP tables: a join of `follows` against `published_items`, ordered by `created_at`. With an index on `follows (follower_id)` it stays fast well past the allowlist's size. Everything below is the path once real numbers say the query hurts. **Measure before building it:** daily active users, publishes a day, follows per user, and p99 feed latency against the 500ms target. Feeds are heavily read-skewed, so reads give out first.
+
+          **New table, needed from the first follow:** `follows (follower_id, followee_id, created_at)`, PK `(follower_id, followee_id)`, plus an index on `followee_id` for "who follows X", which fan-out and the profile page both read.
+
+          ```mermaid
+          flowchart LR
+            Client --> Gateway["API gateway: auth, rate limits"]
+            Gateway --> PublishSvc["Publish service"]
+            Gateway --> FeedSvc["Feed service"]
+            PublishSvc -- "write version + outbox row (one txn)" --> Primary[("Postgres primary")]
+            Primary -- "outbox" --> Queue[["Queue"]]
+            Queue --> Fanout["Fan-out workers"]
+            Fanout -- "push item id to each follower's feed" --> FeedStore[("Feed store: Redis sorted sets")]
+            Queue -.-> DLQ[["Dead letter queue"]]
+            FeedSvc -- "read own feed" --> FeedStore
+            FeedSvc -- "pull recents of big publishers you follow" --> Replica[("Read replicas")]
+            Primary --> Replica
+            Primary -- "outbox" --> Search["Search index (Postgres FTS first, Elasticsearch later)"]
+            Client -- "version content (immutable)" --> CDN["CDN"]
+          ```
+
+          **The design, and why each piece:**
+          - **Hybrid fan-out.** On publish, push the item onto each follower's feed (fan-out on write), so reading a feed is a single lookup. Publishers above a follower threshold are **skipped** at write time; their recent items are pulled at read time and merged in. That stops one big publisher from causing a write storm.
+          - **Fan-out is asynchronous.** Publishing writes the version and an **outbox** row in one transaction; workers consume it from a queue. Publishing stays fast, and a slow fan-out only delays feeds, which "availability over consistency" allows. Failed deliveries retry, then park in a dead letter queue. The outbox (rather than writing to the queue directly) means a crash can't publish an item that never fans out.
+          - **The feed store is a list, not a relational model.** Per user, a sorted set of `(created_at, item_id)` capped at a few hundred entries. Card details are hydrated from the item cache or a replica. In Postgres the equivalent is one `feed_items (user_id, created_at, item_id)` table keyed on `(user_id, created_at)`; a separate `feeds` table adds nothing.
+          - **Read replicas, with read-your-writes.** Replica lag means an author can publish and then not see their own item. Route the author's reads of their own items to the primary for a short window after publishing.
+          - **Cold start.** A new user follows nobody, so the follow shelf is empty. It stays one shelf among COMM-1.3's curated, top and new shelves rather than replacing them, which fits COMM-1's "never an empty feed".
+          - **Search stays in Postgres** (full-text plus the GIN index on tags) until it measurably can't keep up. Elasticsearch then needs keeping in sync, fed from the same outbox. Search by feeling (COMM-1.5) is a separate vector index either way.
+          - **CDN for content.** Published versions are immutable (COMM-1.1), so `GET /published/:id?version=` can be cached forever at the edge.
+          - **Service split.** Publish and feed services sharing one Postgres is fine; giving each its own database is a later step, only if the teams or load diverge.
+
+          **Where it lives:** all of this is hosting code, in the private repo after HOST-23.
+        id: 01a0ed75-f030-70df-bb48-05beb0d68e16
+        created_at: 2026-09-29T13:58:44.528Z
+        updated_at: 2026-10-04T16:07:14.149Z
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
@@ -2793,7 +3175,7 @@ projects:
       - ref: DAW-12.1
         area: DAW
         title: "Chords and scale playing, on any surface: the pads and the QWERTY keyboard"
-        status: to-do
+        status: review
         sort_path: "000012.000001"
         parent: DAW-12
         body: |
@@ -2833,7 +3215,13 @@ projects:
           Most musical value of the pad follow-ups, and the most self-contained: pure maths plus labels.
         id: 01a06ceb-cf46-7418-a66e-e55aa8a8fbda
         created_at: 2026-09-04T14:56:28.486Z
-        updated_at: 2026-09-04T14:56:28.486Z
+        updated_at: 2026-10-09T16:33:59.627Z
+        comments:
+          - body: "**QWERTY surface built (2026-10-09), in review.** Desktop keys panel in the piano roll under the velocity lane (`src/ui/keys/`). All four letter/number rows play in key, by `KeyboardEvent.code`, one line per key with keycap first. The pads' Accidentals switch picks the row mode: on, alternate rows are accidentals up-and-right as on a piano (two octaves); off, each row is an octave and Shift shows the sharps on the same keys, blanking the rest. Chords mode stacks triads and variations. `[` `]` move the octave, +/- set rows drawn (all four always play), a drag strip sets strike velocity. Prototyped and dropped: staggered rows, a pads layout, a timeline placement, Caps Lock, and Shift falling back to flats with merged pads. Voicing and momentary-vs-sticky variations are still open."
+            audience: user
+            id: 01a12183-ab97-731b-952a-24688fc55d87
+            at: 2026-10-09T16:33:59.703Z
+            actor: claude
       - ref: DAW-13
         area: DAW
         title: Audio export and mixdown
@@ -4923,6 +5311,53 @@ projects:
         created_at: 2026-09-24T19:00:16.384Z
         updated_at: 2026-09-24T21:06:30.095Z
         closed_at: 2026-09-24T21:06:30.095Z
+      - ref: DAW-45
+        area: DAW
+        title: Hosted load asks for history/refs.json, a local-only file, and logs a 404
+        status: to-do
+        sort_path: "000045"
+        body: |-
+          Seen 2026-09-24 in the console on every load of the hosted app: `GET /projects/<id>/files/history/refs.json 404`.
+
+          **Harmless, but a wasted request and console noise.** The startup restore (`restoreProject` then `versionStore.reload()`, shared by boot and project switch in `projects/operations.ts`) runs `VersionStore.load()` before `AppShell` has called `versionStore.setRemote(session)`. So on a hosted project, the first load takes the **local file-DAG path** and reads `history/refs.json`. Hosted projects never write that file: server-authoritative history (HOST-6) derives versions from the log.
+
+          The 404 is read as "no history yet", and `setRemote` then reseeds the remote state, so nothing breaks. But the browser logs every failed fetch, and it's one extra round trip on a cold start.
+
+          **Fix options, cheapest first:**
+          - Tell the version store it's remote before the first load: pass it from whatever decides the repository is hosted, so `load()` takes the remote branch from the start.
+          - Or have the hosted bundle store skip history-DAG paths entirely in remote mode.
+
+          The first is the honest one; the second just hides the symptom.
+        id: 01a0d5a4-3c6b-73be-ad98-98bb2cb29dd0
+        created_at: 2026-09-24T22:58:25.516Z
+        updated_at: 2026-09-24T22:58:25.516Z
+      - ref: DAW-46
+        area: DAW
+        title: create_track's default group matches by name, so a project with differently named groups gets a new one
+        status: planning
+        sort_path: "000046"
+        body: |-
+          Observed 2026-09-25 over MCP in the euclidean demo project. Probably working as designed; a question rather than a bug.
+
+          Every existing track (two Nimbus, one Drum Kit) sits in `g-main`. `create_track` with `wavetable` (family: Synths) and no `group` created a fresh group `g-8c51073a` rather than joining `g-main`, although `g-main` already holds Synths-family Nimbus tracks. A custom instrument track then got a third group, `g-72a33d4c`, which a second custom-instrument track (Tine Piano) later joined (see comment) - so reuse works.
+
+          **Cause (checked 2026-10-02).** `familyGroup` in `server/mcp/context.ts` looks for a **top-level group whose name equals the family name** ("Synths") and creates one if there is none. It never looks at what tracks a group holds, and groups carry no family tag. `g-main` is not named "Synths", so a new group is the intended result. Note this is the MCP's librarian behaviour only; the UI's add-track path may file differently.
+
+          **The question.** Is name-matching enough? Options:
+          - **Leave it** - predictable, and a user who renames "Synths" to "Leads" simply gets a fresh "Synths" next time.
+          - **Fall back to contents** - if no group is named for the family, reuse the top-level group holding the most tracks of that family. Fixes this case, but files a new synth into a hand-built "Main" the user may want kept mixed.
+          - **Tag groups with a family** when the librarian creates them, so renames keep working. Needs a field on groups, so a project-document bump with an upcaster (`documentMigration.ts`).
+
+          Recommend leaving it unless renamed family groups turn out to matter.
+        id: 01a0d5b4-bdd2-723e-864d-f3ff2f87c98a
+        created_at: 2026-09-24T23:16:27.218Z
+        updated_at: 2026-10-02T14:32:11.206Z
+        comments:
+          - body: '**Family lookup does reuse groups** (2026-09-25): a second custom-instrument track (Tine Piano) joined the existing `g-72a33d4c` created for Noise Sweep, rather than making a new one. So the lookup works; the only open question is that `g-main` is untagged, which supports the "demo project predates family groups" explanation.'
+            audience: user
+            id: 01a0da61-a8d0-715c-8945-dfc2d7fdb85f
+            at: 2026-09-25T21:03:48.432Z
+            actor: claude
       - ref: HOST-1
         area: HOST
         title: Multiplayer authority
@@ -5649,6 +6084,106 @@ projects:
         id: 01a07e42-c77d-778c-b07b-d23fe39dddf8
         created_at: 2026-09-07T23:45:00.797Z
         updated_at: 2026-09-08T16:22:19.699Z
+      - ref: HOST-22
+        area: HOST
+        title: Server-side render service (web-daw-render), AGENT-28 phase 2
+        status: to-do
+        sort_path: "000022"
+        body: |-
+          **Phase 2 of AGENT-28, given its own item** (2026-09-25). AGENT-28 is `done` because phase 1 (hosted MCP, editing only) shipped; phase 2 - server-side rendering - was designed and validated there but only as prose, so nothing on the board tracked it. The full design and its evidence stay in AGENT-28; this item is the work.
+
+          ## What to build (summary of AGENT-28 phase 2)
+
+          - **Its own Fly app, `web-daw-render`,** not another machine in `web-daw`: machines in one app share an image, and Chromium would bloat the API's image and cold start. Private networking at `web-daw-render.internal`; separate failure domain.
+          - **Headless Chromium rendering through `renderOffline`** into a buffer via `OfflineAudioContext` - no audio device, faster than realtime. Already proven on Linux in CI (`e2e/offline-render.e2e.ts`); ~450ms render-plus-analyse measured locally.
+          - **Its own entry point** importing `renderOffline` directly: the render harness (`src/audio/engine/renderHarness.ts`, the `__dawRender*` globals) is dev/test-only, installed from `src/devTools.ts`, and dead-code-eliminated from production builds.
+          - **Stateless requests that carry what they render.** The hosted MCP target reads a scratch copy of the room's project per call (`server/mcp/hosted.ts`); the render service should be sent the project (or, for a device check, the one def plus its params) rather than reading the database itself, so it holds no credentials.
+          - **Container flags:** `playwright install --with-deps chromium` (or the `mcr.microsoft.com/playwright` base), `--disable-dev-shm-usage`, `--no-sandbox`. **Budget 1GB**, not 256MB.
+          - **First acceptance check on boot:** run the project smoke render (what `__dawRenderProjectSmoke` does in the harness) from the service's own entry point, log peak and timing - one deploy tells us whether `shared-cpu-1x` is enough before any plumbing.
+          - Serverless (Lambda + `@sparticuz/chromium`) rejected for now on operational grounds; revisit only for concurrency.
+
+          **First consumer: AGENT-4.8 phase 2.** AGENT-4.8 builds the isolated-device render and the checks in the tab first (local MCP); this service runs the same functions so the hosted `requestDeviceCheck` on `DawTarget` gives the same verdict. **Later consumers:** COMM-1.5 (rendering published synths' demo phrases for CLAP embedding, since COMM-1.1 stores no preview audio).
+
+          **Trust boundary.** This service runs user-authored device defs. Fine while defs are pure data over trusted primitives (INST-4); the WASM/Faust tier (INST-6) must keep its sandboxing here too, not just in viewers' browsers.
+
+          ## Analysis tooling research (2026-09-25)
+
+          Surveyed which open-source analysis could run here, because it decides the service's language, memory and licences. Grouped in three layers:
+
+          **1. Perceptual descriptors - cheap, deterministic.** Numbers that say "brighter than", "rougher than", never "good": the basis for A/B comparison and regression.
+          - **Meyda** (MIT, JS) - spectral features; already the AGENT-4.1 choice.
+          - **Essentia / Essentia.js** (AGPLv3, WASM) - the broadest descriptor set (centroid, flatness, inharmonicity, dissonance, HPCP). Compatible with this repo's AGPL, **but it would block the dual licensing the README reserves**: a separate commercial Corrente licence cannot cover third-party AGPL code, so shipping Essentia in the product would also need MTG's commercial licence. Fine as a dev-time tool; prefer Meyda + own DSP in anything shipped.
+          - **libebur128** (MIT) - integrated LUFS, LRA, true peak.
+          - **AudioCommons `timbral_models`** (Apache 2.0) and **MoSQITo** (Apache 2.0) - the best vocabulary for critiquing a patch (hardness, warmth, brightness, boominess; Zwicker sharpness, roughness, loudness), but **Python-only**, no JS port. Porting is possible from published coefficients; roughness and Zwicker loudness are the fiddly ones.
+
+          **2. Correctness probes - pass/fail, no taste.** All own-written in JS with an FFT; no dependencies worth naming. Exponential sine sweep + deconvolution (frequency/phase response and each harmonic distortion order from one render - the highest-value test for effects), aliasing energy at non-harmonic bins, clicks at note boundaries, zipper noise, DC offset, filter stability at high resonance, stereo correlation. Needs a device rendered in isolation against synthetic signals - the isolated-device render AGENT-4.8 builds. The same render-and-compare machinery serves INST-19's parity tests; build it once.
+
+          **3. Learned scoring - slow, fuzzy.** "Did I make what was asked for" and "is this well made".
+          - **LAION-CLAP** (CC0) - cosine similarity between audio and a text target ("warm analog bass, slight grit"). Official ONNX conversions run in Node/browser via Transformers.js, with quantised variants. Also COMM-1.5's search-by-feeling model.
+          - **audiobox-aesthetics** (Meta; mostly CC-BY 4.0, some MIT) - no-reference scores on four perceptual axes. **PyTorch only**; needs a one-off ONNX export, after which it runs from `onnxruntime-node`.
+          - **FAD** (`fadtk`) against a reference bank - only meaningful with several hundred reference clips. Defer.
+          - **Essentia's pretrained models** (MusiCNN, Discogs-EffNet, VGGish) - **non-commercial licence only** (CC BY-NC; their docs disagree on ND vs SA). Incompatible with a commercial Corrente licence; avoid outside experiments.
+
+          **Implications for this service:**
+          - **Layers 1 and 2 can run in the rendering page itself**, next to the buffer - Meyda and own DSP are JS - so no transfer and no second runtime. `analyzeProjectMix` (`src/audio/engine/renderOffline.ts`, behind `__dawAnalyzeMix`) already works this way.
+          - **Some probes may not need Chromium at all.** Per the README, custom DSP is written once as pure functions over `Float32Array` and shared with an offline `.wav` test renderer, so worklet-backed primitives (ladder, wavetableOsc, analogOsc, bitcrush) can be probed in plain Node. Anything built from native Web Audio nodes (biquad, delay, convolver) still needs the browser.
+          - **Layer 3 does not fit the 1GB budget.** Rough, unmeasured estimates: CLAP ~1-1.5GB RAM at fp32 (a few hundred MB quantised) and 0.5-2s per clip on CPU; audiobox similar. Either a quantised model in a larger VM, or keep layer 3 as a separate worker (the AGENT-4 plan already makes it a remote `describe_sound` call; COMM-1.5 needs the same kind of worker).
+          - **Python is never required at runtime** - only for the one-off audiobox ONNX export, or as an optional sidecar if porting the psychoacoustic models isn't worth it.
+        id: 01a0d5bf-aed7-7513-8e4b-a2b01696c3c4
+        created_at: 2026-09-24T23:28:24.279Z
+        updated_at: 2026-10-02T14:31:18.371Z
+      - ref: HOST-23
+        area: HOST
+        title: Split into an open app repo and a private hosting repo
+        status: planning
+        sort_path: "000023"
+        body: |-
+          **The split.** The app, the device format and SDK, and the local MCP stay in the public AGPL repo (`alden12/web-daw`). The hosted product moves to a private repo: the sync API, the database, auth on the server, the hosted MCP, deploy config and the workers to come (HOST-22, the COMM-1 feed backend). This mirrors the split planned for ai-project-manager. Plan of record for the licensing side is `apm: "Licensing and business model"`, and this ticket follows it: sole copyright is what lets the server be private, and the trademark rather than the licence protects the hosted service.
+
+          **The code already splits along this line (surveyed 2026-10-04).** Dependencies run one way only: nothing in `src/` imports `server/`, while `server/` imports about 20 modules from `src/`. Among them are `project/projectStore`, `mcp/protocol`, `commands/{types,authors,replay}`, `instruments/catalog`, `graph/{validate,vocabulary}`, `params/validate`, `project/{schema,types,documentMigration}`, `history/{paths,keyframes}`, `patches/patchTools` and `contract/{http,ws}`. Inside `server/`, only `server/mcp/hosted.ts` reaches into `api/` and `db/` (for `Room`, `listProjects` and `Db`), and only `api/mcpHttp.ts` reaches back into it. So the cut is:
+
+          | Open (stays) | Private (moves) |
+          | --- | --- |
+          | `src/` whole, including `src/contract/` (the wire contract), `src/auth/session.ts`, `AuthGate`, `OAuthConsent`, the sync client | `server/api/`, `server/db/`, `server/mcp/hosted.ts` |
+          | `server/index.ts`, `server/mcpServer.ts`, `server/mcp/{shared,context,target}.ts`, `server/mcp/tools/` (the local stdio MCP, whose tools the hosted one shares) | `drizzle/`, `drizzle.config.ts`, `Dockerfile`, `.dockerignore`, `fly.toml`, `scripts/deploy.sh`, `docker-compose.yml` |
+          | `e2e/` (already runs with no backend: `.env.test` blanks `VITE_DAW_API_URL`), HOST-18's GitHub Pages demo | The server half of `tsconfig.server.json` / `check:server`, `yarn api` / `start` / `dev:all` |
+
+          The client's auth and sync code stays open. That is fine as long as every hosted URL and Supabase setting comes from `VITE_*` env vars, with nothing secret or deployment-specific committed.
+
+          ## Phases
+
+          1. **Licensing first, before any outside contribution lands.** Today `CONTRIBUTING.md` asks for a **DCO** (Developer Certificate of Origin), whose inbound licence equals the outbound one and grants no relicensing. The split raises the stakes: the private server *imports* the open core. So once an outside contribution lands in any module it uses, the private server is combined with someone else's AGPL code and must be published itself, unless their contribution came with a broader grant. Pick one of these and record it in the licensing section:
+             - **CLA-lite.** A clause in `CONTRIBUTING.md` granting the right to relicense, keeping the DCO sign-off. Lowest friction, and it covers the whole core.
+             - **A permissive shared core.** Relicense the modules the server imports (format, catalogs, protocol, contract) as MIT/Apache. This overlaps heavily with INST-5's planned permissive SDK; the server's import list above is wider than INST-5's (it adds the project store, history and command replay), so decide whether those join the SDK or stay behind a CLA.
+             - **Full CLA plus a signing bot.** The most options, the most friction.
+
+             The current "decide at the first outside PR" trigger still holds; the split only makes it a must-do rather than a nice-to-have. While Alden is still the only author (true as of 2026-10-04: 671 of 671 commits), the slate is clean.
+          2. **Give the open side a real export surface.** The server currently deep-imports `../../src/audio/...` paths. Add a package entry point (`package.json` `exports`, or a `src/index.server.ts` barrel) listing exactly what the private side may use, and switch `server/` onto it while everything is still in one repo. That surface becomes the stable promise across repos, so it's worth keeping small. It's cheap and reversible, and it catches any hidden coupling before the cut.
+          3. **Cut.** Keep `alden12/web-daw` as the open repo, so its history, stars and issues stay put, and create the private repo holding the moved files. The private repo pins the open one at a commit SHA (git dependency or submodule; a published package can wait for INST-5). Its Dockerfile builds the client from that pin. Server code already pushed stays public under AGPL in the history; only work from here on is private.
+          4. **CI and dev loop on both sides.**
+             - **Open CI:** `build`, `test`, `test:e2e`, `tsc` for the client and local MCP.
+             - **Private CI:** `check:server`, migrations and an integration run against the pinned open SHA.
+             - **Bumping the pin:** a private PR, so a breaking change to the contract surfaces there, not in production.
+             - **Dev loop:** `yarn dev` stays standalone in the open repo; `dev:all` (Postgres, API, client) moves to the private one.
+             - **CLAUDE.md:** gets split to match.
+          5. **Split the plan.** `corrente.apm.yaml` is committed to the public repo, and the HOST area carries infrastructure detail (Fly, Neon, the allowlist, the render service's private network). Move the hosting tickets into a private apm store and link across with `key:REF` deps. The open plan keeps the app, INST, AGENT (local), MOBILE and the parts of COMM a self-hoster would see.
+
+          ## Costs to accept
+
+          - **Cross-repo changes become two PRs.** A document-schema bump (`documentMigration`), a protocol or contract change, or a new MCP tool used by both servers means one PR in each repo, landed in order. Stacked PRs within one repo stop covering it.
+          - **Self-hosters lose the sync server.** The open app is local-only (OPFS) plus the local MCP. Accounts, multiplayer, sync and the hosted MCP are the moat the licensing section already names; a self-host story for them would be a later, deliberate choice.
+          - **Not legal advice**, same caveat as the licensing section. Phase 1 is worth a look by someone who does this for a living before launch.
+
+          **Related:** INST-5 (permissive SDK, which overlaps phase 1), HOST-18 (the public demo, which stays open), HOST-22 and COMM-1 (new private-side services, which are cheaper to start in the private repo than to move later).
+        id: 01a10782-c474-757a-bf05-14cd7670afdf
+        created_at: 2026-10-04T15:22:52.916Z
+        updated_at: 2026-10-04T15:22:52.916Z
+        comments:
+          - body: "**Phase 1 decided (2026-10-04): CLA-lite.** A clause in `CONTRIBUTING.md` granting the right to relicense, on top of the existing DCO sign-off. A full CLA or a permissive core can be revisited later if needed. The narrow permissive SDK for plugin authors (INST-5) is separate and still planned. The clause should go in before the first outside contribution lands, and is worth a lawyer's look before launch."
+            audience: user
+            id: 01a107a3-800c-7538-8599-6e51458fd7da
+            at: 2026-10-04T15:58:38.092Z
+            actor: claude
       - ref: INST-1
         area: INST
         title: Built-in instruments
@@ -5754,6 +6289,16 @@ projects:
             id: 019ff33c-dc60-74af-99d6-547182db1801
             at: 2026-08-11T23:51:19.904Z
             actor: claude
+          - body: |-
+              **The direction held up in practice** (2026-09-25). First hosted-MCP authoring session: a working noise-sweep instrument in a few calls, and every failure a small vocabulary or validation gap with a fix in the format's own terms (INST-27..31, INST-20) - none architectural.
+
+              **Declarative is the better fit for an agent, not just the safer one**: validation errors are feedback it can act on, a bounded param space is searchable against analysis, and the failure modes are few. It still broke playback once (INST-28); raw DSP code would widen that to denormals, unstable filters and NaNs, all diagnosed blind.
+
+              **Precedent**: SuperCollider sends SynthDefs to its server as graphs of trusted unit generators - the same model, proven for serious sound design.
+            audience: user
+            id: 01a0d5d6-ae27-76a5-bfa4-64810d1bed20
+            at: 2026-09-24T23:53:31.431Z
+            actor: claude
       - ref: INST-5
         area: INST
         title: Extension SDK for third-party devices
@@ -5818,6 +6363,17 @@ projects:
         id: 019fae08-d78c-7382-be06-aace3907a535
         created_at: 2026-07-29T13:20:42.892Z
         updated_at: 2026-08-11T23:51:12.073Z
+        comments:
+          - body: |-
+              **Findings from an MCP authoring session, 2026-09-25**, for when this is revisited:
+              - **Quality ceiling is set by leaves, not the graph.** Commercial-grade sound comes from alias-free oscillators, ZDF filters and oversampled saturation; the graph only arranges them. Spend effort on a few excellent leaves before many adequate ones.
+              - **Control primitives are the likely next gap**: sample-and-hold, comparators, counters. Awkward as audio graphs, easy as Faust.
+              - **Faust fits the trust model well**: arbitrary DSP expressiveness with no I/O or pointers to escape through.
+              - **The trust boundary now includes HOST-22**: it will render user-authored devices server-side. Fine while defs are pure data; this tier's sandboxing must hold there too, not just in viewers' browsers.
+            audience: user
+            id: 01a0d5d6-9bd2-7098-b89d-8a5875fb3018
+            at: 2026-09-24T23:53:26.738Z
+            actor: claude
       - ref: INST-7
         area: INST
         title: Audio pitch and time
@@ -6222,13 +6778,22 @@ projects:
 
           **Hard parts.**
           - Re-implementing every native kind in JS/DSP: biquad (match Web Audio's coefficient formulas), waveshaper with oversampling, convolver, compressor (Web Audio's is loosely specified), buffer playback, envelopes with the anchored release.
-          - Proving the two runtimes sound the same: parity tests rendering the same def through both (offline) and comparing within a tolerance, per kind and for the built-in defs.
+          - Proving the two runtimes sound the same: parity tests rendering the same def through both (offline) and comparing within a tolerance, per kind and for the built-in defs. Same render-and-compare machinery as AGENT-4.8's isolated-device render and HOST-22's analysis probes; build it once.
           - Param modulation at audio rate across the slot array, and voice allocation/stealing moving into the worklet.
 
-          **Not a blocker for anything**: every def already runs on the native runtime; this is purely cost.
+          **Cost, and the feedback ceiling** (revised 2026-09-25, see comment). Every def already runs on the native runtime, so for existing defs this is purely cost. But Web Audio requires a `DelayNode` of at least one 128-sample render quantum in any cycle, so the native runtime can never express sub-block feedback: Karplus-Strong above low pitches, zero-delay-feedback filters, waveguides, most physical models. Inside one worklet a cycle can run at one-sample delay, so this engine is what makes that class of instruments expressible as plain graph defs.
         id: 01a0d465-77af-7498-8fe9-7233b96083e0
         created_at: 2026-09-24T17:10:14.703Z
-        updated_at: 2026-09-24T17:10:14.703Z
+        updated_at: 2026-10-02T14:31:29.868Z
+        comments:
+          - body: |-
+              **Not only cost: this is also what lifts the feedback ceiling** (2026-09-25). Web Audio requires a `DelayNode` in any cycle, at least one 128-sample render quantum long. So the native runtime can never express sub-block feedback: Karplus-Strong above low pitches, zero-delay-feedback filters, waveguides and most physical models. Inside a single-worklet engine a cycle can run at one-sample delay, so those become expressible as plain graph defs rather than each needing its own leaf. That changes "not a blocker for anything" - it blocks a whole class of instruments.
+
+              The parity tests described here are the same render-and-compare machinery as the analysis probes in HOST-22; build them once.
+            audience: user
+            id: 01a0d5d6-8682-715f-950a-f67e9a40d240
+            at: 2026-09-24T23:53:21.282Z
+            actor: claude
       - ref: INST-20
         area: INST
         title: Per-voice drift and key-track sources in the graph vocabulary
@@ -6246,6 +6811,15 @@ projects:
         id: 01a0d465-84bf-71ad-9391-fde0ee2bf46c
         created_at: 2026-09-24T17:10:18.047Z
         updated_at: 2026-09-24T17:10:18.047Z
+        comments:
+          - body: |-
+              **Hit in practice 2026-09-25** (merged from INST-26, filed as a duplicate and deleted). Authoring a noise sweep over MCP, the agent could not start a bandpass at the played note: no key-track source existed, so it fell back to a fixed start-note param. Nimbus's `filter.keytrack` shows the DSP already exists.
+
+              Alternative considered: `noteRatio` on `biquad`/`ladder`, mirroring `osc`. Rejected in favour of this item's source node - it is general (any param can follow the note, at any amount, through a `gain`), where `noteRatio` only covers filter cutoff. Worth a line in `describe_device_format` showing the key-track -> gain -> `filter.detune` pattern, since that wiring is not obvious.
+            audience: user
+            id: 01a0d5d5-f807-77cc-b832-554302b1b3c3
+            at: 2026-09-24T23:52:44.807Z
+            actor: claude
       - ref: INST-21
         area: INST
         title: Edit custom devices over MCP (read back, update in place, see what uses them)
@@ -6331,7 +6905,7 @@ projects:
       - ref: INST-25
         area: INST
         title: "Bug: an in-place load stripped every MIDI device of its params"
-        status: review
+        status: done
         sort_path: "000025"
         body: |-
           Found 2026-09-24 on the live site: selecting a track with an arpeggiator threw `Unknown parameter: rate` from the arp's scheduler, over and over, and in the device panel.
@@ -6343,7 +6917,139 @@ projects:
           **Aftermath:** a device whose params were stripped and then saved will load with its defaults, so an arpeggiator's rate or pattern may have reset.
         id: 01a0d58c-c5f6-760a-8965-926431bbc22b
         created_at: 2026-09-24T22:32:47.862Z
-        updated_at: 2026-09-24T22:32:47.862Z
+        updated_at: 2026-09-24T22:53:49.188Z
+        closed_at: 2026-09-24T22:53:49.188Z
+      - ref: INST-26
+        area: INST
+        title: Filter keytracking in the declarative format
+        status: planning
+        sort_path: "000026"
+        body: |-
+          Found 2026-09-25 while authoring a noise-sweep instrument over MCP from the claude.ai client.
+
+          **Gap.** A declarative voice cannot make a filter follow the played note. `biquad` and `ladder` take only an absolute `frequency` in Hz, bindings read only schema params, and no node emits the note's frequency as a control signal. So "bandpass noise starting at the played note, sweeping up N octaves" is not expressible - the agent had to fall back to a fixed start-note param.
+
+          **Built-ins already do this.** Nimbus exposes `filter.keytrack` (0..1), so the DSP exists; it just is not in the declarative vocabulary.
+
+          **Design question to settle.** Two shapes:
+          - `noteRatio` on `biquad` / `ladder`, mirroring `osc` - cutoff = note frequency x ratio. Full keytracking, consistent vocabulary, and a sweep depth then reads naturally in octaves above the note.
+          - A `keytrack` amount (0..1) like Nimbus - partial tracking, which is what most subtractive patches actually want.
+
+          Possibly both: `noteRatio` for full tracking, with an amount that blends toward the fixed `frequency`.
+        id: 01a0d5b4-2e77-750c-a006-f03e116d783a
+        created_at: 2026-09-24T23:15:50.519Z
+        updated_at: 2026-09-24T23:53:16.281Z
+        deleted_at: 2026-09-24T23:53:16.281Z
+      - ref: INST-27
+        area: INST
+        title: Tempo-synced rates in the declarative format
+        status: planning
+        sort_path: "000027"
+        body: |-
+          Found 2026-09-25 while authoring a noise-sweep instrument over MCP.
+
+          **Gap.** An LFO's rate can only be set in Hz (`osc` with an absolute `frequency`). There is no way to say "one cycle per 2 bars" - bindings are `param * scale + offset` over schema params (`resolveNumber` in `src/audio/graph/table.ts`) and nothing reads the transport tempo. The agent had to hand-compute ~0.27 Hz for two bars at 130 BPM, which drifts the moment tempo changes.
+
+          The same gap applies to `delay.delayTime` (tempo-synced echoes) and any envelope time meant to land on the grid.
+
+          **Shape to consider.** A tempo-aware binding - e.g. `{ param, unit: "beats" }` resolved against project tempo and re-evaluated on a `setTempo` edit - rather than a special `sync` flag per node kind, so it works for every time-valued field at once. INST-5 already lists tempo/transport context as part of the extension contract; the declarative format needs the same input.
+
+          **Reuse what the MIDI devices already have.** The arpeggiator and euclidean devices already do tempo-synced rates: an `enum` param over `RATE_OPTIONS` ("1/8", "1/16", ...) turned into beats by `rateToBeats` (`src/audio/midi/device/devices/rate.ts`), with seconds-per-beat from the `TransportClock` (`src/audio/midi/device/clock.ts`). A declarative binding could accept the same rate names, so an agent learns one vocabulary, and the graph instrument needs a tempo source the way MIDI devices get the clock. Binding an `enum` to a number field is exactly what INST-28 makes an error today, so settle the two together: a rate enum is the natural first case of INST-28's "enum resolves to a value" semantics.
+        id: 01a0d5b4-4552-7028-8500-da2f9ed896a6
+        created_at: 2026-09-24T23:15:56.371Z
+        updated_at: 2026-10-02T14:32:24.617Z
+      - ref: INST-28
+        area: INST
+        title: "Enum params: undocumented, and binding one to a number field validates but breaks playback"
+        status: to-do
+        sort_path: "000028"
+        body: |-
+          Found 2026-09-25 while authoring a noise-sweep instrument over MCP.
+
+          **Gap.** `describe_device_format` (`deviceFormatDoc` in `server/mcp/shared.ts`) documents node kinds, bindings and connections, but never lists the schema's param kinds. Its only example uses `kind: "number"`, and every built-in instrument param is a number, so an agent concludes that's all there is. The validator (`paramSpec` in `src/audio/graph/zod.ts`) actually accepts `number | enum | boolean | sample`; the agent only found `enum` (with `options: string[]` and a string `default`) by deliberately provoking a zod discriminator error.
+
+          **Enum bound to a number field: accepted, then broke playback.** The agent bound an `enum` param (73 note names, C1..C7, default "C3") to a *number* field - `constant.offset` via `{ param, scale: 100, offset: -4500 }` - assuming the enum resolves to its option index. `update_instrument` accepted it, and `list_parameters` showed a proper enum with value "C3", but **playback broke** (user report, 2026-09-25). Reverted Noise Sweep (`ci-343020bb`, euclidean demo project) to a number param in MIDI note numbers.
+
+          **Mechanism (confirmed 2026-10-02).** `src/audio/graph/validate.ts` only checks that a binding names a param that exists (`binds unknown parameter`), never its kind. At runtime `resolveNumber` (`src/audio/graph/table.ts`) computes `raw * scale + offset`, so `"C3" * 100 - 4500` is NaN, which Web Audio rejects on an AudioParam. AGENT-4.8's finite-output check would have caught it.
+
+          **Fix, in order.**
+          1. **Reject it at validation** in `validate.ts`, beside the unknown-param check: a `numberField` bound to a non-`number` param, or an `enumField` / `boolField` bound to a param of the wrong kind, fails `parseInstrumentDef` / `parseEffectDef` with a clear message. Note `enumField` and `boolField` share `paramRef` in zod, so the kind check has to live in `validate.ts` (which has the schema), not in the zod shapes.
+          2. **Document the kinds:** a `paramKinds` section in `describe_device_format` covering each kind's fields and which node fields each may bind to.
+          3. **Suggest a per-voice peak target** in the same doc (from AGENT-4.8's gain-staging comment: the Tine Piano clipped on five-note chords at Level 0.7), so agent-authored instruments come out consistently gain-staged and AGENT-4.8's chord check has a threshold.
+          4. **Optionally define the semantics** so this becomes a feature: an enum bound to a number field yields its option index, which makes `table` bindings over an enum useful (a note-name selector, a stepped mode switch). Alternatively a dedicated `kind: "note"` - a number that renders as note names and snaps to semitones - covers the commonest case more directly.
+        id: 01a0d5b4-60d7-703c-afda-092b847b58d5
+        created_at: 2026-09-24T23:16:03.415Z
+        updated_at: 2026-10-02T14:31:49.097Z
+      - ref: INST-29
+        area: INST
+        title: "Bug: biquad detune is listed as an audio param but rejected as a node field"
+        status: to-do
+        sort_path: "000029"
+        body: |-
+          Found 2026-09-25 while authoring a noise-sweep instrument over MCP.
+
+          `describe_device_format` lists `detune` among `biquad`'s `audioParams` (alongside `frequency`, `q`, `gain`), and its binding section says a node field is a literal or a param binding. But binding it on the node - `{ kind: "biquad", detune: { param: ..., scale: 100 } }` - is rejected: `voice.nodes.1: Unrecognized key: "detune"`.
+
+          Connecting a signal into `filter.detune` works, so the workaround is a `constant` with its `offset` bound, wired into `filter.detune`. That is what Noise Sweep does now.
+
+          **Only biquad is affected** (checked 2026-10-02). In `src/audio/graph/zod.ts` the `biquad` node spec has `filterType`, `frequency`, `q`, `gain` and no `detune`; `osc`, `buffer`, `wavetableOsc`, `analogOsc` and `ladder` all accept `detune: numberField`.
+
+          **Fix.** Add `detune: numberField.optional()` to the `biquad` spec and apply it where the node is built (`src/audio/graph/nodes.ts`). Worth a test that every name in a kind's `audioParams` is also accepted as a node field (or is explicitly marked connection-only), so the doc and the zod spec can't drift apart again.
+        id: 01a0d5b4-7509-7761-8e43-3ff9e9eff6f7
+        created_at: 2026-09-24T23:16:08.585Z
+        updated_at: 2026-10-02T14:33:51.437Z
+      - ref: INST-30
+        area: INST
+        title: update_instrument doesn't report params whose value was clamped across a change of range
+        status: planning
+        sort_path: "000030"
+        body: |-
+          Found 2026-09-25 while revising Noise Sweep (`ci-343020bb`) over MCP.
+
+          `update_instrument` keeps the values of params whose id survives, which is the right default - but it does so even when the param's meaning changed. `filter.sweep` went from semitones (0..96, value 66) to octaves (0..6); the old 66 was clamped to 6, the new maximum, rather than reset to the new default of 4. `env.attack` likewise kept 1200 ms instead of the new 300 default. Nothing in the tool result said so, so the agent reported defaults the instrument no longer had.
+
+          **A change of kind is already safe** (checked 2026-10-02). Values carry through `ParamStore.reschema` (`src/audio/params/store.ts`), which runs each surviving value through the new spec's coercer: `Number("C3")` is NaN so a number param falls back to its default, and an enum only keeps a value that is one of its options. So the `filter.note` enum -> number revert the agent dodged by renaming would have reset to the default, not stored a string. One edge: an enum with numeric-looking options ("12") carried into a number param keeps 12, which is probably what was meant.
+
+          **What is left: range and unit changes clamp silently.** Options:
+          - **Report** every carried value that was clamped, or whose spec's `min`/`max`/`unit` changed, in the tool result, so the agent can see and correct it. The tool can compute this itself before sending: `target.project` has the current values and the parsed def has the new schema, and the coercers are pure.
+          - **Reset** on a `unit` change (the number means something else now), keep and report on a range change. Reporting never destroys a value the user chose on purpose, so it should be the default; resetting is the judgement call.
+
+          Small, and the report half pairs naturally with AGENT-4.8, which adds a verdict to the same tool result.
+        id: 01a0d5b4-8bb8-758c-8b89-4f2c8cbdb5cb
+        created_at: 2026-09-24T23:16:14.392Z
+        updated_at: 2026-10-02T14:32:04.112Z
+      - ref: INST-31
+        area: INST
+        title: A phase field on osc
+        status: planning
+        sort_path: "000031"
+        body: |-
+          Found 2026-09-25 while authoring Noise Sweep over MCP.
+
+          `osc` has no starting phase, so a per-note LFO always begins at zero rising. An up-and-down sweep built from `0.5 * (1 + sin)` therefore starts halfway up rather than at the bottom. The agent worked around it by squaring the LFO (the same sine into a gain's input and its `.gain`, giving sin^2 at half rate), which does start at zero - but that is a trick, not something an author should need to know.
+
+          A `phase` field (0..1, bindable) would cover this plus quadrature and stereo-offset LFOs (two oscillators a quarter-cycle apart). Low priority now the workaround exists.
+        id: 01a0d5b4-9f29-72ca-ac78-c1cb05ce6d6d
+        created_at: 2026-09-24T23:16:19.369Z
+        updated_at: 2026-09-24T23:16:19.369Z
+      - ref: INST-32
+        area: INST
+        title: "Glide and glissando: portamento, per-note slide, and a glissando MIDI device"
+        status: planning
+        sort_path: "000032"
+        body: |-
+          Found 2026-09-25 trying to recreate a gliding 1970s monosynth lead (ABBA's "Gimme! Gimme! Gimme!" line) over MCP.
+
+          **Gap.** Nothing can slide from one note's pitch to the next. Each note is a fresh voice with no knowledge of the previous one, there is no mono or legato mode, and the MIDI devices are only Octavator, Arpeggiator and Euclidean. The only workaround is a per-voice pitch "scoop" from a fixed interval below (an env into `osc.detune`), which can't slide down and isn't gliding between the notes played. Blocks every classic monosynth lead and every 303-style slide.
+
+          **Two separable pieces, per the user:**
+          - **Glissando - a MIDI device.** Fills the gap between consecutive notes with the chromatic (or in-scale) steps, as extra short notes. Needs no engine change; fits the existing MIDI-device chain beside the Arpeggiator. Cheap first step.
+          - **Glide / portamento - engine.** A mono/legato voice mode where a new note *retargets the sounding voice's pitch* over a glide time rather than starting a new voice; plus a **per-note glide** flag (303-style slide) so only marked notes slide. Glide time should be a schema param so it can be tabled/bound like anything else.
+
+          **Shared prerequisite with MOBILE-15** (drag-up pitch bend): both need a way to move the pitch of a voice that is already sounding, which doesn't exist today. Design that once. MOBILE-6's slide-to-glissando on pads is the UI counterpart of the glissando device.
+        id: 01a0dda4-bd4b-70ca-b476-bbe521d9796b
+        created_at: 2026-09-26T12:15:56.235Z
+        updated_at: 2026-09-26T12:15:56.235Z
       - ref: MOBILE-1
         area: MOBILE
         title: Responsive shell, tier by device
