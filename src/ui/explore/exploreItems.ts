@@ -139,5 +139,38 @@ export function matchesQuery(item: ExploreItem, query: string): boolean {
 export const tagsIn = (items: ExploreItem[]): Tag[] =>
   TAG_KEYS.filter((tag) => items.some((item) => item.tags.includes(tag)));
 
+/** Whether an item carries every one of `tags` (picked chips narrow together). */
+export const hasTags = (item: ExploreItem, tags: readonly Tag[]) => tags.every((tag) => item.tags.includes(tag));
+
+/** How many unpicked chips the row offers before "More tags". */
+export const CHIP_LIMIT = 8;
+
+/**
+ * The chips worth offering for `items`, the list on screen: the picked ones first, so what is
+ * filtering is always in view, then the tags that best **split** the list.
+ *
+ * A tag's score is the smaller side of the cut it makes, so one on half the items scores highest,
+ * and one on every item (which narrows nothing) or on none scores zero and is left out. Picking a
+ * tag shrinks the list, so the row re-ranks to the tags that go with it: drilling down rather than
+ * a flat menu. Ties keep vocabulary order (the sort is stable), which puts roles first.
+ *
+ * Counting is a pass per tag over what is on screen, cheap at any size this list will reach. The
+ * published catalogue (COMM-1.9.2 on) moves the counting server-side, and usage (COMM-1.2's
+ * events) can then rank by what people actually take rather than by the split alone.
+ */
+export function rankTags(items: ExploreItem[], picked: readonly Tag[], limit = CHIP_LIMIT): Tag[] {
+  const split = (tag: Tag) => {
+    const count = items.filter((item) => item.tags.includes(tag)).length;
+    return Math.min(count, items.length - count);
+  };
+  const offered = TAG_KEYS.filter((tag) => !picked.includes(tag))
+    .map((tag) => ({ tag, score: split(tag) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map(({ tag }) => tag);
+  return [...picked, ...offered];
+}
+
 export const byName = (left: ExploreItem, right: ExploreItem) =>
   left.name.localeCompare(right.name, undefined, { sensitivity: "base" });

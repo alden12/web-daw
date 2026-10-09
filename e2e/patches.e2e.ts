@@ -71,14 +71,23 @@ test("clicking a patch applies it to the selected track (audition), no new track
   await expect(trackHeaders).toHaveCount(before);
 });
 
-test("a tag chip narrows a category, and search finds by #tag (COMM-1.9.1)", async ({ page }) => {
+test("tag chips narrow a category together, and search finds by #tag (COMM-1.9.1)", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
   await openExploreCategory(page, "Patches");
-  await page.getByRole("button", { name: "#pad", exact: true }).click();
+  await page.getByRole("group", { name: "Filter by tag" }).getByRole("button", { name: "#pad", exact: true }).click();
   await expect(page.getByRole("button", { name: "Glass Pad", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Deep Sub", exact: true })).toHaveCount(0);
+
+  // Tags narrow together: the row re-ranks to what goes with #pad, and a second pick refines it.
+  await page.getByRole("group", { name: "Filter by tag" }).getByRole("button", { name: "#airy", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Glass Pad", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Warm Strings", exact: true })).toHaveCount(0);
+
+  // "More tags" has every tag on the page, grouped, beyond the short ranked row.
+  await page.getByRole("button", { name: "More tags" }).click();
+  await expect(page.getByRole("group", { name: "All tags" }).getByRole("button", { name: "#gritty" })).toBeVisible();
 
   await page.getByRole("button", { name: "Back to Explore" }).click();
   await page.getByRole("searchbox", { name: "Search Explore" }).fill("#space");

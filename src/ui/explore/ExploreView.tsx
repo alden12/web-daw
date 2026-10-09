@@ -24,7 +24,9 @@ import {
   type ExploreCategory,
   type ExploreItem,
   exploreItems,
+  hasTags,
   matchesQuery,
+  rankTags,
   tagsIn,
 } from "./exploreItems";
 import { useLibraryActions } from "./useLibraryActions";
@@ -61,7 +63,14 @@ export function ExploreView({
   const [page, setPage] = usePersistentString<ExplorePage>(EXPLORE_PAGE_KEY, "home", EXPLORE_PAGES);
   const category = page === "home" ? null : page;
   const [query, setQuery] = useState("");
-  const [tag, setTag] = useState<Tag | null>(null);
+  const [picked, setPicked] = useState<Tag[]>([]);
+  const toggleTag = (tag: Tag) =>
+    setPicked((current) => (current.includes(tag) ? current.filter((each) => each !== tag) : [...current, tag]));
+  const pickedLine = picked.map((tag) => `#${tag}`).join(" ");
+  /** The chips for a page: ranked over what is on screen, with every tag in its pool behind "More". */
+  const chips = (pool: ExploreItem[], shown: ExploreItem[]) => (
+    <TagChips tags={rankTags(shown, picked)} all={tagsIn(pool)} picked={picked} onToggle={toggleTag} />
+  );
 
   const items = exploreItems({ savedPatches, samples: project.samples });
   const inCategory = (key: ExploreCategory) => items.filter((item) => item.category === key);
@@ -72,12 +81,12 @@ export function ExploreView({
   // Tag filters are per page: opening a category or going back home starts unfiltered.
   const openPage = (next: ExploreCategory | null) => {
     setPage(next ?? "home");
-    setTag(null);
+    setPicked([]);
   };
 
   if (category) {
     const all = inCategory(category).sort(byName);
-    const shown = all.filter((item) => !tag || item.tags.includes(tag));
+    const shown = all.filter((item) => hasTags(item, picked));
     return (
       <div className="pb-2">
         <button
@@ -116,15 +125,15 @@ export function ExploreView({
           <>
             <div className="px-3.5 pt-3 pb-1 flex flex-col gap-2">
               <div className="font-mono text-[10px] uppercase tracking-wider text-faint">A to Z</div>
-              <TagChips tags={tagsIn(all)} selected={tag} onSelect={setTag} />
+              {chips(all, shown)}
             </div>
             {category === "samples" && <SampleImport samples={project.samples} dispatch={dispatch} />}
             {shown.length > 0 ? (
               list(shown)
-            ) : category === "samples" && !tag ? (
+            ) : category === "samples" && picked.length === 0 ? (
               <Hint>Import a sample to play it with the Sampler.</Hint>
             ) : (
-              <Hint>{`Nothing tagged #${tag ?? ""} here.`}</Hint>
+              <Hint>{`Nothing here is tagged ${pickedLine}.`}</Hint>
             )}
           </>
         )}
@@ -132,9 +141,10 @@ export function ExploreView({
     );
   }
 
-  const filtering = query.trim() !== "" || tag !== null;
-  const results = items
-    .filter((item) => matchesQuery(item, query) && (!tag || item.tags.includes(tag)))
+  const filtering = query.trim() !== "" || picked.length > 0;
+  const searched = items.filter((item) => matchesQuery(item, query));
+  const results = searched
+    .filter((item) => hasTags(item, picked))
     .sort(
       (left, right) =>
         CATEGORY_ORDER.indexOf(left.category) - CATEGORY_ORDER.indexOf(right.category) || byName(left, right),
@@ -165,7 +175,7 @@ export function ExploreView({
             className="flex-1 min-w-0 bg-transparent text-ink text-[12.5px] pointer-coarse:text-[15px] placeholder:text-faint outline-none"
           />
         </label>
-        <TagChips tags={tagsIn(items)} selected={tag} onSelect={setTag} />
+        {chips(searched, results)}
         {!filtering && (
           <div className="grid grid-cols-1 @[17rem]:grid-cols-2 gap-1.5 mt-0.5">
             {CATEGORY_ORDER.map((key) => (
@@ -196,7 +206,7 @@ export function ExploreView({
             {list(results, true)}
           </>
         ) : (
-          <Hint>{`Nothing matches${query.trim() ? ` “${query.trim()}”` : ""}${tag ? ` tagged #${tag}` : ""}.`}</Hint>
+          <Hint>{`Nothing matches${query.trim() ? ` “${query.trim()}”` : ""}${picked.length ? ` tagged ${pickedLine}` : ""}.`}</Hint>
         ))}
     </div>
   );

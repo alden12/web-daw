@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { exploreItems, matchesQuery, tagsIn, type ExploreItem } from "../src/ui/explore/exploreItems";
+import {
+  exploreItems,
+  hasTags,
+  matchesQuery,
+  rankTags,
+  tagsIn,
+  type ExploreItem,
+} from "../src/ui/explore/exploreItems";
 import { pickableInstrumentInfos } from "../src/audio/instruments/catalog";
 import { effectInfos } from "../src/audio/effects/catalog";
 import { midiDeviceInfos } from "../src/audio/midi/device/catalog";
@@ -60,5 +67,37 @@ describe("tagsIn", () => {
   it("offers only tags that something carries, in vocabulary order", () => {
     expect(tagsIn([named("Reverb"), named("Distortion")])).toEqual(["space", "gritty", "airy", "lush", "aggressive"]);
     expect(tagsIn([named("Kick 01")])).toEqual([]);
+  });
+});
+
+describe("rankTags", () => {
+  const item = (name: string, tags: ExploreItem["tags"]): ExploreItem => ({
+    key: name,
+    category: "patches",
+    name,
+    meta: "",
+    tags,
+    builtin: true,
+    source: { kind: "instrument", type: name },
+  });
+  const list = [
+    item("a", ["bass", "warm", "retro"]),
+    item("b", ["bass", "warm", "bright"]),
+    item("c", ["pad", "warm"]),
+    item("d", ["pad", "warm", "dark"]),
+  ];
+
+  it("leads with the tags that split the list most evenly, and drops ones that split nothing", () => {
+    // bass and pad cut it 2/2; retro, bright and dark 1/3; warm is on everything, so narrows nothing.
+    expect(rankTags(list, [])).toEqual(["bass", "pad", "bright", "dark", "retro"]);
+  });
+
+  it("caps the row", () => {
+    expect(rankTags(list, [], 2)).toEqual(["bass", "pad"]);
+  });
+
+  it("keeps picked tags first, and re-ranks over what they leave", () => {
+    const left = list.filter((each) => hasTags(each, ["bass"]));
+    expect(rankTags(left, ["bass"])).toEqual(["bass", "bright", "retro"]);
   });
 });
