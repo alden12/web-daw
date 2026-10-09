@@ -17,7 +17,9 @@ const SECONDS_PER_BEAT = 0.5; // 120 BPM
 
 export function capturePhrase(
   type: string,
-  { bars = 1, params = {} }: { bars?: number; params?: Record<string, ParamValue> } = {},
+  // Half a bar: at card size a whole bar of eighths is a row of slivers, and half shows the
+  // pattern with notes wide enough to read.
+  { bars = 0.5, params = {} }: { bars?: number; params?: Record<string, ParamValue> } = {},
 ): { notes: PhraseNote[]; spanSec: number } {
   const spanSec = bars * 4 * SECONDS_PER_BEAT;
   const notes: PhraseNote[] = [];

@@ -131,19 +131,23 @@ export interface PhraseNote {
  * per semitone: at card size a triad spread over eight semitone rows is three hairlines, where
  * three rows of its own are three bars you can see. The contour survives; the intervals do not
  * need to. At least 4 rows, so a single repeated note is not one slab filling the card.
+ * Blocks are at least 9 wide (of 100), so a staccato hit is a block rather than a sliver.
  */
 export function phrase(notes: PhraseNote[], spanSec: number): string {
   if (notes.length === 0) return "";
   const pitches = [...new Set(notes.map((note) => note.pitch))].sort((low, high) => low - high);
   const rows = Math.max(4, pitches.length);
-  const rowHeight = 76 / rows;
+  // Capped and centred: a few pitches would otherwise make blocks far taller than a note is long.
+  const rowHeight = Math.min(12, 76 / rows);
+  const firstRow = CENTRE - (rows * rowHeight) / 2;
   const x = (seconds: number) => 8 + (Math.min(seconds, spanSec) / spanSec) * 84;
   return notes
     .filter((note) => note.start < spanSec)
     .map((note) => {
       const left = x(note.start);
-      const width = Math.max(0.8, x(note.start + note.length) - left - 0.8);
-      const top = 12 + (rows - 1 - pitches.indexOf(note.pitch)) * rowHeight;
+      // Never narrower than a block you can see, however staccato the note.
+      const width = Math.min(92 - left, Math.max(9, x(note.start + note.length) - left - 0.8));
+      const top = firstRow + (rows - 1 - pitches.indexOf(note.pitch)) * rowHeight;
       return `M${point(left, top)} h${round(width)} v${round(Math.max(0.8, rowHeight - 2))} h${round(-width)} Z`;
     })
     .join(" ");
