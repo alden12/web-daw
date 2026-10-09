@@ -106,10 +106,11 @@ test("a sign-in round trip comes back to the project it left", async ({ page }) 
   await expect(page).toHaveURL(/\/p\/deep-house-jam~/);
   const path = new URL(page.url()).pathname;
 
-  // Switch away, so opening the remembered path has to do real work.
+  // Switch away, so opening the remembered path has to do real work. A new project mounts the
+  // whole workbench afresh, which under a fully parallel run can outlast the default wait.
   await projectMenu(page).click();
   await page.getByRole("menuitem", { name: "New project" }).click();
-  await expect(page).toHaveURL(/\/p\/untitled~/);
+  await expect(page).toHaveURL(/\/p\/untitled~/, { timeout: 15_000 });
 
   // An OAuth return lands on the bare origin with the path in the tab's memory - `redirectTo`
   // is the origin, because Supabase silently falls back to its configured Site URL for any

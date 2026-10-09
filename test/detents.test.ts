@@ -12,16 +12,33 @@ import {
   type PointerSample,
 } from "../src/ui/shell/detents";
 
-const PHONE = detentsFor({ tier: "phone", short: false });
 const HEIGHT = 800;
+const MEASURED = { workspaceHeight: HEIGHT, peekPixels: 58 };
+const PHONE = detentsFor({ tier: "phone", short: false }, MEASURED);
 
 describe("detentsFor", () => {
   it("gives a landscape phone its own set, whatever tier it lands in", () => {
     // A phone in landscape is ~844px wide, so it falls in the tablet tier while being the
     // shortest viewport the app sees. `short` has to win.
-    const landscapePhone = detentsFor({ tier: "tablet", short: true });
-    expect(landscapePhone).toEqual(detentsFor({ tier: "phone", short: true }));
-    expect(landscapePhone).not.toEqual(detentsFor({ tier: "tablet", short: false }));
+    const landscapePhone = detentsFor({ tier: "tablet", short: true }, MEASURED);
+    expect(landscapePhone).toEqual(detentsFor({ tier: "phone", short: true }, MEASURED));
+    expect(landscapePhone).not.toEqual(detentsFor({ tier: "tablet", short: false }, MEASURED));
+  });
+
+  it("minimises to exactly the header, and covers everything when full (MOBILE-19.1)", () => {
+    expect(PHONE.peek * HEIGHT).toBeCloseTo(58);
+    expect(PHONE.full).toBe(1);
+  });
+
+  it("has a minimised height before the workspace is measured", () => {
+    const unmeasured = detentsFor({ tier: "phone", short: false }, { workspaceHeight: 0, peekPixels: 58 });
+    expect(unmeasured.peek).toBeGreaterThan(0);
+    expect(unmeasured.peek).toBeLessThan(unmeasured.half);
+  });
+
+  it("keeps minimised below half on a workspace too short for the header", () => {
+    const cramped = detentsFor({ tier: "phone", short: true }, { workspaceHeight: 90, peekPixels: 58 });
+    expect(cramped.peek).toBeLessThan(cramped.half);
   });
 
   it("orders every set peek < half < full", () => {
@@ -32,7 +49,7 @@ describe("detentsFor", () => {
       { tier: "tablet", short: true },
     ] as const;
     shapes.forEach((shape) => {
-      const detents = detentsFor(shape);
+      const detents = detentsFor(shape, MEASURED);
       expect(detents.peek).toBeLessThan(detents.half);
       expect(detents.half).toBeLessThan(detents.full);
       expect(detents.peek).toBeGreaterThan(0);

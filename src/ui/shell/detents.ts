@@ -1,9 +1,9 @@
 /**
  * The editor sheet's detent model (MOBILE-5) - pure geometry, no DOM.
  *
- * A detent is expressed as **the fraction of the workspace the sheet covers**, so it
- * survives the address bar collapsing and an orientation change without recomputing
- * anything: 0 is fully out of the way, 1 covers everything. Keeping it a fraction rather
+ * A detent is expressed as **the fraction of the workspace the sheet covers**, so the
+ * gesture maths is one unit whatever the screen: 0 is fully out of the way, 1 covers
+ * everything. (Peek is set in pixels and converted - see `detentsFor`.) Keeping it a fraction rather
  * than a pixel offset is the same choice `gridView.ts` makes by storing the arrangement
  * offset in beats - the unit is the one the invariant is expressed in, so the maths falls
  * out instead of needing bookkeeping.
@@ -13,7 +13,10 @@
  */
 import type { DeviceShape } from "./useDeviceShape";
 
-/** Parked, editing alongside the arrangement, or editing over it. */
+/**
+ * Minimised to its preview bar, editing alongside the arrangement, or covering it (MOBILE-19.1).
+ * The names predate that revision: `peek` is the minimised bar.
+ */
 export type Detent = "peek" | "half" | "full";
 
 /** Ascending by coverage, which is what lets a keyboard step through them. */
@@ -31,21 +34,34 @@ export type DetentSet = Record<Detent, number>;
 export const PROJECTION_MS = 130;
 
 /**
- * A phone stacks, so its detents are the plain three. A landscape phone (`short`) is the
- * awkward one - wide but ~390px tall - so it parks higher and covers more when full,
- * because the same fractions would leave a sliver at either end.
- *
- * Half may not survive there at all; that is MOBILE-5's open question and needs real use
- * rather than a guess, so the detent stays and the numbers are tuned to give it the best
- * chance.
+ * Half is the one detent that is a share of the screen. A landscape phone (`short`) is the
+ * awkward shape - wide but ~390px tall - so its half covers a little more, or the roll is a
+ * sliver. Whether half survives there at all is MOBILE-5's open question.
  */
-const PHONE: DetentSet = { peek: 0.14, half: 0.55, full: 0.82 };
-const SHORT: DetentSet = { peek: 0.2, half: 0.58, full: 0.92 };
-const TABLET: DetentSet = { peek: 0.12, half: 0.5, full: 0.8 };
+const HALF = { phone: 0.55, short: 0.58, tablet: 0.5 } as const;
 
-export function detentsFor(shape: DeviceShape): DetentSet {
-  if (shape.short) return SHORT;
-  return shape.tier === "tablet" ? TABLET : PHONE;
+/**
+ * The other two are **ends, not shares** (MOBILE-19.1). Peek and full used to be fractions too
+ * (0.14 and 0.82 on a phone), and both were fiddly in use: peek left a thin strip hard to catch,
+ * and full stopped short of the top to keep the selected lane showing, so it was neither out of
+ * the way nor a proper full-screen editor. Now:
+ *
+ * - **peek** is exactly the sheet's header - the preview bar with its expand button - so it
+ *   is sized in pixels (`peekPixels`) and becomes a fraction only against the workspace it is
+ *   in. Before the workspace has been measured it falls back to a plausible share, so the
+ *   first frame is not a sheet with no height.
+ * - **full** covers the whole workspace; its header has the minimise button.
+ */
+const PEEK_FALLBACK = 0.1;
+
+export function detentsFor(
+  shape: DeviceShape,
+  { workspaceHeight, peekPixels }: { workspaceHeight: number; peekPixels: number },
+): DetentSet {
+  const half = shape.short ? HALF.short : shape.tier === "tablet" ? HALF.tablet : HALF.phone;
+  // Capped below half, so a tiny workspace still keeps the detents in order.
+  const peek = workspaceHeight > 0 ? Math.min(peekPixels / workspaceHeight, half / 2) : PEEK_FALLBACK;
+  return { peek, half, full: 1 };
 }
 
 /** The detent whose coverage is closest to `cover`. */

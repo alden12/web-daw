@@ -9,11 +9,11 @@
  * the desktop does not tab between them either, it *stacks and occludes* -
  * `CenterWorkbench` is editor-above-rack floating over the timeline. So the arrangement is
  * simply the background here, and the editor is an `EditorSheet` over it, thrown between
- * three detents (parked, half, covering all but the selected lane).
+ * three detents: minimised to a preview bar, half, and covering the workspace (MOBILE-19.1).
  *
  * That deleted three things rather than adding one: the tab bar (~56px of a phone, plus
  * the safe area), the `LaneStrip` special case (it existed only because the Edit tab took
- * the arrangement away, and the Full detent now *is* that strip), and the question of
+ * the arrangement away), and the question of
  * where selection navigates to - it does not, because the arrangement never leaves.
  *
  * Because the arrangement and the editor are mounted at the same time, **both** publish to
@@ -62,6 +62,7 @@ import { DeviceRack } from "../workbench/DeviceRack";
 import { TrackRecordButton } from "../workbench/TrackRecordButton";
 import { NotePads } from "../pads/NotePads";
 import { EditorSection } from "./EditorSection";
+import { ClipPreview } from "./ClipPreview";
 import { useProject } from "../../audio/project/useProject";
 import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
@@ -312,6 +313,16 @@ function LibraryContent({
   );
 }
 
+/** The minimised sheet's glance: an instrument track's active clip, drawn; an audio clip by name. */
+function sheetPreview(track: Track): ReactNode {
+  if (track.kind === "instrument") {
+    const active = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
+    return active && <ClipPreview store={active.store} name={active.name} />;
+  }
+  const active = track.clips.find((clip) => clip.id === track.activeClipId) ?? track.clips[0];
+  return active && <span className="block px-2 truncate font-mono text-[10px] text-faint">{active.name}</span>;
+}
+
 /** A docked side column on a tablet: the same contents a phone gets in a sheet. */
 function DockedPanel({ side, label, children }: { side: "left" | "right"; label: string; children: ReactNode }) {
   return (
@@ -443,7 +454,6 @@ export function MobileShell({
    */
   const docked = shape.tier === "tablet" && !shape.short;
 
-  const detents = detentsFor(shape);
   /**
    * How much editor there is at the committed detent, for the pads to size themselves
    * against (MOBILE-6). **Derived from the workspace, not measured on the sheet**: the
@@ -459,6 +469,9 @@ export function MobileShell({
   // the lint rule cannot see, since the inset is read from the DOM rather than from it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const safeBottom = useMemo(() => insetPixels("bottom"), [workspaceHeight]);
+  // Minimised is the header and nothing else, so its height is the header's plus the inset the
+  // sheet pads its foot by.
+  const detents = detentsFor(shape, { workspaceHeight, peekPixels: SHEET_HEADER_HEIGHT + safeBottom });
   const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT - safeBottom);
 
   // Surface -> the panel it hosts, as an object map so adding one is an entry here plus
@@ -736,8 +749,6 @@ export function MobileShell({
               // a second copy, and its own options move into the shell's ⋮.
               showTransport={false}
               compact
-              // At Full the arrangement is a sliver, so make it the lane being edited.
-              pinSelectedTrack={detent === "full"}
             />
           </div>
           {/* No sheet without a track: there is nothing to edit, and an empty sheet over
@@ -750,6 +761,7 @@ export function MobileShell({
               onDetentChange={setDetent}
               title={selectedTrack.name}
               subtitle={selectedTrack.kind === "audio" ? "audio" : selectedTrack.instrumentType}
+              preview={sheetPreview(selectedTrack)}
               controls={
                 // Three short options, exactly one chosen: a segmented control, and now an
                 // actual radiogroup rather than a `tablist` of buttons that each carried
@@ -762,8 +774,6 @@ export function MobileShell({
                     setSurface(next);
                     // So is asking for one while it is folded away.
                     setSurfaceOpen(true);
-                    // Asking for a surface while parked means you want to see it.
-                    if (detent === "peek") setDetent("half");
                   }}
                   className="ml-auto shrink-0 font-mono uppercase tracking-wide"
                 />
