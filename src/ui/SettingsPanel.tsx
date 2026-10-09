@@ -1,6 +1,6 @@
 /**
  * The settings modal, opened from the logo at the foot of the desktop rail, or your initials in the
- * touch top bar. "Timing" is tempo, meter, metronome, count-in and groove (`TimingSettings`); on touch,
+ * touch top bar. "Timing" is tempo, meter, metronome, count-in and groove (`TimingSettings`);
  * "Arrangement" and "Piano roll" hold the editing surfaces' settings (`EditorSettings`); "Account" is everyone in the project and how they are coloured, you first, plus the way out;
  * "Agent" holds the BYOK provider/key/model config; "MIDI" holds hardware MIDI input; "Recording"
  * the input and count-in; "Appearance" the theme.
@@ -53,11 +53,10 @@ const TAB_IDS = [
   "recording",
   "appearance",
 ] as const satisfies readonly SettingsTab[];
-/** `touch`: only on the touch shell, where the surfaces have no room for their settings beside them. */
-const TABS: { id: SettingsTab; label: string; touch?: true }[] = [
+const TABS: { id: SettingsTab; label: string }[] = [
   { id: "timing", label: "Timing" },
-  { id: "arrangement", label: "Arrangement", touch: true },
-  { id: "pianoRoll", label: "Piano roll", touch: true },
+  { id: "arrangement", label: "Arrangement" },
+  { id: "pianoRoll", label: "Piano roll" },
   { id: "account", label: "Account" },
   { id: "agent", label: "Agent" },
   { id: "midi", label: "MIDI" },
@@ -93,14 +92,11 @@ export function SettingsPanel({
   dispatch: Dispatch;
   /** The tab a caller means, if it means one. Omitted, the panel opens on the one you left it on. */
   initialTab?: SettingsTab;
-  /** The touch shell is showing: offer the editing surfaces' settings pages too. */
+  /** The touch shell is showing. The piano roll's velocity lane is remembered per shell. */
   touch: boolean;
   onClose: () => void;
 }) {
-  const tabs = TABS.filter((candidate) => touch || !candidate.touch);
-  const [rememberedTab, setRemembered] = useRememberedTab();
-  // A touch-only page remembered from a phone opens Account on a desktop instead.
-  const remembered = tabs.some((candidate) => candidate.id === rememberedTab) ? rememberedTab : "";
+  const [remembered, setRemembered] = useRememberedTab();
   const [rememberedListing, setRememberedListing] = useRememberedListing();
   const [tab, setTab] = useState<SettingsTab>(initialTab ?? (remembered || "account"));
   // Narrow screens only: whether the category list is showing rather than a tab's page.
@@ -109,7 +105,7 @@ export function SettingsPanel({
     setListingState(showing);
     setRememberedListing(showing);
   };
-  const label = tabs.find((candidate) => candidate.id === tab)?.label ?? "";
+  const label = TABS.find((candidate) => candidate.id === tab)?.label ?? "";
 
   const choose = (id: SettingsTab) => {
     setTab(id);
@@ -167,7 +163,7 @@ export function SettingsPanel({
             aria-label="Settings"
             className={`${listing ? "flex" : "hidden sm:flex"} flex-col gap-0.5 p-2 sm:p-3 w-full sm:w-44 shrink-0 sm:border-r border-line overflow-y-auto`}
           >
-            {tabs.map(({ id, label: tabLabel }) => (
+            {TABS.map(({ id, label: tabLabel }) => (
               <button
                 key={id}
                 type="button"
@@ -193,7 +189,7 @@ export function SettingsPanel({
           >
             {tab === "timing" && <TimingSettings projectStore={projectStore} dispatch={dispatch} />}
             {tab === "arrangement" && <ArrangementSettings />}
-            {tab === "pianoRoll" && <PianoRollSettings />}
+            {tab === "pianoRoll" && <PianoRollSettings compact={touch} />}
             {tab === "account" && <AccountSettings config={authorColors} editLog={editLog} onClose={onClose} />}
             {tab === "agent" && <AgentSettingsSection config={agentConfig} onClose={onClose} />}
             {tab === "midi" && <MidiSettings midiInput={midiInput} />}

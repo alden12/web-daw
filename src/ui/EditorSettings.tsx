@@ -1,11 +1,11 @@
 /**
- * The Arrangement and Piano roll settings pages (MOBILE-19.4), touch shell only.
+ * The Arrangement and Piano roll settings pages (MOBILE-19.4).
  *
  * On a phone these settings were the bulk of the tools menu beside each surface, nested two deep
  * on a screen with room for neither. They live here instead, where someone on a small screen looks
- * for settings; the tools menus keep the actions (quantize now, zoom, add a track). On desktop the
- * settings stay in each surface's toolbar menu, beside their use, which is where they belong when
- * there is room. Either way it is one value (`editorPrefs.ts`), not a copy.
+ * for settings; the tools menus keep the actions (quantize now, zoom, add a track). On desktop they
+ * are in both places: here, and still in each surface's toolbar menu beside their use. Either way
+ * it is one value (`editorPrefs.ts`), not a copy.
  */
 import { GRID_DIVISIONS } from "../audio/sequencer/quantize";
 import { SNAP_OPTIONS } from "./arrangement/shared";
@@ -44,14 +44,14 @@ export function ArrangementSettings() {
   );
 }
 
-export function PianoRollSettings() {
+export function PianoRollSettings({ compact }: { compact: boolean }) {
   const [snapOn, setSnapOn] = useRollSnapOn();
   const [grid, setGrid] = useRollGrid();
   const [strength, setStrength] = useQuantizeStrength();
   const [ends, setEnds] = useQuantizeEnds();
   const [onRecord, setOnRecord] = useQuantizeOnRecord();
-  // The touch shell's lane: this page only shows there (see `SettingsPanel`).
-  const [velocityLane, setVelocityLane] = useVelocityLane(true);
+  // The lane is remembered per shell (see `useVelocityLane`), so this is the showing shell's.
+  const [velocityLane, setVelocityLane] = useVelocityLane(compact);
   return (
     <div className="flex flex-col gap-5">
       <SettingsRow title="Snap to grid" hint="Notes land on the grid when you draw, move or resize them.">

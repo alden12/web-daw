@@ -3,9 +3,9 @@
  * their persisted keys, so a surface and the settings page that shows the same preference are
  * reading one value rather than two copies that happen to share a key (MOBILE-19.4).
  *
- * On desktop these stay in each surface's toolbar menu, beside their use. On touch the settings
- * panel's Arrangement and Piano roll pages carry them instead: a phone has no room for a menu of
- * settings beside every surface, and a settings page is where someone on a small screen looks.
+ * The settings panel's Arrangement and Piano roll pages carry them on both shells. On desktop each
+ * surface's toolbar menu keeps them too, beside their use; on touch the pages are the only home,
+ * since a phone has no room for a menu of settings beside every surface.
  */
 import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
 import { QUANT_KEYS } from "./quantizeSettings";
