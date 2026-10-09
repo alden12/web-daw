@@ -79,11 +79,11 @@ async function setDetent(page: Page, target: "peek" | "half" | "full") {
   }
   await expect.poll(() => detentOf(page)).toBe(target);
   // Wait for the settle to *commit* rather than for a fixed time. `data-detent` flips the
-  // instant the key is pressed, but the sheet is still mid-spring and laid out at
-  // `height: 100%` with a transform until it comes to rest - so measuring on the attribute
-  // alone reads the travelling size, and any fixed timeout is only as good as the longest
-  // throw in the suite. Committed layout is the honest signal that it has landed.
-  await expect.poll(() => sheet(page).evaluate((el) => (el as HTMLElement).style.height)).not.toBe("100%");
+  // instant the key is pressed, but the sheet is still mid-spring, laid out at full height
+  // with a transform until it comes to rest - so measuring on the attribute alone reads the
+  // travelling size, and any fixed timeout is only as good as the longest throw in the suite.
+  // `data-moving` is cleared by the commit, so its absence is the honest signal it has landed.
+  await expect(sheet(page)).not.toHaveAttribute("data-moving");
 }
 
 /**
@@ -673,16 +673,19 @@ test.describe("phone", () => {
     expect(box.y + box.height, "and sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
   });
 
-  test("parked is a lip, not a panel", async ({ page }) => {
+  test("minimised is the preview bar, and a tap on it opens the sheet (MOBILE-19.1)", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await setDetent(page, "peek");
 
-    // Parked still names the track and offers the surfaces - that is what teaches the drag.
-    await expect(segment(page, "Edit")).toBeVisible();
+    // The header and nothing else: the track, a glance at its clip, and the way back up.
     const box = (await sheet(page).boundingBox())!;
-    expect(box.height, "parked is a lip").toBeLessThan(PHONE.height * 0.25);
+    expect(box.height, "minimised is just the header").toBeLessThan(80);
     expect(box.y + box.height, "and it sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
+    await expect(segment(page, "Edit")).toHaveCount(0);
+
+    await sheet(page).getByRole("button", { name: "Open the editor" }).tap();
+    await expect.poll(() => detentOf(page)).toBe("half");
   });
 
   test("opens on the lane headers, not on beat 0", async ({ page }) => {
@@ -773,14 +776,20 @@ test.describe("phone", () => {
     expect(await roll.evaluate((el) => Math.round(el.scrollTop))).toBe(parked);
   });
 
-  test("picking a surface raises the sheet, so nothing is more than one tap away", async ({ page }) => {
+  test("every detent has a button route, so the drag is a shortcut rather than the only way", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    const button = (name: string) => sheet(page).getByRole("button", { name, exact: true });
     await setDetent(page, "peek");
 
-    await segment(page, "Edit").tap();
+    await button("Expand the editor").tap();
     await expect.poll(() => detentOf(page)).toBe("half");
-    await expect(page.getByTestId("roll-scroll")).toBeVisible();
+    await button("Expand the editor to full screen").tap();
+    await expect.poll(() => detentOf(page)).toBe("full");
+    await button("Back to half").tap();
+    await expect.poll(() => detentOf(page)).toBe("half");
+    await button("Minimise the editor").tap();
+    await expect.poll(() => detentOf(page)).toBe("peek");
   });
 
   test("each segment hosts one surface, and the transport survives switching", async ({ page }) => {
@@ -834,7 +843,7 @@ test.describe("phone", () => {
 
     await setDetent(page, "peek");
     const parked = (await timeline.boundingBox())!;
-    await setDetent(page, "full");
+    await setDetent(page, "half");
     const raised = (await timeline.boundingBox())!;
 
     // It is not merely occluded - it lays out in what is left, so its own scrollers stay
@@ -976,9 +985,10 @@ test.describe("phone", () => {
     await dismissStart(page);
     await setDetent(page, "peek");
 
-    // The whole header is the drag surface, not just the grabber pill.
+    // The whole header is the drag surface, not just the grabber pill - caught here by the
+    // track name, since the preview beside it is a button that keeps its tap.
     const header = (await sheet(page).boundingBox())!;
-    const startX = header.x + header.width / 2;
+    const startX = header.x + 40;
     const startY = header.y + 20;
     await page.mouse.move(startX, startY);
     await page.mouse.down();
@@ -992,22 +1002,15 @@ test.describe("phone", () => {
     expect(box.y + box.height, "still anchored to the bottom edge").toBeGreaterThan(PHONE.height - 4);
   });
 
-  test("the arrangement pins the selected lane once the sheet covers it", async ({ page }) => {
+  test("full covers the whole workspace (MOBILE-19.1)", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await trackHeader(page).tap();
     await setDetent(page, "full");
 
-    // At Full only a sliver of arrangement is left, and it should be the lane being edited -
-    // the job LaneStrip used to do from a second copy of the grid.
-    const pinned = await page.getByTestId("arr-scroll").evaluate((el) => {
-      const row = el.querySelector("[data-track-id]") as HTMLElement | null;
-      if (!row) return null;
-      const offset = row.offsetTop - el.scrollTop;
-      return { visible: offset >= 0 && offset < el.clientHeight, band: el.clientHeight };
-    });
-    expect(pinned?.visible, "the selected lane is in view").toBe(true);
-    expect(pinned?.band, "and the band really is a sliver").toBeLessThan(PHONE.height * 0.3);
+    // No sliver of arrangement any more: the sheet's top meets the workspace's.
+    const workspaceTop = await sheet(page).evaluate((el) => el.parentElement!.getBoundingClientRect().top);
+    const box = (await sheet(page).boundingBox())!;
+    expect(Math.abs(box.y - workspaceTop), "the sheet reaches the top of the workspace").toBeLessThan(2);
   });
 
   test("undo and redo are in the top bar, and tempo has moved to the overflow menu", async ({ page }) => {

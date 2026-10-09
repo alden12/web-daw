@@ -90,7 +90,6 @@ export function ArrangementTimeline({
   isPlaying,
   started,
   showTransport = true,
-  pinSelectedTrack = false,
   compact = false,
 }: {
   projectStore: ProjectStore;
@@ -109,14 +108,6 @@ export function ArrangementTimeline({
    * to the shell's single ⋮ instead. The clip-mode indicator stays, being live state.
    */
   compact?: boolean;
-  /**
-   * Pin the selected track's row to the top rather than merely scrolling it into view
-   * (MOBILE-5). At the editor sheet's Full detent only a sliver of arrangement shows, and
-   * it should be the lane being edited - which is the job `LaneStrip` used to do from a
-   * separate copy of the grid. Doing it by scroll position instead means there is one
-   * arrangement rather than two that have to be kept in step.
-   */
-  pinSelectedTrack?: boolean;
 }) {
   const project = useProject(projectStore);
   const rec = useRecorder(recorder);
@@ -134,14 +125,10 @@ export function ArrangementTimeline({
     const row = scroller?.querySelector<HTMLElement>(`[data-track-id="${CSS.escape(selectedTrackId)}"]`);
     if (!scroller || !row) return;
     const above = row.offsetTop - RULER_H; // the ruler is sticky, so it covers this much
-    if (pinSelectedTrack) {
-      scroller.scrollTop = above;
-      return;
-    }
     const below = row.offsetTop + row.offsetHeight - scroller.clientHeight;
     if (above < scroller.scrollTop) scroller.scrollTop = above;
     else if (below > scroller.scrollTop) scroller.scrollTop = below;
-  }, [selectedTrackId, pinSelectedTrack]);
+  }, [selectedTrackId]);
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("corrente:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);

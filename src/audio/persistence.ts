@@ -9,7 +9,7 @@
  */
 import type { ProjectStore } from "./project/projectStore";
 import type { EditLog } from "./commands/editLog";
-import { getRepository, type ProjectRepository } from "./projectRepository";
+import { currentProjectId, getRepository, loadedProjectId, type ProjectRepository } from "./projectRepository";
 import { readUndoSession, writeUndoSession } from "./undoSession";
 
 /** Fast cadence: coalesce an edit burst, then append the delta to the log. */
@@ -60,12 +60,27 @@ export async function restoreProject(
  * note posted with no following edit would never be saved. Returns a disposer.
  * Re-subscribes to track stores whenever the track set changes.
  */
+/**
+ * The current project's repository, but **only while the live store holds that project**, else null.
+ *
+ * A switch repoints the repository first and loads the store several awaits later, so in between
+ * the "current" bundle is the new project's and the store is still the old one's. A save pending
+ * from the last edit (a rename made just before choosing New project, in the CI failure that found
+ * this) landed in that window and wrote the *old* project into the *new* one's bundle, which then
+ * opened as a copy of it. Skipping is safe: every switch flushes the old project before it
+ * repoints, and the load that ends the window changes the store, which schedules a save of its own.
+ */
+function liveRepository(): ProjectRepository | null {
+  return loadedProjectId() === currentProjectId() ? getRepository() : null;
+}
+
 export function attachAutosave(project: ProjectStore, editLog: EditLog, repo?: ProjectRepository): () => void {
   // Resolve the target at save time, not at attach time: a project switch replaces
   // the current repository (setCurrentProject builds a new one per project), so a
   // captured reference would keep writing the live project into the *previous*
-  // project's bundle. Tests inject a fixed repo; production follows the current one.
-  const targetRepo = () => repo ?? getRepository();
+  // project's bundle. Tests inject a fixed repo; production follows the current one,
+  // and only while the store holds it (`liveRepository`).
+  const targetRepo = () => repo ?? liveRepository();
   let appendTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Write the working snapshot as a keyframe + append the stream delta (edits + notes).
@@ -188,8 +203,9 @@ const UNDO_PERSIST_MS = 1500;
 
 export function attachUndoPersistence(editLog: EditLog, repo?: ProjectRepository): () => void {
   // Resolved per write, not captured: a project switch replaces the repository, and a captured one
-  // would write this project's stacks under the previous project's key.
-  const targetRepo = () => repo ?? getRepository();
+  // would write this project's stacks under the previous project's key. Mid-switch, not at all
+  // (`liveRepository`), for the same reason from the other side.
+  const targetRepo = () => repo ?? liveRepository();
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const write = () => {

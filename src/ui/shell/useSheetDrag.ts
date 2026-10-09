@@ -20,9 +20,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { projectDetent, trimSamples, velocityFrom, type Detent, type DetentSet, type PointerSample } from "./detents";
 
-/** Critically-damped-ish. Fast enough to feel decisive, slow enough to read as physical. */
+/** Fast enough to feel decisive, slow enough to read as physical. */
 const STIFFNESS = 220;
-const DAMPING = 26;
+/**
+ * Exactly critical: the fastest settle that never overshoots. It was 26, a touch under, which
+ * read as a small bounce at every detent - most visibly at full, which now meets the top edge
+ * (MOBILE-19.1). The release velocity still carries in; it just lands rather than rebounds.
+ */
+const DAMPING = 2 * Math.sqrt(STIFFNESS);
 /** Sub-step the integration: a stiff spring on a dropped frame explodes at a variable dt. */
 const MAX_STEP_S = 0.004;
 const REST_POSITION = 0.4;
@@ -94,6 +99,16 @@ export function useSheetDrag({
     if (!node) return;
     node.style.height = `${cover * 100}%`;
     node.style.transform = "translate3d(0, 0, 0)";
+    delete node.dataset.moving;
+  }, []);
+
+  /**
+   * Flag the sheet as travelling, from the moment a settle or drag starts until `commit`. Height
+   * alone cannot say it has landed now that full is 100% (MOBILE-19.1), and the first spring
+   * frame is a frame away, so the flag is set up front rather than on the first paint.
+   */
+  const markMoving = useCallback(() => {
+    if (sheetRef.current) sheetRef.current.dataset.moving = "";
   }, []);
 
   const stopSpring = useCallback(() => {
@@ -111,6 +126,7 @@ export function useSheetDrag({
         commit(target);
         return;
       }
+      markMoving();
       // Integrate in pixels of coverage so the constants read like any other spring.
       let position = coverRef.current * height;
       let speed = -velocity * 1000; // downward pointer travel shrinks coverage
@@ -136,7 +152,7 @@ export function useSheetDrag({
       };
       frameRef.current = requestAnimationFrame(step);
     },
-    [commit, paint, stopSpring, workspaceHeight],
+    [commit, markMoving, paint, stopSpring, workspaceHeight],
   );
 
   /**
@@ -166,6 +182,7 @@ export function useSheetDrag({
       // Buttons inside the header keep their taps; everything else is drag surface.
       if ((event.target as HTMLElement).closest("button, a, input, select")) return;
       stopSpring();
+      markMoving();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
         pointerId: event.pointerId,
@@ -175,7 +192,7 @@ export function useSheetDrag({
       };
       event.preventDefault();
     },
-    [stopSpring],
+    [markMoving, stopSpring],
   );
 
   const onPointerMove = useCallback(

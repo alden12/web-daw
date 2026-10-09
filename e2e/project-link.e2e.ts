@@ -106,7 +106,10 @@ test("a sign-in round trip comes back to the project it left", async ({ page }) 
   await expect(page).toHaveURL(/\/p\/deep-house-jam~/);
   const path = new URL(page.url()).pathname;
 
-  // Switch away, so opening the remembered path has to do real work.
+  // Switch away, so opening the remembered path has to do real work. This step is also what
+  // caught the autosave writing the renamed project into the new one's bundle mid-switch
+  // (`liveRepository` in persistence.ts): the new project then opened as a copy, and the URL
+  // stayed on the old name for good.
   await projectMenu(page).click();
   await page.getByRole("menuitem", { name: "New project" }).click();
   await expect(page).toHaveURL(/\/p\/untitled~/);

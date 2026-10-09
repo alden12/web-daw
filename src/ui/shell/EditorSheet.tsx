@@ -19,6 +19,7 @@ import type { ReactNode } from "react";
 import { DETENT_ORDER, stepDetent, type Detent, type DetentSet } from "./detents";
 import { useSheetDrag } from "./useSheetDrag";
 import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
+import { IconButton } from "../controls/IconButton";
 
 /**
  * The grabber and title row, as a number. It is a constant rather than a measurement because
@@ -28,6 +29,34 @@ import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
  */
 export const SHEET_HEADER_HEIGHT = 58;
 
+/**
+ * Every detent has a button route as well as the drag (MOBILE-19.1), so a throw is a shortcut
+ * rather than the only way: minimised has **expand**, half has **minimise** and **expand**,
+ * full has **minimise** and **back to half**. Data, so the header renders whichever apply.
+ */
+const GLYPHS = {
+  up: <path d="M3.5 10 8 5.5l4.5 4.5" />,
+  down: <path d="M3.5 6 8 10.5 12.5 6" />,
+  half: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+      <path d="M2.5 8h11" />
+    </>
+  ),
+};
+
+const DETENT_BUTTONS: Record<Detent, { to: Detent; label: string; glyph: keyof typeof GLYPHS }[]> = {
+  peek: [{ to: "half", label: "Expand the editor", glyph: "up" }],
+  half: [
+    { to: "peek", label: "Minimise the editor", glyph: "down" },
+    { to: "full", label: "Expand the editor to full screen", glyph: "up" },
+  ],
+  full: [
+    { to: "peek", label: "Minimise the editor", glyph: "down" },
+    { to: "half", label: "Back to half", glyph: "half" },
+  ],
+};
+
 export function EditorSheet({
   detent,
   detents,
@@ -35,6 +64,7 @@ export function EditorSheet({
   title,
   subtitle,
   controls,
+  preview,
   children,
 }: {
   detent: Detent;
@@ -46,9 +76,15 @@ export function EditorSheet({
   subtitle?: string;
   /** The Edit / Rack switch, which opts out of the drag by being buttons. */
   controls?: ReactNode;
+  /**
+   * What the minimised bar shows in place of the controls: a glance at the clip, since at peek
+   * the header is all there is. Tapping it opens the sheet to half.
+   */
+  preview?: ReactNode;
   children: ReactNode;
 }) {
   const { sheetRef, handleProps } = useSheetDrag({ detent, detents, onDetentChange });
+  const minimised = detent === "peek";
 
   return (
     <div
@@ -92,7 +128,28 @@ export function EditorSheet({
             <span className="truncate text-[13px] font-semibold text-strong">{title}</span>
             {subtitle && <span className="font-mono text-[9px] tracking-wider uppercase text-faint">{subtitle}</span>}
           </div>
-          {controls}
+          {minimised ? (
+            // A button, so the drag surface leaves the tap to it (`useSheetDrag` skips buttons).
+            <button
+              type="button"
+              aria-label="Open the editor"
+              onClick={() => onDetentChange("half")}
+              className="ml-auto min-w-0 flex-1 h-8 max-w-48 rounded-md bg-stage overflow-hidden"
+            >
+              {preview}
+            </button>
+          ) : (
+            controls
+          )}
+          <div className={`flex shrink-0 ${minimised ? "" : "ml-1"}`}>
+            {DETENT_BUTTONS[detent].map((button) => (
+              <IconButton key={button.to} label={button.label} onClick={() => onDetentChange(button.to)}>
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  {GLYPHS[button.glyph]}
+                </svg>
+              </IconButton>
+            ))}
+          </div>
         </div>
       </div>
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{children}</div>
