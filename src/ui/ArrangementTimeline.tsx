@@ -41,7 +41,8 @@ import { beatToX } from "./timeline/timeGrid";
 import { anchorZoomX } from "./timeline/anchoredZoom";
 import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
 import { beatsPerBar as beatsPerBarOf } from "../audio/project/schema";
-import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { usePersistentNumber } from "./usePersistent";
+import { useArrangementSnapDivision, useArrangementSnapOn } from "./editorPrefs";
 import { GroupHeader, TrackRow } from "./arrangement/rows";
 import { useSharedGridScroll } from "./arrangement/useSharedGridScroll";
 import { usePublishSurfaceControls } from "./shell/usePublishSurfaceControls";
@@ -139,8 +140,8 @@ export function ArrangementTimeline({
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:arr-zoom", 24, ZOOM.min, ZOOM.max);
   const [headerW, setHeaderW] = usePersistentNumber("corrente:arr-header-w", DEFAULT_HEADER_W, HEADER_MIN, HEADER_MAX);
-  const [snapOn, setSnapOn] = usePersistentBoolean("corrente:arr-snap-on", true);
-  const [snapDiv, setSnapDiv] = usePersistentNumber("corrente:arr-snap-div", 1, 0.5, 4);
+  const [snapOn, setSnapOn] = useArrangementSnapOn();
+  const [snapDiv, setSnapDiv] = useArrangementSnapDivision();
   // The count-in is a persisted preference pushed to the recorder from here, because this
   // component is mounted in both shells; the rows that *set* it are project settings and are
   // built alongside groove in `projectSettings.ts`. (The Record button stays in the transport.)
@@ -442,21 +443,12 @@ export function ArrangementTimeline({
   // Count-in and groove are not here: they are timing settings, on the settings panel's Timing
   // page (MOBILE-19, and MOBILE-11 before it for why they were never the arrangement's).
   //
-  // On touch the toolbar row goes away and its contents move to the tools menu in the
-  // timeline's corner: the snap and zoom controls from the toolbar's right, then the "+"
-  // items. Zoom folds into a submenu there - it is a fallback for the pinch gesture (MOBILE-2).
+  // On touch the toolbar row goes away. Its actions move to the tools menu in the timeline's
+  // corner: zoom (a fallback for the pinch gesture, MOBILE-2), then the "+" items. Its settings,
+  // snap, move to the settings panel's Arrangement page (MOBILE-19.4).
   usePublishSurfaceControls(
     "arrangement",
     [
-      { label: "Snap to grid", checked: snapOn, onClick: () => setSnapOn(!snapOn) },
-      {
-        label: "Snap to",
-        submenu: SNAP_OPTIONS.map((option) => ({
-          label: option.label,
-          checked: snapDiv === option.value,
-          onClick: () => setSnapDiv(option.value),
-        })),
-      },
       {
         label: "Zoom",
         submenu: [

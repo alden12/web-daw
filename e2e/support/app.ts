@@ -38,11 +38,27 @@ export async function dismissStart(page: Page): Promise<void> {
  * phone the category list is only there to tap on the first opening.
  */
 export async function openTimingSettings(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Account and settings" }).click();
-  const timing = page.getByRole("tab", { name: "Timing" });
-  if (await timing.isVisible()) await timing.click();
+  await openSettingsPage(page, "Timing");
   // Scoped to the panel: the desktop transport has a tempo field of its own.
   await expect(page.getByRole("dialog").getByRole("spinbutton", { name: "Tempo", exact: true })).toBeVisible();
+}
+
+/**
+ * Open the settings panel on one of its pages, from the account button on either shell, or switch
+ * page if it is already open.
+ */
+export async function openSettingsPage(page: Page, name: string): Promise<void> {
+  const close = page.getByRole("button", { name: "Close settings" });
+  if (!(await close.isVisible())) await page.getByRole("button", { name: "Account and settings" }).click();
+  const tab = page.getByRole("tab", { name, exact: true });
+  // Reopening lands on the page it was closed on, where a phone hides the list.
+  if (await tab.isVisible()) await tab.click();
+  else
+    await page
+      .getByRole("button", { name: "All settings" })
+      .click()
+      .then(() => tab.click());
+  await expect(page.getByRole("tabpanel", { name })).toBeVisible();
 }
 
 /** Set the count-in from the Timing page and close the panel again. */

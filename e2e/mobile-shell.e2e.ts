@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart, openExploreCategory, openTimingSettings, setCountIn } from "./support/app";
+import { dismissStart, openExploreCategory, openSettingsPage, openTimingSettings, setCountIn } from "./support/app";
 
 /**
  * The touch shell (MOBILE-1, restructured by MOBILE-5). At phone/tablet size the app swaps
@@ -1059,11 +1059,11 @@ test.describe("phone", () => {
 
     await openTools(page, "Arrangement");
     await expect(page.getByRole("menuitem", { name: "Add group" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: /^Quantize/ })).toHaveCount(0);
     await page.keyboard.press("Escape");
 
     await openTools(page, "Notes");
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /^Quantize/ })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Add group" })).toHaveCount(0);
     await page.keyboard.press("Escape");
 
@@ -1098,10 +1098,12 @@ test.describe("phone", () => {
     // The toolbar row is hidden, so its label is not shown...
     await expect(page.getByText("Piano roll", { exact: true })).toBeHidden();
 
-    // ...and the controls turn up in the sheet header's tools menu. Zoom folds into a submenu
+    // ...and the actions turn up in the sheet header's tools menu. Zoom folds into a submenu
     // there: it is a fallback for the pinch gesture, so it need not spend a row of its own.
+    // The settings are not here: they are on the settings panel's Piano roll page (MOBILE-19.4).
     await openTools(page, "Notes");
-    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Quantize all notes" })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: /Snap to grid/i })).toHaveCount(0);
     await page.getByRole("menuitem", { name: "Zoom", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Taller rows" })).toBeVisible();
   });
@@ -1121,22 +1123,26 @@ test.describe("phone", () => {
     await expect(page.getByRole("button", { name: "Arrangement tools" })).toBeVisible();
   });
 
-  test("a tools menu reflects the surface's state, not the shell's last render", async ({ page }) => {
+  test("the editors' settings are settings pages on touch, and what they set reaches the surface", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await segment(page, "Edit").tap();
-    const velocity = () => page.getByRole("menuitemradio", { name: /Velocity lane/i });
 
-    // Off to start with on touch, where the lane costs a row of pads.
-    await openTools(page, "Notes");
-    await expect(velocity()).toHaveAttribute("aria-checked", "false");
-    await velocity().click();
+    await openSettingsPage(page, "Arrangement");
+    await page.getByRole("radiogroup", { name: "Arrangement snap" }).getByRole("radio", { name: "Bar" }).click();
+    await openSettingsPage(page, "Piano roll");
+    const grid = page.getByRole("radiogroup", { name: "Piano roll grid" });
+    await grid.getByRole("radio", { name: "1/8T" }).click();
+    await page.getByRole("button", { name: "Close settings" }).tap();
 
-    // The surface's controls are published as a getter and the shell is *not* re-rendered
-    // when the surface's own state changes, so an items array captured at the shell's last
-    // render would still show this row unticked. `Menu` reads the getter while open instead.
-    await openTools(page, "Notes");
-    await expect(velocity()).toHaveAttribute("aria-checked", "true");
+    // One value, not a copy: reopening shows what was chosen, and the roll's snap follows it.
+    await openSettingsPage(page, "Piano roll");
+    await expect(grid.getByRole("radio", { name: "1/8T" })).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("button", { name: "Close settings" }).tap();
+    await openSettingsPage(page, "Arrangement");
+    await expect(
+      page.getByRole("radiogroup", { name: "Arrangement snap" }).getByRole("radio", { name: "Bar" }),
+    ).toHaveAttribute("aria-checked", "true");
   });
 
   test("three tabs switch places, and the Studio keeps its editor behind them (MOBILE-19)", async ({ page }) => {
@@ -1540,7 +1546,7 @@ test.describe("phone, landscape", () => {
     expect(roll.width, "and the full width").toBeGreaterThan(700);
   });
 
-  test("the velocity lane starts folded away on touch, and the menu brings it back", async ({ page }) => {
+  test("the velocity lane starts folded away on touch, and its setting brings it back", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
     await setDetent(page, "full");
@@ -1550,8 +1556,9 @@ test.describe("phone, landscape", () => {
     // so on touch the lane is off until it is asked for.
     const lane = page.getByTitle("Velocity - drag a bar");
     await expect(lane).toBeHidden();
-    await openTools(page, "Notes");
-    await page.getByRole("menuitemradio", { name: /Velocity lane/i }).click();
+    await openSettingsPage(page, "Piano roll");
+    await page.getByRole("radiogroup", { name: "Velocity lane" }).getByRole("radio", { name: "On" }).click();
+    await page.getByRole("button", { name: "Close settings" }).tap();
     await expect(lane).toBeVisible();
   });
 

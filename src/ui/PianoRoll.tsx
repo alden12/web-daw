@@ -42,13 +42,21 @@ import { newNoteId } from "../audio/commands/ids";
 import { clamp } from "../util";
 import { beginPointerDrag } from "./pointerDrag";
 import { useAnimationFrame } from "./useAnimationFrame";
-import { usePersistentBoolean, usePersistentNumber } from "./usePersistent";
+import { usePersistentNumber } from "./usePersistent";
 import { Ruler } from "./timeline/Ruler";
 import { beatToX, floorBeat, snapBeat, snapDelta, xToBeat } from "./timeline/timeGrid";
 import { anchorZoomX, anchorZoomY } from "./timeline/anchoredZoom";
 import { usePinchZoom, type PinchGesture } from "./usePinchZoom";
-import { GRID_DIVISIONS, FINEST_DIVISION, quantizeNotes } from "../audio/sequencer/quantize";
-import { QUANT_KEYS } from "./quantizeSettings";
+import { GRID_DIVISIONS, quantizeNotes } from "../audio/sequencer/quantize";
+import {
+  STRENGTH_OPTIONS,
+  useQuantizeEnds,
+  useQuantizeOnRecord,
+  useQuantizeStrength,
+  useRollGrid,
+  useRollSnapOn,
+  useVelocityLane,
+} from "./editorPrefs";
 import { Menu, type MenuItem } from "./Menu";
 import { ObjectHandles } from "./editing/ObjectHandles";
 import { Button } from "./controls/Button";
@@ -72,10 +80,6 @@ const RULER_H = 22; // px - matches Ruler's height, for the label-gutter corner 
 const ZOOM_X = { min: 24, max: 240 };
 const ZOOM_Y = { min: 7, max: 28 };
 const VEL = { min: 24, max: 160 };
-
-// The note-grid choices (incl. triplets) come from the one shared list, so the snap
-// dropdown and the quantize action always offer the same resolutions.
-const STRENGTH_OPTIONS = [0.25, 0.5, 0.75, 1];
 
 /**
  * How the roll's pitch rows are labelled, tinted, and framed. The default is the
@@ -200,30 +204,20 @@ export function PianoRoll({
 
   const [pxPerBeat, setPxPerBeat] = usePersistentNumber("corrente:roll-zoom-x", 64, ZOOM_X.min, ZOOM_X.max);
   const [rowH, setRowH] = usePersistentNumber("corrente:roll-zoom-y", 12, ZOOM_Y.min, ZOOM_Y.max);
-  const [snapDiv, setSnapDiv] = usePersistentNumber(QUANT_KEYS.grid, 0.25, FINEST_DIVISION, 1);
-  const [snapOn, setSnapOn] = usePersistentBoolean("corrente:roll-snap-on", true);
+  const [snapDiv, setSnapDiv] = useRollGrid();
+  const [snapOn, setSnapOn] = useRollSnapOn();
   const [velH, setVelH] = usePersistentNumber("corrente:roll-vel-height", 56, VEL.min, VEL.max);
   // Collapsible, because on a short viewport (a phone in landscape leaves the roll ~250px)
-  // a 56px lane plus the ruler is most of what there is, and the notes lose the room.
-  // Toggled from the roll's settings menu, so it is reachable in both shells.
-  //
-  // **Closed by default on touch**, where the roll is sharing a sheet with the pads and 56px
-  // is a whole row of them. Velocity is not lost by hiding it: it renders as note fill
-  // strength, and editing it per note belongs in the note's own menu on touch (MOBILE-7).
-  //
-  // Remembered per tier (MOBILE-18). `compact` only decides the *initial* value, so one shared
-  // key meant opening the lane on a desktop pinned it open on the phone too, where it is exactly
-  // the thing that does not fit. The two screens want different answers, so they get their own.
-  const [velOpen, setVelOpen] = usePersistentBoolean(
-    compact ? "corrente:roll-vel-open:compact" : "corrente:roll-vel-open",
-    !compact,
-  );
+  // a 56px lane plus the ruler is most of what there is, and the notes lose the room. Toggled
+  // from the roll's tools menu on desktop and the Piano roll settings page on touch; closed by
+  // default on touch (see `useVelocityLane`).
+  const [velOpen, setVelOpen] = useVelocityLane(compact);
 
   // Quantize settings (the grid is the snap-div above). Strength: how far notes pull
   // toward the grid. Ends: snap note ends too. onRecord: snap takes as they're captured.
-  const [quantStrength, setQuantStrength] = usePersistentNumber(QUANT_KEYS.strength, 1, 0, 1);
-  const [quantEnds, setQuantEnds] = usePersistentBoolean(QUANT_KEYS.ends, false);
-  const [quantOnRecord, setQuantOnRecord] = usePersistentBoolean(QUANT_KEYS.onRecord, false);
+  const [quantStrength, setQuantStrength] = useQuantizeStrength();
+  const [quantEnds, setQuantEnds] = useQuantizeEnds();
+  const [quantOnRecord, setQuantOnRecord] = useQuantizeOnRecord();
 
   // Measure the scroll viewport so the velocity lane can never take most of it. Same
   // guard as the workbench puts on the device rack: a persisted size competing with a
@@ -844,15 +838,14 @@ export function PianoRoll({
     velocityItem,
   ];
 
-  // Touch gets the zoom buttons as menu entries too, since the toolbar is gone there.
-  // Each closes the menu, so they are a fallback rather than the gesture: pinch-zoom is
-  // the real answer and belongs to MOBILE-2.
+  // Touch keeps only the actions here: the settings (snap, grid, quantize, velocity lane) are on
+  // the settings panel's Piano roll page there (MOBILE-19.4), where a small screen looks for them.
+  // The zoom entries are a fallback for pinch-zoom rather than the gesture (MOBILE-2); each closes
+  // the menu.
   usePublishSurfaceControls(
     "notes",
     [
-      ...gridItems,
-      { label: "Quantize", submenu: quantizeItems },
-      velocityItem,
+      quantizeItems[0],
       {
         label: "Zoom",
         submenu: [

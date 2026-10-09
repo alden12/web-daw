@@ -8157,3 +8157,21 @@ projects:
         id: 01a12246-81d0-7612-a250-4e836b5325f6
         created_at: 2026-10-09T20:06:48.528Z
         updated_at: 2026-10-09T20:06:48.528Z
+      - ref: MOBILE-19.4
+        area: MOBILE
+        title: "Editor settings move to the settings panel on touch: Arrangement and Piano roll pages"
+        status: review
+        sort_path: "000019.000004"
+        parent: MOBILE-19
+        deps:
+          - MOBILE-19.2
+        body: |-
+          On a phone, the arrangement's and the piano roll's settings filled the tools menus beside each surface, nested two deep, on a screen with room for neither. A small-screen user looks for settings in settings (user request, 2026-10-09).
+
+          - **Touch-only settings pages**, Arrangement (snap on/off, snap to) and Piano roll (snap, grid, quantize strength, quantize note ends, auto-quantize recordings, velocity lane), in the settings panel after Timing.
+          - **The tools menus keep the actions**: arrangement = zoom + add group / new track; notes = quantize now + zoom.
+          - **Desktop unchanged**: the settings stay in each surface's toolbar menu, beside their use.
+          - **One value, not a copy**: the preferences are hooks over their persisted keys in `src/ui/editorPrefs.ts`, used by the surfaces and the pages alike.
+        id: 01a122a3-258e-7348-bfee-84e007432011
+        created_at: 2026-10-09T21:47:59.758Z
+        updated_at: 2026-10-09T21:47:59.758Z

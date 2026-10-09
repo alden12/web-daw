@@ -125,20 +125,20 @@ test.describe("placement", () => {
     // The arrangement's tools (MOBILE-19), in the timeline's top-left corner: a flyout opened
     // near the left edge, which is where a flyout most wants to run off the screen.
     await page.getByRole("button", { name: "Arrangement tools" }).tap();
-    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
+    await page.getByRole("menuitem", { name: "Zoom", exact: true }).tap();
     // Hover is a mouse idea, and a tap ends with the same events a hover-out does. A flyout
     // opened by a tap has to survive the finger that opened it leaving.
-    await liftFinger(page, "Snap to");
+    await liftFinger(page, "Zoom");
 
     // Polls, so no fixed wait for the flyout to open and settle.
     const levels = await settledPopoverBoxes(page, 2);
     expect(levels, "both levels open at once").toHaveLength(2);
 
-    await page.getByRole("menuitemradio", { name: "1/2", exact: true }).tap();
+    const zoom = () => page.evaluate(() => localStorage.getItem("corrente:arr-zoom"));
+    const before = await zoom();
+    await page.getByRole("menuitem", { name: "Zoom in", exact: true }).tap();
     await expect(popovers(page)).toHaveCount(0); // choosing dismisses the whole tree
-    await page.getByRole("button", { name: "Arrangement tools" }).tap();
-    await page.getByRole("menuitem", { name: "Snap to", exact: true }).tap();
-    await expect(page.getByRole("menuitemradio", { name: "1/2", exact: true })).toHaveAttribute("aria-checked", "true");
+    await expect.poll(zoom).not.toBe(before);
   });
 
   /**
@@ -156,7 +156,7 @@ test.describe("placement", () => {
 
     // The resize triggers a re-place, so the box has to be read once that has run.
     await settledPopoverBoxes(page, 1);
-    await expect(page.getByRole("menuitem", { name: "Quantize", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /^Quantize/ })).toBeVisible();
   });
 
   test("a menu too tall for the viewport scrolls instead of running off it", async ({ page }) => {
