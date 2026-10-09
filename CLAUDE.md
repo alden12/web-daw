@@ -113,8 +113,10 @@ Comments in the codebase cite it directly: a bare ticket ref (`DAW-10`, `HOST-6.
     reaches it locally, where the dev stub stands in for sign-in.
   - **`yarn start`** - the *same server as `yarn api`* with no watch. Production entry
     (Fly runs this). Not for local work.
-  - **`yarn server`** - the **MCP** server, spawned by Claude Code over stdio per
-    `.mcp.json`. Never run by hand; it talks MCP on stdout and would just sit there.
+  - **`yarn mcp-server`** - the **local MCP** server. Claude Code spawns it over stdio from
+    `.mcp.json`, which calls `tsx server/index.ts` directly (yarn's banner on stdout would
+    corrupt the MCP stream). Never run by hand; it talks MCP on stdout and would just sit there.
+    If it dies, reconnect it from Claude Code's `/mcp` menu.
 
 ## CI
 
