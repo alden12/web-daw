@@ -12,7 +12,7 @@ import { effectInfos } from "../../audio/effects/catalog";
 import { midiDeviceInfos } from "../../audio/midi/device/catalog";
 import { FACTORY_PATCHES } from "../../audio/patches/factory";
 import type { Patch } from "../../audio/patches/library";
-import { TAG_KEYS, type Tag } from "../../audio/tags";
+import { byTagOrder, type Tag } from "../../audio/tags";
 
 export type ExploreCategory = "favourites" | "instruments" | "patches" | "effects" | "midi" | "samples";
 export type ItemCategory = Exclude<ExploreCategory, "favourites">;
@@ -135,9 +135,9 @@ export function matchesQuery(item: ExploreItem, query: string): boolean {
   );
 }
 
-/** The tags at least one of `items` carries, in vocabulary order: the chips worth offering. */
+/** Every tag `items` carry, known ones first in vocabulary order, then the rest A to Z. */
 export const tagsIn = (items: ExploreItem[]): Tag[] =>
-  TAG_KEYS.filter((tag) => items.some((item) => item.tags.includes(tag)));
+  [...new Set(items.flatMap((item) => item.tags))].sort(byTagOrder);
 
 /** Whether an item carries every one of `tags` (picked chips narrow together). */
 export const hasTags = (item: ExploreItem, tags: readonly Tag[]) => tags.every((tag) => item.tags.includes(tag));
@@ -152,7 +152,7 @@ export const CHIP_LIMIT = 8;
  * A tag's score is the smaller side of the cut it makes, so one on half the items scores highest,
  * and one on every item (which narrows nothing) or on none scores zero and is left out. Picking a
  * tag shrinks the list, so the row re-ranks to the tags that go with it: drilling down rather than
- * a flat menu. Ties keep vocabulary order (the sort is stable), which puts roles first.
+ * a flat menu. Ties keep `tagsIn`'s order (the sort is stable), which puts known roles first.
  *
  * Counting is a pass per tag over what is on screen, cheap at any size this list will reach. The
  * published catalogue (COMM-1.9.2 on) moves the counting server-side, and usage (COMM-1.2's
@@ -163,7 +163,8 @@ export function rankTags(items: ExploreItem[], picked: readonly Tag[], limit = C
     const count = items.filter((item) => item.tags.includes(tag)).length;
     return Math.min(count, items.length - count);
   };
-  const offered = TAG_KEYS.filter((tag) => !picked.includes(tag))
+  const offered = tagsIn(items)
+    .filter((tag) => !picked.includes(tag))
     .map((tag) => ({ tag, score: split(tag) }))
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score)

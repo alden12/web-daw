@@ -70,6 +70,19 @@ describe("tagsIn", () => {
   });
 });
 
+describe("tags outside the known vocabulary", () => {
+  const custom: ExploreItem = { ...named("Glass Pad"), key: "custom", tags: ["pad", "shoegaze", "airy"] };
+
+  it("are offered, after the known ones", () => {
+    expect(tagsIn([custom])).toEqual(["pad", "airy", "shoegaze"]);
+  });
+
+  it("are searchable and filterable like any other", () => {
+    expect(matchesQuery(custom, "#shoe")).toBe(true);
+    expect(hasTags(custom, ["shoegaze"])).toBe(true);
+  });
+});
+
 describe("rankTags", () => {
   const item = (name: string, tags: ExploreItem["tags"]): ExploreItem => ({
     key: name,
