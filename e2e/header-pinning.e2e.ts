@@ -23,16 +23,19 @@ test.describe("tablet", () => {
   test("the headers scroll away while a panel is docked beside the arrangement", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    await expect.poll(() => headerPosition(page)).toBe("sticky");
 
-    // A tablet opens with the library docked, which leaves the timeline ~736px - a 220px
-    // pinned column there is a header with a sliver beside it, not an arrangement.
-    await expect(page.getByRole("complementary", { name: "Library" })).toBeVisible();
-    expect(await headerPosition(page)).not.toBe("sticky");
+    // Docking the agent leaves the timeline ~690px - a 220px pinned column there is a header
+    // with a sliver beside it, not an arrangement.
+    await page.getByRole("button", { name: "Agent" }).tap();
+    await expect(page.getByRole("complementary", { name: "Agent" })).toBeVisible();
+    await expect.poll(() => headerPosition(page)).not.toBe("sticky");
 
     // Close it and the room comes back, so the headers pin again - the point being that the
     // answer follows the layout rather than the device.
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
-    await expect(page.getByRole("complementary", { name: "Library" })).toHaveCount(0);
+    // The top bar's ✦ (the docked panel has an "Agent" control of its own).
+    await page.getByRole("button", { name: "Agent" }).first().tap();
+    await expect(page.getByRole("complementary", { name: "Agent" })).toHaveCount(0);
     await expect.poll(() => headerPosition(page)).toBe("sticky");
   });
 });

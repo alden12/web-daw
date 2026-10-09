@@ -44,6 +44,10 @@ const segment = (page: Page, name: string) => sheet(page).getByRole("radio", { n
 const grabber = (page: Page) => page.getByRole("slider", { name: "Editor height" });
 const trackHeader = (page: Page) => page.locator("[data-track-id]").first().locator("> div").first();
 const detentOf = (page: Page) => sheet(page).getAttribute("data-detent");
+/** The bottom tab bar (MOBILE-19), which the editor sheet now sits on rather than the screen edge. */
+const tabBar = (page: Page) => page.getByRole("navigation", { name: "Places" });
+const tab = (page: Page, name: string) => tabBar(page).getByRole("button", { name, exact: true });
+const tabBarTop = async (page: Page) => (await tabBar(page).boundingBox())!.y;
 const pads = (page: Page) => page.locator('[data-section="pads"]');
 const pad = (page: Page, name: string) => pads(page).getByRole("button", { name, exact: true });
 
@@ -606,8 +610,6 @@ test.describe("phone", () => {
   test("every edge of the shell is padded back from the display's insets", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await page.getByRole("button", { name: "Library" }).tap();
-
     const INSETS = { top: 59, bottom: 34, left: 12, right: 21 };
     await page.evaluate((insets) => {
       (window as unknown as { simulateInsets: (i: typeof insets) => void }).simulateInsets(insets);
@@ -625,17 +627,20 @@ test.describe("phone", () => {
     expect(await padding(topBar, "left")).toBe(`${INSETS.left}px`);
     expect(await padding(topBar, "right")).toBe(`${INSETS.right}px`);
 
-    // The editor sheet, abspos against the workspace and so given nothing by its padding.
+    // The editor sheet, abspos against the workspace and so given nothing by its padding. Its
+    // foot no longer reaches the display's edge - the tab bar does, and carries that inset.
     const editor = sheet(page);
-    expect(await padding(editor, "bottom")).toBe(`${INSETS.bottom}px`);
     expect(await padding(editor, "left")).toBe(`${INSETS.left}px`);
+    expect(await padding(tabBar(page), "bottom")).toBe(`${INSETS.bottom}px`);
+    expect(await padding(tabBar(page), "left")).toBe(`${INSETS.left}px`);
 
-    // The library sheet, abspos against the shell for the same reason. Only the outer side
+    // The agent sheet, abspos against the shell for the same reason. Only the outer side
     // matters horizontally - its inner edge faces the app, not the display.
-    const library = page.getByRole("dialog", { name: "Library" });
-    expect(await padding(library, "top")).toBe(`${INSETS.top}px`);
-    expect(await padding(library, "bottom")).toBe(`${INSETS.bottom}px`);
-    expect(await padding(library, "left")).toBe(`${INSETS.left}px`);
+    await page.getByRole("button", { name: "Agent" }).tap();
+    const agent = page.getByRole("dialog", { name: "Agent" });
+    expect(await padding(agent, "top")).toBe(`${INSETS.top}px`);
+    expect(await padding(agent, "bottom")).toBe(`${INSETS.bottom}px`);
+    expect(await padding(agent, "right")).toBe(`${INSETS.right}px`);
   });
 
   test("swaps in the touch shell: the arrangement, with an editor sheet over it", async ({ page }) => {
@@ -670,7 +675,7 @@ test.describe("phone", () => {
     // Still a sheet over a live arrangement, not a full-screen editor.
     const box = (await sheet(page).boundingBox())!;
     expect(box.height, "leaves the arrangement half the screen").toBeLessThan(PHONE.height * 0.7);
-    expect(box.y + box.height, "and sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
+    expect(Math.abs(box.y + box.height - (await tabBarTop(page))), "and sits on the tab bar").toBeLessThan(2);
   });
 
   test("minimised is the preview bar, and a tap on it opens the sheet (MOBILE-19.1)", async ({ page }) => {
@@ -681,7 +686,7 @@ test.describe("phone", () => {
     // The header and nothing else: the track, a glance at its clip, and the way back up.
     const box = (await sheet(page).boundingBox())!;
     expect(box.height, "minimised is just the header").toBeLessThan(80);
-    expect(box.y + box.height, "and it sits on the bottom edge").toBeGreaterThan(PHONE.height - 4);
+    expect(Math.abs(box.y + box.height - (await tabBarTop(page))), "and it sits on the tab bar").toBeLessThan(2);
     await expect(segment(page, "Edit")).toHaveCount(0);
 
     await sheet(page).getByRole("button", { name: "Open the editor" }).tap();
@@ -704,11 +709,10 @@ test.describe("phone", () => {
     await dismissStart(page);
     await setDetent(page, "peek");
 
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
+    await tab(page, "Explore").tap();
     // The row's "+", not the row itself: a primary tap applies the instrument to the
-    // selected track, where "+" adds a new one and selects it.
+    // selected track, where "+" adds a new one and selects it. Taking it goes back to the Studio.
     await page.getByRole("button", { name: "Add a Sampler track", exact: true }).tap();
-    await page.keyboard.press("Escape");
 
     // A new selection is a request to edit that track, so the sheet meets you at Half.
     await expect.poll(() => detentOf(page)).toBe("half");
@@ -999,7 +1003,7 @@ test.describe("phone", () => {
     await expect.poll(() => detentOf(page)).not.toBe("peek");
     await page.waitForTimeout(500);
     const box = (await sheet(page).boundingBox())!;
-    expect(box.y + box.height, "still anchored to the bottom edge").toBeGreaterThan(PHONE.height - 4);
+    expect(Math.abs(box.y + box.height - (await tabBarTop(page))), "still anchored to the tab bar").toBeLessThan(2);
   });
 
   test("full covers the whole workspace (MOBILE-19.1)", async ({ page }) => {
@@ -1165,38 +1169,47 @@ test.describe("phone", () => {
     await expect(velocity()).toHaveAttribute("aria-checked", "true");
   });
 
-  test("the library opens as a sheet from the left and closes again", async ({ page }) => {
+  test("three tabs switch places, and the Studio keeps its editor behind them (MOBILE-19)", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    await expect(tab(page, "Studio")).toHaveAttribute("aria-current", "page");
+    await expect(sheet(page)).toBeVisible();
 
-    const panel = page.getByRole("dialog", { name: "Library" });
-    await expect(panel).toHaveCount(0); // lazily mounted: never opened, never built
+    await tab(page, "Explore").tap();
+    await expect(page.getByRole("navigation", { name: "Explore views" })).toBeVisible();
+    await expect(page.getByText("Subtractive", { exact: true })).toBeVisible();
+    await expect(sheet(page)).toBeHidden();
 
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
-    await expect(panel).toBeVisible();
-    await expect(panel.getByRole("navigation", { name: "Library views" })).toBeVisible();
-    await expect(panel.getByText("Subtractive")).toBeVisible();
+    await tab(page, "Projects").tap();
+    await expect(page.getByRole("navigation", { name: "Projects views" })).toBeVisible();
 
-    await page.keyboard.press("Escape");
-    // Still mounted (so reopening is instant) but inert and out of reach.
-    await expect(panel).toHaveAttribute("inert", "");
+    // Hidden, not unmounted: the sheet comes back at the detent it was left at.
+    await tab(page, "Studio").tap();
+    await expect(sheet(page)).toBeVisible();
+    expect(await detentOf(page)).toBe("half");
   });
 
-  test("picking from the library closes it, so you can see what it just did", async ({ page }) => {
+  test("picking from Explore goes back to the Studio, so you can see what it just did", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    await expect(sheet(page).getByText("subtractive", { exact: true })).toBeVisible();
 
-    const panel = page.getByRole("dialog", { name: "Library" });
-    const sheetSubtitle = sheet(page).getByText("subtractive", { exact: true });
-    await expect(sheetSubtitle).toBeVisible();
+    await tab(page, "Explore").tap();
+    await page.getByRole("button", { name: "FM", exact: true }).tap();
 
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
-    await panel.getByRole("button", { name: "FM", exact: true }).tap();
-
-    // The sheet it changed is behind the library on a phone, so the library gets out of the
-    // way: without this the instrument swaps under a full-screen panel and nothing happens.
-    await expect(panel).toHaveAttribute("inert", "");
+    // The track it changed is in the Studio, so that is where you land; staying on a
+    // full-screen tab would show nothing happening.
+    await expect(tab(page, "Studio")).toHaveAttribute("aria-current", "page");
     await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
+  });
+
+  test("a search typed from Projects shows its results in Explore", async ({ page }) => {
+    await page.goto("/");
+    await dismissStart(page);
+    await tab(page, "Projects").tap();
+    await page.getByRole("searchbox", { name: /search the library/i }).fill("fm");
+    await expect(tab(page, "Explore")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("button", { name: "FM", exact: true })).toBeVisible();
   });
 
   test("the pads sit under the roll, in the key they say they are in", async ({ page }) => {
@@ -1507,33 +1520,19 @@ test.describe("phone", () => {
     expect(box.y + box.height).toBeLessThanOrEqual(PHONE.height);
   });
 
-  test("the agent shares the library panel rather than opening a second one", async ({ page }) => {
+  test("the agent is a top-bar button, opening a sheet over the app", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
 
     const composer = page.getByRole("textbox", { name: /message the agent/i });
-    const librarySearch = page.getByRole("searchbox", { name: /search the library/i });
-
-    // Not in the top bar any more: a phone has one bar for the whole app, and the agent is
-    // the control you open deliberately rather than reach for mid-gesture.
-    await expect(page.getByRole("button", { name: "Agent" })).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Library" }).tap();
-    await expect(librarySearch).toBeVisible();
-
-    // It fills the library's own column - there is no second sheet over the top of it.
     await page.getByRole("button", { name: "Agent" }).tap();
+    const agent = page.getByRole("dialog", { name: "Agent" });
+    await expect(agent).toBeVisible();
     await expect(composer).toBeVisible();
-    await expect(librarySearch).toBeHidden();
-    await expect(page.getByRole("dialog", { name: "Agent" })).toHaveCount(0);
 
-    // Back to a library view, and the conversation survives it: an agent run is interruptible
-    // and long-lived, so looking something up must not throw away what is in flight.
-    // `includeHidden`, because a hidden subtree is out of the accessibility tree and the
-    // default `getByRole` would report it as gone when it is only out of sight.
-    await page.getByRole("button", { name: "Instruments" }).tap();
-    await expect(librarySearch).toBeVisible();
-    await expect(composer).toBeHidden();
+    // Closing keeps it mounted, so a conversation in flight survives a look at the work.
+    await page.keyboard.press("Escape");
+    await expect(agent).toHaveAttribute("inert", "");
     await expect(page.getByRole("textbox", { name: /message the agent/i, includeHidden: true })).toHaveCount(1);
   });
 });
@@ -1615,62 +1614,28 @@ test.describe("tablet", () => {
     await expect(desktopRail(page)).toHaveCount(0);
   });
 
-  test("docks the library beside the workspace, and the agent shares that column", async ({ page }) => {
+  test("has the same tabs, and docks the agent beside the workspace", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
+    await expect(tabBar(page)).toBeVisible();
 
-    // Already open: a tablet starts with the library docked, so there is nothing to tap.
-    const library = page.getByRole("complementary", { name: "Library" });
-    await expect(library).toBeVisible();
     // Docked, not a sheet: no scrim, and it sits beside the workspace rather than over it.
-    await expect(page.getByRole("dialog", { name: "Library" })).toHaveCount(0);
-
-    const libraryBox = (await library.boundingBox())!;
-    expect(libraryBox.x, "library on the left").toBeLessThan(TABLET.width / 2);
-
-    // The agent takes over that same column rather than claiming a second one on the right.
-    // A tablet has the width for two, but not for two *and* a workspace worth editing in.
     await page.getByRole("button", { name: "Agent" }).tap();
-    await expect(page.getByRole("textbox", { name: /message the agent/i })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Agent" })).toHaveCount(0);
+    const agent = page.getByRole("complementary", { name: "Agent" });
+    await expect(agent).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Agent" })).toHaveCount(0);
+    expect((await agent.boundingBox())!.x, "agent on the right").toBeGreaterThan(TABLET.width / 2);
 
-    const withAgentBox = (await library.boundingBox())!;
-    expect(withAgentBox.x, "still the left column").toBe(libraryBox.x);
-    expect(withAgentBox.width, "and the same width").toBe(libraryBox.width);
-  });
-
-  test("opens with the library already docked, and the toggle still closes it", async ({ page }) => {
-    await page.goto("/");
-    await dismissStart(page);
-
-    const library = page.getByRole("complementary", { name: "Library" });
-    await expect(library).toBeVisible();
-
-    // Picking does *not* close it here, unlike the phone's sheet: docked, it is beside the
-    // track it changes rather than over it, so there is nothing to get out of the way of and
-    // picking several things in a row keeps working.
-    await library.getByRole("button", { name: "FM", exact: true }).tap();
-    await expect(sheet(page).getByText("fm", { exact: true })).toBeVisible();
-    await expect(library).toBeVisible();
-
-    await page.getByRole("button", { name: "Library", exact: true }).tap();
-    await expect(library).toHaveCount(0);
-  });
-
-  test("keeps the sheet over the workspace, not under the docked panels", async ({ page }) => {
-    await page.goto("/");
-    await dismissStart(page);
-
-    const library = page.getByRole("complementary", { name: "Library" });
-    await expect(library).toBeVisible();
-    const libraryBox = (await library.boundingBox())!;
+    // The sheet belongs to the workspace column: the docked agent owns its full height, so
+    // the sheet must end where the agent starts rather than sliding underneath it.
     const sheetBox = (await sheet(page).boundingBox())!;
-
-    // The sheet belongs to the workspace column: a docked panel owns its full height, so
-    // the sheet must start where the panel ends rather than sliding underneath it.
-    expect(sheetBox.x, "sheet starts after the docked library").toBeGreaterThanOrEqual(
-      libraryBox.x + libraryBox.width - 1,
+    expect(sheetBox.x + sheetBox.width, "sheet ends before the agent").toBeLessThanOrEqual(
+      (await agent.boundingBox())!.x + 1,
     );
+
+    // The top bar's ✦ (the docked panel has an "Agent" control of its own).
+    await page.getByRole("button", { name: "Agent" }).first().tap();
+    await expect(agent).toHaveCount(0);
   });
 });
 

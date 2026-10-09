@@ -22,20 +22,17 @@
  * at the timeline and the roll together, so following the front-most surface meant hiding
  * controls for a panel in plain view (`surfaceControls.ts` has the longer version).
  *
- * The library is reached from the ☰ at the left of the top bar, framed by device: a phone
- * gets a sheet over the app, a tablet **docks** it as a column beside the workspace, because
- * it has the width and covering what you are editing to pick an instrument for it is a phone
- * compromise rather than a virtue.
+ * **That workspace is the Studio, one of three tabs** (MOBILE-19): Projects, Explore and
+ * Studio, along the bottom (`MobileTabs.tsx`). They replaced the ☰ library panel, whose views
+ * they now host between them. The Studio stays mounted while another tab is in front, so the
+ * arrangement's scroll and the editor's state survive a look at the catalogue.
  *
- * **The agent lives inside that same column**, chosen from the rail at its head rather than
- * from a button of its own. It used to be a second sheet (phone) or a second docked column
- * (tablet) on the right, which on a phone meant two full-screen things fighting over one
- * screen, and on a tablet a workspace squeezed between two columns. Neither device has room
- * for two panels *and* something worth editing between them, so there is one panel and the
- * rail says what is in it.
+ * **The agent** is a ✦ in the top bar, beside the account button: a sheet over the app on a
+ * phone, a docked column on a tablet. It used to share the ☰ panel's column, and before that
+ * was a second sheet; with the panel gone it is a button of its own again.
  *
- * The top bar keeps only what you reach for mid-idea - record, play, undo, redo - and
- * everything else is behind ⋮, above the project's tempo, meter and metronome.
+ * The top bar keeps what you reach for mid-idea - record, play, undo, redo - plus the agent and
+ * your account, and everything else is behind ⋮, above the project's tempo, meter and metronome.
  *
  * Under the roll sit collapsible sections (MOBILE-6). The pads are the first, and they are
  * what makes a phone able to *play* rather than only arrange - and so what makes it able to
@@ -45,7 +42,7 @@
  * the second section (it is still the Clips segment above), and the select-then-handles
  * editing model (MOBILE-7).
  */
-import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { LibraryPanel } from "../LibraryPanel";
 import { AgentPanel } from "../AgentPanel";
 import { ArrangementTimeline } from "../ArrangementTimeline";
@@ -56,7 +53,7 @@ import { Menu, type MenuItem } from "../Menu";
 import { IconButton } from "../controls/IconButton";
 import { iconButtonClass } from "../controls/iconButtonStyle";
 import { Segmented } from "../controls/Segmented";
-import { RAIL_ITEMS } from "../libraryViews";
+import type { LibraryView } from "../libraryViews";
 import { TrackEditor } from "../workbench/TrackEditor";
 import { DeviceRack } from "../workbench/DeviceRack";
 import { TrackRecordButton } from "../workbench/TrackRecordButton";
@@ -66,7 +63,7 @@ import { ClipPreview } from "./ClipPreview";
 import { useProject } from "../../audio/project/useProject";
 import { useEditLog } from "../../audio/commands/useEditLog";
 import { useRecorder } from "../useRecorder";
-import { usePersistentBoolean } from "../usePersistent";
+import { usePersistentBoolean, usePersistentString } from "../usePersistent";
 import { useElementHeight } from "../useElementHeight";
 import { useProjectSettingItems } from "../projectSettings";
 import {
@@ -78,7 +75,9 @@ import { readSurfaceControls, subscribeSurfaceControls } from "./surfaceControls
 import { detentsFor, type Detent } from "./detents";
 import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
-import { atLeast, insetPixels, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
+import { atLeast, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
+import { TabBar, ViewRail } from "./MobileTabs";
+import { isViewOf, MOBILE_TABS, TAB_VIEWS, type BrowseTab, type MobileTab } from "./mobileTabViews";
 import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
 import type { DeviceShape } from "./useDeviceShape";
@@ -160,159 +159,6 @@ const UndoIcon = ({ flip = false }: { flip?: boolean }) => (
   </svg>
 );
 
-/**
- * The library's contents: the desktop's icon rail laid on its side across the top, the panel
- * below it, and settings plus the account pinned at the bottom, where the rail also keeps
- * them. Same `RAIL_ITEMS` data the desktop lays out vertically, so both platforms teach the
- * same vocabulary rather than one each.
- *
- * The agent is the first entry on that rail and shares the panel below it. See the file
- * header for why it is not a panel of its own.
- *
- * Wrapper-agnostic on purpose: a phone hosts this in a `Sheet` over the app, a tablet
- * docks it as a column beside the workspace. Only the frame differs.
- */
-function LibraryContent({
-  onClose,
-  onPick,
-  libView,
-  onSelectView,
-  search,
-  onSearch,
-  projectStore,
-  editLog,
-  versionStore,
-  dispatch,
-  onOpenShare,
-  onOpenSettings,
-  onOpenAgent,
-  agentOpen,
-  agent,
-}: Pick<
-  ShellProps,
-  | "libView"
-  | "onSelectView"
-  | "search"
-  | "onSearch"
-  | "projectStore"
-  | "editLog"
-  | "versionStore"
-  | "dispatch"
-  | "onOpenShare"
-  | "onOpenSettings"
-> & {
-  onClose: () => void;
-  /** Set only where this is a sheet: see `LibraryPanel`'s `onPick`. */
-  onPick?: () => void;
-  /** Toggle the agent panel. It is reached from here on every touch layout, not the top bar. */
-  onOpenAgent: () => void;
-  agentOpen: boolean;
-  /** The agent panel itself, which shares this column rather than opening a second one. */
-  agent: ReactNode;
-}) {
-  return (
-    <>
-      <div className="shrink-0 flex items-center gap-2 h-11 px-3 border-b border-line">
-        <span className="text-[13px] font-semibold text-strong">Library</span>
-        <IconButton label="Close library" size="lg" onClick={onClose} className="ml-auto text-lg leading-none">
-          ✕
-        </IconButton>
-      </div>
-      {/* The desktop rail, laid on its side. It used to be a scrolling strip of labelled
-          pills, which is a lot of width spent on words you learn once - and it still did not
-          fit, so the last views were off-screen behind a scroll nobody discovers. Icons fit
-          all of them at once, and touch and desktop end up teaching the same vocabulary
-          instead of two.
-
-          The agent leads it. It is the one entry that is not a library view - it fills this
-          panel with a conversation rather than switching what the panel lists - so it keeps
-          its own voice colour, which separates it from the views without needing a rule
-          drawn between them, and it reports pressed rather than current. */}
-      <nav aria-label="Library views" className="shrink-0 flex items-stretch px-1 border-b border-line bg-frame">
-        <button
-          type="button"
-          onClick={onOpenAgent}
-          aria-pressed={agentOpen}
-          aria-label="Agent"
-          title="Agent"
-          className={`relative flex-1 flex items-center justify-center h-11 cursor-pointer ${
-            agentOpen ? "text-agent" : "text-agent/70 hover:text-agent"
-          }`}
-        >
-          <span
-            className={`absolute left-1.5 right-1.5 bottom-0 h-0.5 rounded-full bg-agent transition-opacity ${
-              agentOpen ? "opacity-100" : "opacity-0"
-            }`}
-          />
-          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-4.5 h-4.5">
-            <path d="M8 1.75l1.6 4.15 4.15 1.6-4.15 1.6L8 13.25l-1.6-4.15L2.25 7.5l4.15-1.6z" />
-          </svg>
-        </button>
-        {RAIL_ITEMS.map((item) => {
-          const selected = item.view === libView && !agentOpen;
-          return (
-            <button
-              key={item.view}
-              type="button"
-              title={item.label}
-              aria-label={item.label}
-              aria-current={selected ? "page" : undefined}
-              onClick={() => onSelectView(item.view)}
-              className={`relative flex-1 flex items-center justify-center h-11 cursor-pointer ${
-                selected ? "text-strong" : "text-faint hover:text-ink"
-              }`}
-            >
-              {/* The desktop rail marks the near edge; laid on its side that is the bottom. */}
-              <span
-                className={`absolute left-1.5 right-1.5 bottom-0 h-0.5 rounded-full bg-you transition-opacity ${
-                  selected ? "opacity-100" : "opacity-0"
-                }`}
-              />
-              {item.icon}
-            </button>
-          );
-        })}
-      </nav>
-      {/* Both mounted, one shown. The agent shares this panel rather than opening a second
-          one: on touch there is only ever room for one column of chrome beside the
-          workspace, so a separate agent sheet was a second thing covering the same space
-          the library was already covering.
-
-          `hidden` rather than a conditional, because an agent run is interruptible and
-          long-lived - unmounting the panel to look something up in the library would throw
-          away the conversation and whatever is in flight. */}
-      <div hidden={agentOpen} className="flex-1 min-h-0 flex flex-col">
-        <LibraryPanel
-          projectStore={projectStore}
-          editLog={editLog}
-          versionStore={versionStore}
-          dispatch={dispatch}
-          activeView={libView}
-          search={search}
-          onSearch={onSearch}
-          onOpenShare={onOpenShare}
-          onPick={onPick}
-        />
-      </div>
-      <div hidden={!agentOpen} className="flex-1 min-h-0 flex flex-col">
-        {agent}
-      </div>
-      {/* The logo is the way into account and settings, as it is at the foot of the desktop rail. */}
-      <div className="shrink-0 flex items-center justify-end px-2 py-1.5 border-t border-line">
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Account and settings"
-          title="Account and settings"
-          className="flex items-center justify-center w-11 h-11 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
-        >
-          <BrandMark size={34} />
-        </button>
-      </div>
-    </>
-  );
-}
-
 /** The minimised sheet's glance: an instrument track's active clip, drawn; an audio clip by name. */
 function sheetPreview(track: Track): ReactNode {
   if (track.kind === "instrument") {
@@ -323,7 +169,7 @@ function sheetPreview(track: Track): ReactNode {
   return active && <span className="block px-2 truncate font-mono text-[10px] text-faint">{active.name}</span>;
 }
 
-/** A docked side column on a tablet: the same contents a phone gets in a sheet. */
+/** A docked side column on a tablet (the agent): the same contents a phone gets in a sheet. */
 function DockedPanel({ side, label, children }: { side: "left" | "right"; label: string; children: ReactNode }) {
   return (
     <aside
@@ -379,15 +225,14 @@ export function MobileShell({
   // reloads like the pads' own open state.
   const [surfaceOpen, setSurfaceOpen] = usePersistentBoolean("corrente:surface-open", true);
   const [surface, setSurface] = useState<EditorSurface>("edit");
+  // Which place is in front. Kept across reloads: you come back to where you were.
+  const [tab, setTab] = usePersistentString<MobileTab>("corrente:mobile-tab", "studio", MOBILE_TABS);
   /**
-   * A tablet opens with the library already docked: there is width for it beside the
-   * workspace, and it is the first thing you reach for on a new project (add a track,
-   * pick an instrument). Only where it *docks* - a phone, or a landscape phone sharing
-   * the tablet tier, would open onto a full-screen overlay instead, which is a worse
-   * first impression than an empty workspace. Same condition as `docked` below, read at
-   * mount only, so toggling it later sticks.
+   * Each browsing tab remembers its own view. Explore's follows the shared library view, since
+   * typing a search is what moves that to the results; Projects keeps its own.
    */
-  const [libraryOpen, setLibraryOpen] = useState(() => shape.tier === "tablet" && !shape.short);
+  const [projectsView, setProjectsView] = useState<LibraryView>(TAB_VIEWS.projects[0]);
+  const exploreView: LibraryView = isViewOf("explore", libView) ? libView : TAB_VIEWS.explore[0];
   const [agentOpen, setAgentOpen] = useState(false);
   const project = useProject(projectStore);
   /**
@@ -444,10 +289,9 @@ export function MobileShell({
   const surfaceGroups = useSyncExternalStore(subscribeSurfaceControls, readSurfaceControls, readSurfaceControls);
 
   /**
-   * On a tablet the library and agent **dock** beside the workspace instead of sliding
-   * over it: there is width for a column, and covering the thing you are editing to pick
-   * an instrument for it is a phone compromise, not a virtue. The same ☰ / ✦ buttons
-   * toggle them either way, so only the presentation differs.
+   * On a tablet the agent **docks** beside the workspace instead of sliding over it: there is
+   * width for a column, and covering what you are editing to talk about it is a phone
+   * compromise, not a virtue. The same ✦ toggles it either way.
    *
    * Not on a phone in landscape: it lands in the same tier at ~844px but is only ~390px
    * tall, and a docked column there would leave the workspace a sliver.
@@ -463,16 +307,10 @@ export function MobileShell({
    */
   const workspaceRef = useRef<HTMLDivElement>(null);
   const workspaceHeight = useElementHeight(workspaceRef);
-  // Less the home indicator's inset, which the sheet pads its foot by: left out, the pads fitted
-  // themselves to room a notched phone does not have and clipped the last row.
-  // Re-read when the workspace resizes, which is when a rotation can change it - a dependency
-  // the lint rule cannot see, since the inset is read from the DOM rather than from it.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const safeBottom = useMemo(() => insetPixels("bottom"), [workspaceHeight]);
-  // Minimised is the header and nothing else, so its height is the header's plus the inset the
-  // sheet pads its foot by.
-  const detents = detentsFor(shape, { workspaceHeight, peekPixels: SHEET_HEADER_HEIGHT + safeBottom });
-  const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT - safeBottom);
+  // Minimised is the header and nothing else. The home indicator's inset is the tab bar's to
+  // carry now, below the workspace, so neither this nor the pads' room need to allow for it.
+  const detents = detentsFor(shape, { workspaceHeight, peekPixels: SHEET_HEADER_HEIGHT });
+  const editorRoom = Math.max(0, workspaceHeight * detents[detent] - SHEET_HEADER_HEIGHT);
 
   // Surface -> the panel it hosts, as an object map so adding one is an entry here plus
   // one in SURFACE_ITEMS, and a missing case is a type error.
@@ -512,7 +350,7 @@ export function MobileShell({
           projectStore={projectStore}
           onRevealSamples={() => {
             onSelectView("samples");
-            setLibraryOpen(true);
+            setTab("explore");
           }}
         />
       </div>
@@ -613,34 +451,30 @@ export function MobileShell({
     />
   );
 
-  // Built once, framed twice: a sheet on a phone, a docked column on a tablet.
-  const library = (
-    <LibraryContent
-      onClose={() => setLibraryOpen(false)}
-      // A sheet closes when you take something out of it, because on a phone it is covering
-      // the track it just changed - swap the instrument behind it and nothing appears to
-      // happen. A docked column is beside that track rather than over it, so it stays, and
-      // picking several things in a row keeps working.
-      onPick={docked ? undefined : () => setLibraryOpen(false)}
-      agentOpen={agentOpen}
-      agent={agent}
-      onOpenAgent={() => setAgentOpen(!agentOpen)}
-      libView={libView}
-      // Picking a view means you want the library, so it stands the agent down. They share
-      // one column now, and the rail is the one control that says which of them is in it.
-      onSelectView={(view) => {
-        setAgentOpen(false);
-        onSelectView(view);
-      }}
-      search={search}
-      onSearch={onSearch}
-      projectStore={projectStore}
-      editLog={editLog}
-      versionStore={versionStore}
-      dispatch={dispatch}
-      onOpenShare={onOpenShare}
-      onOpenSettings={onOpenSettings}
-    />
+  /**
+   * A browsing tab: its views across the top and the library panel under them. Taking something
+   * out of it (an instrument, a device, a sample) goes to the Studio, because what it changed is
+   * there and a full-screen tab in front of it would show nothing happening (MOBILE-9).
+   */
+  const browse = (browseTab: BrowseTab, view: LibraryView, onView: (view: LibraryView) => void) => (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col bg-panel">
+      <ViewRail tab={browseTab} current={view} onSelect={onView} />
+      <LibraryPanel
+        projectStore={projectStore}
+        editLog={editLog}
+        versionStore={versionStore}
+        dispatch={dispatch}
+        activeView={view}
+        search={search}
+        onSearch={(query) => {
+          onSearch(query);
+          // The results view lives in Explore, so a search typed from Projects goes there.
+          if (query && browseTab !== "explore") setTab("explore");
+        }}
+        onOpenShare={onOpenShare}
+        onPick={() => setTab("studio")}
+      />
+    </div>
   );
 
   return (
@@ -659,19 +493,6 @@ export function MobileShell({
           paddingRight: atLeast("0.5rem", SAFE_RIGHT),
         }}
       >
-        <BarButton label="Library" onClick={() => setLibraryOpen(!libraryOpen)} active={libraryOpen}>
-          <svg
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            className="w-5 h-5"
-          >
-            <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
-          </svg>
-        </BarButton>
         <div className="min-w-0 flex-1 overflow-x-auto">
           <TransportBar
             projectStore={projectStore}
@@ -691,6 +512,21 @@ export function MobileShell({
         <BarButton label="Redo" onClick={() => editLog.redo()} disabled={!canRedo}>
           <UndoIcon flip />
         </BarButton>
+        <BarButton label="Agent" tint="agent" onClick={() => setAgentOpen(!agentOpen)} active={agentOpen}>
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="currentColor" className="w-5 h-5">
+            <path d="M8 1.75l1.6 4.15 4.15 1.6-4.15 1.6L8 13.25l-1.6-4.15L2.25 7.5l4.15-1.6z" />
+          </svg>
+        </BarButton>
+        {/* The logo is the way into account and settings, as it is at the foot of the desktop rail. */}
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          aria-label="Account and settings"
+          title="Account and settings"
+          className="shrink-0 flex items-center justify-center w-9 h-9 cursor-pointer hover:[--brand-chip-edge:var(--brand-chip-edge-hover)]"
+        >
+          <BrandMark size={30} />
+        </button>
         <Menu
           items={overflowItems}
           label="More controls"
@@ -709,19 +545,22 @@ export function MobileShell({
         />
       </div>
 
-      {/* The middle band: docked panels flank the workspace on a tablet; on a phone they
-          are sheets over it (rendered below) and this is just the workspace. */}
+      {/* The middle band: whichever tab is in front, with the agent docked beside it on a
+          tablet. On a phone the agent is a sheet over it (rendered below). */}
       <div className="flex-1 min-h-0 flex">
-        {docked && libraryOpen && (
-          <DockedPanel side="left" label="Library">
-            {library}
-          </DockedPanel>
-        )}
-        {/* `relative` because the sheet is absolutely positioned against this column,
-            not the shell: on a tablet it must not run under a docked library or agent,
-            which own their full height. On a phone the column is the whole width anyway. */}
+        {tab === "projects" &&
+          browse("projects", projectsView, (view) => {
+            setProjectsView(view);
+            onSelectView(view);
+          })}
+        {tab === "explore" && browse("explore", exploreView, onSelectView)}
+        {/* The Studio. Hidden rather than unmounted behind the other tabs, so the arrangement's
+            scroll, the editor and an in-progress recording all survive a trip to Explore.
+            `relative` because the sheet is absolutely positioned against this column, not the
+            shell: on a tablet it must not run under the docked agent, which owns its height. */}
         <div
           ref={workspaceRef}
+          hidden={tab !== "studio"}
           className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
           // For the arrangement, which is an ordinary flex child. The editor sheet is
           // absolutely positioned against this box and so is *not* inset by this padding -
@@ -818,17 +657,24 @@ export function MobileShell({
             </EditorSheet>
           )}
         </div>
+        {docked && agentOpen && (
+          <DockedPanel side="right" label="Agent">
+            {agent}
+          </DockedPanel>
+        )}
       </div>
+
+      <TabBar tab={tab} onSelect={setTab} />
 
       {!docked && (
         <Sheet
-          open={libraryOpen}
-          side="left"
-          label="Library"
-          onClose={() => setLibraryOpen(false)}
-          widthClass="w-[86%] max-w-100"
+          open={agentOpen}
+          side="right"
+          label="Agent"
+          onClose={() => setAgentOpen(false)}
+          widthClass="w-[92%] max-w-120"
         >
-          {library}
+          {agent}
         </Sheet>
       )}
     </div>

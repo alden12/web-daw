@@ -18,7 +18,7 @@
 import type { ReactNode } from "react";
 import { DETENT_ORDER, stepDetent, type Detent, type DetentSet } from "./detents";
 import { useSheetDrag } from "./useSheetDrag";
-import { SAFE_BOTTOM, SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
+import { SAFE_LEFT, SAFE_RIGHT } from "./safeArea";
 import { IconButton } from "../controls/IconButton";
 
 /**
@@ -95,8 +95,9 @@ export function EditorSheet({
       className="absolute bottom-0 left-0 right-0 flex flex-col rounded-t-2xl border-t border-line bg-panel shadow-[0_-14px_40px_-12px_var(--sheet-shadow)] will-change-transform"
       // The insets go here rather than as padding on the workspace: an absolutely
       // positioned box resolves against its containing block's *padding box*, so padding
-      // out there would be silently ignored by this element (MOBILE-8).
-      style={{ paddingBottom: SAFE_BOTTOM, paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
+      // out there would be silently ignored by this element (MOBILE-8). Not the bottom one:
+      // the tab bar below the workspace carries that (MOBILE-19).
+      style={{ paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT }}
     >
       {/*
        * The whole header drags, not just the grabber - it is the easiest thing on screen

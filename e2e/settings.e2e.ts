@@ -39,7 +39,6 @@ test.describe("phone", () => {
   test("the logo opens a list of categories, and a category opens with a way back", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await page.getByRole("button", { name: "Library" }).tap();
     await page.getByRole("button", { name: "Account and settings" }).tap();
 
     await page.getByRole("tab", { name: "Appearance" }).tap();
@@ -53,7 +52,6 @@ test.describe("phone", () => {
   test("reopens on the list if that is where you closed it", async ({ page }) => {
     await page.goto("/");
     await dismissStart(page);
-    await page.getByRole("button", { name: "Library" }).tap();
     await page.getByRole("button", { name: "Account and settings" }).tap();
     await page.getByRole("tab", { name: "Appearance" }).tap();
     await page.getByRole("button", { name: "Close settings" }).tap();
