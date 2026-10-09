@@ -72,6 +72,7 @@ import { EditorSheet, SHEET_HEADER_HEIGHT } from "./EditorSheet";
 import { Sheet } from "./Sheet";
 import { atLeast, SAFE_LEFT, SAFE_RIGHT, SAFE_TOP } from "./safeArea";
 import { TabBar, ViewRail } from "./MobileTabs";
+import { openExplorePage } from "../explore/explorePage";
 import { isViewOf, MOBILE_TABS, TAB_VIEWS, type BrowseTab, type MobileTab } from "./mobileTabViews";
 import type { Track } from "../../audio/project/projectStore";
 import type { ShellProps } from "./types";
@@ -223,11 +224,12 @@ export function MobileShell({
   // Which place is in front. Kept across reloads: you come back to where you were.
   const [tab, setTab] = usePersistentString<MobileTab>("corrente:mobile-tab", "studio", MOBILE_TABS);
   /**
-   * Each browsing tab remembers its own view. Explore's follows the shared library view, since
-   * typing a search is what moves that to the results; Projects keeps its own.
+   * Projects follows the shared library view while that is one of its own, since typing a search
+   * is what moves the shared view to the results (and clearing it moves it back); otherwise it
+   * shows the view it was last left on. Explore has the one view.
    */
-  const [projectsView, setProjectsView] = useState<LibraryView>(TAB_VIEWS.projects[0]);
-  const exploreView: LibraryView = isViewOf("explore", libView) ? libView : TAB_VIEWS.explore[0];
+  const [lastProjectsView, setProjectsView] = useState<LibraryView>(TAB_VIEWS.projects[0]);
+  const projectsView: LibraryView = isViewOf("projects", libView) ? libView : lastProjectsView;
   const [agentOpen, setAgentOpen] = useState(false);
   const project = useProject(projectStore);
   /**
@@ -341,7 +343,8 @@ export function MobileShell({
           dispatch={dispatch}
           projectStore={projectStore}
           onRevealSamples={() => {
-            onSelectView("samples");
+            openExplorePage("samples");
+            onSelectView("explore");
             setTab("explore");
           }}
         />
@@ -401,11 +404,7 @@ export function MobileShell({
         dispatch={dispatch}
         activeView={view}
         search={search}
-        onSearch={(query) => {
-          onSearch(query);
-          // The results view lives in Explore, so a search typed from Projects goes there.
-          if (query && browseTab !== "explore") setTab("explore");
-        }}
+        onSearch={onSearch}
         onOpenShare={onOpenShare}
         onPick={() => setTab("studio")}
       />
@@ -474,7 +473,7 @@ export function MobileShell({
             setProjectsView(view);
             onSelectView(view);
           })}
-        {tab === "explore" && browse("explore", exploreView, onSelectView)}
+        {tab === "explore" && browse("explore", "explore", onSelectView)}
         {/* The Studio. Hidden rather than unmounted behind the other tabs, so the arrangement's
             scroll, the editor and an in-progress recording all survive a trip to Explore.
             `relative` because the sheet is absolutely positioned against this column, not the

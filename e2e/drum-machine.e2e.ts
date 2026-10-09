@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { dismissStart } from "./support/app";
+import { dismissStart, openExploreCategory } from "./support/app";
 
 /**
  * The drum machine: a Drum Kit track can be edited either as a pad x step grid ("Pads")
@@ -14,8 +14,9 @@ test("a Drum Kit track shows the step grid; toggling a cell writes a note", asyn
   await page.goto("/");
   await dismissStart(page);
 
-  // Instruments is the default view; applying Drum Kit to the (selected) seed track
+  // Applying Drum Kit (from Explore's Instruments) to the (selected) seed track
   // loads the built-in pads. Switch the editor to Pads to get the step grid.
+  await openExploreCategory(page, "Instruments");
   await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
   await expect(page.getByRole("tablist").getByText("drumkit", { exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Pads", exact: true }).click();
@@ -36,6 +37,7 @@ test("a Drum Kit track can switch to the piano roll (Keys), editing the same cli
   await page.goto("/");
   await dismissStart(page);
 
+  await openExploreCategory(page, "Instruments");
   await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
 
   // Place a kick hit in the step grid (writes a note into the clip).
@@ -62,6 +64,7 @@ test("on a phone the drum roll gets the touch treatment, like any other roll (MO
   await page.goto("/");
   await dismissStart(page);
 
+  await openExploreCategory(page, "Instruments");
   await page.getByRole("button", { name: "Drum Kit", exact: true }).click();
   await page.getByRole("radio", { name: "Keys", exact: true }).click();
   await expect(page.getByTestId("piano-grid")).toBeVisible();

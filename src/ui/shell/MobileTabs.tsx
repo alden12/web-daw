@@ -6,9 +6,9 @@
  * does. These switch between *places* - your projects, the catalogue, the workspace - and the
  * Studio keeps the arrangement and editor sheet together exactly as before.
  *
- * Until Explore (COMM-1.9.1) and the projects tab (MOBILE-19.3) get their own designs, each tab
- * hosts the library views it inherits from the old ☰ panel: Projects has the project tree and its
- * history, Explore has search and the catalogues. `TAB_VIEWS` (`mobileTabViews.ts`) is that split.
+ * Projects hosts the library views it inherits from the old ☰ panel (the project tree, its
+ * history, search) until it gets its own design (MOBILE-19.3); Explore is the one Explore view
+ * (COMM-1.9.1). `TAB_VIEWS` (`mobileTabViews.ts`) is that split.
  */
 import type { ReactNode } from "react";
 import { RAIL_ITEMS, type LibraryView } from "../libraryViews";
@@ -105,6 +105,8 @@ export function ViewRail({
   onSelect: (view: LibraryView) => void;
 }) {
   const items = RAIL_ITEMS.filter((item) => isViewOf(tab, item.view));
+  // A tab with one view has nothing to switch between.
+  if (items.length < 2) return null;
   return (
     <nav
       aria-label={`${TAB_ITEMS[tab].label} views`}

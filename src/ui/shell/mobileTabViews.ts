@@ -7,10 +7,13 @@ import type { LibraryView } from "../libraryViews";
 export type MobileTab = "projects" | "explore" | "studio";
 export const MOBILE_TABS: readonly MobileTab[] = ["projects", "explore", "studio"];
 
-/** The library views each non-Studio tab hosts. The first is where the tab opens. */
+/**
+ * The library views each non-Studio tab hosts. The first is where the tab opens. Search lives in
+ * Projects, beside the tracks it finds: Explore searches its own contents from its own box.
+ */
 export const TAB_VIEWS = {
-  projects: ["project", "activity"],
-  explore: ["instruments", "effects", "patches", "samples", "search"],
+  projects: ["project", "activity", "search"],
+  explore: ["explore"],
 } as const satisfies Record<Exclude<MobileTab, "studio">, readonly LibraryView[]>;
 
 export type BrowseTab = keyof typeof TAB_VIEWS;

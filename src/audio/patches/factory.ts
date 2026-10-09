@@ -11,6 +11,7 @@
  * ear-knowledge to Nimbus's schema, with the chorus effect bundled where the sound
  * wants that lush ensemble shimmer. Names are our own.
  */
+import type { Tag } from "../tags";
 import { listPatches, type Patch, type PatchEffect } from "./library";
 
 /** Juno-style chorus settings for the lush presets (bundled as the one effect). */
@@ -21,6 +22,7 @@ const chorusII: PatchEffect = { type: "chorus", params: { "chorus.rate": 1.6, "c
 function nimbus(
   category: string,
   name: string,
+  tags: readonly Tag[],
   params: Patch["params"],
   effects: PatchEffect[] = [],
 ): Patch & { category: string } {
@@ -30,6 +32,7 @@ function nimbus(
     author: "you",
     builtin: true,
     category,
+    tags,
     instrumentType: "nimbus",
     params,
     effects,
@@ -41,7 +44,7 @@ function nimbus(
 // fills the rest from schema defaults when the patch is applied.
 export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   // --- Bass -----------------------------------------------------------------
-  nimbus("Bass", "Deep Sub", {
+  nimbus("Bass", "Deep Sub", ["bass", "dark", "soft"], {
     "osc.saw": 0.4,
     "osc.sub": 1,
     "osc.pulse": 0,
@@ -55,7 +58,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
     "env.release": 140,
     "amp.level": 0.85,
   }),
-  nimbus("Bass", "Reso Acid", {
+  nimbus("Bass", "Reso Acid", ["bass", "gritty", "retro"], {
     "osc.saw": 0.9,
     "osc.sub": 0.3,
     "filter.cutoff": 340,
@@ -72,6 +75,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Lead",
     "Bright Saw",
+    ["lead", "bright", "aggressive"],
     {
       "osc.saw": 1,
       "osc.pulse": 0.3,
@@ -104,6 +108,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Lead",
     "Hollow PWM",
+    ["lead", "retro"],
     {
       "osc.pulse": 1,
       "osc.pulseWidth": 0.5,
@@ -126,6 +131,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Pad",
     "Warm Strings",
+    ["pad", "warm", "lush"],
     {
       "osc.saw": 0.8,
       "osc.pulse": 0.4,
@@ -146,6 +152,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Pad",
     "Glass Pad",
+    ["pad", "glassy", "airy"],
     {
       "osc.pulse": 0.7,
       "osc.pulseWidth": 0.5,
@@ -167,6 +174,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Keys",
     "Electric Piano",
+    ["keys", "warm", "soft"],
     {
       "osc.pulse": 0.6,
       "osc.saw": 0.3,
@@ -183,7 +191,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
     },
     [chorusI],
   ),
-  nimbus("Keys", "Clav", {
+  nimbus("Keys", "Clav", ["keys", "bright", "retro"], {
     "osc.pulse": 0.9,
     "osc.pulseWidth": 0.3,
     "filter.cutoff": 3500,
@@ -197,7 +205,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
     "amp.level": 0.8,
   }),
   // --- Pluck ----------------------------------------------------------------
-  nimbus("Pluck", "Synth Pluck", {
+  nimbus("Pluck", "Synth Pluck", ["pluck", "bright"], {
     "osc.saw": 0.8,
     "osc.sub": 0.4,
     "filter.cutoff": 2500,
@@ -214,6 +222,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
   nimbus(
     "Brass",
     "Analog Brass",
+    ["lead", "bright", "retro"],
     {
       "osc.saw": 0.9,
       "osc.pulse": 0.5,
@@ -231,7 +240,7 @@ export const FACTORY_PATCHES: (Patch & { category: string })[] = [
     [chorusI],
   ),
   // --- FX -------------------------------------------------------------------
-  nimbus("FX", "Noise Sweep", {
+  nimbus("FX", "Noise Sweep", ["fx", "airy"], {
     "osc.noise": 0.8,
     "osc.saw": 0.2,
     "osc.sub": 0,

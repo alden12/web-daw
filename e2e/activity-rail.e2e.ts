@@ -1,12 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
-import { dismissStart } from "./support/app";
+import { dismissStart, openExploreCategory } from "./support/app";
 
 /**
  * The activity rail + toolbar (the VSCode-style spine). Guards: the rail switches
  * the single library view; clicking the active icon collapses the panel to the
  * rail and it persists across a reload; the toolbar carries undo/redo + MCP; the
  * Project view creates a project that survives a reload; and an empty Sampler
- * picker reveals the Samples view.
+ * picker reveals Explore's Samples page.
  */
 
 test.use({ viewport: { width: 1320, height: 900 } });
@@ -18,11 +18,11 @@ test("the rail switches the single library view", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
-  // Instruments is the default view (its title shows in the panel header).
-  await expect(page.getByText("Instruments", { exact: true })).toBeVisible();
+  // Explore is the default view (its title shows in the panel header).
+  await expect(page.getByText("Explore", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Effects" }).click();
-  await expect(page.getByText("Effects", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Project", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Project menu" })).toBeVisible();
 
   await page.getByRole("button", { name: "Activity" }).click();
   await expect(page.getByRole("combobox", { name: "Activity view" })).toBeVisible();
@@ -33,9 +33,9 @@ test("clicking the active rail icon collapses the panel to the rail, and it pers
   await dismissStart(page);
   expect(await libWidth(page)).toBeGreaterThan(150);
 
-  // Clicking the active (Instruments) icon collapses the panel away (only the rail
+  // Clicking the active (Explore) icon collapses the panel away (only the rail
   // remains, which is now its own full-height column).
-  await page.getByRole("button", { name: "Instruments" }).click();
+  await page.getByRole("button", { name: "Explore", exact: true }).click();
   await expect(libPanel(page)).toHaveCount(0);
 
   // Collapse persists across a reload.
@@ -44,15 +44,17 @@ test("clicking the active rail icon collapses the panel to the rail, and it pers
   await expect(libPanel(page)).toHaveCount(0);
 
   // Selecting a different view reopens the panel on that view.
-  await page.getByRole("button", { name: "Samples" }).click();
+  await page.getByRole("button", { name: "Activity" }).click();
   await expect.poll(() => libWidth(page)).toBeGreaterThan(150);
-  await expect(page.getByText("Samples", { exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Activity view" })).toBeVisible();
 });
 
 test("typing in search jumps to the Search view with grouped results", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
+  // Explore (the default view) searches from its own box, so the library's steps aside there.
+  await page.getByRole("button", { name: "Project", exact: true }).click();
   await page.getByRole("searchbox", { name: "Search the library" }).fill("sampler");
   // The panel switches to the Search view (its title) and the Sampler instrument matches.
   await expect(page.getByText("Search", { exact: true })).toBeVisible();
@@ -90,16 +92,17 @@ test("the project switcher creates a project that survives a reload", async ({ p
   await expect(page.getByRole("menuitemradio")).toHaveCount(2);
 });
 
-test("an empty Sampler picker reveals the Samples view", async ({ page }) => {
+test("an empty Sampler picker reveals the Samples page", async ({ page }) => {
   await page.goto("/");
   await dismissStart(page);
 
-  // Add a Sampler track (Instruments view is the default), then clear its sample.
+  // Apply the Sampler to the seed track, then clear its sample.
+  await openExploreCategory(page, "Instruments");
   await page.getByRole("button", { name: "Sampler", exact: true }).click();
   const picker = page.getByRole("combobox", { name: /Sample/ });
   await picker.selectOption({ label: "None" });
 
   // The empty picker offers a "browse the library" affordance that jumps to Samples.
   await page.getByRole("button", { name: "Browse samples in the library" }).click();
-  await expect(page.getByText("Samples", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Samples", exact: true })).toBeVisible();
 });

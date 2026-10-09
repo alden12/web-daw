@@ -51,3 +51,14 @@ export async function setCountIn(page: Page, choice: "None" | "1 bar" | "2 bars"
   await page.getByRole("radio", { name: choice }).click();
   await page.getByRole("button", { name: "Close settings" }).click();
 }
+
+/**
+ * Open an Explore category page (COMM-1.9.1) from wherever Explore is: home, or another category.
+ * Explore must already be on screen (the desktop library's default view, or the phone's tab).
+ */
+export async function openExploreCategory(page: Page, label: string): Promise<void> {
+  const back = page.getByRole("button", { name: "Back to Explore" });
+  if (await back.isVisible()) await back.click();
+  await page.getByRole("button", { name: new RegExp(`^${label}\\b`) }).click();
+  await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+}

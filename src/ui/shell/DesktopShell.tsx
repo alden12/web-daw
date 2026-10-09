@@ -16,6 +16,7 @@ import { ArrangementTimeline } from "../ArrangementTimeline";
 import { ResizeHandle } from "../ResizeHandle";
 import { usePersistentNumber } from "../usePersistent";
 import type { ShellProps } from "./types";
+import { openExplorePage } from "../explore/explorePage";
 import { KeysPanel } from "../keys/KeysPanel";
 import { useDesktopKeys } from "../keys/useDesktopKeys";
 
@@ -121,7 +122,10 @@ export function DesktopShell({
         recorder={recorder}
         dispatch={dispatch}
         selectedTrack={selectedTrack}
-        onRevealSamples={() => onSelectView("samples")}
+        onRevealSamples={() => {
+          openExplorePage("samples");
+          onSelectView("explore");
+        }}
         mcpStatus={mcpStatus}
         syncStatus={syncStatus}
         agentCollapsed={agentCollapsed}

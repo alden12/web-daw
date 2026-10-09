@@ -14,6 +14,7 @@
 import type { Author } from "../commands/types";
 import type { PatchValues } from "../params/types";
 import { randomUuid } from "../randomUuid";
+import type { Tag } from "../tags";
 
 /** One effect in a saved patch: its type, bypass state, and parameter values. */
 export interface PatchEffect {
@@ -44,6 +45,8 @@ export interface Patch {
   builtin?: boolean;
   /** Optional grouping label for the library (factory presets set this, e.g. "Bass"). */
   category?: string;
+  /** Tags from the vocabulary (`tags.ts`). Factory presets carry them; saved patches have none yet. */
+  tags?: readonly Tag[];
 }
 
 const STORAGE_KEY = "corrente:patches:v1";

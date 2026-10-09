@@ -3358,7 +3358,7 @@ projects:
       - ref: DAW-12.1
         area: DAW
         title: "Chords and scale playing, on any surface: the pads and the QWERTY keyboard"
-        status: review
+        status: done
         sort_path: "000012.000001"
         parent: DAW-12
         body: |
@@ -3398,7 +3398,8 @@ projects:
           Most musical value of the pad follow-ups, and the most self-contained: pure maths plus labels.
         id: 01a06ceb-cf46-7418-a66e-e55aa8a8fbda
         created_at: 2026-09-04T14:56:28.486Z
-        updated_at: 2026-10-09T16:33:59.627Z
+        updated_at: 2026-10-09T21:08:47.195Z
+        closed_at: 2026-10-09T21:08:47.195Z
         comments:
           - body: "**QWERTY surface built (2026-10-09), in review.** Desktop keys panel in the piano roll under the velocity lane (`src/ui/keys/`). All four letter/number rows play in key, by `KeyboardEvent.code`, one line per key with keycap first. The pads' Accidentals switch picks the row mode: on, alternate rows are accidentals up-and-right as on a piano (two octaves); off, each row is an octave and Shift shows the sharps on the same keys, blanking the rest. Chords mode stacks triads and variations. `[` `]` move the octave, +/- set rows drawn (all four always play), a drag strip sets strike velocity. Prototyped and dropped: staggered rows, a pads layout, a timeline placement, Caps Lock, and Shift falling back to flats with merged pads. Voicing and momentary-vs-sticky variations are still open."
             audience: user
@@ -8050,7 +8051,7 @@ projects:
       - ref: MOBILE-19.1
         area: MOBILE
         title: "Editor sheet detents: a minimised preview, half, and fully covered"
-        status: review
+        status: done
         sort_path: "000019.000001"
         parent: MOBILE-19
         body: |-
@@ -8072,12 +8073,18 @@ projects:
           Mockups: the "Corrente Feed Layout" artifact, Studio detent boards.
         id: 01a121c9-b8dd-70bf-a2c6-2bca21840288
         created_at: 2026-10-09T17:50:30.621Z
-        updated_at: 2026-10-09T20:16:29.040Z
+        updated_at: 2026-10-09T21:08:47.135Z
+        closed_at: 2026-10-09T21:08:47.135Z
         comments:
           - body: "Approved mockups: https://claude.ai/artifact/X6xQfnrfcnHspPxXDkNMeY, boards `PhoneSheet` (minimised), `PhoneSheetHalf`, `PhoneSheetFull`."
             audience: user
             id: 01a12243-004b-77fb-beb6-781f793dbcc8
             at: 2026-10-09T20:02:58.763Z
+            actor: claude
+          - body: "The header's detent buttons (expand / minimise / back to half) were removed in #188: they crowded the track title. Routes left: drag, tap the minimised preview to open to half, and ArrowUp/ArrowDown on the title slider. Bring the buttons back if testing shows they're missed."
+            audience: user
+            id: 01a1227f-4004-7002-b194-673a390e88ff
+            at: 2026-10-09T21:08:47.236Z
             actor: claude
       - ref: MOBILE-19.2
         area: MOBILE
