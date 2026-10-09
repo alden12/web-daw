@@ -22,6 +22,13 @@ describe("capturePhrase", () => {
     }
   });
 
+  it("feeds a pass-through device a melody, so its copies have somewhere to go", () => {
+    const { notes, spanSec } = capturePhrase("octavator");
+    // Each melody note and its octave copy, so more than one onset, and none lasting the phrase.
+    expect(new Set(notes.map((note) => note.start)).size).toBeGreaterThan(1);
+    expect(notes.every((note) => note.length < spanSec / 2)).toBe(true);
+  });
+
   it("steps a generator through the phrase once, not twice at its start", () => {
     const { notes } = capturePhrase("arpeggiator", { bars: 2 });
     const starts = notes.map((note) => note.start);

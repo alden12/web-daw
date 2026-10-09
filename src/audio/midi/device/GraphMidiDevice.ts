@@ -59,6 +59,15 @@ export class GraphMidiDevice implements NoteTarget {
     this.strategy = createStrategy(def.transform, ctx);
   }
 
+  /**
+   * Whether this device **generates** notes on a clock of its own (an arpeggiator, a Euclidean
+   * sequencer) rather than transforming each note as it arrives (the octavator's tap). Read off the
+   * strategy, so a new transform kind answers by having a step schedule or not.
+   */
+  get generates(): boolean {
+    return this.strategy.scheduleWindow !== undefined;
+  }
+
   /** Relink to the next target in the chain (the engine calls this on reconcile). */
   setNext(next: NoteTarget): void {
     this.next = next;
