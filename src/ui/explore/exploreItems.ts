@@ -13,6 +13,9 @@ import { midiDeviceInfos } from "../../audio/midi/device/catalog";
 import { FACTORY_PATCHES } from "../../audio/patches/factory";
 import type { Patch } from "../../audio/patches/library";
 import { byTagOrder, type Tag } from "../../audio/tags";
+import { PORTRAIT_KEYS } from "../../audio/portraits/keys";
+import type { Portrait } from "../../audio/portraits/draw";
+import PORTRAITS from "./portraits.json";
 
 export type ExploreCategory = "favourites" | "instruments" | "patches" | "effects" | "midi" | "samples";
 export type ItemCategory = Exclude<ExploreCategory, "favourites">;
@@ -49,6 +52,12 @@ export interface ExploreItem {
   tags: readonly Tag[];
   /** Shipped with the app, so it cannot be deleted. */
   builtin: boolean;
+  /**
+   * Its sound portrait (COMM-1.9.2), drawn from a render of it. Built-ins have one from
+   * `portraits.json` (`yarn portraits`); your patches and samples do not yet, and show the
+   * category's glyph instead.
+   */
+  portrait?: Portrait;
   source: ItemSource;
 }
 
@@ -61,21 +70,21 @@ export function exploreItems({
 }): ExploreItem[] {
   const instruments = pickableInstrumentInfos();
   const instrumentLabel = (type: string) => instruments.find((info) => info.type === type)?.label ?? type;
-  return [
+  const items: ExploreItem[] = [
     ...instruments.map(
       (info): ExploreItem => ({
-        key: `instrument:${info.type}`,
+        key: PORTRAIT_KEYS.instrument(info.type),
         category: "instruments",
         name: info.label,
-        meta: "Instrument",
+        meta: info.custom ? "Instrument · custom" : "Instrument",
         tags: info.tags ?? [],
-        builtin: true,
+        builtin: !info.custom,
         source: { kind: "instrument", type: info.type },
       }),
     ),
     ...[...FACTORY_PATCHES, ...savedPatches].map(
       (patch): ExploreItem => ({
-        key: `patch:${patch.id}`,
+        key: PORTRAIT_KEYS.patch(patch.id),
         category: "patches",
         name: patch.name,
         meta: patch.builtin
@@ -88,18 +97,18 @@ export function exploreItems({
     ),
     ...effectInfos().map(
       (info): ExploreItem => ({
-        key: `effect:${info.type}`,
+        key: PORTRAIT_KEYS.effect(info.type),
         category: "effects",
         name: info.label,
-        meta: "Audio effect",
+        meta: info.custom ? "Audio effect · custom" : "Audio effect",
         tags: info.tags ?? [],
-        builtin: true,
+        builtin: !info.custom,
         source: { kind: "effect", type: info.type },
       }),
     ),
     ...midiDeviceInfos().map(
       (info): ExploreItem => ({
-        key: `midi:${info.type}`,
+        key: PORTRAIT_KEYS.midi(info.type),
         category: "midi",
         name: info.label,
         meta: "MIDI device",
@@ -120,6 +129,7 @@ export function exploreItems({
       }),
     ),
   ];
+  return items.map((item) => ({ ...item, portrait: (PORTRAITS as Record<string, Portrait>)[item.key] }));
 }
 
 /**

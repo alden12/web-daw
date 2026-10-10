@@ -2299,6 +2299,11 @@ projects:
             id: 01a1228c-c77f-71be-8d41-8c5b7adbe655
             at: 2026-10-09T21:23:33.887Z
             actor: claude
+          - body: 'Revised 2026-10-09 (user review of #189): **tags are any string**, not a closed vocabulary. `src/audio/tags.ts` holds the *known* tags (suggested at publish, used by built-ins, and grouping "More tags" into role / character); anything else is equally valid and lists under "Other". Moderation of free-form tags is still a COMM-1.7 concern, but the data model no longer forbids them.'
+            audience: user
+            id: 01a122ba-0e0e-7432-9b9c-7ace3f7576db
+            at: 2026-10-09T22:13:01.070Z
+            actor: claude
       - ref: COMM-1.3
         area: COMM
         title: "The feed: landing page with curated, top and new synths"
@@ -2571,7 +2576,7 @@ projects:
       - ref: COMM-1.9.1
         area: COMM
         title: "Explore on built-ins: home, category tiles, playlist-style category pages, desktop rail"
-        status: review
+        status: done
         sort_path: 000001.000009.000001
         parent: COMM-1.9
         deps:
@@ -2587,7 +2592,8 @@ projects:
           Mockups: `FeedHome`, `FeedCategory`, `FeedDesktop`.
         id: 01a12246-2578-76bc-b8d2-ef13a98b3e25
         created_at: 2026-10-09T20:06:24.888Z
-        updated_at: 2026-10-09T21:23:33.833Z
+        updated_at: 2026-10-09T23:11:11.848Z
+        closed_at: 2026-10-09T23:11:11.848Z
         comments:
           - body: "Built notes: search on the phone moved to the Projects tab (Explore searches its own contents from its own box; the library's box hides on Explore). Tag chips are one horizontal scrolling row everywhere (user feedback: wrapped, they ate the desktop panel). No sort control yet, just an \"A to Z\" caption, since there is one order. No drag-onto-a-track existed in the old views, so none to keep. The open page persists (`corrente:explore-page`), which is how the Sampler's \"browse samples\" link lands on Samples."
             audience: user
@@ -2597,7 +2603,7 @@ projects:
       - ref: COMM-1.9.2
         area: COMM
         title: Sound portrait thumbnails, generated from an isolated render
-        status: to-do
+        status: review
         sort_path: 000001.000009.000002
         parent: COMM-1.9
         deps:
@@ -2610,7 +2616,13 @@ projects:
           - Custom artwork later; this stays the default.
         id: 01a12246-81a3-74b0-beac-eb931b262fbe
         created_at: 2026-10-09T20:06:48.484Z
-        updated_at: 2026-10-09T20:06:48.484Z
+        updated_at: 2026-10-09T22:19:06.852Z
+        comments:
+          - body: 'Built: "build time" is a committed `src/ui/explore/portraits.json` from `yarn portraits` (headless Chromium via the dev-only `__dawRenderPortraits` hook), not a CI build step. A unit test fails if a built-in lacks one. Effects pick by RMS ring length (a 20ms tone burst): over 0.2s draws an envelope (delay, reverb), otherwise an input-vs-output transfer curve. Your saved patches and samples keep the glyph for now. `renderIsolated` is the shared isolated-device render AGENT-4.8 wanted.'
+            audience: user
+            id: 01a122bf-a311-713f-934d-9375e8f2015a
+            at: 2026-10-09T22:19:06.897Z
+            actor: claude
       - ref: COMM-1.9.3
         area: COMM
         title: Favourites (the like button) and one combined search with tags
@@ -2636,6 +2648,7 @@ projects:
           - COMM-1.1
           - COMM-1.2
           - COMM-1.9.3
+          - COMM-1.9.5
         body: |-
           Slice 10 of the Explore work, after publishing (COMM-1.1) and the signals (COMM-1.2):
           - **Most favourited** and **Most added** shelves on Explore home, served by indexed queries (the denormalised favourite counter; add events over 30 days).
@@ -2644,7 +2657,52 @@ projects:
           - Cards show author and counts; agent-built devices are marked.
         id: 01a12246-824e-71b4-8de7-0768248f2153
         created_at: 2026-10-09T20:06:48.654Z
-        updated_at: 2026-10-09T20:06:48.654Z
+        updated_at: 2026-10-09T22:19:06.803Z
+      - ref: COMM-1.9.5
+        area: COMM
+        title: "Explore queries run on the server: paged category pages, search, tag filters and chip counts"
+        status: to-do
+        sort_path: 000001.000009.000005
+        parent: COMM-1.9
+        deps:
+          - COMM-1.1
+          - COMM-1.2
+        body: |-
+          **Why (user, 2026-10-09):** Explore currently builds every item in the browser and filters, sorts and ranks tags there (`exploreItems.ts`: `matchesQuery`, `hasTags`, `rankTags`, `tagsIn`). That's fine for about 30 built-ins, but it breaks down once the published catalogue has real users: every device can't be shipped to every client, and per-render passes over the whole list won't scale. This has to land before the published catalogue does.
+
+          **Shape:**
+          - **One query endpoint** (Hono, beside the sync API), roughly `GET /api/explore?category&q&tags[]&sort&cursor`. It returns a page of items, a total, and the **tag facet counts** for the filtered set.
+          - **Chip ranking moves to the server** with the same rule as `rankTags`: score = min(count, total − count) per tag, picked tags first. That rule is the reference implementation, so unit-test the server version against it.
+          - **Indexes:** GIN on the `tags` array and on a full-text `tsvector` (name, description and tags, as COMM-1.9.4 plans), plus btree on the sort keys (the favourite counter, recent adds, name). Measure, per CLAUDE.md: target p95 under 100ms at 100k published devices, seeded.
+          - **Keyset pagination** (cursor = last sort key + id), not offset. The client pages in with infinite scroll, and long lists get a **virtualised** row list.
+          - **Built-ins and your own things stay local:** catalog devices, factory patches, your saved patches and project samples. The UI reads through one `ExploreSource` seam: a local source (today's pure functions) and a remote one, merged. Local items list first, or interleave by the same sort. Decide when building.
+          - **Offline / no-API builds** (OPFS-only, the HOST-18 demo) keep the local source alone, so Explore works with no server.
+          - Portraits for published devices are stored with each version (COMM-1.9.2), so a page of results needs no rendering.
+
+          COMM-1.9.4 (the shelves and the published search group) builds on this endpoint rather than adding its own queries.
+        id: 01a122bf-a272-754d-a86f-388e151649e9
+        created_at: 2026-10-09T22:19:06.739Z
+        updated_at: 2026-10-09T22:19:06.739Z
+      - ref: COMM-1.9.6
+        area: COMM
+        title: "Portraits for custom devices: drawn in the browser on creation, saved with the device"
+        status: to-do
+        sort_path: 000001.000009.000006
+        parent: COMM-1.9
+        deps:
+          - COMM-1.9.2
+        body: |-
+          COMM-1.9.2 draws portraits for the built-ins only, as a committed `portraits.json`. Custom devices (user or agent-authored, registered from the project at load) show the category glyph. The drawing code already works on them: `renderIsolated` builds through the same factories, and a portrait renders in well under a second.
+
+          **Agreed shape (user, 2026-10-09):**
+          - **Stored with the device:** the portrait (about 1-2KB of SVG path) lives **inline in the custom device's definition** in the project document, not in blob storage (that's for audio-sized assets). It travels with the device, so **publishing carries it** (COMM-1.1) like the rest of the definition.
+          - **Drawn in the browser** when the device is created or changed (`renderPortraits`' per-kind logic, run on one device in the background), and saved through an authored edit so it syncs.
+          - **A hash of the definition beside it.** When the agent edits the device, the hash stops matching and the portrait redraws. A project document bump needs an upcaster in `documentMigration.ts` (the field is optional, so existing devices just have none until drawn).
+          - **The hosted MCP server has no browser,** so a device an agent makes through it can't be drawn at creation. The first browser to open the project draws and saves it. Once the render service (HOST-22) exists, the server can draw it at creation instead.
+          - **Your saved patches** (localStorage, cross-project) could take the same treatment, stored on the patch.
+        id: 01a122e1-5156-7033-b5be-c38513cd0e90
+        created_at: 2026-10-09T22:55:54.198Z
+        updated_at: 2026-10-09T22:55:54.198Z
       - ref: DAW-1
         area: DAW
         title: Param-schema keystone and catalogs
@@ -8184,7 +8242,7 @@ projects:
       - ref: MOBILE-19.4
         area: MOBILE
         title: Editor settings get Arrangement and Piano roll settings pages; on touch they leave the tools menus
-        status: review
+        status: done
         sort_path: "000019.000004"
         parent: MOBILE-19
         deps:
@@ -8198,7 +8256,8 @@ projects:
           - **One value, not a copy**: the preferences are hooks over their persisted keys in `src/ui/editorPrefs.ts`, used by the surfaces and the pages alike.
         id: 01a122a3-258e-7348-bfee-84e007432011
         created_at: 2026-10-09T21:47:59.758Z
-        updated_at: 2026-10-09T21:51:14.056Z
+        updated_at: 2026-10-09T23:11:11.899Z
+        closed_at: 2026-10-09T23:11:11.899Z
         comments:
           - body: "Extended in #190 at the user's request: on touch both surface tools menus are gone. Adding is a + in the top bar (Studio tab only), zoom is pinch only, and Quantize moved to the selected note's own menu (that note, or its selection), on both shells. Manual \"quantize the whole clip\" is now desktop-only; on a phone it's select-then-quantize, or auto-quantize from settings."
             audience: user

@@ -32,6 +32,7 @@
     "db:studio": "drizzle-kit studio",
     "check:server": "tsc -p tsconfig.server.json",
     "check:pwa": "tsx scripts/checkPwaOffline.ts",
+    "portraits": "tsx scripts/generatePortraits.ts",
     "preview": "vite preview",
     "worktree:new": "bash scripts/worktree.sh new",
     "worktree:rm": "bash scripts/worktree.sh rm",

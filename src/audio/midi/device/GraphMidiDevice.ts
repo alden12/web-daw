@@ -59,6 +59,15 @@ export class GraphMidiDevice implements NoteTarget {
     this.strategy = createStrategy(def.transform, ctx);
   }
 
+  /**
+   * Whether this device **generates** notes on a clock of its own (an arpeggiator, a Euclidean
+   * sequencer) rather than transforming each note as it arrives (the octavator's tap). Read off the
+   * strategy, so a new transform kind answers by having a step schedule or not.
+   */
+  get generates(): boolean {
+    return this.strategy.scheduleWindow !== undefined;
+  }
+
   /** Relink to the next target in the chain (the engine calls this on reconcile). */
   setNext(next: NoteTarget): void {
     this.next = next;
@@ -82,6 +91,16 @@ export class GraphMidiDevice implements NoteTarget {
   allNotesOff(): void {
     this.strategy.allNotesOff();
     this.next.allNotesOff();
+  }
+
+  /**
+   * Play a generator's steps in [fromTime, toTime) through at once, ahead of its timer: how a
+   * phrase is captured without waiting for it in real time (the Explore portraits, COMM-1.9.2).
+   * Call it in the same task as the notes that start the phrase, then `dispose`, so the timer
+   * those notes started never fires and plays the opening steps a second time.
+   */
+  scheduleWindow(fromTime: number, toTime: number): void {
+    this.strategy.scheduleWindow?.(fromTime, toTime);
   }
 
   /** Release held state into the downstream (avoids stuck notes on removal) and stop any timer. */

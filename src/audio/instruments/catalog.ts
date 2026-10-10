@@ -562,7 +562,8 @@ export interface InstrumentInfo {
    */
   hidden?: boolean;
   /** Tags from the vocabulary (`tags.ts`), for Explore's chips and search. */
-  tags?: readonly Tag[];
+  tags?: readonly Tag[]; /** Authored in a project (by you or the agent), not shipped with the app: registered on load. */
+  custom?: boolean;
 }
 
 /** The sentinel instrument type for an empty track (no instrument chosen yet). */

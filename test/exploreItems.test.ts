@@ -12,6 +12,7 @@ import { effectInfos } from "../src/audio/effects/catalog";
 import { midiDeviceInfos } from "../src/audio/midi/device/catalog";
 import { FACTORY_PATCHES } from "../src/audio/patches/factory";
 import type { Patch } from "../src/audio/patches/library";
+import { registerInstrument, unregisterInstrument } from "../src/audio/instruments/catalog";
 
 const saved: Patch = {
   id: "mine",
@@ -45,6 +46,19 @@ describe("exploreItems", () => {
     expect(named("My Bass").builtin).toBe(false);
     expect(named("Kick 01").builtin).toBe(false);
     expect(named("Reverb").builtin).toBe(true);
+  });
+});
+
+describe("custom devices", () => {
+  it("are not marked built-in", () => {
+    registerInstrument({ type: "agent-fizz", label: "Fizz", schema: [], family: "Custom", custom: true });
+    try {
+      const fizz = exploreItems({ savedPatches: [], samples: [] }).find((item) => item.name === "Fizz");
+      expect(fizz?.builtin).toBe(false);
+      expect(fizz?.meta).toBe("Instrument · custom");
+    } finally {
+      unregisterInstrument("agent-fizz");
+    }
   });
 });
 

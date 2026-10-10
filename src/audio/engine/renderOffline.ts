@@ -13,9 +13,8 @@
  */
 import { createInstrument } from "../instruments/registry";
 import { createEffect } from "../effects/registry";
-import { instrumentSchema } from "../instruments/catalog";
-import { ParamStore } from "../params/store";
 import { loadWorklets } from "../worklets";
+import { renderIsolated } from "./renderIsolated";
 import { setSampleAssets } from "../samples/sampleRegistry";
 import { soloMutedTrackIds } from "./mix";
 import { beatsToSeconds, tileClipNotes } from "../sequencer/scheduler";
@@ -327,30 +326,13 @@ export function peakAmplitude(buffer: AudioBuffer): number {
 }
 
 /**
- * Render a single wavetable (worklet) note under an OfflineAudioContext, reusing the real
- * instrument factory + worklet loader. Returns the rendered buffer for the caller to check.
+ * Render a single wavetable (worklet) note: the probe that proved worklet instruments render
+ * offline, kept as the minimal regression guard. Now one case of `renderIsolated`.
  */
-export async function renderWorkletSmokeTest(sampleRate = 44100): Promise<AudioBuffer> {
-  const durationSec = 1;
-  const ctx = new OfflineAudioContext(2, Math.ceil(durationSec * sampleRate), sampleRate);
-
-  // Worklet modules are keyed per-context (BaseAudioContext WeakMap), so a fresh offline
-  // context re-adds them cleanly. Must complete BEFORE constructing any AudioWorkletNode.
-  await loadWorklets(ctx);
-
-  const store = new ParamStore(instrumentSchema("wavetable"));
-  const instrument = createInstrument("wavetable", ctx, store);
-  instrument.output.connect(ctx.destination);
-
-  // Worklet note commands are port messages. A message posted before startRendering() races
-  // the offline render and loses - the render can finish before the cross-thread message is
-  // delivered, so the processor never sees the note (renders silence). Suspend the render at
-  // t=0, post the note while paused so it is queued, then resume: the message is delivered
-  // before the first block renders. C4 (MIDI 60), 0.8s, near-full velocity, at the top.
-  void ctx.suspend(0).then(() => {
-    instrument.playNote(60, 0.8, 0.9, 0);
-    void ctx.resume();
-  });
-
-  return ctx.startRendering();
+export function renderWorkletSmokeTest(sampleRate = 44100): Promise<AudioBuffer> {
+  return renderIsolated(
+    { instrument: { type: "wavetable" } },
+    { kind: "note", pitch: 60, holdSec: 0.8, velocity: 0.9 },
+    { durationSec: 1, sampleRate },
+  );
 }

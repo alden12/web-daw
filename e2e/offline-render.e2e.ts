@@ -119,3 +119,27 @@ test("render + analyze produces a sane mix report (analyze_mix chain)", async ({
   expect(report.headroomDb).toBeGreaterThan(0);
   expect(typeof report.note).toBe("string");
 });
+
+/**
+ * COMM-1.9.2: the portrait renderer `yarn portraits` runs. Every built-in renders alone and draws
+ * something, so a device that renders silent, or a drawing that comes out empty, fails here rather
+ * than landing as a blank card.
+ */
+test("every built-in renders a non-empty sound portrait", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => typeof (window as unknown as { __dawRenderPortraits?: unknown }).__dawRenderPortraits === "function",
+  );
+
+  const portraits = await page.evaluate(async () =>
+    (
+      window as unknown as { __dawRenderPortraits: () => Promise<Record<string, { line?: string; fill?: string }>> }
+    ).__dawRenderPortraits(),
+  );
+
+  const empty = Object.entries(portraits)
+    .filter(([, portrait]) => (portrait.line ?? portrait.fill ?? "").length < 20)
+    .map(([key]) => key);
+  expect(Object.keys(portraits).length).toBeGreaterThan(20);
+  expect(empty).toEqual([]);
+});
