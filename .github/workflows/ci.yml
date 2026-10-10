@@ -4,11 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The "Run workflow" button: checks, then deploys main whether or not CD is switched on.
+  workflow_dispatch:
 
-# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
+# Cancel superseded runs on a PR branch. Not on main, where a run may be part-way through a deploy:
+# those queue instead.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -49,3 +52,31 @@ jobs:
 
       - name: End-to-end tests
         run: yarn test:e2e
+
+  # Continuous deployment: every green push to main ships to Fly. Off until the repo variable
+  # CD_ENABLED is "true" (Settings -> Secrets and variables -> Actions -> Variables); a manual run
+  # deploys regardless, which is how to try the token before switching it on. Needs the FLY_API_TOKEN
+  # secret on the production environment. See docs/DEPLOY.md "Continuous deployment".
+  deploy:
+    needs: check
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || vars.CD_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://web-daw.fly.dev
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Build args come from fly.toml [build.args], as with `yarn deploy`. Remote-only: the runner
+      # has Docker, but Fly's builder is next to the registry and caches layers between deploys.
+      - name: Deploy to Fly
+        run: flyctl deploy --remote-only -a web-daw
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

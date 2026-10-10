@@ -109,6 +109,30 @@ intermittently fail to resolve `api.fly.io`. A bare `fly deploy` works too - it 
 args from `fly.toml`, so no `--build-arg` flags are needed. To re-point the deploy (rename, new Supabase
 project), edit `[build.args]` in `fly.toml` and redeploy.
 
+## Continuous deployment
+
+The `deploy` job in `.github/workflows/ci.yml` runs `flyctl deploy` after the `check` job passes on
+main, so a merge ships once CI is green. It is **off until switched on**, and `yarn deploy` stays the
+way to ship until then (and afterwards for a deploy from your machine).
+
+To switch it on:
+
+1. **Make a deploy token** scoped to this one app, rather than one that can reach your whole Fly account:
+   ```sh
+   fly tokens create deploy -a web-daw -x 8760h   # a year; rotate it before then
+   ```
+2. **Store it on a GitHub environment**: repo Settings -> Environments -> New environment `production`
+   -> Environment secrets -> `FLY_API_TOKEN` = the whole token printed above (it starts `FlyV1 `).
+3. **Try it by hand**: Actions -> CI -> Run workflow (on main). A manual run deploys whether or not CD
+   is on, after the same checks, so this proves the token without changing anything else.
+4. **Switch it on**: Settings -> Secrets and variables -> Actions -> Variables -> `CD_ENABLED` = `true`.
+   Set it to anything else (or delete it) to switch CD off again.
+
+Runs on main queue rather than cancel one another, so a deploy is never cut off part-way. Migrations
+run on boot as they always do, so a merged migration reaches the live database with no one watching.
+When that matters (real users), add **Required reviewers** to the `production` environment: each deploy
+then waits for a click in the Actions tab, and nothing else changes.
+
 ## Observability and logging
 
 The app is a **single service** today - one Node process (API + WS authority + static serving) plus two
