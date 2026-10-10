@@ -2603,7 +2603,7 @@ projects:
       - ref: COMM-1.9.2
         area: COMM
         title: Sound portrait thumbnails, generated from an isolated render
-        status: review
+        status: done
         sort_path: 000001.000009.000002
         parent: COMM-1.9
         deps:
@@ -2616,7 +2616,8 @@ projects:
           - Custom artwork later; this stays the default.
         id: 01a12246-81a3-74b0-beac-eb931b262fbe
         created_at: 2026-10-09T20:06:48.484Z
-        updated_at: 2026-10-09T22:19:06.852Z
+        updated_at: 2026-10-10T11:56:09.526Z
+        closed_at: 2026-10-10T11:56:09.526Z
         comments:
           - body: 'Built: "build time" is a committed `src/ui/explore/portraits.json` from `yarn portraits` (headless Chromium via the dev-only `__dawRenderPortraits` hook), not a CI build step. A unit test fails if a built-in lacks one. Effects pick by RMS ring length (a 20ms tone burst): over 0.2s draws an envelope (delay, reverb), otherwise an input-vs-output transfer curve. Your saved patches and samples keep the glyph for now. `renderIsolated` is the shared isolated-device render AGENT-4.8 wanted.'
             audience: user
